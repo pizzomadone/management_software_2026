@@ -416,6 +416,12 @@ public class SuppliersPanel extends JPanel {
             }
 
             ordersWindow.setVisible(true);
+
+            // Refresh ProductsPanel after closing supplier orders window
+            // (stock may have been updated by completing orders)
+            if (parentWindow instanceof MainWindow) {
+                ((MainWindow) parentWindow).refreshProductsPanel();
+            }
         }
     }
 

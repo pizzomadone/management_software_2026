@@ -565,6 +565,10 @@ public class WarehousePanel extends JPanel {
         dialog.setVisible(true);
         if (dialog.isMovementSaved()) {
             loadData();
+            // Refresh ProductsPanel to update stock levels
+            if (parentWindow instanceof MainWindow) {
+                ((MainWindow) parentWindow).refreshProductsPanel();
+            }
         }
     }
 
