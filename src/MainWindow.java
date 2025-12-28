@@ -731,7 +731,16 @@ public class MainWindow extends JFrame {
     private void openSettings() {
         showPanel("SETTINGS");
     }
-    
+
+    /**
+     * Refresh ProductsPanel to update stock levels after order changes
+     */
+    public void refreshProductsPanel() {
+        if (productsPanel != null) {
+            productsPanel.loadProducts();
+        }
+    }
+
     public static void main(String[] args) {
         // Add this code block for macOS integration
         final String os = System.getProperty("os.name");

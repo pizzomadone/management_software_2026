@@ -94,7 +94,7 @@ public class ProductsPanel extends JPanel {
         deleteButton.setEnabled(isRowSelected);
     }
     
-    private void loadProducts() {
+    public void loadProducts() {
         tableModel.setRowCount(0);
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();

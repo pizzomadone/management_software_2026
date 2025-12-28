@@ -450,8 +450,8 @@ public class OrderDialog extends JDialog {
                 stockItems.add(new StockManager.StockItem(productId, productName, quantity));
             }
 
-            // Check stock availability for In Progress and Completed states
-            if ("In Progress".equals(newStatus) || "Completed".equals(newStatus)) {
+            // Check stock availability for New, In Progress and Completed states
+            if ("New".equals(newStatus) || "In Progress".equals(newStatus) || "Completed".equals(newStatus)) {
                 Map<String, StockManager.StockAvailability> insufficient =
                     StockManager.checkStockAvailability(
                         DatabaseManager.getInstance().getConnection(),
@@ -531,9 +531,9 @@ public class OrderDialog extends JDialog {
                         pstmt.executeUpdate();
                     }
 
-                    // If order was "In Progress", cancel old reservations before changing details
+                    // If order was "New" or "In Progress", cancel old reservations before changing details
                     // This ensures reservations match the NEW quantities, not old ones
-                    if ("In Progress".equals(previousStatus)) {
+                    if ("New".equals(previousStatus) || "In Progress".equals(previousStatus)) {
                         StockManager.cancelReservation(conn, "ORDER", orderId);
                     }
 
@@ -590,19 +590,22 @@ public class OrderDialog extends JDialog {
                                          List<StockManager.StockItem> items, Date orderDate) throws SQLException {
         switch (status) {
             case "New":
-                // No stock action
-                break;
             case "In Progress":
-                // Create reservations
+                // Create reservations for both New and In Progress
                 for (StockManager.StockItem item : items) {
                     StockManager.createOrUpdateReservation(conn, item.getProductId(),
                         "ORDER", orderId, item.getQuantity(), "Order #" + orderId);
                 }
                 break;
             case "Completed":
-                // Decrement stock directly (no prior reservation)
-                StockManager.decrementStockDirectly(conn, items, orderDate,
-                    String.valueOf(orderId), "ORDER");
+                // Complete reservation and decrement stock
+                // First create reservation if items exist, then complete it
+                for (StockManager.StockItem item : items) {
+                    StockManager.createOrUpdateReservation(conn, item.getProductId(),
+                        "ORDER", orderId, item.getQuantity(), "Order #" + orderId);
+                }
+                StockManager.completeReservationAndDecrementStock(conn, "ORDER", orderId,
+                    orderDate, String.valueOf(orderId));
                 break;
             case "Cancelled":
                 // No stock action
@@ -612,30 +615,32 @@ public class OrderDialog extends JDialog {
 
     private void handleStatusChange(Connection conn, int orderId, String oldStatus, String newStatus,
                                     List<StockManager.StockItem> items, Date orderDate) throws SQLException {
-        // Note: If oldStatus was "In Progress", reservations were already cancelled
+        // Note: If oldStatus was "In Progress" or "New", reservations were already cancelled
         // before updating details, so we don't need to cancel them here
 
         if ("Completed".equals(oldStatus) && !"Completed".equals(newStatus)) {
-            // Restore stock
+            // Restore stock when moving away from Completed
             StockManager.restoreStockFromDocument(conn, orderId, "ORDER");
         }
 
         // Handle transition to new status
         switch (newStatus) {
             case "New":
-                // No action needed
-                break;
             case "In Progress":
-                // Create new reservations with current quantities
+                // Create new reservations with current quantities for both New and In Progress
                 for (StockManager.StockItem item : items) {
                     StockManager.createOrUpdateReservation(conn, item.getProductId(),
                         "ORDER", orderId, item.getQuantity(), "Order #" + orderId);
                 }
                 break;
             case "Completed":
-                // Always decrement stock directly (reservations were cancelled if they existed)
-                StockManager.decrementStockDirectly(conn, items, orderDate,
-                    String.valueOf(orderId), "ORDER");
+                // Create reservations and then complete them (this decrements stock)
+                for (StockManager.StockItem item : items) {
+                    StockManager.createOrUpdateReservation(conn, item.getProductId(),
+                        "ORDER", orderId, item.getQuantity(), "Order #" + orderId);
+                }
+                StockManager.completeReservationAndDecrementStock(conn, "ORDER", orderId,
+                    orderDate, String.valueOf(orderId));
                 break;
             case "Cancelled":
                 // No action needed (reservations already cancelled if they existed)

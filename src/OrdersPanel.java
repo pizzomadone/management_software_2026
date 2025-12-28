@@ -199,6 +199,10 @@ public class OrdersPanel extends JPanel {
         dialog.setVisible(true);
         if (dialog.isOrderSaved()) {
             loadOrders();
+            // Refresh ProductsPanel to update stock levels
+            if (parentWindow instanceof MainWindow) {
+                ((MainWindow) parentWindow).refreshProductsPanel();
+            }
         }
     }
 
