@@ -60,7 +60,7 @@ public class MainWindow extends JFrame {
     }
     
     private void setupWindow() {
-        setTitle("WorkGenio - Management System");
+        setTitle(AppConstants.SOFTWARE_NAME + " - Management System");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setSize(1400, 900);
         setLocationRelativeTo(null);
@@ -219,7 +219,7 @@ public class MainWindow extends JFrame {
         JMenu helpMenu = new JMenu("Help");
         helpMenu.setMnemonic(KeyEvent.VK_H);
         
-        JMenuItem aboutItem = new JMenuItem("About WorkGenio");
+        JMenuItem aboutItem = new JMenuItem("About " + AppConstants.SOFTWARE_NAME);
         aboutItem.addActionListener(e -> showAboutDialog());
         
         JMenuItem keyboardShortcutsItem = new JMenuItem("Keyboard Shortcuts");
@@ -413,7 +413,7 @@ public class MainWindow extends JFrame {
         // Welcome panel
         JPanel welcomePanel = new JPanel();
         welcomePanel.setLayout(new GridBagLayout());
-        JLabel welcomeLabel = new JLabel("Welcome to WorkGenio");
+        JLabel welcomeLabel = new JLabel("Welcome to " + AppConstants.SOFTWARE_NAME);
         welcomeLabel.setFont(new Font("Arial", Font.BOLD, 32));
         welcomeLabel.setForeground(new Color(34, 139, 34));
         
@@ -432,7 +432,7 @@ public class MainWindow extends JFrame {
         
         // Quick stats or info panel
         JPanel infoPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
-        JLabel versionLabel = new JLabel("WorkGenio v1.0 - Use the toolbar above or File menu to navigate between modules");
+        JLabel versionLabel = new JLabel(AppConstants.FULL_TITLE + " - Use the toolbar above or File menu to navigate between modules");
         versionLabel.setFont(new Font("Arial", Font.PLAIN, 14));
         versionLabel.setForeground(new Color(70, 130, 180));
         infoPanel.add(versionLabel);
@@ -517,9 +517,9 @@ public class MainWindow extends JFrame {
     
     private void showAboutDialog() {
         String aboutText = """
-            WorkGenio v1.0
+            %s
             Professional Business Management System
-            
+
             Features:
             • Customer Management
             • Product Catalog
@@ -529,13 +529,13 @@ public class MainWindow extends JFrame {
             • Warehouse Control
             • Sales Reports & Analytics
             • Backup & Restore
-            
-            © 2025 WorkGenio
-            """;
-        
+
+            %s
+            """.formatted(AppConstants.FULL_TITLE, AppConstants.COPYRIGHT);
+
         JOptionPane.showMessageDialog(this,
             aboutText,
-            "About WorkGenio",
+            "About " + AppConstants.SOFTWARE_NAME,
             JOptionPane.INFORMATION_MESSAGE);
     }
     
@@ -606,7 +606,7 @@ public class MainWindow extends JFrame {
             e.printStackTrace();
             JOptionPane.showMessageDialog(this,
                 "Error opening " + panelName + ": " + e.getMessage(),
-                "WorkGenio - Error",
+                AppConstants.SOFTWARE_NAME + " - Error",
                 JOptionPane.ERROR_MESSAGE);
         }
     }
@@ -709,7 +709,7 @@ public class MainWindow extends JFrame {
     }
     
     private void updateWindowTitle(String panelName) {
-        String title = "WorkGenio - ";
+        String title = AppConstants.SOFTWARE_NAME + " - ";
         switch (panelName) {
             case "HOME": title += "Dashboard"; break;
             case "CUSTOMERS": title += "Customer Management"; break;
@@ -737,7 +737,7 @@ public class MainWindow extends JFrame {
         final String os = System.getProperty("os.name");
         if (os != null && os.startsWith("Mac OS X")) {
             System.setProperty("apple.laf.useScreenMenuBar", "true");
-            System.setProperty("apple.awt.application.name", "WorkGenio");
+            System.setProperty("apple.awt.application.name", AppConstants.SOFTWARE_NAME);
         }
 
         SwingUtilities.invokeLater(() -> {

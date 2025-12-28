@@ -1,4 +1,4 @@
--- Script corretto per popolare il database WorkGenio
+-- Script to populate the management software database
 PRAGMA foreign_keys = OFF;
 PRAGMA synchronous = OFF;
 PRAGMA journal_mode = MEMORY;
