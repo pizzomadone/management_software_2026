@@ -67,14 +67,14 @@ SELECT
         WHEN 3 THEN 'Elite' WHEN 4 THEN 'Pro' WHEN 5 THEN 'Master'
         WHEN 6 THEN 'Supreme' WHEN 7 THEN 'Ultra' WHEN 8 THEN 'Mega'
         ELSE 'Super'
-    END || ' Supplier ' || ROW_NUMBER() OVER() || ' Inc.',
+    END || ' Supplier ' || x || ' Inc.',
     printf('VAT%011d', ABS(RANDOM()) % 100000000000),
     printf('TAX%016d', ABS(RANDOM()) % 10000000000000000),
     'Industrial Park ' || (1 + ABS(RANDOM() % 50)) || ', Business District, CA',
     '+1 800-' || printf('%04d', 1000 + ABS(RANDOM() % 8999)),
-    'info@supplier' || ROW_NUMBER() OVER() || '.com',
-    'certified@supplier' || ROW_NUMBER() OVER() || '.com',
-    'www.supplier' || ROW_NUMBER() OVER() || '.com',
+    'info@supplier' || x || '.com',
+    'certified@supplier' || x || '.com',
+    'www.supplier' || x || '.com',
     'Reliable supplier with excellent service'
 FROM (
     WITH RECURSIVE numbers(x) AS (
@@ -88,7 +88,7 @@ FROM (
 -- 3. PRODUCTS (500 records)
 INSERT INTO products (code, name, description, price, quantity, reserved_quantity, category, alternative_sku, weight, unit_of_measure, minimum_quantity, acquisition_cost, active, supplier_id, warehouse_position, vat_rate)
 SELECT
-    'PROD' || printf('%06d', ROW_NUMBER() OVER()),
+    'PROD' || printf('%06d', x),
     CASE (ABS(RANDOM()) % 25)
         WHEN 0 THEN 'Resistor' WHEN 1 THEN 'Capacitor' WHEN 2 THEN 'Transistor'
         WHEN 3 THEN 'LED Diode' WHEN 4 THEN 'Integrated Circuit' WHEN 5 THEN 'Connector'
@@ -109,7 +109,7 @@ SELECT
         WHEN 3 THEN 'Accessories' WHEN 4 THEN 'Hardware' WHEN 5 THEN 'Peripherals'
         WHEN 6 THEN 'Computing' ELSE 'Networking'
     END,
-    'ALT-' || printf('%06d', ROW_NUMBER() OVER()),  -- alternative_sku
+    'ALT-' || printf('%06d', x),  -- alternative_sku
     ROUND(0.1 + (ABS(RANDOM() % 100) / 10.0), 2),  -- weight in kg
     CASE (ABS(RANDOM()) % 3) WHEN 0 THEN 'pcs' WHEN 1 THEN 'box' ELSE 'pack' END,
     5 + ABS(RANDOM() % 20),  -- minimum_quantity
@@ -181,7 +181,7 @@ INSERT INTO invoice_numbering (year, last_number) VALUES (2025, 0);
 
 INSERT INTO invoices (number, date, customer_id, taxable_amount, vat, total, status)
 SELECT
-    '2024/' || printf('%04d', ROW_NUMBER() OVER()),
+    '2024/' || printf('%04d', x),
     datetime('now', '-' || ABS(RANDOM() % 365) || ' days',
              '-' || ABS(RANDOM() % 24) || ' hours'),
     1 + ABS(RANDOM() % 1000),
@@ -225,7 +225,7 @@ FROM (
 INSERT INTO supplier_orders (supplier_id, number, order_date, expected_delivery_date, status, total, notes)
 SELECT
     1 + ABS(RANDOM() % 50),
-    'PO-2024-' || printf('%04d', ROW_NUMBER() OVER()),
+    'PO-2024-' || printf('%04d', x),
     datetime('now', '-' || ABS(RANDOM() % 180) || ' days'),
     datetime('now', '-' || ABS(RANDOM() % 180) || ' days', '+' || (7 + ABS(RANDOM() % 21)) || ' days'),
     CASE (ABS(RANDOM()) % 5)
