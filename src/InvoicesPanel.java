@@ -71,11 +71,11 @@ public class InvoicesPanel extends JPanel {
         addButton = new JButton("New Invoice");
         editButton = new JButton("Modify");
         deleteButton = new JButton("Delete");
-        generatePDFButton = new JButton("Generate Invoice");
+        generatePDFButton = new JButton("Generate PDF");
         refreshButton = new JButton("Refresh");
 
         generatePDFButton.setFont(generatePDFButton.getFont().deriveFont(Font.BOLD));
-        generatePDFButton.setPreferredSize(new Dimension(150, 30));
+        generatePDFButton.setPreferredSize(new Dimension(140, 30));
         generatePDFButton.setOpaque(true);
 
         addButton.addActionListener(e -> createNewInvoice());
