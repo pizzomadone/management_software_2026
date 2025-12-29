@@ -190,17 +190,18 @@ public class DashboardPanel extends JPanel {
 
     private JButton createQuickActionButton(String text, Color color, Runnable action) {
         JButton button = new JButton(text);
-        button.setFont(new Font("Arial", Font.BOLD, 14));
+        button.setFont(new Font("Arial", Font.BOLD, 13));
         button.setBackground(color);
         button.setForeground(Color.WHITE);
         button.setFocusPainted(false);
         button.setBorderPainted(true);
+        button.setContentAreaFilled(true);  // Critical: ensures background color is painted
         button.setOpaque(true);
         button.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        button.setPreferredSize(new Dimension(190, 45));
+        button.setPreferredSize(new Dimension(170, 38));
         button.setBorder(BorderFactory.createCompoundBorder(
             BorderFactory.createLineBorder(color.darker(), 1),
-            BorderFactory.createEmptyBorder(8, 15, 8, 15)
+            BorderFactory.createEmptyBorder(5, 12, 5, 12)
         ));
         button.addActionListener(e -> action.run());
 
@@ -208,17 +209,9 @@ public class DashboardPanel extends JPanel {
         button.addMouseListener(new java.awt.event.MouseAdapter() {
             public void mouseEntered(java.awt.event.MouseEvent evt) {
                 button.setBackground(color.brighter());
-                button.setBorder(BorderFactory.createCompoundBorder(
-                    BorderFactory.createLineBorder(color.darker(), 2),
-                    BorderFactory.createEmptyBorder(8, 15, 8, 15)
-                ));
             }
             public void mouseExited(java.awt.event.MouseEvent evt) {
                 button.setBackground(color);
-                button.setBorder(BorderFactory.createCompoundBorder(
-                    BorderFactory.createLineBorder(color.darker(), 1),
-                    BorderFactory.createEmptyBorder(8, 15, 8, 15)
-                ));
             }
         });
 
