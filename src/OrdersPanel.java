@@ -479,10 +479,20 @@ public class OrdersPanel extends JPanel {
                 }
 
             } catch (Exception e) {
-                conn.rollback();
+                try {
+                    if (!conn.getAutoCommit()) {
+                        conn.rollback();
+                    }
+                } catch (SQLException rollbackEx) {
+                    rollbackEx.printStackTrace();
+                }
                 throw e;
             } finally {
-                conn.setAutoCommit(true);
+                try {
+                    conn.setAutoCommit(true);
+                } catch (SQLException finallyEx) {
+                    finallyEx.printStackTrace();
+                }
             }
 
         } catch (Exception e) {
