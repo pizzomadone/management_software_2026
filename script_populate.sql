@@ -263,8 +263,8 @@ FROM (
     SELECT x FROM numbers
 );
 
--- 11. MINIMUM STOCKS (250 records) - Link to products table
-INSERT INTO minimum_stocks (product_id, minimum_quantity, reorder_quantity, notes)
+-- 11. MINIMUM STOCK (250 records) - Link to products table
+INSERT INTO minimum_stock (product_id, minimum_quantity, reorder_quantity, notes)
 SELECT
     x,
     5 + ABS(RANDOM() % 20),
@@ -280,7 +280,7 @@ FROM (
 );
 
 -- 12. WAREHOUSE MOVEMENTS (4000 records)
-INSERT INTO warehouse_movements (product_id, movement_type, quantity, date, notes, reference_document)
+INSERT INTO warehouse_movements (product_id, type, quantity, date, reason, document_number, document_type, notes)
 SELECT
     1 + ABS(RANDOM() % 500),
     CASE (ABS(RANDOM()) % 6)
@@ -291,13 +291,22 @@ SELECT
     datetime('now', '-' || ABS(RANDOM() % 180) || ' days',
              '-' || ABS(RANDOM() % 24) || ' hours'),
     CASE (ABS(RANDOM()) % 5)
+        WHEN 0 THEN 'PURCHASE' WHEN 1 THEN 'SALE'
+        WHEN 2 THEN 'ADJUSTMENT' WHEN 3 THEN 'RETURN'
+        ELSE 'TRANSFER'
+    END,
+    'DOC-' || printf('%06d', 10000 + ABS(RANDOM() % 89999)),
+    CASE (ABS(RANDOM()) % 4)
+        WHEN 0 THEN 'DDT' WHEN 1 THEN 'INVOICE'
+        WHEN 2 THEN 'ORDER' ELSE 'INTERNAL'
+    END,
+    CASE (ABS(RANDOM()) % 5)
         WHEN 0 THEN 'Purchase order received'
         WHEN 1 THEN 'Sale to customer'
         WHEN 2 THEN 'Stock adjustment'
         WHEN 3 THEN 'Inventory count correction'
         ELSE 'Transfer between warehouses'
-    END,
-    'DOC-' || printf('%06d', 10000 + ABS(RANDOM() % 89999))
+    END
 FROM (
     WITH RECURSIVE numbers(x) AS (
         SELECT 1
@@ -374,7 +383,7 @@ UNION ALL SELECT 'Invoice Details: ' || COUNT(*) FROM invoice_details
 UNION ALL SELECT 'Supplier Orders: ' || COUNT(*) FROM supplier_orders
 UNION ALL SELECT 'Supplier Order Details: ' || COUNT(*) FROM supplier_order_details
 UNION ALL SELECT 'Supplier Price Lists: ' || COUNT(*) FROM supplier_price_lists
-UNION ALL SELECT 'Minimum Stocks: ' || COUNT(*) FROM minimum_stocks
+UNION ALL SELECT 'Minimum Stock: ' || COUNT(*) FROM minimum_stock
 UNION ALL SELECT 'Warehouse Movements: ' || COUNT(*) FROM warehouse_movements
 UNION ALL SELECT 'Warehouse Notifications: ' || COUNT(*) FROM warehouse_notifications
 UNION ALL SELECT ''
