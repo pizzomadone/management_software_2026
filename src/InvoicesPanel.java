@@ -435,8 +435,7 @@ public class InvoicesPanel extends JPanel {
 
             int result = JOptionPane.showConfirmDialog(this,
                 "Are you sure you want to delete invoice " + number + " from customer " + customer + "?\n" +
-                "Status: " + status + "\n" +
-                (status.equals("Issued") || status.equals("Paid") ? "Stock will be restored." : "No stock changes."),
+                "Status: " + status,
                 "Confirm Deletion",
                 JOptionPane.YES_NO_OPTION,
                 JOptionPane.WARNING_MESSAGE);
@@ -458,10 +457,7 @@ public class InvoicesPanel extends JPanel {
                             }
                         }
 
-                        // Restore stock based on invoice status
-                        if (invoiceId > 0) {
-                            StockManager.deleteInvoice(conn, invoiceId, number, status);
-                        }
+                        // Invoices do not affect warehouse stock - stock is managed by orders only
 
                         // Delete the invoice details
                         String deleteDetailsQuery = "DELETE FROM invoice_details WHERE invoice_id = ?";
@@ -481,8 +477,7 @@ public class InvoicesPanel extends JPanel {
                         loadInvoices();
 
                         JOptionPane.showMessageDialog(this,
-                            "Invoice deleted successfully!" +
-                            (status.equals("Issued") || status.equals("Paid") ? "\nStock has been restored." : ""),
+                            "Invoice deleted successfully!",
                             "Success", JOptionPane.INFORMATION_MESSAGE);
 
                     } catch (SQLException e) {
