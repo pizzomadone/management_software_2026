@@ -3,6 +3,22 @@ PRAGMA foreign_keys = OFF;
 PRAGMA synchronous = OFF;
 PRAGMA journal_mode = MEMORY;
 
+-- Clear existing data (in reverse order of foreign key dependencies)
+DELETE FROM warehouse_notifications;
+DELETE FROM warehouse_movements;
+DELETE FROM minimum_stock;
+DELETE FROM supplier_price_lists;
+DELETE FROM supplier_order_details;
+DELETE FROM supplier_orders;
+DELETE FROM invoice_details;
+DELETE FROM invoices;
+DELETE FROM invoice_numbering;
+DELETE FROM order_details;
+DELETE FROM orders;
+DELETE FROM products;
+DELETE FROM suppliers;
+DELETE FROM customers;
+
 -- 1. CUSTOMERS (1000 records)
 INSERT INTO customers (first_name, last_name, email, phone, address)
 SELECT
