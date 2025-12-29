@@ -406,6 +406,10 @@ public class OrdersPanel extends JPanel {
                     .get(java.util.Calendar.YEAR);
                 String invoiceNumber = DatabaseManager.getInstance().getNextInvoiceNumber(year);
 
+                // getNextInvoiceNumber commits its own transaction, resetting auto-commit
+                // Re-disable auto-commit for our transaction
+                conn.setAutoCommit(false);
+
                 // Calculate totals with default VAT rate (22%)
                 final double DEFAULT_VAT_RATE = 22.0;
                 double taxableAmount = 0.0;
@@ -465,7 +469,10 @@ public class OrdersPanel extends JPanel {
                     pstmt.executeBatch();
                 }
 
-                conn.commit();
+                // Commit transaction (verify we're still in transaction mode)
+                if (!conn.getAutoCommit()) {
+                    conn.commit();
+                }
 
                 JOptionPane.showMessageDialog(this,
                     "Invoice " + invoiceNumber + " generated successfully!\n" +
