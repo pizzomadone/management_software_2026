@@ -1,9 +1,16 @@
 -- Script to populate the management software database with dummy but valid data
+-- IMPORTANT: This script must be run with foreign keys disabled at the database level
+-- If using SQLite Browser or similar tool, ensure foreign keys are disabled in settings
+
 PRAGMA foreign_keys = OFF;
 PRAGMA synchronous = OFF;
 PRAGMA journal_mode = MEMORY;
 
+-- Use a transaction to ensure all operations are atomic
+BEGIN TRANSACTION;
+
 -- Clear existing data (in reverse order of foreign key dependencies)
+-- Child tables first, parent tables last
 DELETE FROM warehouse_notifications;
 DELETE FROM warehouse_movements;
 DELETE FROM minimum_stock;
@@ -18,6 +25,14 @@ DELETE FROM orders;
 DELETE FROM products;
 DELETE FROM suppliers;
 DELETE FROM customers;
+DELETE FROM stock_reservations;
+DELETE FROM company_data;
+
+-- Commit the delete transaction
+COMMIT;
+
+-- Start new transaction for inserts
+BEGIN TRANSACTION;
 
 -- 1. CUSTOMERS (1000 records)
 INSERT INTO customers (first_name, last_name, email, phone, address)
@@ -380,6 +395,9 @@ UPDATE supplier_orders SET total = (
     SELECT COALESCE(SUM(total), 0)
     FROM supplier_order_details WHERE order_id = supplier_orders.id
 );
+
+-- Commit all insert operations
+COMMIT;
 
 -- Re-enable foreign keys and restore settings
 PRAGMA foreign_keys = ON;
