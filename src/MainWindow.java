@@ -741,6 +741,15 @@ public class MainWindow extends JFrame {
         }
     }
 
+    /**
+     * Refresh InvoicesPanel to update invoices list after generation
+     */
+    public void refreshInvoicesPanel() {
+        if (invoicesPanel != null) {
+            invoicesPanel.loadInvoices();
+        }
+    }
+
     public static void main(String[] args) {
         // Add this code block for macOS integration
         final String os = System.getProperty("os.name");

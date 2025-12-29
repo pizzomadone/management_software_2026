@@ -105,7 +105,7 @@ public class InvoicesPanel extends JPanel {
         generatePDFButton.setEnabled(isRowSelected);
     }
 
-    private void loadInvoices() {
+    public void loadInvoices() {
         tableModel.setRowCount(0);
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
