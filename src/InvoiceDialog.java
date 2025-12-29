@@ -609,55 +609,7 @@ public class InvoiceDialog extends JDialog {
             String newStatus = (String)statusCombo.getSelectedItem();
             String number = numberField.getText();
 
-            // Build list of stock items
-            List<StockManager.StockItem> stockItems = new ArrayList<>();
-            for (int i = 0; i < itemsTableModel.getRowCount(); i++) {
-                String code = (String)itemsTableModel.getValueAt(i, 0);
-                String productName = (String)itemsTableModel.getValueAt(i, 1);
-                int quantity = parseInteger(itemsTableModel.getValueAt(i, 2));
-
-                // Find product ID by code
-                int productId = -1;
-                for (Product p : productsCache.values()) {
-                    if (p.getCode().equals(code)) {
-                        productId = p.getId();
-                        break;
-                    }
-                }
-                if (productId != -1) {
-                    stockItems.add(new StockManager.StockItem(productId, productName, quantity));
-                }
-            }
-
-            // Check stock availability for Issued invoices
-            if ("Issued".equals(newStatus) || "Paid".equals(newStatus)) {
-                Map<String, StockManager.StockAvailability> insufficient =
-                    StockManager.checkStockAvailability(
-                        DatabaseManager.getInstance().getConnection(),
-                        stockItems,
-                        invoice != null ? invoice.getId() : null,
-                        "INVOICE"
-                    );
-
-                if (!insufficient.isEmpty()) {
-                    StringBuilder message = new StringBuilder("Insufficient stock for the following products:\n\n");
-                    for (Map.Entry<String, StockManager.StockAvailability> entry : insufficient.entrySet()) {
-                        message.append(String.format("- %s: %s\n",
-                            entry.getKey(), entry.getValue().getFormattedMessage()));
-                    }
-                    message.append("\nDo you want to proceed anyway?\nThis will result in negative stock.");
-
-                    int choice = JOptionPane.showConfirmDialog(this,
-                        message.toString(),
-                        "Insufficient Stock",
-                        JOptionPane.YES_NO_OPTION,
-                        JOptionPane.WARNING_MESSAGE);
-
-                    if (choice != JOptionPane.YES_OPTION) {
-                        return;
-                    }
-                }
-            }
+            // Invoices do not affect warehouse stock - stock is managed by orders only
 
             Connection conn = DatabaseManager.getInstance().getConnection();
             conn.setAutoCommit(false);
@@ -691,9 +643,6 @@ public class InvoiceDialog extends JDialog {
 
                     insertInvoiceDetails(conn, invoiceId);
 
-                    // Handle stock based on status
-                    handleStockForNewStatus(conn, invoiceId, newStatus, stockItems, invoiceDate, number);
-
                 } else {
                     // Update existing invoice
                     invoiceId = invoice.getId();
@@ -722,9 +671,6 @@ public class InvoiceDialog extends JDialog {
                     }
 
                     insertInvoiceDetails(conn, invoiceId);
-
-                    // Handle status change
-                    handleStatusChange(conn, invoiceId, previousStatus, newStatus, stockItems, invoiceDate, number);
                 }
 
                 conn.commit();
@@ -743,32 +689,6 @@ public class InvoiceDialog extends JDialog {
             JOptionPane.showMessageDialog(this,
                 "Error while saving the invoice: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
-        }
-    }
-
-    private void handleStockForNewStatus(Connection conn, int invoiceId, String status,
-                                        List<StockManager.StockItem> items, Date invoiceDate, String invoiceNumber) throws SQLException {
-        if ("Issued".equals(status) || "Paid".equals(status)) {
-            // Decrement stock directly
-            StockManager.decrementStockDirectly(conn, items, invoiceDate, invoiceNumber, "INVOICE");
-        }
-        // Draft and Canceled: no stock action
-    }
-
-    private void handleStatusChange(Connection conn, int invoiceId, String oldStatus, String newStatus,
-                                    List<StockManager.StockItem> items, Date invoiceDate, String invoiceNumber) throws SQLException {
-        // Handle transition from old status
-        if (("Issued".equals(oldStatus) || "Paid".equals(oldStatus)) &&
-            !("Issued".equals(newStatus) || "Paid".equals(newStatus))) {
-            // Restore stock
-            StockManager.restoreStockFromDocument(conn, invoiceId, "INVOICE");
-        }
-
-        // Handle transition to new status
-        if (("Issued".equals(newStatus) || "Paid".equals(newStatus)) &&
-            !("Issued".equals(oldStatus) || "Paid".equals(oldStatus))) {
-            // Decrement stock
-            StockManager.decrementStockDirectly(conn, items, invoiceDate, invoiceNumber, "INVOICE");
         }
     }
 

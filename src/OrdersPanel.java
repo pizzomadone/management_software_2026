@@ -307,7 +307,7 @@ public class OrdersPanel extends JPanel {
                 "Are you sure you want to delete the order from customer '" + customer + "'?\n" +
                 "Status: " + status + "\n" +
                 (status.equals("Completed") ? "Stock will be restored." :
-                 status.equals("In Progress") ? "Reservations will be cancelled." :
+                 (status.equals("New") || status.equals("In Progress")) ? "Reservations will be cancelled." :
                  "No stock changes."),
                 "Confirm Deletion",
                 JOptionPane.YES_NO_OPTION,
@@ -339,10 +339,16 @@ public class OrdersPanel extends JPanel {
                         conn.commit();
                         loadOrders();
 
+                        // Refresh ProductsPanel to update stock levels
+                        Window parentWindow = SwingUtilities.getWindowAncestor(this);
+                        if (parentWindow instanceof MainWindow) {
+                            ((MainWindow) parentWindow).refreshProductsPanel();
+                        }
+
                         JOptionPane.showMessageDialog(this,
                             "Order deleted successfully!" +
                             (status.equals("Completed") ? "\nStock has been restored." :
-                             status.equals("In Progress") ? "\nReservations have been cancelled." : ""),
+                             (status.equals("New") || status.equals("In Progress")) ? "\nReservations have been cancelled." : ""),
                             "Success", JOptionPane.INFORMATION_MESSAGE);
 
                     } catch (SQLException e) {

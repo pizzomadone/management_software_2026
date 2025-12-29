@@ -376,7 +376,7 @@ public class StockManager {
 
     /**
      * Delete an order and restore stock based on its status
-     * Handles: restoring stock if Completed, cancelling reservations if In Progress
+     * Handles: restoring stock if Completed, cancelling reservations if New or In Progress
      */
     public static void deleteOrder(Connection conn, int orderId, String orderStatus) throws SQLException {
         // If order was Completed, restore stock
@@ -384,8 +384,8 @@ public class StockManager {
             restoreStockFromDocument(conn, orderId, "ORDER");
         }
 
-        // If order was In Progress, cancel active reservations
-        if ("In Progress".equals(orderStatus)) {
+        // If order was New or In Progress, cancel active reservations
+        if ("New".equals(orderStatus) || "In Progress".equals(orderStatus)) {
             cancelReservation(conn, "ORDER", orderId);
         }
 
