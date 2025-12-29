@@ -35,32 +35,40 @@ public class SupplierPriceListDialog extends JDialog {
     }
 
     private void setupWindow() {
-        setSize(500, 600);
+        setSize(550, 500);
         setLocationRelativeTo(getOwner());
         setLayout(new BorderLayout(10, 10));
+        setMinimumSize(new Dimension(500, 450));
     }
 
     private void initComponents() {
         JPanel formPanel = new JPanel(new GridBagLayout());
+        formPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(5, 5, 5, 5);
         gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 0.0;
 
         // Supplier
         gbc.gridx = 0; gbc.gridy = 0;
         formPanel.add(new JLabel("Supplier:"), gbc);
 
         gbc.gridx = 1;
+        gbc.weightx = 1.0;
         JTextField supplierField = new JTextField(supplierName);
         supplierField.setEditable(false);
+        supplierField.setPreferredSize(new Dimension(300, 28));
         formPanel.add(supplierField, gbc);
 
         // Product
         gbc.gridx = 0; gbc.gridy = 1;
+        gbc.weightx = 0.0;
         formPanel.add(new JLabel("* Product:"), gbc);
 
         gbc.gridx = 1;
+        gbc.weightx = 1.0;
         productCombo = new JComboBox<>();
+        productCombo.setPreferredSize(new Dimension(300, 28));
         if (priceList != null) {
             productCombo.setEnabled(false); // Do not allow product change in edit mode
         }
@@ -68,62 +76,89 @@ public class SupplierPriceListDialog extends JDialog {
 
         // Supplier Code
         gbc.gridx = 0; gbc.gridy = 2;
+        gbc.weightx = 0.0;
         formPanel.add(new JLabel("Supplier Code:"), gbc);
 
         gbc.gridx = 1;
+        gbc.weightx = 1.0;
         supplierCodeField = new JTextField(20);
+        supplierCodeField.setPreferredSize(new Dimension(300, 28));
         formPanel.add(supplierCodeField, gbc);
 
         // Price
         gbc.gridx = 0; gbc.gridy = 3;
+        gbc.weightx = 0.0;
         formPanel.add(new JLabel("* Price €:"), gbc);
 
         gbc.gridx = 1;
+        gbc.weightx = 1.0;
         priceField = new JTextField(10);
+        priceField.setPreferredSize(new Dimension(300, 28));
         formPanel.add(priceField, gbc);
 
         // Minimum quantity
         gbc.gridx = 0; gbc.gridy = 4;
+        gbc.weightx = 0.0;
         formPanel.add(new JLabel("Minimum Quantity:"), gbc);
 
         gbc.gridx = 1;
+        gbc.weightx = 1.0;
         SpinnerNumberModel spinnerModel = new SpinnerNumberModel(1, 1, 9999, 1);
         minimumQuantitySpinner = new JSpinner(spinnerModel);
+        minimumQuantitySpinner.setPreferredSize(new Dimension(300, 28));
         formPanel.add(minimumQuantitySpinner, gbc);
 
         // Validity start date
         gbc.gridx = 0; gbc.gridy = 5;
+        gbc.weightx = 0.0;
         formPanel.add(new JLabel("* Validity Start Date:"), gbc);
 
         gbc.gridx = 1;
+        gbc.weightx = 1.0;
         startDateField = new JTextField(10);
         startDateField.setText(DateUtils.formatDate(new Date(), dateFormat));
         startDateField.setToolTipText("Format: dd/MM/yyyy");
+        startDateField.setPreferredSize(new Dimension(300, 28));
         formPanel.add(startDateField, gbc);
 
         // Validity end date
         gbc.gridx = 0; gbc.gridy = 6;
+        gbc.weightx = 0.0;
         formPanel.add(new JLabel("Validity End Date:"), gbc);
 
         gbc.gridx = 1;
+        gbc.weightx = 1.0;
         endDateField = new JTextField(10);
         endDateField.setToolTipText("Format: dd/MM/yyyy (optional)");
+        endDateField.setPreferredSize(new Dimension(300, 28));
         formPanel.add(endDateField, gbc);
 
         // Notes
         gbc.gridx = 0; gbc.gridy = 7;
+        gbc.weightx = 0.0;
+        gbc.anchor = GridBagConstraints.NORTHWEST;
         formPanel.add(new JLabel("Notes:"), gbc);
 
         gbc.gridx = 1;
-        notesArea = new JTextArea(4, 30);
+        gbc.weightx = 1.0;
+        gbc.weighty = 1.0;
+        gbc.fill = GridBagConstraints.BOTH;
+        notesArea = new JTextArea(3, 25);
         notesArea.setLineWrap(true);
         notesArea.setWrapStyleWord(true);
-        formPanel.add(new JScrollPane(notesArea), gbc);
+        JScrollPane notesScroll = new JScrollPane(notesArea);
+        notesScroll.setPreferredSize(new Dimension(300, 80));
+        notesScroll.setMinimumSize(new Dimension(300, 60));
+        formPanel.add(notesScroll, gbc);
 
         // Buttons
-        JPanel buttonPanel = new JPanel();
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 10));
         JButton saveButton = new JButton("Save");
         JButton cancelButton = new JButton("Cancel");
+
+        saveButton.setPreferredSize(new Dimension(90, 32));
+        cancelButton.setPreferredSize(new Dimension(90, 32));
+        saveButton.setFont(saveButton.getFont().deriveFont(Font.BOLD));
 
         saveButton.addActionListener(e -> savePrice());
         cancelButton.addActionListener(e -> dispose());
@@ -131,14 +166,17 @@ public class SupplierPriceListDialog extends JDialog {
         buttonPanel.add(saveButton);
         buttonPanel.add(cancelButton);
 
-        // Main layout
-        add(new JScrollPane(formPanel), BorderLayout.CENTER);
-        add(buttonPanel, BorderLayout.SOUTH);
-
         // Legend
-        JPanel legendPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        legendPanel.add(new JLabel("* Required fields"));
+        JPanel legendPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 5));
+        JLabel legendLabel = new JLabel("* Required fields");
+        legendLabel.setFont(legendLabel.getFont().deriveFont(Font.ITALIC));
+        legendLabel.setForeground(Color.GRAY);
+        legendPanel.add(legendLabel);
+
+        // Main layout
         add(legendPanel, BorderLayout.NORTH);
+        add(formPanel, BorderLayout.CENTER);
+        add(buttonPanel, BorderLayout.SOUTH);
     }
 
     private void loadProducts() {
