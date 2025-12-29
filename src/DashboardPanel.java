@@ -9,6 +9,16 @@ import java.util.*;
 import java.util.List;
 
 public class DashboardPanel extends JPanel {
+    // Color palette - Sober blue-gray theme
+    private static final Color PRIMARY_COLOR = new Color(44, 62, 80);      // Dark blue-gray
+    private static final Color SECONDARY_COLOR = new Color(52, 73, 94);    // Medium blue-gray
+    private static final Color ACCENT_COLOR = new Color(52, 152, 219);     // Blue
+    private static final Color SUCCESS_COLOR = new Color(39, 174, 96);     // Green
+    private static final Color WARNING_COLOR = new Color(230, 126, 34);    // Orange
+    private static final Color DANGER_COLOR = new Color(231, 76, 60);      // Red
+    private static final Color LIGHT_COLOR = new Color(236, 240, 241);     // Light gray
+    private static final Color BORDER_COLOR = new Color(189, 195, 199);    // Gray
+
     private JLabel warehouseValueLabel;
     private JLabel lowStockCountLabel;
     private JLabel pendingOrdersLabel;
@@ -85,13 +95,16 @@ public class DashboardPanel extends JPanel {
     private JPanel createHeaderPanel() {
         JPanel panel = new JPanel(new BorderLayout());
 
-        JLabel titleLabel = new JLabel("📊 Dashboard - Panoramica Gestionale");
+        JLabel titleLabel = new JLabel("Dashboard - Management Overview");
         titleLabel.setFont(new Font("Arial", Font.BOLD, 24));
-        titleLabel.setForeground(new Color(34, 139, 34));
+        titleLabel.setForeground(PRIMARY_COLOR);
 
-        JButton refreshButton = new JButton("🔄 Aggiorna");
+        JButton refreshButton = new JButton("Refresh");
         refreshButton.setFont(new Font("Arial", Font.PLAIN, 12));
         refreshButton.setFocusPainted(false);
+        refreshButton.setBackground(ACCENT_COLOR);
+        refreshButton.setForeground(Color.WHITE);
+        refreshButton.setBorderPainted(false);
         refreshButton.addActionListener(e -> loadData());
 
         panel.add(titleLabel, BorderLayout.WEST);
@@ -103,20 +116,21 @@ public class DashboardPanel extends JPanel {
     private JPanel createKPIPanel() {
         JPanel panel = new JPanel(new GridLayout(2, 3, 10, 10));
         panel.setBorder(BorderFactory.createTitledBorder(
-            BorderFactory.createLineBorder(new Color(200, 200, 200)),
-            "Indicatori Chiave (KPI)",
+            BorderFactory.createLineBorder(BORDER_COLOR),
+            "Key Performance Indicators",
             TitledBorder.LEFT,
             TitledBorder.TOP,
-            new Font("Arial", Font.BOLD, 14)
+            new Font("Arial", Font.BOLD, 14),
+            PRIMARY_COLOR
         ));
 
-        // Create 6 KPI cards
-        panel.add(createKPICard("💰 Valore Magazzino", "0.00 €", new Color(52, 152, 219), "warehouseValue"));
-        panel.add(createKPICard("⚠️ Prodotti Sotto Scorta", "0", new Color(231, 76, 60), "lowStock"));
-        panel.add(createKPICard("📋 Ordini in Sospeso", "0", new Color(241, 196, 15), "pendingOrders"));
-        panel.add(createKPICard("💵 Fatturato Mese", "0.00 €", new Color(46, 204, 113), "monthRevenue"));
-        panel.add(createKPICard("📊 Margine Medio", "0.0%", new Color(155, 89, 182), "avgMargin"));
-        panel.add(createKPICard("📦 Prodotti Scorta Zero", "0", new Color(230, 126, 34), "zeroStock"));
+        // Create 6 KPI cards with consistent color scheme
+        panel.add(createKPICard("Warehouse Value", "0.00 €", SECONDARY_COLOR, "warehouseValue"));
+        panel.add(createKPICard("Low Stock Products", "0", DANGER_COLOR, "lowStock"));
+        panel.add(createKPICard("Pending Orders", "0", WARNING_COLOR, "pendingOrders"));
+        panel.add(createKPICard("Monthly Revenue", "0.00 €", SUCCESS_COLOR, "monthRevenue"));
+        panel.add(createKPICard("Average Margin", "0.0%", ACCENT_COLOR, "avgMargin"));
+        panel.add(createKPICard("Zero Stock Products", "0", WARNING_COLOR, "zeroStock"));
 
         return panel;
     }
@@ -131,7 +145,7 @@ public class DashboardPanel extends JPanel {
         card.setBackground(Color.WHITE);
 
         JLabel titleLabel = new JLabel(title);
-        titleLabel.setFont(new Font("Arial", Font.BOLD, 12));
+        titleLabel.setFont(new Font("Arial", Font.BOLD, 11));
         titleLabel.setForeground(new Color(100, 100, 100));
 
         JLabel valueLabel = new JLabel(defaultValue);
@@ -157,31 +171,32 @@ public class DashboardPanel extends JPanel {
     private JPanel createQuickActionsPanel() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 5));
         panel.setBorder(BorderFactory.createTitledBorder(
-            BorderFactory.createLineBorder(new Color(200, 200, 200)),
-            "Azioni Rapide",
+            BorderFactory.createLineBorder(BORDER_COLOR),
+            "Quick Actions",
             TitledBorder.LEFT,
             TitledBorder.TOP,
-            new Font("Arial", Font.BOLD, 14)
+            new Font("Arial", Font.BOLD, 14),
+            PRIMARY_COLOR
         ));
 
-        panel.add(createQuickActionButton("📝 Nuovo Ordine", new Color(52, 152, 219), this::createNewOrder));
-        panel.add(createQuickActionButton("📋 Nuova Fattura", new Color(46, 204, 113), this::createNewInvoice));
-        panel.add(createQuickActionButton("📦 Movimento Magazzino", new Color(241, 196, 15), this::createWarehouseMovement));
-        panel.add(createQuickActionButton("👥 Gestione Clienti", new Color(155, 89, 182), this::openCustomers));
-        panel.add(createQuickActionButton("📊 Report Vendite", new Color(52, 73, 94), this::openSalesReport));
+        panel.add(createQuickActionButton("New Order", ACCENT_COLOR, this::createNewOrder));
+        panel.add(createQuickActionButton("New Invoice", SUCCESS_COLOR, this::createNewInvoice));
+        panel.add(createQuickActionButton("Warehouse Movement", SECONDARY_COLOR, this::createWarehouseMovement));
+        panel.add(createQuickActionButton("Manage Customers", ACCENT_COLOR, this::openCustomers));
+        panel.add(createQuickActionButton("Sales Report", SECONDARY_COLOR, this::openSalesReport));
 
         return panel;
     }
 
     private JButton createQuickActionButton(String text, Color color, Runnable action) {
         JButton button = new JButton(text);
-        button.setFont(new Font("Arial", Font.BOLD, 13));
+        button.setFont(new Font("Arial", Font.BOLD, 12));
         button.setBackground(color);
         button.setForeground(Color.WHITE);
         button.setFocusPainted(false);
         button.setBorderPainted(false);
         button.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        button.setPreferredSize(new Dimension(180, 40));
+        button.setPreferredSize(new Dimension(160, 35));
         button.addActionListener(e -> action.run());
 
         // Hover effect
@@ -200,12 +215,12 @@ public class DashboardPanel extends JPanel {
     private JPanel createAlertsSection() {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBorder(BorderFactory.createTitledBorder(
-            BorderFactory.createLineBorder(new Color(231, 76, 60), 2),
-            "⚠️ Alert - Prodotti Sotto Scorta Minima",
+            BorderFactory.createLineBorder(DANGER_COLOR, 2),
+            "Alerts - Products Below Minimum Stock",
             TitledBorder.LEFT,
             TitledBorder.TOP,
             new Font("Arial", Font.BOLD, 14),
-            new Color(231, 76, 60)
+            DANGER_COLOR
         ));
 
         alertsPanel = new JPanel();
@@ -223,11 +238,12 @@ public class DashboardPanel extends JPanel {
     private JPanel createPendingOrdersSection() {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBorder(BorderFactory.createTitledBorder(
-            BorderFactory.createLineBorder(new Color(200, 200, 200)),
-            "📋 Ordini da Evadere",
+            BorderFactory.createLineBorder(BORDER_COLOR),
+            "Pending Orders",
             TitledBorder.LEFT,
             TitledBorder.TOP,
-            new Font("Arial", Font.BOLD, 14)
+            new Font("Arial", Font.BOLD, 14),
+            PRIMARY_COLOR
         ));
 
         pendingOrdersPanel = new JPanel();
@@ -245,14 +261,15 @@ public class DashboardPanel extends JPanel {
     private JPanel createTopProductsSection() {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBorder(BorderFactory.createTitledBorder(
-            BorderFactory.createLineBorder(new Color(200, 200, 200)),
-            "🏆 Top 10 Prodotti Più Venduti",
+            BorderFactory.createLineBorder(BORDER_COLOR),
+            "Top 10 Best-Selling Products",
             TitledBorder.LEFT,
             TitledBorder.TOP,
-            new Font("Arial", Font.BOLD, 14)
+            new Font("Arial", Font.BOLD, 14),
+            PRIMARY_COLOR
         ));
 
-        String[] columns = {"#", "Prodotto", "Qtà Venduta", "Ricavo"};
+        String[] columns = {"#", "Product", "Qty Sold", "Revenue"};
         DefaultTableModel model = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -283,14 +300,15 @@ public class DashboardPanel extends JPanel {
     private JPanel createABCAnalysisSection() {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBorder(BorderFactory.createTitledBorder(
-            BorderFactory.createLineBorder(new Color(200, 200, 200)),
-            "📈 Analisi ABC (Pareto) - Classificazione Prodotti per Valore",
+            BorderFactory.createLineBorder(BORDER_COLOR),
+            "ABC (Pareto) Analysis - Product Classification by Revenue",
             TitledBorder.LEFT,
             TitledBorder.TOP,
-            new Font("Arial", Font.BOLD, 14)
+            new Font("Arial", Font.BOLD, 14),
+            PRIMARY_COLOR
         ));
 
-        String[] columns = {"Classe", "N° Prodotti", "% Prodotti", "Ricavo Totale", "% Ricavo", "Descrizione"};
+        String[] columns = {"Class", "# Products", "% Products", "Total Revenue", "% Revenue", "Description"};
         DefaultTableModel model = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -343,9 +361,6 @@ public class DashboardPanel extends JPanel {
                 if (rs.next()) {
                     int count = rs.getInt("count");
                     lowStockCountLabel.setText(String.valueOf(count));
-                    if (count > 0) {
-                        lowStockCountLabel.setForeground(new Color(231, 76, 60));
-                    }
                 }
             }
 
@@ -406,8 +421,8 @@ public class DashboardPanel extends JPanel {
         } catch (SQLException e) {
             e.printStackTrace();
             JOptionPane.showMessageDialog(this,
-                "Errore nel caricamento dei KPI: " + e.getMessage(),
-                "Errore",
+                "Error loading KPI data: " + e.getMessage(),
+                "Error",
                 JOptionPane.ERROR_MESSAGE);
         }
     }
@@ -443,9 +458,9 @@ public class DashboardPanel extends JPanel {
                 }
 
                 if (!hasAlerts) {
-                    JLabel noAlerts = new JLabel("✅ Nessun prodotto sotto scorta minima");
+                    JLabel noAlerts = new JLabel("No products below minimum stock");
                     noAlerts.setFont(new Font("Arial", Font.BOLD, 13));
-                    noAlerts.setForeground(new Color(46, 204, 113));
+                    noAlerts.setForeground(SUCCESS_COLOR);
                     alertsPanel.add(noAlerts);
                 }
             }
@@ -461,23 +476,26 @@ public class DashboardPanel extends JPanel {
     private JPanel createAlertItem(String code, String name, int quantity, int minQuantity, int shortage) {
         JPanel panel = new JPanel(new BorderLayout(10, 5));
         panel.setBorder(BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(new Color(231, 76, 60)),
+            BorderFactory.createLineBorder(DANGER_COLOR),
             BorderFactory.createEmptyBorder(5, 10, 5, 10)
         ));
-        panel.setBackground(new Color(255, 235, 235));
+        panel.setBackground(new Color(255, 245, 245));
         panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
 
         JLabel productLabel = new JLabel(String.format("%s - %s", code, name));
         productLabel.setFont(new Font("Arial", Font.BOLD, 12));
 
-        JLabel stockLabel = new JLabel(String.format("Scorta: %d / Min: %d (Mancano: %d)",
+        JLabel stockLabel = new JLabel(String.format("Stock: %d / Min: %d (Short: %d)",
             quantity, minQuantity, shortage));
         stockLabel.setFont(new Font("Arial", Font.PLAIN, 11));
-        stockLabel.setForeground(new Color(150, 40, 27));
+        stockLabel.setForeground(new Color(100, 40, 40));
 
-        JButton actionButton = new JButton("Vai al Prodotto");
+        JButton actionButton = new JButton("View Product");
         actionButton.setFont(new Font("Arial", Font.PLAIN, 11));
         actionButton.setFocusPainted(false);
+        actionButton.setBackground(DANGER_COLOR);
+        actionButton.setForeground(Color.WHITE);
+        actionButton.setBorderPainted(false);
         actionButton.addActionListener(e -> openProductsPanel());
 
         panel.add(productLabel, BorderLayout.WEST);
@@ -522,9 +540,9 @@ public class DashboardPanel extends JPanel {
                 }
 
                 if (!hasOrders) {
-                    JLabel noOrders = new JLabel("✅ Nessun ordine in sospeso");
+                    JLabel noOrders = new JLabel("No pending orders");
                     noOrders.setFont(new Font("Arial", Font.BOLD, 13));
-                    noOrders.setForeground(new Color(46, 204, 113));
+                    noOrders.setForeground(SUCCESS_COLOR);
                     pendingOrdersPanel.add(noOrders);
                 }
             }
@@ -540,19 +558,21 @@ public class DashboardPanel extends JPanel {
     private JPanel createPendingOrderItem(int id, String date, String status, double total, String customer, int daysOld) {
         JPanel panel = new JPanel(new BorderLayout(5, 5));
 
-        Color borderColor = daysOld > 7 ? new Color(231, 76, 60) : new Color(241, 196, 15);
+        Color borderColor = daysOld > 7 ? DANGER_COLOR : WARNING_COLOR;
+        Color bgColor = daysOld > 7 ? new Color(255, 245, 245) : new Color(255, 250, 240);
+
         panel.setBorder(BorderFactory.createCompoundBorder(
             BorderFactory.createLineBorder(borderColor),
             BorderFactory.createEmptyBorder(5, 10, 5, 10)
         ));
-        panel.setBackground(daysOld > 7 ? new Color(255, 235, 235) : new Color(255, 250, 235));
+        panel.setBackground(bgColor);
         panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 50));
 
         JPanel infoPanel = new JPanel();
         infoPanel.setLayout(new BoxLayout(infoPanel, BoxLayout.Y_AXIS));
         infoPanel.setOpaque(false);
 
-        JLabel idLabel = new JLabel(String.format("Ordine #%d - %s", id, status));
+        JLabel idLabel = new JLabel(String.format("Order #%d - %s", id, status));
         idLabel.setFont(new Font("Arial", Font.BOLD, 12));
 
         String dateStr = date;
@@ -561,7 +581,7 @@ public class DashboardPanel extends JPanel {
             dateStr = dateFormat.format(d);
         } catch (Exception ignored) {}
 
-        JLabel detailsLabel = new JLabel(String.format("%s - %s - %d giorni fa",
+        JLabel detailsLabel = new JLabel(String.format("%s - %s - %d days old",
             customer != null ? customer : "N/A", dateStr, daysOld));
         detailsLabel.setFont(new Font("Arial", Font.PLAIN, 11));
         detailsLabel.setForeground(new Color(100, 100, 100));
@@ -571,11 +591,14 @@ public class DashboardPanel extends JPanel {
 
         JLabel totalLabel = new JLabel(currencyFormat.format(total));
         totalLabel.setFont(new Font("Arial", Font.BOLD, 14));
-        totalLabel.setForeground(new Color(34, 139, 34));
+        totalLabel.setForeground(SUCCESS_COLOR);
 
-        JButton viewButton = new JButton("Visualizza");
+        JButton viewButton = new JButton("View");
         viewButton.setFont(new Font("Arial", Font.PLAIN, 11));
         viewButton.setFocusPainted(false);
+        viewButton.setBackground(ACCENT_COLOR);
+        viewButton.setForeground(Color.WHITE);
+        viewButton.setBorderPainted(false);
         viewButton.addActionListener(e -> openOrdersPanel());
 
         JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
@@ -663,7 +686,7 @@ public class DashboardPanel extends JPanel {
             }
 
             if (products.isEmpty() || totalRevenue == 0) {
-                model.addRow(new Object[]{"N/A", "0", "0%", currencyFormat.format(0), "0%", "Nessun dato disponibile"});
+                model.addRow(new Object[]{"N/A", "0", "0%", currencyFormat.format(0), "0%", "No data available"});
                 return;
             }
 
@@ -696,7 +719,7 @@ public class DashboardPanel extends JPanel {
                 String.format("%.1f%%", (classACount * 100.0 / totalProducts)),
                 currencyFormat.format(classARevenue),
                 String.format("%.1f%%", (classARevenue * 100.0 / totalRevenue)),
-                "Prodotti ad alto valore - Focus prioritario"
+                "High-value products - Priority focus"
             });
 
             model.addRow(new Object[]{
@@ -705,7 +728,7 @@ public class DashboardPanel extends JPanel {
                 String.format("%.1f%%", (classBCount * 100.0 / totalProducts)),
                 currencyFormat.format(classBRevenue),
                 String.format("%.1f%%", (classBRevenue * 100.0 / totalRevenue)),
-                "Prodotti di valore medio - Monitorare"
+                "Medium-value products - Monitor"
             });
 
             model.addRow(new Object[]{
@@ -714,7 +737,7 @@ public class DashboardPanel extends JPanel {
                 String.format("%.1f%%", (classCCount * 100.0 / totalProducts)),
                 currencyFormat.format(classCRevenue),
                 String.format("%.1f%%", (classCRevenue * 100.0 / totalRevenue)),
-                "Prodotti a basso valore - Considerare liquidazione"
+                "Low-value products - Consider liquidation"
             });
 
         } catch (SQLException e) {
@@ -738,7 +761,6 @@ public class DashboardPanel extends JPanel {
         if (mainWindow != null) {
             mainWindow.showPanelByName("ORDERS");
             SwingUtilities.invokeLater(() -> {
-                // Trigger new order dialog
                 Window window = SwingUtilities.getWindowAncestor(this);
                 if (window instanceof JFrame) {
                     OrderDialog dialog = new OrderDialog((JFrame) window, null);
