@@ -47,6 +47,9 @@ public class InvoiceDialog extends JDialog {
         } else {
             setupNewInvoice();
         }
+
+        // Center window after everything is initialized
+        setLocationRelativeTo(parent);
     }
 
     // Constructor for JDialog parent
@@ -64,11 +67,13 @@ public class InvoiceDialog extends JDialog {
         } else {
             setupNewInvoice();
         }
+
+        // Center window after everything is initialized
+        setLocationRelativeTo(parent);
     }
 
     private void setupWindow() {
         setSize(1000, 750);
-        setLocationRelativeTo(getOwner());
         setLayout(new BorderLayout(10, 10));
     }
 
