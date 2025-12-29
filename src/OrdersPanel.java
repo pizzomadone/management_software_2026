@@ -13,8 +13,10 @@ public class OrdersPanel extends JPanel {
     private JButton addButton;
     private JButton editButton;
     private JButton deleteButton;
+    private JButton generateInvoiceButton;
     private JButton refreshButton;
     private SimpleDateFormat dateFormat;
+    private Window parentWindow;
 
     public OrdersPanel() {
         dateFormat = new SimpleDateFormat("dd/MM/yyyy");
@@ -71,16 +73,23 @@ public class OrdersPanel extends JPanel {
         addButton = new JButton("New Order");
         editButton = new JButton("Modify");
         deleteButton = new JButton("Delete");
+        generateInvoiceButton = new JButton("Generate Invoice");
         refreshButton = new JButton("Refresh");
+
+        generateInvoiceButton.setFont(generateInvoiceButton.getFont().deriveFont(Font.BOLD));
+        generateInvoiceButton.setPreferredSize(new Dimension(150, 30));
+        generateInvoiceButton.setOpaque(true);
 
         addButton.addActionListener(e -> showOrderDialog(null));
         editButton.addActionListener(e -> editSelectedOrder());
         deleteButton.addActionListener(e -> deleteSelectedOrder());
+        generateInvoiceButton.addActionListener(e -> generateInvoiceFromOrder());
         refreshButton.addActionListener(e -> loadOrders());
 
         buttonPanel.add(addButton);
         buttonPanel.add(editButton);
         buttonPanel.add(deleteButton);
+        buttonPanel.add(generateInvoiceButton);
         buttonPanel.add(refreshButton);
 
         // Main layout
@@ -95,6 +104,7 @@ public class OrdersPanel extends JPanel {
         boolean isRowSelected = ordersTable.getSelectedRow() != -1;
         editButton.setEnabled(isRowSelected);
         deleteButton.setEnabled(isRowSelected);
+        generateInvoiceButton.setEnabled(isRowSelected);
     }
 
     private void loadOrders() {
@@ -199,6 +209,10 @@ public class OrdersPanel extends JPanel {
         dialog.setVisible(true);
         if (dialog.isOrderSaved()) {
             loadOrders();
+            // Refresh ProductsPanel to update stock levels
+            if (parentWindow instanceof MainWindow) {
+                ((MainWindow) parentWindow).refreshProductsPanel();
+            }
         }
     }
 
@@ -344,6 +358,155 @@ public class OrdersPanel extends JPanel {
                         "Error", JOptionPane.ERROR_MESSAGE);
                 }
             }
+        }
+    }
+
+    private void generateInvoiceFromOrder() {
+        int selectedRow = ordersTable.getSelectedRow();
+        if (selectedRow == -1) return;
+
+        int orderId = (int)tableModel.getValueAt(selectedRow, 0);
+        String customer = (String)tableModel.getValueAt(selectedRow, 1);
+        String status = (String)tableModel.getValueAt(selectedRow, 3);
+
+        // Confirm with user
+        int result = JOptionPane.showConfirmDialog(this,
+            "Generate invoice for order from customer: " + customer + "?\n" +
+            "Order status: " + status,
+            "Confirm Invoice Generation",
+            JOptionPane.YES_NO_OPTION,
+            JOptionPane.QUESTION_MESSAGE);
+
+        if (result != JOptionPane.YES_OPTION) return;
+
+        try {
+            Order order = loadOrderDetails(orderId);
+            if (order == null) {
+                JOptionPane.showMessageDialog(this,
+                    "Error loading order details",
+                    "Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            if (order.getItems().isEmpty()) {
+                JOptionPane.showMessageDialog(this,
+                    "Cannot generate invoice: order has no items",
+                    "Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            Connection conn = DatabaseManager.getInstance().getConnection();
+            conn.setAutoCommit(false);
+
+            try {
+                // Generate invoice number
+                int year = new java.util.Calendar.Builder()
+                    .setInstant(order.getOrderDate())
+                    .build()
+                    .get(java.util.Calendar.YEAR);
+                String invoiceNumber = DatabaseManager.getInstance().getNextInvoiceNumber(year);
+
+                // getNextInvoiceNumber commits its own transaction, resetting auto-commit
+                // Re-disable auto-commit for our transaction
+                conn.setAutoCommit(false);
+
+                // Calculate totals with default VAT rate (22%)
+                final double DEFAULT_VAT_RATE = 22.0;
+                double taxableAmount = 0.0;
+                double vatTotal = 0.0;
+
+                for (OrderItem item : order.getItems()) {
+                    double itemTaxable = item.getQuantity() * item.getUnitPrice();
+                    double itemVat = itemTaxable * DEFAULT_VAT_RATE / 100.0;
+                    taxableAmount += itemTaxable;
+                    vatTotal += itemVat;
+                }
+
+                double total = taxableAmount + vatTotal;
+
+                // Insert invoice
+                String insertInvoice = """
+                    INSERT INTO invoices (number, date, customer_id, taxable_amount, vat, total, status)
+                    VALUES (?, ?, ?, ?, ?, ?, 'Draft')
+                """;
+
+                int invoiceId = 0;
+                try (PreparedStatement pstmt = conn.prepareStatement(insertInvoice, Statement.RETURN_GENERATED_KEYS)) {
+                    pstmt.setString(1, invoiceNumber);
+                    pstmt.setTimestamp(2, DateUtils.toSqlTimestamp(order.getOrderDate()));
+                    pstmt.setInt(3, order.getCustomerId());
+                    pstmt.setDouble(4, taxableAmount);
+                    pstmt.setDouble(5, vatTotal);
+                    pstmt.setDouble(6, total);
+                    pstmt.executeUpdate();
+
+                    ResultSet rs = pstmt.getGeneratedKeys();
+                    if (rs.next()) {
+                        invoiceId = rs.getInt(1);
+                    }
+                }
+
+                // Insert invoice details
+                String insertDetails = """
+                    INSERT INTO invoice_details (invoice_id, product_id, quantity, unit_price, vat_rate, total)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """;
+
+                try (PreparedStatement pstmt = conn.prepareStatement(insertDetails)) {
+                    for (OrderItem item : order.getItems()) {
+                        double itemTaxable = item.getQuantity() * item.getUnitPrice();
+                        double itemVat = itemTaxable * DEFAULT_VAT_RATE / 100.0;
+                        double itemTotal = itemTaxable + itemVat;
+
+                        pstmt.setInt(1, invoiceId);
+                        pstmt.setInt(2, item.getProductId());
+                        pstmt.setInt(3, item.getQuantity());
+                        pstmt.setDouble(4, item.getUnitPrice());
+                        pstmt.setDouble(5, DEFAULT_VAT_RATE);
+                        pstmt.setDouble(6, itemTotal);
+                        pstmt.addBatch();
+                    }
+                    pstmt.executeBatch();
+                }
+
+                // Commit transaction (verify we're still in transaction mode)
+                if (!conn.getAutoCommit()) {
+                    conn.commit();
+                }
+
+                JOptionPane.showMessageDialog(this,
+                    "Invoice " + invoiceNumber + " generated successfully!\n" +
+                    "You can find it in the Invoices panel.",
+                    "Success", JOptionPane.INFORMATION_MESSAGE);
+
+                // Refresh invoices panel if available
+                parentWindow = SwingUtilities.getWindowAncestor(this);
+                if (parentWindow instanceof MainWindow) {
+                    ((MainWindow) parentWindow).refreshInvoicesPanel();
+                }
+
+            } catch (Exception e) {
+                try {
+                    if (!conn.getAutoCommit()) {
+                        conn.rollback();
+                    }
+                } catch (SQLException rollbackEx) {
+                    rollbackEx.printStackTrace();
+                }
+                throw e;
+            } finally {
+                try {
+                    conn.setAutoCommit(true);
+                } catch (SQLException finallyEx) {
+                    finallyEx.printStackTrace();
+                }
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this,
+                "Error generating invoice: " + e.getMessage(),
+                "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
 }

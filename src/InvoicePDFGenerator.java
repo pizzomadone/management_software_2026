@@ -206,7 +206,7 @@ public class InvoicePDFGenerator {
                 // Totals
                 yPosition = drawTotals(contentStream, yPosition, page);
 
-                // Footer with WorkGenio branding
+                // Footer with software branding
                 drawFooter(contentStream, page);
             }
 
@@ -503,14 +503,14 @@ public class InvoicePDFGenerator {
     }
 
     private void drawFooter(PDPageContentStream contentStream, PDPage page) throws IOException {
-        // Discrete footer with WorkGenio branding
+        // Discrete footer with software branding
         float footerY = 30f;
 
         contentStream.beginText();
         contentStream.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 7f);
         contentStream.setNonStrokingColor(0.6f, 0.6f, 0.6f);
 
-        String footerText = "Document generated with WorkGenio - Business Management System";
+        String footerText = "Document generated with " + AppConstants.SOFTWARE_NAME + " - Business Management System";
         // Approximate width estimation for text
         float textWidth = footerText.length() * 7f * 0.5f;
         float footerX = (page.getMediaBox().getWidth() - textWidth) / 2;

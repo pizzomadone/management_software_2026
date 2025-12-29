@@ -39,7 +39,7 @@ public class ProductsPanel extends JPanel {
         searchPanel.add(searchButton);
         
         // Products table
-        String[] columns = {"ID", "Code", "Name", "Description", "Price", "Physical", "Reserved", "Available", "Category", "Unit", "Min Qty", "Active", "Supplier", "Warehouse Pos", "VAT %"};
+        String[] columns = {"ID", "Code", "Name", "Description", "Price", "Physical", "Reserved", "Available", "On Order", "Category", "Unit", "Min Qty", "Active", "Supplier", "Warehouse Pos", "VAT %"};
         tableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -94,14 +94,23 @@ public class ProductsPanel extends JPanel {
         deleteButton.setEnabled(isRowSelected);
     }
     
-    private void loadProducts() {
+    public void loadProducts() {
         tableModel.setRowCount(0);
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
-                SELECT p.*, f.company_name as supplier_name
+                SELECT p.*,
+                       f.company_name as supplier_name,
+                       COALESCE(SUM(CASE
+                           WHEN so.status IN ('Draft', 'Confirmed', 'In Transit')
+                           THEN sod.quantity
+                           ELSE 0
+                       END), 0) as on_order_quantity
                 FROM products p
                 LEFT JOIN suppliers f ON p.supplier_id = f.id
+                LEFT JOIN supplier_order_details sod ON p.id = sod.product_id
+                LEFT JOIN supplier_orders so ON sod.order_id = so.id
+                GROUP BY p.id
                 ORDER BY p.name
             """;
             try (Statement stmt = conn.createStatement();
@@ -117,10 +126,12 @@ public class ProductsPanel extends JPanel {
                     int physicalStock = rs.getInt("quantity");
                     int reservedStock = rs.getInt("reserved_quantity");
                     int availableStock = physicalStock - reservedStock;
+                    int onOrderQuantity = rs.getInt("on_order_quantity");
 
                     row.add(physicalStock);
                     row.add(reservedStock);
                     row.add(availableStock);
+                    row.add(onOrderQuantity);
 
                     row.add(rs.getString("category"));
                     row.add(rs.getString("unit_of_measure"));
@@ -145,15 +156,24 @@ public class ProductsPanel extends JPanel {
             loadProducts();
             return;
         }
-        
+
         tableModel.setRowCount(0);
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
-                SELECT p.*, f.company_name as supplier_name
+                SELECT p.*,
+                       f.company_name as supplier_name,
+                       COALESCE(SUM(CASE
+                           WHEN so.status IN ('Draft', 'Confirmed', 'In Transit')
+                           THEN sod.quantity
+                           ELSE 0
+                       END), 0) as on_order_quantity
                 FROM products p
                 LEFT JOIN suppliers f ON p.supplier_id = f.id
+                LEFT JOIN supplier_order_details sod ON p.id = sod.product_id
+                LEFT JOIN supplier_orders so ON sod.order_id = so.id
                 WHERE p.code LIKE ? OR p.name LIKE ? OR p.description LIKE ?
+                GROUP BY p.id
                 ORDER BY p.name
             """;
             String searchPattern = "%" + searchTerm + "%";
@@ -175,10 +195,12 @@ public class ProductsPanel extends JPanel {
                         int physicalStock = rs.getInt("quantity");
                         int reservedStock = rs.getInt("reserved_quantity");
                         int availableStock = physicalStock - reservedStock;
+                        int onOrderQuantity = rs.getInt("on_order_quantity");
 
                         row.add(physicalStock);
                         row.add(reservedStock);
                         row.add(availableStock);
+                        row.add(onOrderQuantity);
 
                         row.add(rs.getString("category"));
                         row.add(rs.getString("unit_of_measure"));
