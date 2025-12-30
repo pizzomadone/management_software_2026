@@ -301,7 +301,7 @@ public class MainWindow extends JFrame {
         backupButton.addActionListener(e -> showPanel("BACKUP"));
         toolBar.add(backupButton);
 
-        settingsButton = createToolBarButton("⚙️", "Settings", "Application Settings");
+        settingsButton = createToolBarButton("⚙", "Settings", "Application Settings");
         settingsButton.addActionListener(e -> openSettings());
         toolBar.add(settingsButton);
 
