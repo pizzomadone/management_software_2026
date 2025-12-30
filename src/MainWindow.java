@@ -29,6 +29,7 @@ public class MainWindow extends JFrame {
     private Color activeButtonColor = new Color(200, 220, 240); // Light blue/gray
 
     // Panel instances
+    private DashboardPanel dashboardPanel;
     private CustomersPanel customersPanel;
     private ProductsPanel productsPanel;
     private OrdersPanel ordersPanel;
@@ -300,7 +301,7 @@ public class MainWindow extends JFrame {
         backupButton.addActionListener(e -> showPanel("BACKUP"));
         toolBar.add(backupButton);
 
-        settingsButton = createToolBarButton("⚙️", "Settings", "Application Settings");
+        settingsButton = createToolBarButton("⚙", "Settings", "Application Settings");
         settingsButton.addActionListener(e -> openSettings());
         toolBar.add(settingsButton);
 
@@ -398,49 +399,13 @@ public class MainWindow extends JFrame {
     private void setupMainPanel() {
         cardLayout = new CardLayout();
         mainPanel = new JPanel(cardLayout);
-        
-        // Create home panel (dashboard)
-        JPanel homePanel = createHomePanel();
-        mainPanel.add(homePanel, "HOME");
-        
+
+        // Create dashboard panel
+        dashboardPanel = new DashboardPanel(this);
+        dashboardPanel.setName("HOME");
+        mainPanel.add(dashboardPanel, "HOME");
+
         add(mainPanel, BorderLayout.CENTER);
-    }
-    
-    private JPanel createHomePanel() {
-        JPanel panel = new JPanel();
-        panel.setLayout(new BorderLayout());
-        
-        // Welcome panel
-        JPanel welcomePanel = new JPanel();
-        welcomePanel.setLayout(new GridBagLayout());
-        JLabel welcomeLabel = new JLabel("Welcome to " + AppConstants.SOFTWARE_NAME);
-        welcomeLabel.setFont(new Font("Arial", Font.BOLD, 32));
-        welcomeLabel.setForeground(new Color(34, 139, 34));
-        
-        JLabel subtitleLabel = new JLabel("Professional Business Management System");
-        subtitleLabel.setFont(new Font("Arial", Font.ITALIC, 18));
-        subtitleLabel.setForeground(new Color(105, 105, 105));
-        
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.gridx = 0; gbc.gridy = 0;
-        gbc.insets = new Insets(10, 0, 0, 0);
-        welcomePanel.add(welcomeLabel, gbc);
-        
-        gbc.gridy = 1;
-        gbc.insets = new Insets(5, 0, 20, 0);
-        welcomePanel.add(subtitleLabel, gbc);
-        
-        // Quick stats or info panel
-        JPanel infoPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
-        JLabel versionLabel = new JLabel(AppConstants.FULL_TITLE + " - Use the toolbar above or File menu to navigate between modules");
-        versionLabel.setFont(new Font("Arial", Font.PLAIN, 14));
-        versionLabel.setForeground(new Color(70, 130, 180));
-        infoPanel.add(versionLabel);
-        
-        panel.add(welcomePanel, BorderLayout.CENTER);
-        panel.add(infoPanel, BorderLayout.SOUTH);
-        
-        return panel;
     }
     
     private void setupPanels() {
@@ -593,6 +558,11 @@ public class MainWindow extends JFrame {
             cardLayout.show(mainPanel, panelName);
             currentPanel = panelName;
 
+            // Refresh dashboard data when returning to HOME
+            if ("HOME".equals(panelName) && dashboardPanel != null) {
+                dashboardPanel.loadData();
+            }
+
             // Update window title
             updateWindowTitle(panelName);
 
@@ -739,6 +709,8 @@ public class MainWindow extends JFrame {
         if (productsPanel != null) {
             productsPanel.loadProducts();
         }
+        // Also refresh dashboard as stock changes affect KPIs
+        refreshDashboard();
     }
 
     /**
@@ -748,6 +720,40 @@ public class MainWindow extends JFrame {
         if (invoicesPanel != null) {
             invoicesPanel.loadInvoices();
         }
+        // Also refresh dashboard as invoices affect revenue KPI
+        refreshDashboard();
+    }
+
+    /**
+     * Public method to allow other components (like DashboardPanel) to navigate to panels
+     */
+    public void showPanelByName(String panelName) {
+        showPanel(panelName);
+    }
+
+    /**
+     * Refresh DashboardPanel to update all dashboard data
+     */
+    public void refreshDashboard() {
+        if (dashboardPanel != null) {
+            dashboardPanel.loadData();
+        }
+    }
+
+    /**
+     * Navigate to Orders panel and select/highlight a specific order
+     * @param orderId The ID of the order to highlight
+     */
+    public void showOrdersAndSelect(int orderId) {
+        // First navigate to the Orders panel
+        showPanel("ORDERS");
+
+        // Then select the specific order (after a small delay to ensure panel is visible)
+        SwingUtilities.invokeLater(() -> {
+            if (ordersPanel != null) {
+                ordersPanel.selectOrderById(orderId);
+            }
+        });
     }
 
     public static void main(String[] args) {
