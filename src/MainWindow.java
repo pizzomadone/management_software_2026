@@ -740,6 +740,22 @@ public class MainWindow extends JFrame {
         }
     }
 
+    /**
+     * Navigate to Orders panel and select/highlight a specific order
+     * @param orderId The ID of the order to highlight
+     */
+    public void showOrdersAndSelect(int orderId) {
+        // First navigate to the Orders panel
+        showPanel("ORDERS");
+
+        // Then select the specific order (after a small delay to ensure panel is visible)
+        SwingUtilities.invokeLater(() -> {
+            if (ordersPanel != null) {
+                ordersPanel.selectOrderById(orderId);
+            }
+        });
+    }
+
     public static void main(String[] args) {
         // Add this code block for macOS integration
         final String os = System.getProperty("os.name");

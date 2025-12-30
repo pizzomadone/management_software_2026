@@ -515,4 +515,33 @@ public class OrdersPanel extends JPanel {
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
+
+    /**
+     * Selects and highlights a specific order in the table by order ID
+     * @param orderId The ID of the order to select
+     */
+    public void selectOrderById(int orderId) {
+        // First ensure the table is loaded
+        loadOrders();
+
+        // Search for the order ID in the table
+        for (int row = 0; row < tableModel.getRowCount(); row++) {
+            Object value = tableModel.getValueAt(row, 0); // ID is in column 0
+            if (value != null && value instanceof Integer && (Integer) value == orderId) {
+                // Found the order, select it
+                ordersTable.setRowSelectionInterval(row, row);
+                // Scroll to make the row visible
+                ordersTable.scrollRectToVisible(ordersTable.getCellRect(row, 0, true));
+                // Update button states
+                updateButtonStates();
+                return;
+            }
+        }
+
+        // If we get here, the order was not found
+        JOptionPane.showMessageDialog(this,
+            "Order #" + orderId + " not found in the list.",
+            "Order Not Found",
+            JOptionPane.INFORMATION_MESSAGE);
+    }
 }

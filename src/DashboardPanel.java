@@ -604,8 +604,10 @@ public class DashboardPanel extends JPanel {
         viewButton.setFocusPainted(false);
         viewButton.setBackground(ACCENT_COLOR);
         viewButton.setForeground(Color.WHITE);
+        viewButton.setContentAreaFilled(true);  // Fix: ensures background is painted
+        viewButton.setOpaque(true);
         viewButton.setBorderPainted(false);
-        viewButton.addActionListener(e -> openOrdersPanel());
+        viewButton.addActionListener(e -> openOrderAndHighlight(id));
 
         JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
         rightPanel.setOpaque(false);
@@ -818,6 +820,12 @@ public class DashboardPanel extends JPanel {
     private void openOrdersPanel() {
         if (mainWindow != null) {
             mainWindow.showPanelByName("ORDERS");
+        }
+    }
+
+    private void openOrderAndHighlight(int orderId) {
+        if (mainWindow != null) {
+            mainWindow.showOrdersAndSelect(orderId);
         }
     }
 }
