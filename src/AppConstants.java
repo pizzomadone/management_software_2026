@@ -38,12 +38,30 @@ public class AppConstants {
     // File and Directory Names
 
     /**
+     * Sanitizes a string for use in filesystem paths.
+     * Removes spaces and special characters that might cause issues.
+     *
+     * @param name The name to sanitize
+     * @return A filesystem-safe version of the name
+     */
+    private static String sanitizeForFilesystem(String name) {
+        // Remove spaces and keep only alphanumeric characters, hyphens, and underscores
+        return name.replaceAll("[^a-zA-Z0-9-_]", "");
+    }
+
+    /**
      * The name of the application directory for user data.
+     * This is automatically derived from SOFTWARE_NAME with spaces and special characters removed.
      * Used on macOS: ~/Library/Application Support/{APP_DIR_NAME}/
      * Used on Windows: %LOCALAPPDATA%\{APP_DIR_NAME}\
      * Used on Linux: ~/.{APP_DIR_NAME}/
+     *
+     * Examples:
+     * - SOFTWARE_NAME = "WorkGenio" -> APP_DIR_NAME = "WorkGenio"
+     * - SOFTWARE_NAME = "My Management Software" -> APP_DIR_NAME = "MyManagementSoftware"
+     * - SOFTWARE_NAME = "Gestionale 2025!" -> APP_DIR_NAME = "Gestionale2025"
      */
-    public static final String APP_DIR_NAME = SOFTWARE_NAME;
+    public static final String APP_DIR_NAME = sanitizeForFilesystem(SOFTWARE_NAME);
 
     /**
      * The name of the database file.
