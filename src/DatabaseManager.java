@@ -1,10 +1,5 @@
 import java.sql.*;
 import javax.swing.JOptionPane;
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 
 public class DatabaseManager {
     private static DatabaseManager instance;
@@ -13,48 +8,12 @@ public class DatabaseManager {
 
     // Static initializer to set up the database URL
     static {
-        String dbPath = getDatabasePath();
-        DB_URL = "jdbc:sqlite:" + dbPath;
-        System.out.println("Database will be created at: " + dbPath);
+        DB_URL = "jdbc:sqlite:" + AppConstants.getDatabasePath().toString();
+        System.out.println("Database will be created at: " + AppConstants.getDatabasePath());
     }
 
     private DatabaseManager() {
         // Private constructor for the Singleton pattern
-    }
-
-    /**
-     * Determines the appropriate path for the database file.
-     * Uses Application Support on macOS, user.home on other systems.
-     */
-    private static String getDatabasePath() {
-        String os = System.getProperty("os.name").toLowerCase();
-        String userHome = System.getProperty("user.home");
-        Path dbDir;
-
-        if (os.contains("mac")) {
-            // macOS: Use Application Support directory
-            dbDir = Paths.get(userHome, "Library", "Application Support", "WorkGenio");
-        } else if (os.contains("win")) {
-            // Windows: Use AppData/Local
-            dbDir = Paths.get(userHome, "AppData", "Local", "WorkGenio");
-        } else {
-            // Linux/Unix: Use .workgenio hidden directory
-            dbDir = Paths.get(userHome, ".workgenio");
-        }
-
-        // Create the directory if it doesn't exist
-        try {
-            if (!Files.exists(dbDir)) {
-                Files.createDirectories(dbDir);
-                System.out.println("Created database directory: " + dbDir);
-            }
-        } catch (IOException e) {
-            System.err.println("Warning: Could not create database directory: " + e.getMessage());
-            // Fallback to user home directory
-            dbDir = Paths.get(userHome);
-        }
-
-        return dbDir.resolve("gestionale.db").toString();
     }
 
     public static synchronized DatabaseManager getInstance() {
