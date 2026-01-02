@@ -8,31 +8,29 @@ import java.util.Properties;
 public class BackupManager {
     private static BackupManager instance;
     private Properties config;
-    private static final String CONFIG_FILE = "backup.properties";
-    private static final String DEFAULT_BACKUP_DIR = "backups";
-    
+
     private BackupManager() {
         loadConfig();
     }
-    
+
     public static BackupManager getInstance() {
         if (instance == null) {
             instance = new BackupManager();
         }
         return instance;
     }
-    
+
     private void loadConfig() {
         config = new Properties();
         try {
-            File configFile = new File(CONFIG_FILE);
-            if (configFile.exists()) {
-                try (FileInputStream fis = new FileInputStream(configFile)) {
+            Path configPath = AppConstants.getBackupConfigPath();
+            if (Files.exists(configPath)) {
+                try (FileInputStream fis = new FileInputStream(configPath.toFile())) {
                     config.load(fis);
                 }
             } else {
                 // Default settings
-                config.setProperty("backup.directory", DEFAULT_BACKUP_DIR);
+                config.setProperty("backup.directory", AppConstants.getBackupDirectory().toString());
                 config.setProperty("backup.autobackup", "true");
                 config.setProperty("backup.retention", "7");
                 saveConfig();
@@ -41,9 +39,9 @@ public class BackupManager {
             e.printStackTrace();
         }
     }
-    
+
     private void saveConfig() {
-        try (FileOutputStream fos = new FileOutputStream(CONFIG_FILE)) {
+        try (FileOutputStream fos = new FileOutputStream(AppConstants.getBackupConfigPath().toFile())) {
             config.store(fos, "Backup Configuration");
         } catch (IOException e) {
             e.printStackTrace();
@@ -52,22 +50,22 @@ public class BackupManager {
     
     public void performBackup() {
         try {
-            String backupDir = config.getProperty("backup.directory", DEFAULT_BACKUP_DIR);
+            String backupDir = config.getProperty("backup.directory", AppConstants.getBackupDirectory().toString());
             Files.createDirectories(Paths.get(backupDir));
-            
+
             SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd_HHmmss");
-            String backupFileName = "gestionale_" + sdf.format(new Date()) + ".db";
+            String backupFileName = AppConstants.DATABASE_FILE_NAME.replace(".db", "_" + sdf.format(new Date()) + ".db");
             String backupPath = Paths.get(backupDir, backupFileName).toString();
-            
-            // FIXED: Check if source database exists
-            Path sourceDb = Paths.get("gestionale.db");
+
+            // Check if source database exists
+            Path sourceDb = AppConstants.getDatabasePath();
             if (!Files.exists(sourceDb)) {
-                throw new IOException("Database file 'gestionale.db' not found");
+                throw new IOException("Database file '" + sourceDb + "' not found");
             }
-            
+
             Files.copy(sourceDb, Paths.get(backupPath), StandardCopyOption.REPLACE_EXISTING);
             cleanOldBackups();
-            
+
         } catch (IOException e) {
             e.printStackTrace();
             throw new RuntimeException("Error during backup: " + e.getMessage());
@@ -76,9 +74,9 @@ public class BackupManager {
     
     private void cleanOldBackups() {
         try {
-            String backupDir = config.getProperty("backup.directory", DEFAULT_BACKUP_DIR);
+            String backupDir = config.getProperty("backup.directory", AppConstants.getBackupDirectory().toString());
             int retentionDays = Integer.parseInt(config.getProperty("backup.retention", "7"));
-            
+
             File dir = new File(backupDir);
             if (dir.exists() && dir.isDirectory()) {
                 File[] files = dir.listFiles((d, name) -> name.endsWith(".db"));
@@ -86,7 +84,6 @@ public class BackupManager {
                     long cutoffTime = System.currentTimeMillis() - (retentionDays * 24L * 60L * 60L * 1000L);
                     for (File file : files) {
                         if (file.lastModified() < cutoffTime) {
-                            // FIXED: Check deletion success
                             if (!file.delete()) {
                                 System.err.println("Failed to delete old backup: " + file.getName());
                             }
@@ -104,37 +101,39 @@ public class BackupManager {
             if (!Files.exists(Paths.get(backupFile))) {
                 throw new FileNotFoundException("Backup file not found: " + backupFile);
             }
-            
-            // FIXED: Close connection safely
+
+            // Close connection safely
             try {
                 DatabaseManager.getInstance().closeConnection();
             } catch (Exception e) {
                 System.err.println("Warning: Could not close database connection: " + e.getMessage());
             }
-            
-            String currentBackup = "gestionale_pre_restore_" + 
-                new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date()) + ".db";
-                
-            // FIXED: Check if current database exists
-            Path currentDb = Paths.get("gestionale.db");
+
+            String currentBackup = AppConstants.DATABASE_FILE_NAME.replace(".db", "_pre_restore_" +
+                new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date()) + ".db");
+
+            // Check if current database exists
+            Path currentDb = AppConstants.getDatabasePath();
+            Path preRestoreBackup = AppConstants.getAppDataDirectory().resolve(currentBackup);
+
             if (Files.exists(currentDb)) {
-                Files.copy(currentDb, Paths.get(currentBackup), StandardCopyOption.REPLACE_EXISTING);
+                Files.copy(currentDb, preRestoreBackup, StandardCopyOption.REPLACE_EXISTING);
             }
-            
-            Files.copy(Paths.get(backupFile), Paths.get("gestionale.db"), StandardCopyOption.REPLACE_EXISTING);
-            
-            // FIXED: Handle reconnection failure
+
+            Files.copy(Paths.get(backupFile), currentDb, StandardCopyOption.REPLACE_EXISTING);
+
+            // Handle reconnection failure
             try {
                 DatabaseManager.getInstance().initDatabase();
             } catch (Exception e) {
                 // Restore previous backup if reconnection fails
-                if (Files.exists(Paths.get(currentBackup))) {
-                    Files.copy(Paths.get(currentBackup), Paths.get("gestionale.db"), StandardCopyOption.REPLACE_EXISTING);
+                if (Files.exists(preRestoreBackup)) {
+                    Files.copy(preRestoreBackup, currentDb, StandardCopyOption.REPLACE_EXISTING);
                     DatabaseManager.getInstance().initDatabase();
                 }
                 throw new RuntimeException("Failed to restore database: " + e.getMessage());
             }
-            
+
         } catch (Exception e) {
             e.printStackTrace();
             throw new RuntimeException("Error during restore: " + e.getMessage());
@@ -142,7 +141,7 @@ public class BackupManager {
     }
     
     public String getBackupDirectory() {
-        return config.getProperty("backup.directory", DEFAULT_BACKUP_DIR);
+        return config.getProperty("backup.directory", AppConstants.getBackupDirectory().toString());
     }
     
     public void setBackupDirectory(String directory) {

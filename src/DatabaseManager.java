@@ -4,7 +4,13 @@ import javax.swing.JOptionPane;
 public class DatabaseManager {
     private static DatabaseManager instance;
     private Connection connection;
-    private static final String DB_URL = "jdbc:sqlite:gestionale.db";
+    private static final String DB_URL;
+
+    // Static initializer to set up the database URL
+    static {
+        DB_URL = "jdbc:sqlite:" + AppConstants.getDatabasePath().toString();
+        System.out.println("Database will be created at: " + AppConstants.getDatabasePath());
+    }
 
     private DatabaseManager() {
         // Private constructor for the Singleton pattern

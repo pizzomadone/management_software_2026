@@ -5,7 +5,6 @@ import java.util.Properties;
 import java.io.*;
 
 public class SettingsPanel extends JPanel {
-    private static final String SETTINGS_FILE = "app_settings.properties";
     private static Properties settings = new Properties();
 
     private JSlider fontSizeSlider;
@@ -432,7 +431,7 @@ public class SettingsPanel extends JPanel {
         settings.setProperty("currency", (String)currencyCombo.getSelectedItem());
         settings.setProperty("default_vat", defaultVatField.getText().trim());
 
-        try (FileOutputStream fos = new FileOutputStream(SETTINGS_FILE)) {
+        try (FileOutputStream fos = new FileOutputStream(AppConstants.getSettingsPath().toFile())) {
             settings.store(fos, "Application Settings");
         } catch (IOException e) {
             throw new RuntimeException("Failed to save settings file", e);
@@ -440,7 +439,7 @@ public class SettingsPanel extends JPanel {
     }
 
     private void loadSettings() {
-        try (FileInputStream fis = new FileInputStream(SETTINGS_FILE)) {
+        try (FileInputStream fis = new FileInputStream(AppConstants.getSettingsPath().toFile())) {
             settings.load(fis);
         } catch (IOException e) {
             setDefaultSettings();
@@ -533,7 +532,7 @@ public class SettingsPanel extends JPanel {
         }
         settings.setProperty(key, value);
 
-        try (FileOutputStream fos = new FileOutputStream(SETTINGS_FILE)) {
+        try (FileOutputStream fos = new FileOutputStream(AppConstants.getSettingsPath().toFile())) {
             settings.store(fos, "Application Settings");
         } catch (IOException e) {
             e.printStackTrace();
@@ -541,7 +540,7 @@ public class SettingsPanel extends JPanel {
     }
 
     public static void loadGlobalSettings() {
-        try (FileInputStream fis = new FileInputStream(SETTINGS_FILE)) {
+        try (FileInputStream fis = new FileInputStream(AppConstants.getSettingsPath().toFile())) {
             settings.load(fis);
         } catch (IOException e) {
             // Use defaults

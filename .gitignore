@@ -28,6 +28,11 @@ bin/
 build/
 target/
 out/
+input/
+output/
+
+# Package files
+MANIFEST.MF
 
 # Database files
 *.db
