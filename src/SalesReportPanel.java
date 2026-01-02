@@ -314,7 +314,7 @@ public class SalesReportPanel extends JPanel {
             previewDialog = new JDialog((JDialog) parentWindow, "Print Preview - Sales Report", true);
         }
 
-        previewDialog.setLocationRelativeTo(null);
+        
 
         JPanel previewPanel = new JPanel(new BorderLayout());
         JPanel headerPanel = new JPanel(new BorderLayout());
@@ -352,6 +352,7 @@ public class SalesReportPanel extends JPanel {
         previewDialog.add(printButtonPanel, BorderLayout.SOUTH);
 
         previewDialog.pack();
+        previewDialog.setLocationRelativeTo(null);
         previewDialog.setVisible(true);
     }
 

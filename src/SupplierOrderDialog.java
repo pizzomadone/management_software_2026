@@ -49,7 +49,7 @@ public class SupplierOrderDialog extends JDialog {
     }
 
     private void setupWindow() {
-        setLocationRelativeTo(null);
+        
         setLayout(new BorderLayout(3, 3));
     }
 
@@ -175,6 +175,7 @@ public class SupplierOrderDialog extends JDialog {
 
         add(mainPanel);
         pack();
+        setLocationRelativeTo(null);
     }
 
     private void generateOrderNumber() {
@@ -355,6 +356,7 @@ public class SupplierOrderDialog extends JDialog {
         dialog.add(panel, BorderLayout.CENTER);
         dialog.add(buttonPanel, BorderLayout.SOUTH);
         dialog.pack();
+        dialog.setLocationRelativeTo(null);
         dialog.setVisible(true);
     }
 

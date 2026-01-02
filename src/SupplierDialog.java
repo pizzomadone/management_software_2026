@@ -42,7 +42,7 @@ public class SupplierDialog extends JDialog {
 
     private void setupWindow() {
         setLayout(new BorderLayout(5, 5));
-        setLocationRelativeTo(null);
+        
     }
 
     private void initComponents() {
@@ -145,6 +145,7 @@ public class SupplierDialog extends JDialog {
         add(legendPanel, BorderLayout.NORTH);
 
         pack();
+        setLocationRelativeTo(null);
     }
 
     private void loadSupplierData() {

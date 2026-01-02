@@ -37,7 +37,6 @@ public class CustomerDialog extends JDialog {
     }
 
     private void setupDialog() {
-        setLocationRelativeTo(null);
         setLayout(new BorderLayout(5, 5));
     }
 
@@ -106,6 +105,7 @@ public class CustomerDialog extends JDialog {
         add(buttonPanel, BorderLayout.SOUTH);
 
         pack();
+        setLocationRelativeTo(null);
     }
 
     private void loadCustomerData() {

@@ -35,7 +35,7 @@ public class SupplierPriceListDialog extends JDialog {
     }
 
     private void setupWindow() {
-        setLocationRelativeTo(null);
+        
         setLayout(new BorderLayout(3, 3));
     }
 
@@ -177,6 +177,7 @@ public class SupplierPriceListDialog extends JDialog {
         add(buttonPanel, BorderLayout.SOUTH);
 
         pack();
+        setLocationRelativeTo(null);
     }
 
     private void loadProducts() {

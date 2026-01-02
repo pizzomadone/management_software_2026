@@ -70,7 +70,6 @@ public class InvoiceDialog extends JDialog {
 
     private void setupWindow() {
         setSize(1000, 750);
-        setLocationRelativeTo(null);
         setLayout(new BorderLayout(10, 10));
     }
 
