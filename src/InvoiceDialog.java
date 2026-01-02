@@ -47,9 +47,6 @@ public class InvoiceDialog extends JDialog {
         } else {
             setupNewInvoice();
         }
-
-        // Center window on screen
-        centerOnScreen();
     }
 
     // Constructor for JDialog parent
@@ -68,20 +65,12 @@ public class InvoiceDialog extends JDialog {
             setupNewInvoice();
         }
 
-        // Center window on screen
-        centerOnScreen();
-    }
-
-    private void centerOnScreen() {
-        Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
-        Dimension windowSize = getSize();
-        int x = (screenSize.width - windowSize.width) / 2;
-        int y = (screenSize.height - windowSize.height) / 2;
-        setLocation(x, y);
+        setLocationRelativeTo(getOwner());
     }
 
     private void setupWindow() {
         setSize(1000, 750);
+        setLocationRelativeTo(getOwner());
         setLayout(new BorderLayout(10, 10));
     }
 

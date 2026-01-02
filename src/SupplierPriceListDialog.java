@@ -36,14 +36,14 @@ public class SupplierPriceListDialog extends JDialog {
 
     private void setupWindow() {
         setLocationRelativeTo(getOwner());
-        setLayout(new BorderLayout(5, 5));
+        setLayout(new BorderLayout(3, 3));
     }
 
     private void initComponents() {
         JPanel formPanel = new JPanel(new GridBagLayout());
-        formPanel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
+        formPanel.setBorder(BorderFactory.createEmptyBorder(3, 3, 3, 3));
         GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(3, 5, 3, 5);
+        gbc.insets = new Insets(2, 3, 2, 3);
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.weightx = 0.0;
 

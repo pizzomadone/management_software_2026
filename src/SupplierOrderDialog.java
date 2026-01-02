@@ -50,18 +50,18 @@ public class SupplierOrderDialog extends JDialog {
 
     private void setupWindow() {
         setLocationRelativeTo(getOwner());
-        setLayout(new BorderLayout(5, 5));
+        setLayout(new BorderLayout(3, 3));
     }
 
     private void initComponents() {
         // Main panel with padding
-        JPanel mainPanel = new JPanel(new BorderLayout(5, 5));
-        mainPanel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
+        JPanel mainPanel = new JPanel(new BorderLayout(3, 3));
+        mainPanel.setBorder(BorderFactory.createEmptyBorder(3, 3, 3, 3));
 
         // Top panel for order data
         JPanel orderPanel = new JPanel(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(3, 5, 3, 5);
+        gbc.insets = new Insets(2, 3, 2, 3);
         gbc.fill = GridBagConstraints.HORIZONTAL;
 
         // Order number
@@ -269,12 +269,12 @@ public class SupplierOrderDialog extends JDialog {
 
     private void showAddProductDialog() {
         JDialog dialog = new JDialog(this, "Add Product", true);
-        dialog.setLayout(new BorderLayout(5, 5));
+        dialog.setLayout(new BorderLayout(3, 3));
         dialog.setLocationRelativeTo(this);
 
         JPanel panel = new JPanel(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(3, 5, 3, 5);
+        gbc.insets = new Insets(2, 3, 2, 3);
         gbc.fill = GridBagConstraints.HORIZONTAL;
 
         // Product combobox
