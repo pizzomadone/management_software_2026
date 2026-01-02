@@ -41,7 +41,7 @@ public class MinimumStockDialog extends JDialog {
 
     private void setupWindow() {
         setSize(450, 400);
-        setLocationRelativeTo(getOwner());
+        setLocationRelativeTo(null);
         setLayout(new BorderLayout(10, 10));
     }
 

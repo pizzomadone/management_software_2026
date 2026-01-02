@@ -256,7 +256,7 @@ public class SalesReportPanel extends JPanel {
             }
 
             detailDialog.setSize(600, 400);
-            detailDialog.setLocationRelativeTo(this);
+            detailDialog.setLocationRelativeTo(null);
             detailDialog.setLayout(new BorderLayout(10, 10));
 
             // Details table
@@ -314,12 +314,11 @@ public class SalesReportPanel extends JPanel {
             previewDialog = new JDialog((JDialog) parentWindow, "Print Preview - Sales Report", true);
         }
 
-        previewDialog.setSize(800, 600);
-        previewDialog.setLocationRelativeTo(this);
+        
 
         JPanel previewPanel = new JPanel(new BorderLayout());
         JPanel headerPanel = new JPanel(new BorderLayout());
-        headerPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        headerPanel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
         String title = "Sales Report - " + new SimpleDateFormat("dd/MM/yyyy").format(new Date());
         JLabel titleLabel = new JLabel(title);
         titleLabel.setFont(new Font("Serif", Font.BOLD, 18));
@@ -352,6 +351,8 @@ public class SalesReportPanel extends JPanel {
         previewDialog.add(previewPanel, BorderLayout.CENTER);
         previewDialog.add(printButtonPanel, BorderLayout.SOUTH);
 
+        previewDialog.pack();
+        previewDialog.setLocationRelativeTo(null);
         previewDialog.setVisible(true);
     }
 

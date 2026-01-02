@@ -35,17 +35,15 @@ public class SupplierPriceListDialog extends JDialog {
     }
 
     private void setupWindow() {
-        setSize(550, 500);
-        setLocationRelativeTo(getOwner());
-        setLayout(new BorderLayout(10, 10));
-        setMinimumSize(new Dimension(500, 450));
+        
+        setLayout(new BorderLayout(3, 3));
     }
 
     private void initComponents() {
         JPanel formPanel = new JPanel(new GridBagLayout());
-        formPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        formPanel.setBorder(BorderFactory.createEmptyBorder(3, 3, 3, 3));
         GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.insets = new Insets(2, 3, 2, 3);
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.weightx = 0.0;
 
@@ -177,6 +175,9 @@ public class SupplierPriceListDialog extends JDialog {
         add(legendPanel, BorderLayout.NORTH);
         add(formPanel, BorderLayout.CENTER);
         add(buttonPanel, BorderLayout.SOUTH);
+
+        pack();
+        setLocationRelativeTo(null);
     }
 
     private void loadProducts() {

@@ -43,7 +43,7 @@ public class SupplierPriceListWindow extends JDialog {
 
     private void setupWindow() {
         setSize(900, 600);
-        setLocationRelativeTo(getOwner());
+        setLocationRelativeTo(null);
         setLayout(new BorderLayout(10, 10));
     }
 

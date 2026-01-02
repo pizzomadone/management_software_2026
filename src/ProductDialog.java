@@ -51,9 +51,8 @@ public class ProductDialog extends JDialog {
     }
     
     private void setupDialog() {
-        setSize(650, 800);
-        setLocationRelativeTo(null); // Center on screen instead of parent window
-        setLayout(new BorderLayout(10, 10));
+         // Center on screen instead of parent window
+        setLayout(new BorderLayout(5, 5));
     }
     
     private void initComponents() {
@@ -230,6 +229,9 @@ public class ProductDialog extends JDialog {
         // Main layout
         add(new JScrollPane(formPanel), BorderLayout.CENTER);
         add(buttonPanel, BorderLayout.SOUTH);
+
+        pack();
+        setLocationRelativeTo(null);
     }
     
     private void loadProductData() {
