@@ -69,7 +69,7 @@ public class OrderDialog extends JDialog {
     
     private void setupWindow() {
         setSize(800, 600);
-        setLocationRelativeTo(getOwner());
+        setLocationRelativeTo(null);
         setLayout(new BorderLayout(10, 10));
     }
     

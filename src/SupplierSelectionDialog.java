@@ -22,7 +22,7 @@ public class SupplierSelectionDialog extends JDialog {
 
     private void setupWindow() {
         setSize(700, 500);
-        setLocationRelativeTo(getOwner());
+        setLocationRelativeTo(null);
         setLayout(new BorderLayout(10, 10));
     }
 

@@ -42,7 +42,7 @@ public class SupplierDialog extends JDialog {
 
     private void setupWindow() {
         setLayout(new BorderLayout(5, 5));
-        setLocationRelativeTo(getOwner());
+        setLocationRelativeTo(null);
     }
 
     private void initComponents() {

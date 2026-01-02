@@ -31,7 +31,7 @@ public class ProductSelectionDialog extends JDialog {
     
     private void setupWindow() {
         setSize(950, 580); // Reduced height for better screen fit
-        setLocationRelativeTo(getOwner());
+        setLocationRelativeTo(null);
         setLayout(new BorderLayout(10, 10));
     }
     

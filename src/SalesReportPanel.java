@@ -256,7 +256,7 @@ public class SalesReportPanel extends JPanel {
             }
 
             detailDialog.setSize(600, 400);
-            detailDialog.setLocationRelativeTo(this);
+            detailDialog.setLocationRelativeTo(null);
             detailDialog.setLayout(new BorderLayout(10, 10));
 
             // Details table
@@ -314,7 +314,7 @@ public class SalesReportPanel extends JPanel {
             previewDialog = new JDialog((JDialog) parentWindow, "Print Preview - Sales Report", true);
         }
 
-        previewDialog.setLocationRelativeTo(this);
+        previewDialog.setLocationRelativeTo(null);
 
         JPanel previewPanel = new JPanel(new BorderLayout());
         JPanel headerPanel = new JPanel(new BorderLayout());

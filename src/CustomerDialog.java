@@ -37,7 +37,7 @@ public class CustomerDialog extends JDialog {
     }
 
     private void setupDialog() {
-        setLocationRelativeTo(getOwner());
+        setLocationRelativeTo(null);
         setLayout(new BorderLayout(5, 5));
     }
 

@@ -49,7 +49,7 @@ public class SupplierOrderDialog extends JDialog {
     }
 
     private void setupWindow() {
-        setLocationRelativeTo(getOwner());
+        setLocationRelativeTo(null);
         setLayout(new BorderLayout(3, 3));
     }
 
@@ -270,7 +270,7 @@ public class SupplierOrderDialog extends JDialog {
     private void showAddProductDialog() {
         JDialog dialog = new JDialog(this, "Add Product", true);
         dialog.setLayout(new BorderLayout(3, 3));
-        dialog.setLocationRelativeTo(this);
+        dialog.setLocationRelativeTo(null);
 
         JPanel panel = new JPanel(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();

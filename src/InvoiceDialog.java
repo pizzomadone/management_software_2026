@@ -65,12 +65,12 @@ public class InvoiceDialog extends JDialog {
             setupNewInvoice();
         }
 
-        setLocationRelativeTo(getOwner());
+        setLocationRelativeTo(null);
     }
 
     private void setupWindow() {
         setSize(1000, 750);
-        setLocationRelativeTo(getOwner());
+        setLocationRelativeTo(null);
         setLayout(new BorderLayout(10, 10));
     }
 

@@ -35,7 +35,7 @@ public class SupplierPriceListDialog extends JDialog {
     }
 
     private void setupWindow() {
-        setLocationRelativeTo(getOwner());
+        setLocationRelativeTo(null);
         setLayout(new BorderLayout(3, 3));
     }
 
