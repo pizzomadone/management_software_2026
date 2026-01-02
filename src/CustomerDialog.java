@@ -37,16 +37,15 @@ public class CustomerDialog extends JDialog {
     }
 
     private void setupDialog() {
-        setSize(400, 500);
         setLocationRelativeTo(getOwner());
-        setLayout(new BorderLayout(10, 10));
+        setLayout(new BorderLayout(5, 5));
     }
 
     private void initComponents() {
         // Form panel
         JPanel formPanel = new JPanel(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.insets = new Insets(3, 5, 3, 5);
         gbc.fill = GridBagConstraints.HORIZONTAL;
 
         // First Name
@@ -105,6 +104,8 @@ public class CustomerDialog extends JDialog {
         // Main layout
         add(new JScrollPane(formPanel), BorderLayout.CENTER);
         add(buttonPanel, BorderLayout.SOUTH);
+
+        pack();
     }
 
     private void loadCustomerData() {

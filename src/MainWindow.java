@@ -63,7 +63,7 @@ public class MainWindow extends JFrame {
     private void setupWindow() {
         setTitle(AppConstants.SOFTWARE_NAME + " - Management System");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(1400, 900);
+        setExtendedState(JFrame.MAXIMIZED_BOTH);
         setLocationRelativeTo(null);
         
         // Add shutdown management to correctly close the database

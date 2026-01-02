@@ -41,9 +41,7 @@ public class SupplierDialog extends JDialog {
     }
 
     private void setupWindow() {
-        setLayout(new BorderLayout(10, 10));
-        pack();
-        setMinimumSize(new Dimension(650, 550));
+        setLayout(new BorderLayout(5, 5));
         setLocationRelativeTo(getOwner());
     }
 
@@ -51,7 +49,7 @@ public class SupplierDialog extends JDialog {
         // Form panel
         JPanel formPanel = new JPanel(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.insets = new Insets(3, 5, 3, 5);
         gbc.fill = GridBagConstraints.HORIZONTAL;
 
         // Company Name
@@ -145,6 +143,8 @@ public class SupplierDialog extends JDialog {
         JPanel legendPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         legendPanel.add(new JLabel("* Required fields"));
         add(legendPanel, BorderLayout.NORTH);
+
+        pack();
     }
 
     private void loadSupplierData() {

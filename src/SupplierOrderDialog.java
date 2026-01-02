@@ -49,20 +49,19 @@ public class SupplierOrderDialog extends JDialog {
     }
 
     private void setupWindow() {
-        setSize(800, 600);
         setLocationRelativeTo(getOwner());
-        setLayout(new BorderLayout(10, 10));
+        setLayout(new BorderLayout(5, 5));
     }
 
     private void initComponents() {
         // Main panel with padding
-        JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
-        mainPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        JPanel mainPanel = new JPanel(new BorderLayout(5, 5));
+        mainPanel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
 
         // Top panel for order data
         JPanel orderPanel = new JPanel(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.insets = new Insets(3, 5, 3, 5);
         gbc.fill = GridBagConstraints.HORIZONTAL;
 
         // Order number
@@ -175,6 +174,7 @@ public class SupplierOrderDialog extends JDialog {
         mainPanel.add(buttonPanel, BorderLayout.SOUTH);
 
         add(mainPanel);
+        pack();
     }
 
     private void generateOrderNumber() {
@@ -269,13 +269,12 @@ public class SupplierOrderDialog extends JDialog {
 
     private void showAddProductDialog() {
         JDialog dialog = new JDialog(this, "Add Product", true);
-        dialog.setLayout(new BorderLayout(10, 10));
-        dialog.setSize(500, 200);
+        dialog.setLayout(new BorderLayout(5, 5));
         dialog.setLocationRelativeTo(this);
 
         JPanel panel = new JPanel(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.insets = new Insets(3, 5, 3, 5);
         gbc.fill = GridBagConstraints.HORIZONTAL;
 
         // Product combobox
@@ -355,6 +354,7 @@ public class SupplierOrderDialog extends JDialog {
 
         dialog.add(panel, BorderLayout.CENTER);
         dialog.add(buttonPanel, BorderLayout.SOUTH);
+        dialog.pack();
         dialog.setVisible(true);
     }
 
