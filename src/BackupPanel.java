@@ -75,6 +75,9 @@ public class BackupPanel extends JPanel {
         };
         backupsTable = new JTable(tableModel);
 
+        // Enable column sorting
+        TableSorterUtil.enableSorting(backupsTable);
+
         // Buttons panel
         JPanel buttonPanel = new JPanel(new FlowLayout());
         JButton backupButton = new JButton("Perform Backup");

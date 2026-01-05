@@ -60,6 +60,9 @@ public class WarehousePanel extends JPanel {
         };
         stockTable = new JTable(stockModel);
 
+        // Enable column sorting
+        TableSorterUtil.enableSorting(stockTable);
+
         // Buttons
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         JButton newMovementButton = new JButton("New Movement");
@@ -101,6 +104,9 @@ public class WarehousePanel extends JPanel {
             }
         };
         movementsTable = new JTable(movementsModel);
+
+        // Enable column sorting
+        TableSorterUtil.enableSorting(movementsTable);
 
         // Hide ID column
         movementsTable.getColumnModel().getColumn(0).setMinWidth(0);
@@ -155,6 +161,9 @@ public class WarehousePanel extends JPanel {
             }
         };
         notificationsTable = new JTable(notificationsModel);
+
+        // Enable column sorting
+        TableSorterUtil.enableSorting(notificationsTable);
 
         // Notification buttons
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));

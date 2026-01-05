@@ -69,6 +69,9 @@ public class AdvancedStatsPanel extends JPanel {
         String[] columns = {"Product", "Quantity Sold", "Revenue", "% of Total"};
         topProductsTable = new JTable(new Object[0][4], columns);
 
+        // Enable column sorting
+        TableSorterUtil.enableSorting(topProductsTable);
+
         JPanel productsTopPanel = new JPanel(new GridLayout(2, 1));
         productsTopPanel.add(productsChartPanel);
         productsTopPanel.add(new JScrollPane(topProductsTable));

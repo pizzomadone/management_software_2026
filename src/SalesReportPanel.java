@@ -87,6 +87,9 @@ public class SalesReportPanel extends JPanel {
         };
         reportTable = new JTable(tableModel);
 
+        // Enable column sorting
+        TableSorterUtil.enableSorting(reportTable);
+
         // Button panel
         JPanel buttonPanel = new JPanel(new FlowLayout());
         JButton printButton = new JButton("Print Report");

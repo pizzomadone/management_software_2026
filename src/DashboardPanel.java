@@ -289,6 +289,9 @@ public class DashboardPanel extends JPanel {
         topProductsTable.setRowHeight(25);
         topProductsTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
 
+        // Enable column sorting
+        TableSorterUtil.enableSorting(topProductsTable);
+
         // Column widths
         topProductsTable.getColumnModel().getColumn(0).setPreferredWidth(30);
         topProductsTable.getColumnModel().getColumn(1).setPreferredWidth(200);
@@ -326,6 +329,9 @@ public class DashboardPanel extends JPanel {
         abcAnalysisTable.setFont(new Font("Arial", Font.PLAIN, 12));
         abcAnalysisTable.getTableHeader().setFont(new Font("Arial", Font.BOLD, 12));
         abcAnalysisTable.setRowHeight(30);
+
+        // Enable column sorting
+        TableSorterUtil.enableSorting(abcAnalysisTable);
 
         JScrollPane scrollPane = new JScrollPane(abcAnalysisTable);
         scrollPane.setPreferredSize(new Dimension(0, 150));
