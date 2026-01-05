@@ -74,6 +74,9 @@ public class WarehouseReportPanel extends JPanel {
         };
         productsTable = new JTable(productsModel);
 
+        // Enable column sorting
+        TableSorterUtil.enableSorting(productsTable);
+
         // Buttons
         JPanel buttonPanel = new JPanel();
         JButton printButton = new JButton("Print Report");
@@ -132,6 +135,9 @@ public class WarehouseReportPanel extends JPanel {
             }
         };
         movementsTable = new JTable(movementsModel);
+
+        // Enable column sorting
+        TableSorterUtil.enableSorting(movementsTable);
 
         // Buttons
         JPanel buttonPanel = new JPanel();

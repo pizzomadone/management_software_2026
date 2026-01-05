@@ -53,6 +53,9 @@ public class InvoicesPanel extends JPanel {
         invoicesTable = new JTable(tableModel);
         invoicesTable.getSelectionModel().addListSelectionListener(e -> updateButtonStates());
 
+        // Enable column sorting
+        TableSorterUtil.enableSorting(invoicesTable);
+
         // Double-click listener
         invoicesTable.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override

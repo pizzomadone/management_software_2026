@@ -55,6 +55,9 @@ public class OrdersPanel extends JPanel {
         ordersTable.getSelectionModel().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         ordersTable.getSelectionModel().addListSelectionListener(e -> updateButtonStates());
 
+        // Enable column sorting
+        TableSorterUtil.enableSorting(ordersTable);
+
         // Add mouse listener for double click
         ordersTable.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override

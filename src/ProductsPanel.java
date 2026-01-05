@@ -49,7 +49,10 @@ public class ProductsPanel extends JPanel {
         productsTable = new JTable(tableModel);
         productsTable.getSelectionModel().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         productsTable.getSelectionModel().addListSelectionListener(e -> updateButtonStates());
-        
+
+        // Enable column sorting
+        TableSorterUtil.enableSorting(productsTable);
+
         // Add mouse listener for double click
         productsTable.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override

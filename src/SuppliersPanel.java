@@ -51,6 +51,9 @@ public class SuppliersPanel extends JPanel {
         suppliersTable.getSelectionModel().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         suppliersTable.getSelectionModel().addListSelectionListener(e -> updateButtonStates());
 
+        // Enable column sorting
+        TableSorterUtil.enableSorting(suppliersTable);
+
         // Add mouse listener for double click
         suppliersTable.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override

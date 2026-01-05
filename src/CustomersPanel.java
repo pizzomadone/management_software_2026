@@ -50,6 +50,9 @@ public class CustomersPanel extends JPanel {
         customersTable.getSelectionModel().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         customersTable.getSelectionModel().addListSelectionListener(e -> updateButtonStates());
 
+        // Enable column sorting
+        TableSorterUtil.enableSorting(customersTable);
+
         // Add mouse listener for double click
         customersTable.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override
