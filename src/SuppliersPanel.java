@@ -306,7 +306,8 @@ public class SuppliersPanel extends JPanel {
             "WARNING: This will permanently delete supplier '" + name + "' and ALL related data:\n" +
             "- All orders from this supplier\n" +
             "- All price list entries\n" +
-            "- All references in minimum stock settings\n\n" +
+            "- All references in minimum stock settings\n" +
+            "- All supplier references in products (will be set to none)\n\n" +
             "This action CANNOT be undone!\n\n" +
             "Are you absolutely sure?",
             "FORCE DELETE - Final Confirmation",
@@ -364,7 +365,19 @@ public class SuppliersPanel extends JPanel {
                     System.out.println("Updated " + updated + " minimum stock references");
                 }
 
-                // 5. Finally delete the supplier
+                // 5. Remove supplier references from products
+                String updateProducts = """
+                    UPDATE products
+                    SET supplier_id = NULL
+                    WHERE supplier_id = ?
+                """;
+                try (PreparedStatement pstmt = conn.prepareStatement(updateProducts)) {
+                    pstmt.setInt(1, id);
+                    int updated = pstmt.executeUpdate();
+                    System.out.println("Updated " + updated + " product supplier references");
+                }
+
+                // 6. Finally delete the supplier
                 String deleteSupplier = "DELETE FROM suppliers WHERE id = ?";
                 try (PreparedStatement pstmt = conn.prepareStatement(deleteSupplier)) {
                     pstmt.setInt(1, id);
