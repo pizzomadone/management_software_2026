@@ -145,7 +145,7 @@ FROM (
 );
 
 -- 4. ORDERS (2000 records)
-INSERT INTO orders (customer_id, order_date, status, total)
+INSERT INTO orders (customer_id, order_date, status, total, payment_status, paid_amount)
 SELECT
     1 + ABS(RANDOM() % 1000),
     datetime('now', '-' || ABS(RANDOM() % 365) || ' days',
@@ -157,7 +157,14 @@ SELECT
         WHEN 4 THEN 'Completed' WHEN 5 THEN 'Completed' WHEN 6 THEN 'Completed' WHEN 7 THEN 'Completed'
         WHEN 8 THEN 'Cancelled' ELSE 'Shipped'
     END,
-    0  -- will be updated later
+    0,  -- total - will be updated later
+    CASE (ABS(RANDOM()) % 10)
+        WHEN 0 THEN 'NOT_PAID' WHEN 1 THEN 'NOT_PAID' WHEN 2 THEN 'NOT_PAID'
+        WHEN 3 THEN 'PARTIALLY_PAID' WHEN 4 THEN 'PARTIALLY_PAID'
+        WHEN 5 THEN 'PAID' WHEN 6 THEN 'PAID' WHEN 7 THEN 'PAID' WHEN 8 THEN 'PAID'
+        ELSE 'PAID'
+    END,  -- payment_status
+    0  -- paid_amount - will be updated later based on payment status and total
 FROM (
     WITH RECURSIVE numbers(x) AS (
         SELECT 1
@@ -188,6 +195,14 @@ UPDATE orders SET total = (
     SELECT COALESCE(SUM(quantity * unit_price), 0)
     FROM order_details WHERE order_id = orders.id
 );
+
+-- Update paid amounts based on payment status
+UPDATE orders SET paid_amount =
+    CASE payment_status
+        WHEN 'PAID' THEN total
+        WHEN 'PARTIALLY_PAID' THEN ROUND(total * (0.3 + (ABS(RANDOM() % 50) / 100.0)), 2)
+        ELSE 0
+    END;
 
 -- 6. INVOICES (1500 records)
 DELETE FROM invoice_numbering;
