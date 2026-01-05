@@ -56,6 +56,20 @@ public class InvoicesPanel extends JPanel {
         // Enable column sorting
         TableSorterUtil.enableSorting(invoicesTable);
 
+        // Add Delete key shortcut
+        TableInteractionUtil.addDeleteKeyAction(invoicesTable, this::deleteSelectedInvoice);
+
+        // Add context menu
+        TableInteractionUtil.addContextMenu(invoicesTable,
+            new TableInteractionUtil.TableAction("New Invoice", this::createNewInvoice, false),
+            new TableInteractionUtil.TableAction("Modify", this::editSelectedInvoice),
+            new TableInteractionUtil.TableAction("Delete", this::deleteSelectedInvoice),
+            null, // Separator
+            new TableInteractionUtil.TableAction("Generate PDF", this::generateSelectedInvoicePDF),
+            null, // Separator
+            new TableInteractionUtil.TableAction("Refresh", this::loadInvoices, false)
+        );
+
         // Double-click listener
         invoicesTable.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override

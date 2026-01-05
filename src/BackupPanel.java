@@ -78,6 +78,18 @@ public class BackupPanel extends JPanel {
         // Enable column sorting
         TableSorterUtil.enableSorting(backupsTable);
 
+        // Add Delete key shortcut
+        TableInteractionUtil.addDeleteKeyAction(backupsTable, this::deleteSelectedBackup);
+
+        // Add context menu
+        TableInteractionUtil.addContextMenu(backupsTable,
+            new TableInteractionUtil.TableAction("Perform Backup", this::performBackup, false),
+            new TableInteractionUtil.TableAction("Restore Backup", this::restoreBackup),
+            new TableInteractionUtil.TableAction("Delete Backup", this::deleteSelectedBackup),
+            null, // Separator
+            new TableInteractionUtil.TableAction("Save Configuration", this::saveConfiguration, false)
+        );
+
         // Buttons panel
         JPanel buttonPanel = new JPanel(new FlowLayout());
         JButton backupButton = new JButton("Perform Backup");

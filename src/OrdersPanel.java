@@ -58,6 +58,20 @@ public class OrdersPanel extends JPanel {
         // Enable column sorting
         TableSorterUtil.enableSorting(ordersTable);
 
+        // Add Delete key shortcut
+        TableInteractionUtil.addDeleteKeyAction(ordersTable, this::deleteSelectedOrder);
+
+        // Add context menu
+        TableInteractionUtil.addContextMenu(ordersTable,
+            new TableInteractionUtil.TableAction("New Order", () -> showOrderDialog(null), false),
+            new TableInteractionUtil.TableAction("Modify", this::editSelectedOrder),
+            new TableInteractionUtil.TableAction("Delete", this::deleteSelectedOrder),
+            null, // Separator
+            new TableInteractionUtil.TableAction("Generate Invoice", this::generateInvoiceFromOrder),
+            null, // Separator
+            new TableInteractionUtil.TableAction("Refresh", this::loadOrders, false)
+        );
+
         // Add mouse listener for double click
         ordersTable.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override
