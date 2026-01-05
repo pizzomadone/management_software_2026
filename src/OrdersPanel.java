@@ -44,7 +44,7 @@ public class OrdersPanel extends JPanel {
         searchPanel.add(searchButton);
 
         // Orders table
-        String[] columns = {"ID", "Customer", "Date", "Status", "Total €"};
+        String[] columns = {"ID", "Customer", "Date", "Status", "Total €", "Payment"};
         tableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -134,6 +134,13 @@ public class OrdersPanel extends JPanel {
 
                     row.add(rs.getString("status"));
                     row.add(String.format("%.2f", rs.getDouble("total")));
+
+                    // Add payment status
+                    String paymentStatus = rs.getString("payment_status");
+                    double paidAmount = rs.getDouble("paid_amount");
+                    double total = rs.getDouble("total");
+                    row.add(formatPaymentStatus(paymentStatus, paidAmount, total));
+
                     tableModel.addRow(row);
                 }
             }
@@ -184,6 +191,13 @@ public class OrdersPanel extends JPanel {
 
                         row.add(rs.getString("status"));
                         row.add(String.format("%.2f", rs.getDouble("total")));
+
+                        // Add payment status
+                        String paymentStatus = rs.getString("payment_status");
+                        double paidAmount = rs.getDouble("paid_amount");
+                        double total = rs.getDouble("total");
+                        row.add(formatPaymentStatus(paymentStatus, paidAmount, total));
+
                         tableModel.addRow(row);
                     }
                 }
@@ -260,6 +274,12 @@ public class OrdersPanel extends JPanel {
                         rs.getString("status"),
                         rs.getDouble("total")
                     );
+
+                    // Load payment information
+                    String paymentStatus = rs.getString("payment_status");
+                    double paidAmount = rs.getDouble("paid_amount");
+                    order.setPaymentStatus(paymentStatus != null ? paymentStatus : "NOT_PAID");
+                    order.setPaidAmount(paidAmount);
 
                     loadOrderItems(order);
                     return order;
@@ -514,6 +534,20 @@ public class OrdersPanel extends JPanel {
                 "Error generating invoice: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
+    }
+
+    /**
+     * Formats payment status for display in the table
+     */
+    private String formatPaymentStatus(String paymentStatus, double paidAmount, double total) {
+        if (paymentStatus == null || "NOT_PAID".equals(paymentStatus)) {
+            return "Not Paid";
+        } else if ("PAID".equals(paymentStatus)) {
+            return "Paid";
+        } else if ("PARTIALLY_PAID".equals(paymentStatus)) {
+            return String.format("Partial (€%.2f)", paidAmount);
+        }
+        return "Not Paid";
     }
 
     /**

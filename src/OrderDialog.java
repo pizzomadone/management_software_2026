@@ -19,6 +19,9 @@ public class OrderDialog extends JDialog {
     private Customer selectedCustomer;
     private JTextField dateField;
     private JComboBox<String> statusCombo;
+    private JComboBox<String> paymentStatusCombo;
+    private JTextField paidAmountField;
+    private JPanel paymentPanel;
     private JTable itemsTable;
     private DefaultTableModel itemsTableModel;
     private JLabel totalLabel;
@@ -115,7 +118,25 @@ public class OrderDialog extends JDialog {
         gbc.gridx = 3;
         statusCombo = new JComboBox<>(new String[]{"New", "In Progress", "Completed", "Cancelled"});
         orderPanel.add(statusCombo, gbc);
-        
+
+        // Payment Status
+        gbc.gridx = 0; gbc.gridy = 2; gbc.gridwidth = 1;
+        orderPanel.add(new JLabel("Payment Status:"), gbc);
+
+        gbc.gridx = 1;
+        paymentStatusCombo = new JComboBox<>(new String[]{"Not Paid", "Partially Paid", "Paid"});
+        paymentStatusCombo.addActionListener(e -> updatePaymentAmountField());
+        orderPanel.add(paymentStatusCombo, gbc);
+
+        // Paid Amount
+        gbc.gridx = 2;
+        orderPanel.add(new JLabel("Paid Amount:"), gbc);
+
+        gbc.gridx = 3;
+        paidAmountField = new JTextField("0.00");
+        paidAmountField.setEnabled(false);
+        orderPanel.add(paidAmountField, gbc);
+
         // Products table
         String[] columns = {"ID", "Product", "Quantity", "Unit Price", "Total"};
         itemsTableModel = new DefaultTableModel(columns, 0) {
@@ -272,6 +293,18 @@ public class OrderDialog extends JDialog {
         statusCombo.setSelectedItem(order.getStatus());
         previousStatus = order.getStatus(); // Store current status as previous
 
+        // Load payment status
+        String paymentStatus = order.getPaymentStatus();
+        if ("PAID".equals(paymentStatus)) {
+            paymentStatusCombo.setSelectedItem("Paid");
+        } else if ("PARTIALLY_PAID".equals(paymentStatus)) {
+            paymentStatusCombo.setSelectedItem("Partially Paid");
+        } else {
+            paymentStatusCombo.setSelectedItem("Not Paid");
+        }
+        paidAmountField.setText(String.format("%.2f", order.getPaidAmount()));
+        updatePaymentAmountField();
+
         for (OrderItem item : order.getItems()) {
             Vector<Object> row = new Vector<>();
             row.add(item.getProductId());
@@ -366,6 +399,20 @@ public class OrderDialog extends JDialog {
         }
     }
     
+    private void updatePaymentAmountField() {
+        String selectedPayment = (String) paymentStatusCombo.getSelectedItem();
+        if ("Partially Paid".equals(selectedPayment)) {
+            paidAmountField.setEnabled(true);
+        } else {
+            paidAmountField.setEnabled(false);
+            if ("Paid".equals(selectedPayment)) {
+                paidAmountField.setText(String.format("%.2f", currentTotal));
+            } else {
+                paidAmountField.setText("0.00");
+            }
+        }
+    }
+
     private synchronized void updateTotals() {
         if (updatingTotals) return;
 
@@ -393,6 +440,11 @@ public class OrderDialog extends JDialog {
 
             currentTotal = total; // Store total value
             totalLabel.setText(String.format("Total: € %.2f", total));
+
+            // Update paid amount if payment status is "Paid"
+            if ("Paid".equals(paymentStatusCombo.getSelectedItem())) {
+                paidAmountField.setText(String.format("%.2f", total));
+            }
 
         } finally {
             updatingTotals = false;
@@ -441,6 +493,44 @@ public class OrderDialog extends JDialog {
             Date orderDate = DateUtils.parseDate(dateField.getText(), dateFormat);
             String newStatus = (String)statusCombo.getSelectedItem();
 
+            // Get payment information
+            String paymentStatusUI = (String) paymentStatusCombo.getSelectedItem();
+            String paymentStatus;
+            double paidAmount = 0.0;
+
+            if ("Paid".equals(paymentStatusUI)) {
+                paymentStatus = "PAID";
+                paidAmount = currentTotal;
+            } else if ("Partially Paid".equals(paymentStatusUI)) {
+                paymentStatus = "PARTIALLY_PAID";
+                try {
+                    paidAmount = Double.parseDouble(paidAmountField.getText().replace(",", "."));
+                    if (paidAmount < 0) {
+                        JOptionPane.showMessageDialog(this,
+                            "Paid amount cannot be negative",
+                            "Error", JOptionPane.ERROR_MESSAGE);
+                        return;
+                    }
+                    if (paidAmount > currentTotal) {
+                        int choice = JOptionPane.showConfirmDialog(this,
+                            "Paid amount exceeds order total. Continue?",
+                            "Warning", JOptionPane.YES_NO_OPTION,
+                            JOptionPane.WARNING_MESSAGE);
+                        if (choice != JOptionPane.YES_OPTION) {
+                            return;
+                        }
+                    }
+                } catch (NumberFormatException ex) {
+                    JOptionPane.showMessageDialog(this,
+                        "Invalid paid amount. Please enter a valid number.",
+                        "Error", JOptionPane.ERROR_MESSAGE);
+                    return;
+                }
+            } else {
+                paymentStatus = "NOT_PAID";
+                paidAmount = 0.0;
+            }
+
             // Build list of stock items
             List<StockManager.StockItem> stockItems = new ArrayList<>();
             for (int i = 0; i < itemsTableModel.getRowCount(); i++) {
@@ -488,14 +578,16 @@ public class OrderDialog extends JDialog {
                 if (order == null) {
                     // New order
                     String orderQuery = """
-                        INSERT INTO orders (customer_id, order_date, status, total)
-                        VALUES (?, ?, ?, ?)
+                        INSERT INTO orders (customer_id, order_date, status, total, payment_status, paid_amount)
+                        VALUES (?, ?, ?, ?, ?, ?)
                     """;
                     try (PreparedStatement pstmt = conn.prepareStatement(orderQuery, Statement.RETURN_GENERATED_KEYS)) {
                         pstmt.setInt(1, selectedCustomer.getId());
                         pstmt.setTimestamp(2, DateUtils.toSqlTimestamp(orderDate));
                         pstmt.setString(3, newStatus);
                         pstmt.setDouble(4, currentTotal);
+                        pstmt.setString(5, paymentStatus);
+                        pstmt.setDouble(6, paidAmount);
                         pstmt.executeUpdate();
 
                         try (ResultSet rs = pstmt.getGeneratedKeys()) {
@@ -519,7 +611,7 @@ public class OrderDialog extends JDialog {
 
                     String orderQuery = """
                         UPDATE orders
-                        SET customer_id = ?, order_date = ?, status = ?, total = ?
+                        SET customer_id = ?, order_date = ?, status = ?, total = ?, payment_status = ?, paid_amount = ?
                         WHERE id = ?
                     """;
                     try (PreparedStatement pstmt = conn.prepareStatement(orderQuery)) {
@@ -527,7 +619,9 @@ public class OrderDialog extends JDialog {
                         pstmt.setTimestamp(2, DateUtils.toSqlTimestamp(orderDate));
                         pstmt.setString(3, newStatus);
                         pstmt.setDouble(4, currentTotal);
-                        pstmt.setInt(5, orderId);
+                        pstmt.setString(5, paymentStatus);
+                        pstmt.setDouble(6, paidAmount);
+                        pstmt.setInt(7, orderId);
                         pstmt.executeUpdate();
                     }
 
