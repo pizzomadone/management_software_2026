@@ -53,6 +53,18 @@ public class CustomersPanel extends JPanel {
         // Enable column sorting
         TableSorterUtil.enableSorting(customersTable);
 
+        // Add Delete key shortcut
+        TableInteractionUtil.addDeleteKeyAction(customersTable, this::deleteSelectedCustomer);
+
+        // Add context menu
+        TableInteractionUtil.addContextMenu(customersTable,
+            new TableInteractionUtil.TableAction("Add Customer", () -> showCustomerDialog(null), false),
+            new TableInteractionUtil.TableAction("Modify", this::editSelectedCustomer),
+            new TableInteractionUtil.TableAction("Delete", this::deleteSelectedCustomer),
+            null, // Separator
+            new TableInteractionUtil.TableAction("Refresh", this::loadCustomers, false)
+        );
+
         // Add mouse listener for double click
         customersTable.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override

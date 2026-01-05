@@ -54,6 +54,21 @@ public class SuppliersPanel extends JPanel {
         // Enable column sorting
         TableSorterUtil.enableSorting(suppliersTable);
 
+        // Add Delete key shortcut
+        TableInteractionUtil.addDeleteKeyAction(suppliersTable, this::deleteSelectedSupplier);
+
+        // Add context menu
+        TableInteractionUtil.addContextMenu(suppliersTable,
+            new TableInteractionUtil.TableAction("New Supplier", () -> showSupplierDialog(null), false),
+            new TableInteractionUtil.TableAction("Edit", this::editSelectedSupplier),
+            new TableInteractionUtil.TableAction("Delete", this::deleteSelectedSupplier),
+            null, // Separator
+            new TableInteractionUtil.TableAction("Orders", this::showSupplierOrders),
+            new TableInteractionUtil.TableAction("Price List", this::showSupplierPriceList),
+            null, // Separator
+            new TableInteractionUtil.TableAction("Refresh", this::loadSuppliers, false)
+        );
+
         // Add mouse listener for double click
         suppliersTable.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override

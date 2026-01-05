@@ -63,6 +63,14 @@ public class WarehousePanel extends JPanel {
         // Enable column sorting
         TableSorterUtil.enableSorting(stockTable);
 
+        // Add context menu
+        TableInteractionUtil.addContextMenu(stockTable,
+            new TableInteractionUtil.TableAction("New Movement", () -> showMovementDialog(null), false),
+            new TableInteractionUtil.TableAction("Set Minimum Stock", this::showMinStockDialog, false),
+            null, // Separator
+            new TableInteractionUtil.TableAction("Refresh", this::loadStockData, false)
+        );
+
         // Buttons
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         JButton newMovementButton = new JButton("New Movement");
@@ -107,6 +115,18 @@ public class WarehousePanel extends JPanel {
 
         // Enable column sorting
         TableSorterUtil.enableSorting(movementsTable);
+
+        // Add Delete key shortcut
+        TableInteractionUtil.addDeleteKeyAction(movementsTable, this::deleteSelectedMovement);
+
+        // Add context menu
+        TableInteractionUtil.addContextMenu(movementsTable,
+            new TableInteractionUtil.TableAction("New Movement", () -> showMovementDialog(null), false),
+            new TableInteractionUtil.TableAction("Edit", this::editSelectedMovement),
+            new TableInteractionUtil.TableAction("Delete", this::deleteSelectedMovement),
+            null, // Separator
+            new TableInteractionUtil.TableAction("Refresh", this::loadMovementsData, false)
+        );
 
         // Hide ID column
         movementsTable.getColumnModel().getColumn(0).setMinWidth(0);
@@ -164,6 +184,14 @@ public class WarehousePanel extends JPanel {
 
         // Enable column sorting
         TableSorterUtil.enableSorting(notificationsTable);
+
+        // Add context menu
+        TableInteractionUtil.addContextMenu(notificationsTable,
+            new TableInteractionUtil.TableAction("Mark as Read", () -> markSelectedNotifications("READ")),
+            new TableInteractionUtil.TableAction("Mark as Handled", () -> markSelectedNotifications("HANDLED")),
+            null, // Separator
+            new TableInteractionUtil.TableAction("Refresh", this::loadNotificationsData, false)
+        );
 
         // Notification buttons
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));

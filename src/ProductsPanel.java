@@ -53,6 +53,18 @@ public class ProductsPanel extends JPanel {
         // Enable column sorting
         TableSorterUtil.enableSorting(productsTable);
 
+        // Add Delete key shortcut
+        TableInteractionUtil.addDeleteKeyAction(productsTable, this::deleteSelectedProduct);
+
+        // Add context menu
+        TableInteractionUtil.addContextMenu(productsTable,
+            new TableInteractionUtil.TableAction("Add Product", () -> showProductDialog(null), false),
+            new TableInteractionUtil.TableAction("Edit", this::editSelectedProduct),
+            new TableInteractionUtil.TableAction("Delete", this::deleteSelectedProduct),
+            null, // Separator
+            new TableInteractionUtil.TableAction("Refresh", this::loadProducts, false)
+        );
+
         // Add mouse listener for double click
         productsTable.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override
