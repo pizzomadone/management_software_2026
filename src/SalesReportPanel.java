@@ -254,7 +254,9 @@ public class SalesReportPanel extends JPanel {
     private void showOrderDetails() {
         int selectedRow = reportTable.getSelectedRow();
         if (selectedRow != -1) {
-            int orderId = (int)tableModel.getValueAt(selectedRow, 1);
+            // Convert view index to model index (important when table is sorted)
+            int modelRow = reportTable.convertRowIndexToModel(selectedRow);
+            int orderId = (int)tableModel.getValueAt(modelRow, 1);
 
             // Create detail window
             Window parentWindow = SwingUtilities.getWindowAncestor(this);

@@ -282,8 +282,10 @@ public class InvoicesPanel extends JPanel {
     private void editSelectedInvoice() {
         int selectedRow = invoicesTable.getSelectedRow();
         if (selectedRow != -1) {
+            // Convert view index to model index (important when table is sorted)
+            int modelRow = invoicesTable.convertRowIndexToModel(selectedRow);
             try {
-                String number = (String)tableModel.getValueAt(selectedRow, 0);
+                String number = (String)tableModel.getValueAt(modelRow, 0);
                 Invoice invoice = loadInvoiceByNumber(number);
                 if (invoice != null) {
                     Window parentWindow = SwingUtilities.getWindowAncestor(this);
@@ -312,8 +314,10 @@ public class InvoicesPanel extends JPanel {
     private void generateSelectedInvoicePDF() {
         int selectedRow = invoicesTable.getSelectedRow();
         if (selectedRow != -1) {
+            // Convert view index to model index (important when table is sorted)
+            int modelRow = invoicesTable.convertRowIndexToModel(selectedRow);
             try {
-                String number = (String)tableModel.getValueAt(selectedRow, 0);
+                String number = (String)tableModel.getValueAt(modelRow, 0);
                 Invoice invoice = loadInvoiceByNumber(number);
                 Customer customer = loadCustomerByInvoice(invoice);
 
@@ -446,9 +450,11 @@ public class InvoicesPanel extends JPanel {
     private void deleteSelectedInvoice() {
         int selectedRow = invoicesTable.getSelectedRow();
         if (selectedRow != -1) {
-            String number = (String)tableModel.getValueAt(selectedRow, 0);
-            String customer = (String)tableModel.getValueAt(selectedRow, 2);
-            String status = (String)tableModel.getValueAt(selectedRow, 6);
+            // Convert view index to model index (important when table is sorted)
+            int modelRow = invoicesTable.convertRowIndexToModel(selectedRow);
+            String number = (String)tableModel.getValueAt(modelRow, 0);
+            String customer = (String)tableModel.getValueAt(modelRow, 2);
+            String status = (String)tableModel.getValueAt(modelRow, 6);
 
             int result = JOptionPane.showConfirmDialog(this,
                 "Are you sure you want to delete invoice " + number + " from customer " + customer + "?\n" +
