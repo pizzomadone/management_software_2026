@@ -319,6 +319,9 @@ public class DatabaseManager {
         // Migrate existing databases to add warehouse_position and vat_rate columns
         migrateWarehousePositionAndVat();
 
+        // Migrate existing databases to add payment tracking columns to orders
+        migratePaymentTracking();
+
         // Create triggers for stock reservation synchronization
         createStockReservationTriggers();
     }
@@ -450,6 +453,38 @@ public class DatabaseManager {
                 System.out.println("Adding vat_rate column to products table...");
                 stmt.execute("ALTER TABLE products ADD COLUMN vat_rate REAL DEFAULT 0.0");
                 System.out.println("Column vat_rate added successfully!");
+            }
+        }
+    }
+
+    private void migratePaymentTracking() throws SQLException {
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery("PRAGMA table_info(orders)")) {
+
+            boolean hasPaymentStatus = false;
+            boolean hasPaidAmount = false;
+
+            while (rs.next()) {
+                String columnName = rs.getString("name");
+                if ("payment_status".equals(columnName)) {
+                    hasPaymentStatus = true;
+                } else if ("paid_amount".equals(columnName)) {
+                    hasPaidAmount = true;
+                }
+            }
+
+            // Add payment_status column if it doesn't exist
+            if (!hasPaymentStatus) {
+                System.out.println("Adding payment_status column to orders table...");
+                stmt.execute("ALTER TABLE orders ADD COLUMN payment_status TEXT DEFAULT 'NOT_PAID'");
+                System.out.println("Column payment_status added successfully!");
+            }
+
+            // Add paid_amount column if it doesn't exist
+            if (!hasPaidAmount) {
+                System.out.println("Adding paid_amount column to orders table...");
+                stmt.execute("ALTER TABLE orders ADD COLUMN paid_amount REAL DEFAULT 0.0");
+                System.out.println("Column paid_amount added successfully!");
             }
         }
     }

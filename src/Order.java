@@ -10,6 +10,8 @@ public class Order {
     private String status;
     private double total;
     private List<OrderItem> items;
+    private String paymentStatus;
+    private double paidAmount;
 
     public Order(int id, int customerId, String customerName, Date orderDate, String status, double total) {
         this.id = id;
@@ -19,6 +21,8 @@ public class Order {
         this.status = status;
         this.total = total;
         this.items = new ArrayList<>();
+        this.paymentStatus = "NOT_PAID";
+        this.paidAmount = 0.0;
     }
 
     // Getters
@@ -29,6 +33,8 @@ public class Order {
     public String getStatus() { return status; }
     public double getTotal() { return total; }
     public List<OrderItem> getItems() { return items; }
+    public String getPaymentStatus() { return paymentStatus; }
+    public double getPaidAmount() { return paidAmount; }
 
     // Setters
     public void setId(int id) { this.id = id; }
@@ -38,4 +44,6 @@ public class Order {
     public void setStatus(String status) { this.status = status; }
     public void setTotal(double total) { this.total = total; }
     public void setItems(List<OrderItem> items) { this.items = items; }
+    public void setPaymentStatus(String paymentStatus) { this.paymentStatus = paymentStatus; }
+    public void setPaidAmount(double paidAmount) { this.paidAmount = paidAmount; }
 }
