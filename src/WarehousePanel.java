@@ -501,11 +501,13 @@ public class WarehousePanel extends JPanel {
                 String updateQuery = "UPDATE warehouse_notifications SET status = ? WHERE id = ?";
                 try (PreparedStatement pstmt = conn.prepareStatement(updateQuery)) {
                     for (int row : selectedRows) {
+                        // Convert view index to model index (important when table is sorted)
+                        int modelRow = notificationsTable.convertRowIndexToModel(row);
                         // Find notification ID by matching data
-                        String dateStr = (String)notificationsModel.getValueAt(row, 0);
-                        String product = (String)notificationsModel.getValueAt(row, 1);
-                        String type = (String)notificationsModel.getValueAt(row, 2);
-                        String message = (String)notificationsModel.getValueAt(row, 3);
+                        String dateStr = (String)notificationsModel.getValueAt(modelRow, 0);
+                        String product = (String)notificationsModel.getValueAt(modelRow, 1);
+                        String type = (String)notificationsModel.getValueAt(modelRow, 2);
+                        String message = (String)notificationsModel.getValueAt(modelRow, 3);
 
                         int notificationId = findNotificationId(dateStr, product, type, message);
                         if (notificationId > 0) {
@@ -618,7 +620,9 @@ public class WarehousePanel extends JPanel {
             return;
         }
 
-        String code = (String)stockModel.getValueAt(selectedRow, 0);
+        // Convert view index to model index (important when table is sorted)
+        int modelRow = stockTable.convertRowIndexToModel(selectedRow);
+        String code = (String)stockModel.getValueAt(modelRow, 0);
         try {
             MinimumStock minStock = loadMinimumStock(code);
             Window parentWindow = SwingUtilities.getWindowAncestor(this);
@@ -680,7 +684,9 @@ public class WarehousePanel extends JPanel {
     private void editSelectedMovement() {
         int selectedRow = movementsTable.getSelectedRow();
         if (selectedRow != -1) {
-            int movementId = (int)movementsModel.getValueAt(selectedRow, 0);
+            // Convert view index to model index (important when table is sorted)
+            int modelRow = movementsTable.convertRowIndexToModel(selectedRow);
+            int movementId = (int)movementsModel.getValueAt(modelRow, 0);
 
             try {
                 Connection conn = DatabaseManager.getInstance().getConnection();
@@ -724,10 +730,12 @@ public class WarehousePanel extends JPanel {
     private void deleteSelectedMovement() {
         int selectedRow = movementsTable.getSelectedRow();
         if (selectedRow != -1) {
-            int movementId = (int)movementsModel.getValueAt(selectedRow, 0);
-            String product = (String)movementsModel.getValueAt(selectedRow, 2);
-            String type = (String)movementsModel.getValueAt(selectedRow, 3);
-            int quantity = (int)movementsModel.getValueAt(selectedRow, 4);
+            // Convert view index to model index (important when table is sorted)
+            int modelRow = movementsTable.convertRowIndexToModel(selectedRow);
+            int movementId = (int)movementsModel.getValueAt(modelRow, 0);
+            String product = (String)movementsModel.getValueAt(modelRow, 2);
+            String type = (String)movementsModel.getValueAt(modelRow, 3);
+            int quantity = (int)movementsModel.getValueAt(modelRow, 4);
 
             int result = JOptionPane.showConfirmDialog(this,
                 "Are you sure you want to delete this movement?\n\n" +
