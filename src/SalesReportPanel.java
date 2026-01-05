@@ -90,6 +90,14 @@ public class SalesReportPanel extends JPanel {
         // Enable column sorting
         TableSorterUtil.enableSorting(reportTable);
 
+        // Add context menu
+        TableInteractionUtil.addContextMenu(reportTable,
+            new TableInteractionUtil.TableAction("Order Details", this::showOrderDetails),
+            null, // Separator
+            new TableInteractionUtil.TableAction("Print Report", this::printReport, false),
+            new TableInteractionUtil.TableAction("Export CSV", this::exportToCSV, false)
+        );
+
         // Button panel
         JPanel buttonPanel = new JPanel(new FlowLayout());
         JButton printButton = new JButton("Print Report");

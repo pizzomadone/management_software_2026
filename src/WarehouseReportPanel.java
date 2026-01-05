@@ -77,6 +77,14 @@ public class WarehouseReportPanel extends JPanel {
         // Enable column sorting
         TableSorterUtil.enableSorting(productsTable);
 
+        // Add context menu
+        TableInteractionUtil.addContextMenu(productsTable,
+            new TableInteractionUtil.TableAction("Print Report", this::printProductsReport, false),
+            new TableInteractionUtil.TableAction("Export CSV", this::exportProductsToCSV, false),
+            null, // Separator
+            new TableInteractionUtil.TableAction("Refresh", this::loadProductsData, false)
+        );
+
         // Buttons
         JPanel buttonPanel = new JPanel();
         JButton printButton = new JButton("Print Report");
@@ -138,6 +146,12 @@ public class WarehouseReportPanel extends JPanel {
 
         // Enable column sorting
         TableSorterUtil.enableSorting(movementsTable);
+
+        // Add context menu
+        TableInteractionUtil.addContextMenu(movementsTable,
+            new TableInteractionUtil.TableAction("Print Report", this::printMovementsReport, false),
+            new TableInteractionUtil.TableAction("Export CSV", this::exportMovementsToCSV, false)
+        );
 
         // Buttons
         JPanel buttonPanel = new JPanel();
