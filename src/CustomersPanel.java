@@ -192,13 +192,15 @@ public class CustomersPanel extends JPanel {
     private void editSelectedCustomer() {
         int selectedRow = customersTable.getSelectedRow();
         if (selectedRow != -1) {
+            // Convert view index to model index (important when table is sorted)
+            int modelRow = customersTable.convertRowIndexToModel(selectedRow);
             Customer customer = new Customer(
-                (int)tableModel.getValueAt(selectedRow, 0),
-                (String)tableModel.getValueAt(selectedRow, 1),
-                (String)tableModel.getValueAt(selectedRow, 2),
-                (String)tableModel.getValueAt(selectedRow, 3),
-                (String)tableModel.getValueAt(selectedRow, 4),
-                (String)tableModel.getValueAt(selectedRow, 5)
+                (int)tableModel.getValueAt(modelRow, 0),
+                (String)tableModel.getValueAt(modelRow, 1),
+                (String)tableModel.getValueAt(modelRow, 2),
+                (String)tableModel.getValueAt(modelRow, 3),
+                (String)tableModel.getValueAt(modelRow, 4),
+                (String)tableModel.getValueAt(modelRow, 5)
             );
             showCustomerDialog(customer);
         }
@@ -207,9 +209,11 @@ public class CustomersPanel extends JPanel {
     private void deleteSelectedCustomer() {
         int selectedRow = customersTable.getSelectedRow();
         if (selectedRow != -1) {
-            int id = (int)tableModel.getValueAt(selectedRow, 0);
-            String firstName = (String)tableModel.getValueAt(selectedRow, 1);
-            String lastName = (String)tableModel.getValueAt(selectedRow, 2);
+            // Convert view index to model index (important when table is sorted)
+            int modelRow = customersTable.convertRowIndexToModel(selectedRow);
+            int id = (int)tableModel.getValueAt(modelRow, 0);
+            String firstName = (String)tableModel.getValueAt(modelRow, 1);
+            String lastName = (String)tableModel.getValueAt(modelRow, 2);
             String fullName = firstName + " " + lastName;
 
             try {

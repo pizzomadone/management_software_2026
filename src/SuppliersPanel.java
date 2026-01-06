@@ -212,14 +212,16 @@ public class SuppliersPanel extends JPanel {
     private void editSelectedSupplier() {
         int selectedRow = suppliersTable.getSelectedRow();
         if (selectedRow != -1) {
+            // Convert view index to model index (important when table is sorted)
+            int modelRow = suppliersTable.convertRowIndexToModel(selectedRow);
             Supplier supplier = new Supplier(
-                (int)tableModel.getValueAt(selectedRow, 0),
-                (String)tableModel.getValueAt(selectedRow, 1),
-                (String)tableModel.getValueAt(selectedRow, 2),
+                (int)tableModel.getValueAt(modelRow, 0),
+                (String)tableModel.getValueAt(modelRow, 1),
+                (String)tableModel.getValueAt(modelRow, 2),
                 "", // tax code
-                (String)tableModel.getValueAt(selectedRow, 5), // address
-                (String)tableModel.getValueAt(selectedRow, 4), // phone
-                (String)tableModel.getValueAt(selectedRow, 3), // email
+                (String)tableModel.getValueAt(modelRow, 5), // address
+                (String)tableModel.getValueAt(modelRow, 4), // phone
+                (String)tableModel.getValueAt(modelRow, 3), // email
                 "", // certified email
                 "", // website
                 ""  // notes
@@ -231,8 +233,10 @@ public class SuppliersPanel extends JPanel {
     private void deleteSelectedSupplier() {
         int selectedRow = suppliersTable.getSelectedRow();
         if (selectedRow != -1) {
-            int id = (int)tableModel.getValueAt(selectedRow, 0);
-            String name = (String)tableModel.getValueAt(selectedRow, 1);
+            // Convert view index to model index (important when table is sorted)
+            int modelRow = suppliersTable.convertRowIndexToModel(selectedRow);
+            int id = (int)tableModel.getValueAt(modelRow, 0);
+            String name = (String)tableModel.getValueAt(modelRow, 1);
 
             try {
                 Connection conn = DatabaseManager.getInstance().getConnection();
@@ -302,7 +306,8 @@ public class SuppliersPanel extends JPanel {
             "WARNING: This will permanently delete supplier '" + name + "' and ALL related data:\n" +
             "- All orders from this supplier\n" +
             "- All price list entries\n" +
-            "- All references in minimum stock settings\n\n" +
+            "- All references in minimum stock settings\n" +
+            "- All supplier references in products (will be set to none)\n\n" +
             "This action CANNOT be undone!\n\n" +
             "Are you absolutely sure?",
             "FORCE DELETE - Final Confirmation",
@@ -360,7 +365,19 @@ public class SuppliersPanel extends JPanel {
                     System.out.println("Updated " + updated + " minimum stock references");
                 }
 
-                // 5. Finally delete the supplier
+                // 5. Remove supplier references from products
+                String updateProducts = """
+                    UPDATE products
+                    SET supplier_id = NULL
+                    WHERE supplier_id = ?
+                """;
+                try (PreparedStatement pstmt = conn.prepareStatement(updateProducts)) {
+                    pstmt.setInt(1, id);
+                    int updated = pstmt.executeUpdate();
+                    System.out.println("Updated " + updated + " product supplier references");
+                }
+
+                // 6. Finally delete the supplier
                 String deleteSupplier = "DELETE FROM suppliers WHERE id = ?";
                 try (PreparedStatement pstmt = conn.prepareStatement(deleteSupplier)) {
                     pstmt.setInt(1, id);
@@ -421,8 +438,10 @@ public class SuppliersPanel extends JPanel {
     private void showSupplierOrders() {
         int selectedRow = suppliersTable.getSelectedRow();
         if (selectedRow != -1) {
-            int supplierId = (int)tableModel.getValueAt(selectedRow, 0);
-            String supplierName = (String)tableModel.getValueAt(selectedRow, 1);
+            // Convert view index to model index (important when table is sorted)
+            int modelRow = suppliersTable.convertRowIndexToModel(selectedRow);
+            int supplierId = (int)tableModel.getValueAt(modelRow, 0);
+            String supplierName = (String)tableModel.getValueAt(modelRow, 1);
 
             Window parentWindow = SwingUtilities.getWindowAncestor(this);
 
@@ -446,8 +465,10 @@ public class SuppliersPanel extends JPanel {
     private void showSupplierPriceList() {
         int selectedRow = suppliersTable.getSelectedRow();
         if (selectedRow != -1) {
-            int supplierId = (int)tableModel.getValueAt(selectedRow, 0);
-            String supplierName = (String)tableModel.getValueAt(selectedRow, 1);
+            // Convert view index to model index (important when table is sorted)
+            int modelRow = suppliersTable.convertRowIndexToModel(selectedRow);
+            int supplierId = (int)tableModel.getValueAt(modelRow, 0);
+            String supplierName = (String)tableModel.getValueAt(modelRow, 1);
 
             Window parentWindow = SwingUtilities.getWindowAncestor(this);
 

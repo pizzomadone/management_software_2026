@@ -148,7 +148,9 @@ public class BackupPanel extends JPanel {
             return;
         }
 
-        String fileName = (String)tableModel.getValueAt(selectedRow, 1);
+        // Convert view index to model index (important when table is sorted)
+        int modelRow = backupsTable.convertRowIndexToModel(selectedRow);
+        String fileName = (String)tableModel.getValueAt(modelRow, 1);
 
         int result = JOptionPane.showConfirmDialog(this,
             "Are you sure you want to delete the backup:\n" + fileName + "?\n\n" +
@@ -206,7 +208,9 @@ public class BackupPanel extends JPanel {
             return;
         }
 
-        String fileName = (String)tableModel.getValueAt(selectedRow, 1);
+        // Convert view index to model index (important when table is sorted)
+        int modelRow = backupsTable.convertRowIndexToModel(selectedRow);
+        String fileName = (String)tableModel.getValueAt(modelRow, 1);
         String filePath = new File(backupManager.getBackupDirectory(), fileName).getAbsolutePath();
 
         int result = JOptionPane.showConfirmDialog(this,

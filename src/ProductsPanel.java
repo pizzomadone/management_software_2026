@@ -255,7 +255,9 @@ public class ProductsPanel extends JPanel {
     private void editSelectedProduct() {
         int selectedRow = productsTable.getSelectedRow();
         if (selectedRow != -1) {
-            int productId = (int)tableModel.getValueAt(selectedRow, 0);
+            // Convert view index to model index (important when table is sorted)
+            int modelRow = productsTable.convertRowIndexToModel(selectedRow);
+            int productId = (int)tableModel.getValueAt(modelRow, 0);
 
             try {
                 Connection conn = DatabaseManager.getInstance().getConnection();
@@ -314,8 +316,10 @@ public class ProductsPanel extends JPanel {
     private void deleteSelectedProduct() {
         int selectedRow = productsTable.getSelectedRow();
         if (selectedRow != -1) {
-            int id = (int)tableModel.getValueAt(selectedRow, 0);
-            String name = (String)tableModel.getValueAt(selectedRow, 2);
+            // Convert view index to model index (important when table is sorted)
+            int modelRow = productsTable.convertRowIndexToModel(selectedRow);
+            int id = (int)tableModel.getValueAt(modelRow, 0);
+            String name = (String)tableModel.getValueAt(modelRow, 2);
             
             try {
                 Connection conn = DatabaseManager.getInstance().getConnection();

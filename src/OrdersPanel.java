@@ -250,7 +250,9 @@ public class OrdersPanel extends JPanel {
     private void editSelectedOrder() {
         int selectedRow = ordersTable.getSelectedRow();
         if (selectedRow != -1) {
-            int orderId = (int)tableModel.getValueAt(selectedRow, 0);
+            // Convert view index to model index (important when table is sorted)
+            int modelRow = ordersTable.convertRowIndexToModel(selectedRow);
+            int orderId = (int)tableModel.getValueAt(modelRow, 0);
             try {
                 Order order = loadOrderDetails(orderId);
                 if (order != null) {
@@ -336,9 +338,11 @@ public class OrdersPanel extends JPanel {
     private void deleteSelectedOrder() {
         int selectedRow = ordersTable.getSelectedRow();
         if (selectedRow != -1) {
-            int id = (int)tableModel.getValueAt(selectedRow, 0);
-            String customer = (String)tableModel.getValueAt(selectedRow, 1);
-            String status = (String)tableModel.getValueAt(selectedRow, 3);
+            // Convert view index to model index (important when table is sorted)
+            int modelRow = ordersTable.convertRowIndexToModel(selectedRow);
+            int id = (int)tableModel.getValueAt(modelRow, 0);
+            String customer = (String)tableModel.getValueAt(modelRow, 1);
+            String status = (String)tableModel.getValueAt(modelRow, 3);
 
             int result = JOptionPane.showConfirmDialog(this,
                 "Are you sure you want to delete the order from customer '" + customer + "'?\n" +
@@ -408,9 +412,11 @@ public class OrdersPanel extends JPanel {
         int selectedRow = ordersTable.getSelectedRow();
         if (selectedRow == -1) return;
 
-        int orderId = (int)tableModel.getValueAt(selectedRow, 0);
-        String customer = (String)tableModel.getValueAt(selectedRow, 1);
-        String status = (String)tableModel.getValueAt(selectedRow, 3);
+        // Convert view index to model index (important when table is sorted)
+        int modelRow = ordersTable.convertRowIndexToModel(selectedRow);
+        int orderId = (int)tableModel.getValueAt(modelRow, 0);
+        String customer = (String)tableModel.getValueAt(modelRow, 1);
+        String status = (String)tableModel.getValueAt(modelRow, 3);
 
         // Confirm with user
         int result = JOptionPane.showConfirmDialog(this,
