@@ -13,17 +13,17 @@ public class AppConstants {
      * The name of the software application.
      * Change this value to rebrand the entire application.
      */
-    public static final String SOFTWARE_NAME = "WorkGenio";
+    public static final String SOFTWARE_NAME = "WareStat";
 
     /**
      * The version of the software.
      */
-    public static final String VERSION = "1.0";
+    public static final String VERSION = "1.2";
 
     /**
      * The year for copyright notice.
      */
-    public static final String COPYRIGHT_YEAR = "2025";
+    public static final String COPYRIGHT_YEAR = "2026";
 
     /**
      * Full application title with version.
