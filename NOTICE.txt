@@ -1,0 +1,27 @@
+NOTICE
+
+This software includes third-party libraries with the following copyright notices:
+
+================================================================================
+
+Apache PDFBox
+Copyright 1999-2024 The Apache Software Foundation
+
+This product includes software developed at
+The Apache Software Foundation (http://www.apache.org/).
+
+Based on contributions made to the original PDFBox project.
+
+================================================================================
+
+SQLite JDBC
+Copyright Taro L. Saito
+
+This product includes a JDBC driver for SQLite developed by Taro L. Saito.
+
+Project: https://github.com/xerial/sqlite-jdbc
+
+================================================================================
+
+Both libraries are licensed under the Apache License 2.0.
+See LICENSE-THIRD-PARTY.txt for the complete license text.
