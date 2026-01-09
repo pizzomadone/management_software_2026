@@ -581,14 +581,16 @@ public class OrdersPanel extends JPanel {
         // First ensure the table is loaded
         loadOrders();
 
-        // Search for the order ID in the table
-        for (int row = 0; row < tableModel.getRowCount(); row++) {
-            Object value = tableModel.getValueAt(row, 0); // ID is in column 0
+        // Search for the order ID in the table model
+        for (int modelRow = 0; modelRow < tableModel.getRowCount(); modelRow++) {
+            Object value = tableModel.getValueAt(modelRow, 0); // ID is in column 0
             if (value != null && value instanceof Integer && (Integer) value == orderId) {
-                // Found the order, select it
-                ordersTable.setRowSelectionInterval(row, row);
+                // Found the order, convert model index to view index
+                int viewRow = ordersTable.convertRowIndexToView(modelRow);
+                // Select the row in the view
+                ordersTable.setRowSelectionInterval(viewRow, viewRow);
                 // Scroll to make the row visible
-                ordersTable.scrollRectToVisible(ordersTable.getCellRect(row, 0, true));
+                ordersTable.scrollRectToVisible(ordersTable.getCellRect(viewRow, 0, true));
                 // Update button states
                 updateButtonStates();
                 return;

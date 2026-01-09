@@ -508,7 +508,7 @@ public class DashboardPanel extends JPanel {
         actionButton.setBackground(DANGER_COLOR);
         actionButton.setForeground(Color.WHITE);
         actionButton.setBorderPainted(false);
-        actionButton.addActionListener(e -> openProductsPanel());
+        actionButton.addActionListener(e -> openProductAndHighlight(code));
 
         panel.add(productLabel, BorderLayout.WEST);
         panel.add(stockLabel, BorderLayout.CENTER);
@@ -832,6 +832,12 @@ public class DashboardPanel extends JPanel {
     private void openOrderAndHighlight(int orderId) {
         if (mainWindow != null) {
             mainWindow.showOrdersAndSelect(orderId);
+        }
+    }
+
+    private void openProductAndHighlight(String productCode) {
+        if (mainWindow != null) {
+            mainWindow.showProductsAndSelect(productCode);
         }
     }
 }

@@ -765,6 +765,18 @@ public class MainWindow extends JFrame {
         });
     }
 
+    public void showProductsAndSelect(String productCode) {
+        // First navigate to the Products panel
+        showPanel("PRODUCTS");
+
+        // Then select the specific product (after a small delay to ensure panel is visible)
+        SwingUtilities.invokeLater(() -> {
+            if (productsPanel != null) {
+                productsPanel.selectProductByCode(productCode);
+            }
+        });
+    }
+
     public static void main(String[] args) {
         // Add this code block for macOS integration
         final String os = System.getProperty("os.name");

@@ -605,4 +605,35 @@ public class ProductsPanel extends JPanel {
             return defaultValue;
         }
     }
+
+    /**
+     * Selects and highlights a specific product in the table by product code
+     * @param productCode The code of the product to select
+     */
+    public void selectProductByCode(String productCode) {
+        // First ensure the table is loaded
+        loadProducts();
+
+        // Search for the product code in the table model
+        for (int modelRow = 0; modelRow < tableModel.getRowCount(); modelRow++) {
+            Object value = tableModel.getValueAt(modelRow, 1); // Code is in column 1
+            if (value != null && value instanceof String && value.equals(productCode)) {
+                // Found the product, convert model index to view index
+                int viewRow = productsTable.convertRowIndexToView(modelRow);
+                // Select the row in the view
+                productsTable.setRowSelectionInterval(viewRow, viewRow);
+                // Scroll to make the row visible
+                productsTable.scrollRectToVisible(productsTable.getCellRect(viewRow, 0, true));
+                // Update button states
+                updateButtonStates();
+                return;
+            }
+        }
+
+        // If we get here, the product was not found
+        JOptionPane.showMessageDialog(this,
+            "Product with code '" + productCode + "' not found in the list.",
+            "Product Not Found",
+            JOptionPane.INFORMATION_MESSAGE);
+    }
 }
