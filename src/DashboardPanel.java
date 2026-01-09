@@ -502,13 +502,15 @@ public class DashboardPanel extends JPanel {
         stockLabel.setFont(new Font("Arial", Font.PLAIN, 11));
         stockLabel.setForeground(new Color(100, 40, 40));
 
-        JButton actionButton = new JButton("View Product");
+        JButton actionButton = new JButton("View");
         actionButton.setFont(new Font("Arial", Font.PLAIN, 11));
         actionButton.setFocusPainted(false);
-        actionButton.setBackground(DANGER_COLOR);
+        actionButton.setBackground(ACCENT_COLOR);
         actionButton.setForeground(Color.WHITE);
+        actionButton.setContentAreaFilled(true);  // Critical: ensures background is painted
+        actionButton.setOpaque(true);
         actionButton.setBorderPainted(false);
-        actionButton.addActionListener(e -> openProductsPanel());
+        actionButton.addActionListener(e -> openProductAndHighlight(code));
 
         panel.add(productLabel, BorderLayout.WEST);
         panel.add(stockLabel, BorderLayout.CENTER);
@@ -832,6 +834,12 @@ public class DashboardPanel extends JPanel {
     private void openOrderAndHighlight(int orderId) {
         if (mainWindow != null) {
             mainWindow.showOrdersAndSelect(orderId);
+        }
+    }
+
+    private void openProductAndHighlight(String productCode) {
+        if (mainWindow != null) {
+            mainWindow.showProductsAndSelect(productCode);
         }
     }
 }

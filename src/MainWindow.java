@@ -496,6 +496,15 @@ public class MainWindow extends JFrame {
             • Backup & Restore
 
             %s
+
+            Third-Party Libraries:
+            • Apache PDFBox 3.0.6
+              Copyright © 1999-2024 The Apache Software Foundation
+              Licensed under Apache License 2.0
+
+            • SQLite JDBC 3.50.3.0
+              Copyright © Taro L. Saito
+              Licensed under Apache License 2.0
             """.formatted(AppConstants.FULL_TITLE, AppConstants.COPYRIGHT);
 
         JOptionPane.showMessageDialog(this,
@@ -752,6 +761,18 @@ public class MainWindow extends JFrame {
         SwingUtilities.invokeLater(() -> {
             if (ordersPanel != null) {
                 ordersPanel.selectOrderById(orderId);
+            }
+        });
+    }
+
+    public void showProductsAndSelect(String productCode) {
+        // First navigate to the Products panel
+        showPanel("PRODUCTS");
+
+        // Then select the specific product (after a small delay to ensure panel is visible)
+        SwingUtilities.invokeLater(() -> {
+            if (productsPanel != null) {
+                productsPanel.selectProductByCode(productCode);
             }
         });
     }
