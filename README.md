@@ -1,4 +1,4 @@
-# WorkGenio
+# WareStat
 
 Professional Business Management System
 
@@ -33,9 +33,9 @@ java -cp "bin:lib/*" Main
 ## Database Location
 
 The application database is stored at:
-- **macOS**: `~/Library/Application Support/WorkGenio/data.db`
-- **Windows**: `%APPDATA%\WorkGenio\data.db`
-- **Linux**: `~/.local/share/WorkGenio/data.db`
+- **macOS**: `~/Library/Application Support/WareStat/data.db`
+- **Windows**: `%APPDATA%\WareStat\data.db`
+- **Linux**: `~/.local/share/WareStat/data.db`
 
 ## Third-Party Libraries
 

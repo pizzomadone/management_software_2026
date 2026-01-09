@@ -57,7 +57,7 @@ public class AppConstants {
      * Used on Linux: ~/.{APP_DIR_NAME}/
      *
      * Examples:
-     * - SOFTWARE_NAME = "WorkGenio" -> APP_DIR_NAME = "WorkGenio"
+     * - SOFTWARE_NAME = "WareStat" -> APP_DIR_NAME = "WareStat"
      * - SOFTWARE_NAME = "My Management Software" -> APP_DIR_NAME = "MyManagementSoftware"
      * - SOFTWARE_NAME = "Gestionale 2025!" -> APP_DIR_NAME = "Gestionale2025"
      */
