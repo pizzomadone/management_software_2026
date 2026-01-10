@@ -119,11 +119,11 @@ See [Eclipse Integration](#eclipse-integration) section below.
 ### Step 3: Find Your Built Application
 
 After successful build:
-- **Development JAR**: `dist/WareStat-1.2.jar`
-- **Development executable**: `dist/WareStat-dev/` (no obfuscation)
-- **Production JAR**: `dist/WareStat-1.2-obfuscated.jar`
-- **Production executable**: `dist/WareStat/` (obfuscated)
-- **Mapping file**: `dist/yguard-log.xml` (for decoding obfuscated stack traces and obfuscation details)
+- **Development JAR**: `dist/WareStat-1.2.jar` (~35 MB)
+- **Development executable**: `dist/WareStat-dev/` (~85 MB, optimized JRE, no obfuscation)
+- **Production JAR**: `dist/WareStat-1.2-obfuscated.jar` (~30 MB, obfuscated)
+- **Production executable**: `dist/WareStat/` (~85 MB, optimized JRE + obfuscation)
+- **Mapping file**: `dist/yguard-log.xml` (for decoding obfuscated stack traces)
 
 ---
 
@@ -213,7 +213,7 @@ yGuard offers several advantages:
 
 ### Custom JRE with jlink
 
-Production builds use **jlink** to create a custom, optimized JRE:
+**Both development and production builds** use **jlink** to create a custom, optimized JRE:
 
 **Benefits:**
 - **60% smaller** - ~50MB instead of ~200MB
@@ -227,12 +227,14 @@ Production builds use **jlink** to create a custom, optimized JRE:
 - Strips debug symbols, man pages, and headers
 - Compresses the result
 
-**Example size comparison:**
+**Size comparison (with vs without jlink):**
 ```
-Development build:  ~235 MB (full JRE)
-Production build:   ~85 MB  (custom JRE with jlink)
+Without jlink:      ~235 MB (full JRE)
+With jlink:         ~85 MB  (custom JRE)
 Savings:            ~150 MB (63% reduction!)
 ```
+
+**Note:** Both `ant build` and `ant build-release` use jlink for optimized executables.
 
 ### Using the Mapping File
 
@@ -412,14 +414,14 @@ dist/
 ├── WareStat-1.2.jar                    # Development JAR (~35 MB)
 ├── WareStat-1.2-obfuscated.jar         # Production JAR (~30 MB, obfuscated)
 ├── yguard-log.xml                       # yGuard mapping & log file (KEEP THIS!)
-├── WareStat-dev/                       # Development executable (~235 MB total)
+├── WareStat-dev/                       # Development executable (~85 MB total)
 │   ├── bin/
 │   │   └── WareStat-dev                # Launcher (Linux/Mac)
 │   │   └── WareStat-dev.exe            # Launcher (Windows)
 │   ├── lib/
 │   │   └── app/
 │   │       └── WareStat-1.2.jar        # Bundled JAR
-│   └── runtime/                        # Full JRE (~200 MB)
+│   └── runtime/                        # Custom JRE via jlink (~50 MB)
 └── WareStat/                           # Production executable (~85 MB total)
     ├── bin/
     │   └── WareStat                    # Launcher (Linux/Mac)
@@ -431,9 +433,10 @@ dist/
 ```
 
 **Size comparison:**
-- Development build: ~235 MB (full JRE for faster build times)
-- Production build: ~85 MB (custom JRE, 64% smaller)
+- Development build: ~85 MB (custom JRE via jlink)
+- Production build: ~85 MB (custom JRE via jlink + obfuscation)
 - JAR only: ~35 MB (requires Java to be installed)
+- Without jlink: ~235 MB (if using full JRE)
 
 ---
 

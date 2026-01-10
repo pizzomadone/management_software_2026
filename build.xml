@@ -224,12 +224,13 @@
     <!-- =================================
           Target: package-exe (Development - No obfuscation)
          ================================= -->
-    <target name="package-exe" depends="jar,jpackage-check"
+    <target name="package-exe" depends="jar,create-custom-runtime,jpackage-check"
             description="Create native executable (development build, no obfuscation)">
         <fail unless="jpackage.available"
               message="jpackage not found! Please ensure you have JDK 14+ with jpackage in your PATH."/>
 
         <echo message="Creating native executable from JAR (development build)..."/>
+        <echo message="Using custom JRE to reduce size by ~60%"/>
         <echo message="This may take several minutes..."/>
 
         <!-- Detect OS -->
@@ -243,7 +244,7 @@
             <os family="unix"/>
         </condition>
 
-        <!-- Common jpackage arguments -->
+        <!-- Common jpackage arguments with custom runtime -->
         <exec executable="jpackage" failonerror="true">
             <arg value="--input"/><arg value="${dist.dir}"/>
             <arg value="--name"/><arg value="${app.name}-dev"/>
@@ -254,10 +255,12 @@
             <arg value="--app-version"/><arg value="${app.version}"/>
             <arg value="--vendor"/><arg value="${app.vendor}"/>
             <arg value="--description"/><arg value="Business Management Software (Development Build)"/>
+            <arg value="--runtime-image"/><arg value="${custom.runtime.dir}"/>
             <arg value="--java-options"/><arg value="-Xmx1024m"/>
         </exec>
 
         <echo message="Native executable created in: ${dist.dir}/${app.name}-dev/"/>
+        <echo message="Using optimized custom JRE"/>
     </target>
 
     <!-- =================================
@@ -301,7 +304,7 @@
         <echo message="Development Build Complete!"/>
         <echo message="======================================"/>
         <echo message="JAR file: ${jar.file}"/>
-        <echo message="Executable: ${dist.dir}/${app.name}-dev/"/>
+        <echo message="Executable: ${dist.dir}/${app.name}-dev/ (optimized with custom JRE)"/>
         <echo message=""/>
         <echo message="To test JAR: java -jar ${jar.file}"/>
         <echo message=""/>
