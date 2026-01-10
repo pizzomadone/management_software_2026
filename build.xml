@@ -37,7 +37,7 @@
     <!-- Classpath for ProGuard -->
     <path id="proguard.classpath">
         <fileset dir="${proguard.dir}/lib">
-            <include name="proguard.jar"/>
+            <include name="*.jar"/>
         </fileset>
     </path>
 
