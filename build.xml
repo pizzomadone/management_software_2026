@@ -185,7 +185,7 @@
         <!-- Fallback: try to find Java using 'java' command -->
         <exec executable="bash" outputproperty="detected.java.home" failifexecutionfails="false" osfamily="unix">
             <arg value="-c"/>
-            <arg value="java -XshowSettings:properties -version 2>&1 | grep 'java.home' | sed 's/.*java.home = //'"/>
+            <arg value="java -XshowSettings:properties -version 2>&amp;1 | grep 'java.home' | sed 's/.*java.home = //'"/>
         </exec>
         <exec executable="cmd" outputproperty="detected.java.home" failifexecutionfails="false" osfamily="windows">
             <arg value="/c"/>
