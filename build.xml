@@ -21,7 +21,7 @@
     <property name="build.classes.dir" location="${build.dir}/classes"/>
     <property name="dist.dir" location="dist"/>
     <property name="tools.dir" location="tools"/>
-    <property name="proguard.dir" location="${tools.dir}/proguard"/>
+    <property name="yguard.jar" location="${tools.dir}/yguard.jar"/>
 
     <!-- Output files -->
     <property name="jar.file" value="${dist.dir}/${app.name}-${app.version}.jar"/>
@@ -31,13 +31,6 @@
     <path id="compile.classpath">
         <fileset dir="${lib.dir}">
             <include name="**/*.jar"/>
-        </fileset>
-    </path>
-
-    <!-- Classpath for ProGuard -->
-    <path id="proguard.classpath">
-        <fileset dir="${proguard.dir}/lib">
-            <include name="*.jar"/>
         </fileset>
     </path>
 
@@ -123,108 +116,78 @@
     </target>
 
     <!-- =================================
-          Target: check-proguard
+          Target: check-yguard
          ================================= -->
-    <target name="check-proguard">
-        <available file="${proguard.dir}/lib" type="dir" property="proguard.available"/>
+    <target name="check-yguard">
+        <available file="${yguard.jar}" property="yguard.available"/>
     </target>
 
     <!-- =================================
-          Target: download-proguard
+          Target: download-yguard
          ================================= -->
-    <target name="download-proguard" depends="check-proguard" unless="proguard.available"
-            description="Download ProGuard if not present">
-        <echo message="ProGuard not found. Downloading..."/>
-        <mkdir dir="${proguard.dir}"/>
+    <target name="download-yguard" depends="check-yguard" unless="yguard.available"
+            description="Download yGuard if not present">
+        <echo message="yGuard not found. Downloading..."/>
+        <mkdir dir="${tools.dir}"/>
 
-        <get src="https://github.com/Guardsquare/proguard/releases/download/v7.4.2/proguard-7.4.2.zip"
-             dest="${tools.dir}/proguard.zip"
+        <get src="https://repo1.maven.org/maven2/com/yworks/yguard/4.1.0/yguard-4.1.0.jar"
+             dest="${yguard.jar}"
              verbose="true"
              usetimestamp="true"/>
 
-        <unzip src="${tools.dir}/proguard.zip" dest="${tools.dir}"/>
-
-        <!-- Rename the extracted directory to just 'proguard' for consistency -->
-        <move todir="${proguard.dir}">
-            <fileset dir="${tools.dir}/proguard-7.4.2"/>
-        </move>
-
-        <delete file="${tools.dir}/proguard.zip"/>
-        <echo message="ProGuard downloaded successfully!"/>
-    </target>
-
-    <!-- =================================
-          Target: detect-java-home
-         ================================= -->
-    <target name="detect-java-home">
-        <!-- proguard.java.home can be set in build.properties -->
-        <!-- If already set in build.properties, use that -->
-
-        <!-- Try to find JAVA_HOME environment variable -->
-        <property environment="env"/>
-
-        <!-- Check if jmods exist at current java.home -->
-        <available file="${java.home}/jmods" type="dir" property="jmods.in.java.home"/>
-
-        <!-- Check if JAVA_HOME is set and has jmods -->
-        <condition property="jmods.in.java_home.env">
-            <and>
-                <isset property="env.JAVA_HOME"/>
-                <available file="${env.JAVA_HOME}/jmods" type="dir"/>
-            </and>
-        </condition>
-
-        <!-- Set the correct Java home based on what we found (only if not already set) -->
-        <condition property="proguard.java.home" value="${java.home}">
-            <isset property="jmods.in.java.home"/>
-        </condition>
-        <condition property="proguard.java.home" value="${env.JAVA_HOME}">
-            <isset property="jmods.in.java_home.env"/>
-        </condition>
-
-        <!-- Fallback: try to find Java using 'java' command -->
-        <exec executable="bash" outputproperty="detected.java.home" failifexecutionfails="false" osfamily="unix">
-            <arg value="-c"/>
-            <arg value="java -XshowSettings:properties -version 2>&amp;1 | grep 'java.home' | sed 's/.*java.home = //'"/>
-        </exec>
-        <exec executable="cmd" outputproperty="detected.java.home" failifexecutionfails="false" osfamily="windows">
-            <arg value="/c"/>
-            <arg value="java -XshowSettings:properties -version 2>&amp;1 | findstr java.home"/>
-        </exec>
-
-        <!-- Use detected path if not already set -->
-        <property name="proguard.java.home" value="${detected.java.home}"/>
-
-        <!-- Final fallback to current java.home -->
-        <property name="proguard.java.home" value="${java.home}"/>
-
-        <echo message="Using Java home for ProGuard: ${proguard.java.home}"/>
+        <echo message="yGuard downloaded successfully!"/>
     </target>
 
     <!-- =================================
           Target: obfuscate
          ================================= -->
-    <target name="obfuscate" depends="jar,download-proguard,detect-java-home" description="Obfuscate JAR with ProGuard">
-        <echo message="Obfuscating JAR with ProGuard..."/>
+    <target name="obfuscate" depends="jar,download-yguard" description="Obfuscate JAR with yGuard">
+        <echo message="Obfuscating JAR with yGuard..."/>
 
-        <taskdef resource="proguard/ant/task.properties"
-                 classpathref="proguard.classpath"/>
+        <taskdef name="yguard" classname="com.yworks.yguard.YGuardTask" classpath="${yguard.jar}"/>
 
-        <proguard configuration="proguard.conf">
-            <!-- Input JAR -->
-            <injar file="${jar.file}"/>
+        <yguard>
+            <!-- Input/Output -->
+            <inoutpair in="${jar.file}" out="${jar.obfuscated.file}"/>
 
-            <!-- Output obfuscated JAR -->
-            <outjar file="${jar.obfuscated.file}"/>
+            <!-- Rename settings -->
+            <rename mainclass="${main.class}" logfile="${dist.dir}/yguard-log.xml">
+                <!-- Keep main class and main method -->
+                <keep>
+                    <class classes="private" methods="private" fields="private">
+                        <patternset>
+                            <include name="${main.class}"/>
+                        </patternset>
+                    </class>
+                </keep>
 
-            <!-- Java runtime library -->
-            <libraryjar path="${proguard.java.home}/jmods/java.base.jmod"/>
-            <libraryjar path="${proguard.java.home}/jmods/java.desktop.jmod"/>
-            <libraryjar path="${proguard.java.home}/jmods/java.sql.jmod"/>
-        </proguard>
+                <!-- Keep all public classes with public methods/fields -->
+                <keep>
+                    <class classes="public" methods="public" fields="public">
+                        <patternset>
+                            <include name="**.*"/>
+                        </patternset>
+                    </class>
+                </keep>
+
+                <!-- Adjust settings -->
+                <adjust replaceName="true" replaceContent="true"/>
+
+                <!-- Mapping file for decoding stack traces -->
+                <map textcolor="true" dest="${dist.dir}/yguard-mapping.txt"/>
+            </rename>
+
+            <!-- Shrink to remove unused code -->
+            <externalclasses>
+                <pathelement location="${java.home}/jmods/java.base.jmod"/>
+                <pathelement location="${java.home}/jmods/java.desktop.jmod"/>
+                <pathelement location="${java.home}/jmods/java.sql.jmod"/>
+            </externalclasses>
+        </yguard>
 
         <echo message="Obfuscation complete: ${jar.obfuscated.file}"/>
-        <echo message="Mapping file saved to: ${dist.dir}/mapping.txt"/>
+        <echo message="Mapping file saved to: ${dist.dir}/yguard-mapping.txt"/>
+        <echo message="Log file saved to: ${dist.dir}/yguard-log.xml"/>
     </target>
 
     <!-- =================================

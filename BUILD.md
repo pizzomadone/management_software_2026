@@ -1,6 +1,6 @@
 # WareStat Build System Guide
 
-This guide explains how to use the automated Ant build system to create runnable JAR files and native executables with optional ProGuard obfuscation.
+This guide explains how to use the automated Ant build system to create runnable JAR files and native executables with optional yGuard obfuscation.
 
 ## Table of Contents
 
@@ -9,7 +9,6 @@ This guide explains how to use the automated Ant build system to create runnable
 - [Eclipse Integration](#eclipse-integration)
 - [Build Targets](#build-targets)
 - [Understanding Obfuscation](#understanding-obfuscation)
-- [Manual ProGuard Download](#manual-proguard-download)
 - [Troubleshooting](#troubleshooting)
 
 ---
@@ -32,8 +31,8 @@ This guide explains how to use the automated Ant build system to create runnable
 
 ### Optional
 
-- **ProGuard** (automatically downloaded on first obfuscation build)
-- Internet connection (for automatic ProGuard download)
+- **yGuard** (automatically downloaded from Maven Central on first obfuscation build)
+- Internet connection (for automatic yGuard download)
 
 ---
 
@@ -123,7 +122,8 @@ After successful build:
 - **JAR file**: `dist/WareStat-1.2.jar`
 - **Obfuscated JAR**: `dist/WareStat-1.2-obfuscated.jar`
 - **Native executable**: `dist/WareStat/` (contains platform-specific launcher)
-- **Mapping file**: `dist/mapping.txt` (for decoding obfuscated stack traces)
+- **Mapping file**: `dist/yguard-mapping.txt` (for decoding obfuscated stack traces)
+- **Log file**: `dist/yguard-log.xml` (obfuscation details)
 
 ---
 
@@ -166,7 +166,7 @@ After successful build:
 
 **Your source code** (.java files) **NEVER changes**. Obfuscation only affects:
 - Compiled `.class` files inside the output JAR
-- Class names, method names, field names → Single letters (`a`, `b`, `c`)
+- Class names, method names, field names → Single letters (`A`, `B`, `C`)
 - Your source code remains 100% readable
 
 ### Before vs After Obfuscation
@@ -184,11 +184,11 @@ public class DatabaseManager {
 
 **Obfuscated Bytecode (in JAR, not source)**:
 ```java
-public class a {
-    private b c;
+public class A {
+    private B a;
 
-    public void d() {
-        c = e.f(g);
+    public void b() {
+        a = C.a(d);
     }
 }
 ```
@@ -198,9 +198,18 @@ public class a {
 ### Benefits of Obfuscation
 
 ✅ **Protects intellectual property** - Makes reverse engineering difficult
-✅ **Reduces JAR size** - Removes unused code (20-40% smaller)
+✅ **Reduces JAR size** - Removes unused code (can reduce size by 20-40%)
 ✅ **Optimizes bytecode** - Can improve performance
 ✅ **Protects algorithms** - Your business logic stays confidential
+
+### Why yGuard?
+
+yGuard offers several advantages:
+- **Free for commercial use** (Apache 2.0 License)
+- **Works with any JDK** - No special requirements
+- **Simple configuration** - Designed specifically for Ant
+- **Active maintenance** - Regular updates
+- **Perfect for Swing apps** - Handles GUI applications well
 
 ### Using the Mapping File
 
@@ -208,54 +217,15 @@ When customers report errors, their stack traces will be obfuscated:
 
 ```
 Exception in thread "main" java.lang.NullPointerException
-    at a.d(Unknown Source)
-    at c.f(Unknown Source)
+    at A.b(Unknown Source)
+    at C.d(Unknown Source)
 ```
 
-**Decode with mapping file**:
-```bash
-# ProGuard includes a tool to decode stack traces
-proguard/bin/retrace.sh dist/mapping.txt stacktrace.txt
-```
+**Decode using the mapping file**:
 
-**Output**:
-```
-Exception in thread "main" java.lang.NullPointerException
-    at DatabaseManager.connect(DatabaseManager.java:45)
-    at MainWindow.initialize(MainWindow.java:120)
-```
+The mapping file `dist/yguard-mapping.txt` contains the translation between original and obfuscated names. You can manually look up the obfuscated names, or use yGuard's built-in tools.
 
-**IMPORTANT**: Keep `dist/mapping.txt` safe for each release!
-
----
-
-## Manual ProGuard Download
-
-If automatic download fails (due to firewall/proxy), download manually:
-
-1. **Download ProGuard 7.4.2**
-   - URL: https://github.com/Guardsquare/proguard/releases/download/v7.4.2/proguard-7.4.2.zip
-   - Alternative: https://sourceforge.net/projects/proguard/files/
-
-2. **Extract to tools directory**
-   ```bash
-   unzip proguard-7.4.2.zip -d tools/
-   mv tools/proguard-7.4.2 tools/proguard
-   ```
-
-3. **Verify structure**
-   ```
-   tools/
-   └── proguard/
-       ├── lib/
-       │   └── proguard.jar
-       └── bin/
-   ```
-
-4. **Run build again**
-   ```bash
-   ant build-release
-   ```
+**IMPORTANT**: Keep `dist/yguard-mapping.txt` safe for each release!
 
 ---
 
@@ -273,9 +243,14 @@ jpackage --version
 # - OpenJDK: https://adoptium.net/
 ```
 
-### Error: "ProGuard download failed"
+### Error: "yGuard download failed"
 
-**Solution**: See [Manual ProGuard Download](#manual-proguard-download) section above.
+**Cause**: Network/firewall blocking Maven Central
+
+**Solution**: Download yGuard manually:
+1. Download from: https://repo1.maven.org/maven2/com/yworks/yguard/4.1.0/yguard-4.1.0.jar
+2. Save to: `tools/yguard.jar`
+3. Run build again
 
 ### Error: "Main class not found" when running JAR
 
@@ -288,17 +263,22 @@ jpackage --version
 
 ### Application crashes after obfuscation
 
-**Cause**: ProGuard removed or renamed required classes
+**Cause**: yGuard obfuscated classes that should be kept
 
 **Solution**:
-1. Check `dist/mapping.txt` to see what was renamed
-2. Edit `proguard.conf` to keep the problematic class:
+1. Check `dist/yguard-log.xml` to see what was renamed
+2. Edit `build.xml` obfuscate target to add keep rules
+3. Example - keep a specific class:
+   ```xml
+   <keep>
+       <class classes="private" methods="private" fields="private">
+           <patternset>
+               <include name="YourClassName"/>
+           </patternset>
+       </class>
+   </keep>
    ```
-   -keep class YourClassName {
-       *;
-   }
-   ```
-3. Run `ant clean build-release` again
+4. Run `ant clean build-release` again
 
 ### "OutOfMemoryError" during build
 
@@ -333,26 +313,33 @@ app.vendor=YourCompany
 
 # Change main class
 main.class=MainWindow
-
-# Adjust JVM memory for packaged app
-jvm.max.memory=2048m
 ```
 
-### More Aggressive Obfuscation
+### Adjust Obfuscation Level
 
-Edit `proguard.conf`, uncomment these lines:
-```properties
-# Rename packages to single name
--repackageclasses 'obf'
--flattenpackagehierarchy 'obf'
+Edit `build.xml` in the `obfuscate` target:
 
-# Remove debug logging
--assumenosideeffects class java.io.PrintStream {
-    public void println(...);
-}
+**More aggressive (obfuscate more)**:
+```xml
+<keep>
+    <class classes="none" methods="none" fields="none">
+        <patternset>
+            <include name="${main.class}"/>
+        </patternset>
+    </class>
+</keep>
 ```
 
-**WARNING**: Test thoroughly after enabling these!
+**Less aggressive (keep more readable)**:
+```xml
+<keep>
+    <class classes="protected" methods="protected" fields="protected">
+        <patternset>
+            <include name="**.*"/>
+        </patternset>
+    </class>
+</keep>
+```
 
 ### Platform-Specific Executables
 
@@ -383,7 +370,8 @@ To create installer packages instead of app images, change in `build.xml`:
 dist/
 ├── WareStat-1.2.jar                    # Development JAR
 ├── WareStat-1.2-obfuscated.jar         # Production JAR (obfuscated)
-├── mapping.txt                          # ProGuard mapping file (KEEP THIS!)
+├── yguard-mapping.txt                   # yGuard mapping file (KEEP THIS!)
+├── yguard-log.xml                       # Obfuscation log
 └── WareStat/                           # Native application directory
     ├── bin/
     │   └── WareStat                    # Launcher (Linux/Mac)
@@ -416,13 +404,27 @@ dist/
 
 ---
 
+## Advantages of yGuard Over ProGuard
+
+| Feature | yGuard | ProGuard |
+|---------|--------|----------|
+| **License** | Apache 2.0 (free commercial) | Apache 2.0 (free commercial) |
+| **JDK Requirements** | Any JDK/JRE works | Requires JDK with jmods |
+| **Ant Integration** | Native, simple | Complex configuration |
+| **Configuration** | Inline or separate file | Separate .conf file needed |
+| **Swing Support** | Excellent | Good, needs tuning |
+| **Setup Complexity** | Low | High |
+| **File Size** | ~1MB | ~9MB |
+
+---
+
 ## Need Help?
 
 - **Check Console Output**: Most errors have clear messages
 - **Test JAR First**: Always test JAR before creating executable
 - **Verify Dependencies**: Ensure `lib/` contains all required JARs
 - **Check Java Version**: Requires JDK 21+
-- **Read Stack Traces**: Use mapping.txt to decode obfuscated errors
+- **Read Log Files**: Use yguard-log.xml to understand what was obfuscated
 
 ---
 

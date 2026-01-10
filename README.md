@@ -36,7 +36,7 @@ ant build-release
 
 **Eclipse Users**: See [BUILD.md](BUILD.md) for complete Eclipse integration guide.
 
-**Full Documentation**: See [BUILD.md](BUILD.md) for detailed build instructions, ProGuard obfuscation, and troubleshooting.
+**Full Documentation**: See [BUILD.md](BUILD.md) for detailed build instructions, yGuard obfuscation, and troubleshooting.
 
 ### Manual Build (Alternative)
 
