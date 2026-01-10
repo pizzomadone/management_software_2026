@@ -233,6 +233,10 @@
         <echo message="Using custom JRE to reduce size by ~60%"/>
         <echo message="This may take several minutes..."/>
 
+        <!-- Create clean input directory for jpackage -->
+        <mkdir dir="${build.dir}/jpackage-input-dev"/>
+        <copy file="${jar.file}" todir="${build.dir}/jpackage-input-dev"/>
+
         <!-- Detect OS -->
         <condition property="is.windows">
             <os family="windows"/>
@@ -246,7 +250,7 @@
 
         <!-- Common jpackage arguments with custom runtime -->
         <exec executable="jpackage" failonerror="true">
-            <arg value="--input"/><arg value="${dist.dir}"/>
+            <arg value="--input"/><arg value="${build.dir}/jpackage-input-dev"/>
             <arg value="--name"/><arg value="${app.name}-dev"/>
             <arg value="--main-jar"/><arg value="${app.name}-${app.version}.jar"/>
             <arg value="--main-class"/><arg value="${main.class}"/>
@@ -258,6 +262,9 @@
             <arg value="--runtime-image"/><arg value="${custom.runtime.dir}"/>
             <arg value="--java-options"/><arg value="-Xmx1024m"/>
         </exec>
+
+        <!-- Clean up temporary input directory -->
+        <delete dir="${build.dir}/jpackage-input-dev"/>
 
         <echo message="Native executable created in: ${dist.dir}/${app.name}-dev/"/>
         <echo message="Using optimized custom JRE"/>
@@ -275,9 +282,13 @@
         <echo message="Using custom JRE to reduce size by ~60%"/>
         <echo message="This may take several minutes..."/>
 
+        <!-- Create clean input directory for jpackage -->
+        <mkdir dir="${build.dir}/jpackage-input-release"/>
+        <copy file="${jar.obfuscated.file}" todir="${build.dir}/jpackage-input-release"/>
+
         <!-- Common jpackage arguments with custom runtime -->
         <exec executable="jpackage" failonerror="true">
-            <arg value="--input"/><arg value="${dist.dir}"/>
+            <arg value="--input"/><arg value="${build.dir}/jpackage-input-release"/>
             <arg value="--name"/><arg value="${app.name}"/>
             <arg value="--main-jar"/><arg value="${app.name}-${app.version}-obfuscated.jar"/>
             <arg value="--main-class"/><arg value="${main.class}"/>
@@ -289,6 +300,9 @@
             <arg value="--runtime-image"/><arg value="${custom.runtime.dir}"/>
             <arg value="--java-options"/><arg value="-Xmx1024m"/>
         </exec>
+
+        <!-- Clean up temporary input directory -->
+        <delete dir="${build.dir}/jpackage-input-release"/>
 
         <echo message="Native executable (obfuscated, optimized) created in: ${dist.dir}/${app.name}/"/>
         <echo message="This build uses a custom JRE (~50MB instead of ~200MB)"/>
