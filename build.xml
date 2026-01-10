@@ -152,42 +152,22 @@
 
             <!-- Rename settings -->
             <rename mainclass="${main.class}" logfile="${dist.dir}/yguard-log.xml">
-                <!-- Keep main class and main method -->
+                <!-- Keep main class -->
                 <keep>
-                    <class classes="private" methods="private" fields="private">
+                    <class classes="public" methods="public" fields="public">
                         <patternset>
                             <include name="${main.class}"/>
                         </patternset>
                     </class>
                 </keep>
 
-                <!-- Keep all public classes with public methods/fields -->
-                <keep>
-                    <class classes="public" methods="public" fields="public">
-                        <patternset>
-                            <include name="**.*"/>
-                        </patternset>
-                    </class>
-                </keep>
-
-                <!-- Adjust settings -->
-                <adjust replaceName="true" replaceContent="true"/>
-
                 <!-- Mapping file for decoding stack traces -->
-                <map textcolor="true" dest="${dist.dir}/yguard-mapping.txt"/>
+                <property name="error-checking" value="pedantic"/>
             </rename>
-
-            <!-- Shrink to remove unused code -->
-            <externalclasses>
-                <pathelement location="${java.home}/jmods/java.base.jmod"/>
-                <pathelement location="${java.home}/jmods/java.desktop.jmod"/>
-                <pathelement location="${java.home}/jmods/java.sql.jmod"/>
-            </externalclasses>
         </yguard>
 
         <echo message="Obfuscation complete: ${jar.obfuscated.file}"/>
-        <echo message="Mapping file saved to: ${dist.dir}/yguard-mapping.txt"/>
-        <echo message="Log file saved to: ${dist.dir}/yguard-log.xml"/>
+        <echo message="Mapping file saved to: ${dist.dir}/yguard-log.xml"/>
     </target>
 
     <!-- =================================
