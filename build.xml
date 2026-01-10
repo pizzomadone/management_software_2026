@@ -218,9 +218,9 @@
             <outjar file="${jar.obfuscated.file}"/>
 
             <!-- Java runtime library -->
-            <libraryjar path="${proguard.java.home}/jmods/java.base.jmod" jarfilter="!**.jar:!module-info.class"/>
-            <libraryjar path="${proguard.java.home}/jmods/java.desktop.jmod" jarfilter="!**.jar:!module-info.class"/>
-            <libraryjar path="${proguard.java.home}/jmods/java.sql.jmod" jarfilter="!**.jar:!module-info.class"/>
+            <libraryjar path="${proguard.java.home}/jmods/java.base.jmod(!**.jar,!module-info.class)"/>
+            <libraryjar path="${proguard.java.home}/jmods/java.desktop.jmod(!**.jar,!module-info.class)"/>
+            <libraryjar path="${proguard.java.home}/jmods/java.sql.jmod(!**.jar,!module-info.class)"/>
         </proguard>
 
         <echo message="Obfuscation complete: ${jar.obfuscated.file}"/>
