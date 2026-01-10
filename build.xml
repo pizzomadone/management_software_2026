@@ -126,7 +126,7 @@
           Target: check-proguard
          ================================= -->
     <target name="check-proguard">
-        <available file="${proguard.dir}/lib/proguard.jar" property="proguard.available"/>
+        <available file="${proguard.dir}/lib" type="dir" property="proguard.available"/>
     </target>
 
     <!-- =================================
@@ -154,9 +154,57 @@
     </target>
 
     <!-- =================================
+          Target: detect-java-home
+         ================================= -->
+    <target name="detect-java-home">
+        <!-- proguard.java.home can be set in build.properties -->
+        <!-- If already set in build.properties, use that -->
+
+        <!-- Try to find JAVA_HOME environment variable -->
+        <property environment="env"/>
+
+        <!-- Check if jmods exist at current java.home -->
+        <available file="${java.home}/jmods" type="dir" property="jmods.in.java.home"/>
+
+        <!-- Check if JAVA_HOME is set and has jmods -->
+        <condition property="jmods.in.java_home.env">
+            <and>
+                <isset property="env.JAVA_HOME"/>
+                <available file="${env.JAVA_HOME}/jmods" type="dir"/>
+            </and>
+        </condition>
+
+        <!-- Set the correct Java home based on what we found (only if not already set) -->
+        <condition property="proguard.java.home" value="${java.home}">
+            <isset property="jmods.in.java.home"/>
+        </condition>
+        <condition property="proguard.java.home" value="${env.JAVA_HOME}">
+            <isset property="jmods.in.java_home.env"/>
+        </condition>
+
+        <!-- Fallback: try to find Java using 'java' command -->
+        <exec executable="bash" outputproperty="detected.java.home" failifexecutionfails="false" osfamily="unix">
+            <arg value="-c"/>
+            <arg value="java -XshowSettings:properties -version 2>&1 | grep 'java.home' | sed 's/.*java.home = //'"/>
+        </exec>
+        <exec executable="cmd" outputproperty="detected.java.home" failifexecutionfails="false" osfamily="windows">
+            <arg value="/c"/>
+            <arg value="java -XshowSettings:properties -version 2>&amp;1 | findstr java.home"/>
+        </exec>
+
+        <!-- Use detected path if not already set -->
+        <property name="proguard.java.home" value="${detected.java.home}"/>
+
+        <!-- Final fallback to current java.home -->
+        <property name="proguard.java.home" value="${java.home}"/>
+
+        <echo message="Using Java home for ProGuard: ${proguard.java.home}"/>
+    </target>
+
+    <!-- =================================
           Target: obfuscate
          ================================= -->
-    <target name="obfuscate" depends="jar,download-proguard" description="Obfuscate JAR with ProGuard">
+    <target name="obfuscate" depends="jar,download-proguard,detect-java-home" description="Obfuscate JAR with ProGuard">
         <echo message="Obfuscating JAR with ProGuard..."/>
 
         <taskdef resource="proguard/ant/task.properties"
@@ -170,9 +218,9 @@
             <outjar file="${jar.obfuscated.file}"/>
 
             <!-- Java runtime library -->
-            <libraryjar path="${java.home}/jmods/java.base.jmod" jarfilter="!**.jar:!module-info.class"/>
-            <libraryjar path="${java.home}/jmods/java.desktop.jmod" jarfilter="!**.jar:!module-info.class"/>
-            <libraryjar path="${java.home}/jmods/java.sql.jmod" jarfilter="!**.jar:!module-info.class"/>
+            <libraryjar path="${proguard.java.home}/jmods/java.base.jmod" jarfilter="!**.jar:!module-info.class"/>
+            <libraryjar path="${proguard.java.home}/jmods/java.desktop.jmod" jarfilter="!**.jar:!module-info.class"/>
+            <libraryjar path="${proguard.java.home}/jmods/java.sql.jmod" jarfilter="!**.jar:!module-info.class"/>
         </proguard>
 
         <echo message="Obfuscation complete: ${jar.obfuscated.file}"/>
