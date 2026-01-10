@@ -22,12 +22,30 @@ Professional Business Management System
 
 ## Building the Application
 
+### Automated Build (Recommended)
+
+Use the included Ant build system to create runnable JARs and native executables:
+
+```bash
+# Development build (JAR + native executable)
+ant build
+
+# Production build (obfuscated JAR + native executable)
+ant build-release
+```
+
+**Eclipse Users**: See [BUILD.md](BUILD.md) for complete Eclipse integration guide.
+
+**Full Documentation**: See [BUILD.md](BUILD.md) for detailed build instructions, ProGuard obfuscation, and troubleshooting.
+
+### Manual Build (Alternative)
+
 ```bash
 # Compile
 javac -d bin -cp "lib/*:src" src/*.java
 
 # Run
-java -cp "bin:lib/*" Main
+java -cp "bin:lib/*" MainWindow
 ```
 
 ## Database Location

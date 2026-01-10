@@ -30,6 +30,10 @@ target/
 out/
 input/
 output/
+dist/
+
+# Build tools (ProGuard, etc.)
+tools/
 
 # Package files
 MANIFEST.MF

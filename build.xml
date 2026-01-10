@@ -1,0 +1,330 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="WareStat" default="build" basedir=".">
+    <description>
+        WareStat - Business Management Software
+        Automated build for JAR and native executable creation
+    </description>
+
+    <!-- Load build properties -->
+    <property file="build.properties"/>
+
+    <!-- Default properties (can be overridden in build.properties) -->
+    <property name="app.name" value="WareStat"/>
+    <property name="app.version" value="1.2"/>
+    <property name="app.vendor" value="WareStat"/>
+    <property name="main.class" value="MainWindow"/>
+
+    <!-- Directory structure -->
+    <property name="src.dir" location="src"/>
+    <property name="lib.dir" location="lib"/>
+    <property name="build.dir" location="build"/>
+    <property name="build.classes.dir" location="${build.dir}/classes"/>
+    <property name="dist.dir" location="dist"/>
+    <property name="tools.dir" location="tools"/>
+    <property name="proguard.dir" location="${tools.dir}/proguard"/>
+
+    <!-- Output files -->
+    <property name="jar.file" value="${dist.dir}/${app.name}-${app.version}.jar"/>
+    <property name="jar.obfuscated.file" value="${dist.dir}/${app.name}-${app.version}-obfuscated.jar"/>
+
+    <!-- Classpath for compilation -->
+    <path id="compile.classpath">
+        <fileset dir="${lib.dir}">
+            <include name="**/*.jar"/>
+        </fileset>
+    </path>
+
+    <!-- Classpath for ProGuard -->
+    <path id="proguard.classpath">
+        <fileset dir="${proguard.dir}/lib">
+            <include name="proguard.jar"/>
+        </fileset>
+    </path>
+
+    <!-- =================================
+          Target: init
+         ================================= -->
+    <target name="init">
+        <echo message="Building ${app.name} v${app.version}"/>
+        <mkdir dir="${build.dir}"/>
+        <mkdir dir="${build.classes.dir}"/>
+        <mkdir dir="${dist.dir}"/>
+        <mkdir dir="${tools.dir}"/>
+    </target>
+
+    <!-- =================================
+          Target: clean
+         ================================= -->
+    <target name="clean" description="Clean build artifacts">
+        <echo message="Cleaning build directories..."/>
+        <delete dir="${build.dir}"/>
+        <delete dir="${dist.dir}"/>
+    </target>
+
+    <!-- =================================
+          Target: compile
+         ================================= -->
+    <target name="compile" depends="init" description="Compile Java sources">
+        <echo message="Compiling Java sources..."/>
+        <javac srcdir="${src.dir}"
+               destdir="${build.classes.dir}"
+               includeantruntime="false"
+               debug="true"
+               source="21"
+               target="21">
+            <classpath refid="compile.classpath"/>
+        </javac>
+        <echo message="Compilation complete!"/>
+    </target>
+
+    <!-- =================================
+          Target: jar
+         ================================= -->
+    <target name="jar" depends="compile" description="Create executable JAR with dependencies">
+        <echo message="Creating executable JAR..."/>
+
+        <!-- Create temporary directory for unpacking libraries -->
+        <mkdir dir="${build.dir}/jar-temp"/>
+
+        <!-- Unpack all dependency JARs -->
+        <unzip dest="${build.dir}/jar-temp">
+            <fileset dir="${lib.dir}">
+                <include name="**/*.jar"/>
+            </fileset>
+        </unzip>
+
+        <!-- Create the JAR with all classes -->
+        <jar destfile="${jar.file}" filesetmanifest="mergewithoutmain">
+            <manifest>
+                <attribute name="Main-Class" value="${main.class}"/>
+                <attribute name="Implementation-Title" value="${app.name}"/>
+                <attribute name="Implementation-Version" value="${app.version}"/>
+                <attribute name="Implementation-Vendor" value="${app.vendor}"/>
+                <attribute name="Built-By" value="${user.name}"/>
+                <attribute name="Built-Date" value="${TODAY}"/>
+            </manifest>
+
+            <!-- Add compiled classes -->
+            <fileset dir="${build.classes.dir}"/>
+
+            <!-- Add unpacked dependencies -->
+            <fileset dir="${build.dir}/jar-temp">
+                <!-- Exclude signature files to avoid security exceptions -->
+                <exclude name="META-INF/*.SF"/>
+                <exclude name="META-INF/*.DSA"/>
+                <exclude name="META-INF/*.RSA"/>
+            </fileset>
+        </jar>
+
+        <!-- Clean up temporary directory -->
+        <delete dir="${build.dir}/jar-temp"/>
+
+        <echo message="JAR created: ${jar.file}"/>
+    </target>
+
+    <!-- =================================
+          Target: check-proguard
+         ================================= -->
+    <target name="check-proguard">
+        <available file="${proguard.dir}/lib/proguard.jar" property="proguard.available"/>
+    </target>
+
+    <!-- =================================
+          Target: download-proguard
+         ================================= -->
+    <target name="download-proguard" depends="check-proguard" unless="proguard.available"
+            description="Download ProGuard if not present">
+        <echo message="ProGuard not found. Downloading..."/>
+        <mkdir dir="${proguard.dir}"/>
+
+        <get src="https://github.com/Guardsquare/proguard/releases/download/v7.4.2/proguard-7.4.2.zip"
+             dest="${tools.dir}/proguard.zip"
+             verbose="true"
+             usetimestamp="true"/>
+
+        <unzip src="${tools.dir}/proguard.zip" dest="${tools.dir}"/>
+
+        <!-- Rename the extracted directory to just 'proguard' for consistency -->
+        <move todir="${proguard.dir}">
+            <fileset dir="${tools.dir}/proguard-7.4.2"/>
+        </move>
+
+        <delete file="${tools.dir}/proguard.zip"/>
+        <echo message="ProGuard downloaded successfully!"/>
+    </target>
+
+    <!-- =================================
+          Target: obfuscate
+         ================================= -->
+    <target name="obfuscate" depends="jar,download-proguard" description="Obfuscate JAR with ProGuard">
+        <echo message="Obfuscating JAR with ProGuard..."/>
+
+        <taskdef resource="proguard/ant/task.properties"
+                 classpathref="proguard.classpath"/>
+
+        <proguard configuration="proguard.conf">
+            <!-- Input JAR -->
+            <injar file="${jar.file}"/>
+
+            <!-- Output obfuscated JAR -->
+            <outjar file="${jar.obfuscated.file}"/>
+
+            <!-- Java runtime library -->
+            <libraryjar path="${java.home}/jmods/java.base.jmod" jarfilter="!**.jar:!module-info.class"/>
+            <libraryjar path="${java.home}/jmods/java.desktop.jmod" jarfilter="!**.jar:!module-info.class"/>
+            <libraryjar path="${java.home}/jmods/java.sql.jmod" jarfilter="!**.jar:!module-info.class"/>
+        </proguard>
+
+        <echo message="Obfuscation complete: ${jar.obfuscated.file}"/>
+        <echo message="Mapping file saved to: ${dist.dir}/mapping.txt"/>
+    </target>
+
+    <!-- =================================
+          Target: jpackage-check
+         ================================= -->
+    <target name="jpackage-check">
+        <exec executable="jpackage" failifexecutionfails="false" resultproperty="jpackage.present">
+            <arg value="--version"/>
+        </exec>
+        <condition property="jpackage.available">
+            <equals arg1="${jpackage.present}" arg2="0"/>
+        </condition>
+    </target>
+
+    <!-- =================================
+          Target: package-exe (Development - No obfuscation)
+         ================================= -->
+    <target name="package-exe" depends="jar,jpackage-check"
+            description="Create native executable (development build, no obfuscation)">
+        <fail unless="jpackage.available"
+              message="jpackage not found! Please ensure you have JDK 14+ with jpackage in your PATH."/>
+
+        <echo message="Creating native executable from JAR (development build)..."/>
+        <echo message="This may take several minutes..."/>
+
+        <!-- Detect OS -->
+        <condition property="is.windows">
+            <os family="windows"/>
+        </condition>
+        <condition property="is.mac">
+            <os family="mac"/>
+        </condition>
+        <condition property="is.linux">
+            <os family="unix"/>
+        </condition>
+
+        <!-- Common jpackage arguments -->
+        <exec executable="jpackage" failonerror="true">
+            <arg value="--input"/><arg value="${dist.dir}"/>
+            <arg value="--name"/><arg value="${app.name}"/>
+            <arg value="--main-jar"/><arg value="${app.name}-${app.version}.jar"/>
+            <arg value="--main-class"/><arg value="${main.class}"/>
+            <arg value="--type"/><arg value="app-image"/>
+            <arg value="--dest"/><arg value="${dist.dir}"/>
+            <arg value="--app-version"/><arg value="${app.version}"/>
+            <arg value="--vendor"/><arg value="${app.vendor}"/>
+            <arg value="--description"/><arg value="Business Management Software"/>
+            <arg value="--java-options"/><arg value="-Xmx1024m"/>
+        </exec>
+
+        <echo message="Native executable created in: ${dist.dir}/${app.name}/"/>
+    </target>
+
+    <!-- =================================
+          Target: package-exe-release (Production - With obfuscation)
+         ================================= -->
+    <target name="package-exe-release" depends="obfuscate,jpackage-check"
+            description="Create native executable (production build, obfuscated)">
+        <fail unless="jpackage.available"
+              message="jpackage not found! Please ensure you have JDK 14+ with jpackage in your PATH."/>
+
+        <echo message="Creating native executable from obfuscated JAR (production build)..."/>
+        <echo message="This may take several minutes..."/>
+
+        <!-- Common jpackage arguments -->
+        <exec executable="jpackage" failonerror="true">
+            <arg value="--input"/><arg value="${dist.dir}"/>
+            <arg value="--name"/><arg value="${app.name}"/>
+            <arg value="--main-jar"/><arg value="${app.name}-${app.version}-obfuscated.jar"/>
+            <arg value="--main-class"/><arg value="${main.class}"/>
+            <arg value="--type"/><arg value="app-image"/>
+            <arg value="--dest"/><arg value="${dist.dir}"/>
+            <arg value="--app-version"/><arg value="${app.version}"/>
+            <arg value="--vendor"/><arg value="${app.vendor}"/>
+            <arg value="--description"/><arg value="Business Management Software"/>
+            <arg value="--java-options"/><arg value="-Xmx1024m"/>
+        </exec>
+
+        <echo message="Native executable (obfuscated) created in: ${dist.dir}/${app.name}/"/>
+    </target>
+
+    <!-- =================================
+          Target: build (Development)
+         ================================= -->
+    <target name="build" depends="package-exe"
+            description="Full build: compile, JAR, and native executable (no obfuscation)">
+        <echo message=""/>
+        <echo message="======================================"/>
+        <echo message="Development Build Complete!"/>
+        <echo message="======================================"/>
+        <echo message="JAR file: ${jar.file}"/>
+        <echo message="Executable: ${dist.dir}/${app.name}/"/>
+        <echo message=""/>
+        <echo message="To test JAR: java -jar ${jar.file}"/>
+        <echo message=""/>
+    </target>
+
+    <!-- =================================
+          Target: build-release (Production)
+         ================================= -->
+    <target name="build-release" depends="package-exe-release"
+            description="Full release build: compile, obfuscated JAR, and native executable">
+        <echo message=""/>
+        <echo message="======================================"/>
+        <echo message="Production Build Complete!"/>
+        <echo message="======================================"/>
+        <echo message="Obfuscated JAR: ${jar.obfuscated.file}"/>
+        <echo message="Executable: ${dist.dir}/${app.name}/"/>
+        <echo message="Mapping file: ${dist.dir}/mapping.txt"/>
+        <echo message=""/>
+        <echo message="IMPORTANT: Keep mapping.txt safe to decode stack traces!"/>
+        <echo message=""/>
+    </target>
+
+    <!-- =================================
+          Target: test-jar
+         ================================= -->
+    <target name="test-jar" depends="jar" description="Test the JAR file">
+        <echo message="Testing JAR file..."/>
+        <java jar="${jar.file}" fork="true" failonerror="true">
+            <jvmarg value="-Xmx1024m"/>
+        </java>
+    </target>
+
+    <!-- =================================
+          Target: help
+         ================================= -->
+    <target name="help" description="Display help information">
+        <echo message=""/>
+        <echo message="WareStat Build System"/>
+        <echo message="====================="/>
+        <echo message=""/>
+        <echo message="Available targets:"/>
+        <echo message=""/>
+        <echo message="  ant build              - Development build (JAR + executable, no obfuscation)"/>
+        <echo message="  ant build-release      - Production build (obfuscated JAR + executable)"/>
+        <echo message="  ant jar                - Create JAR only (no obfuscation)"/>
+        <echo message="  ant obfuscate          - Create obfuscated JAR only"/>
+        <echo message="  ant package-exe        - Create native executable from JAR"/>
+        <echo message="  ant package-exe-release - Create native executable from obfuscated JAR"/>
+        <echo message="  ant test-jar           - Test the JAR file"/>
+        <echo message="  ant clean              - Clean build artifacts"/>
+        <echo message="  ant help               - Display this help"/>
+        <echo message=""/>
+        <echo message="Quick start:"/>
+        <echo message="  Development: ant build"/>
+        <echo message="  Production:  ant build-release"/>
+        <echo message=""/>
+    </target>
+
+</project>
