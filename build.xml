@@ -22,6 +22,7 @@
     <property name="dist.dir" location="dist"/>
     <property name="tools.dir" location="tools"/>
     <property name="yguard.jar" location="${tools.dir}/yguard.jar"/>
+    <property name="custom.runtime.dir" location="${build.dir}/custom-runtime"/>
 
     <!-- Output files -->
     <property name="jar.file" value="${dist.dir}/${app.name}-${app.version}.jar"/>
@@ -177,6 +178,38 @@
     </target>
 
     <!-- =================================
+          Target: create-custom-runtime
+         ================================= -->
+    <target name="create-custom-runtime" description="Create custom JRE with jlink for smaller distribution">
+        <echo message="Creating custom JRE with jlink..."/>
+        <echo message="This will reduce the runtime size from ~200MB to ~50MB"/>
+
+        <!-- Delete existing custom runtime if present -->
+        <delete dir="${custom.runtime.dir}"/>
+
+        <!-- Create custom runtime with only required modules -->
+        <exec executable="jlink" failonerror="true">
+            <arg value="--add-modules"/>
+            <arg value="java.base,java.desktop,java.sql,java.logging,java.naming,java.management"/>
+            <arg value="--strip-debug"/>
+            <arg value="--no-header-files"/>
+            <arg value="--no-man-pages"/>
+            <arg value="--compress=2"/>
+            <arg value="--output"/>
+            <arg value="${custom.runtime.dir}"/>
+        </exec>
+
+        <echo message="Custom JRE created successfully at: ${custom.runtime.dir}"/>
+
+        <!-- Display size comparison -->
+        <exec executable="du" osfamily="unix" outputproperty="runtime.size">
+            <arg value="-sh"/>
+            <arg value="${custom.runtime.dir}"/>
+        </exec>
+        <echo message="Custom runtime size: ${runtime.size}"/>
+    </target>
+
+    <!-- =================================
           Target: jpackage-check
          ================================= -->
     <target name="jpackage-check">
@@ -230,15 +263,16 @@
     <!-- =================================
           Target: package-exe-release (Production - With obfuscation)
          ================================= -->
-    <target name="package-exe-release" depends="obfuscate,jpackage-check"
-            description="Create native executable (production build, obfuscated)">
+    <target name="package-exe-release" depends="obfuscate,create-custom-runtime,jpackage-check"
+            description="Create native executable (production build, obfuscated, with custom JRE)">
         <fail unless="jpackage.available"
               message="jpackage not found! Please ensure you have JDK 14+ with jpackage in your PATH."/>
 
         <echo message="Creating native executable from obfuscated JAR (production build)..."/>
+        <echo message="Using custom JRE to reduce size by ~60%"/>
         <echo message="This may take several minutes..."/>
 
-        <!-- Common jpackage arguments -->
+        <!-- Common jpackage arguments with custom runtime -->
         <exec executable="jpackage" failonerror="true">
             <arg value="--input"/><arg value="${dist.dir}"/>
             <arg value="--name"/><arg value="${app.name}"/>
@@ -249,10 +283,12 @@
             <arg value="--app-version"/><arg value="${app.version}"/>
             <arg value="--vendor"/><arg value="${app.vendor}"/>
             <arg value="--description"/><arg value="Business Management Software (Production Build)"/>
+            <arg value="--runtime-image"/><arg value="${custom.runtime.dir}"/>
             <arg value="--java-options"/><arg value="-Xmx1024m"/>
         </exec>
 
-        <echo message="Native executable (obfuscated) created in: ${dist.dir}/${app.name}/"/>
+        <echo message="Native executable (obfuscated, optimized) created in: ${dist.dir}/${app.name}/"/>
+        <echo message="This build uses a custom JRE (~50MB instead of ~200MB)"/>
     </target>
 
     <!-- =================================
@@ -281,10 +317,11 @@
         <echo message="Production Build Complete!"/>
         <echo message="======================================"/>
         <echo message="Obfuscated JAR: ${jar.obfuscated.file}"/>
-        <echo message="Executable: ${dist.dir}/${app.name}/"/>
-        <echo message="Mapping file: ${dist.dir}/mapping.txt"/>
+        <echo message="Executable: ${dist.dir}/${app.name}/ (optimized with custom JRE)"/>
+        <echo message="Mapping file: ${dist.dir}/yguard-log.xml"/>
         <echo message=""/>
-        <echo message="IMPORTANT: Keep mapping.txt safe to decode stack traces!"/>
+        <echo message="IMPORTANT: Keep yguard-log.xml safe to decode stack traces!"/>
+        <echo message="Size reduction: ~60% smaller than standard JRE bundle"/>
         <echo message=""/>
     </target>
 

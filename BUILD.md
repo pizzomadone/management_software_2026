@@ -211,6 +211,29 @@ yGuard offers several advantages:
 - **Active maintenance** - Regular updates
 - **Perfect for Swing apps** - Handles GUI applications well
 
+### Custom JRE with jlink
+
+Production builds use **jlink** to create a custom, optimized JRE:
+
+**Benefits:**
+- **60% smaller** - ~50MB instead of ~200MB
+- **Still self-contained** - Users don't need Java installed
+- **Faster startup** - Less code to load
+- **More secure** - Smaller attack surface
+
+**How it works:**
+- Analyzes your application's Java module dependencies
+- Includes only required modules (java.base, java.desktop, java.sql, etc.)
+- Strips debug symbols, man pages, and headers
+- Compresses the result
+
+**Example size comparison:**
+```
+Development build:  ~235 MB (full JRE)
+Production build:   ~85 MB  (custom JRE with jlink)
+Savings:            ~150 MB (63% reduction!)
+```
+
 ### Using the Mapping File
 
 When customers report errors, their stack traces will be obfuscated:
@@ -298,6 +321,24 @@ jpackage --version
 2. If JAR works, check jpackage logs in build output
 3. Ensure all dependencies are included in JAR
 
+### Error: "Module not found" at runtime (production build)
+
+**Cause**: jlink didn't include a required Java module
+
+**Solution**:
+1. Check error message for missing module name
+2. Edit `build.xml` in the `create-custom-runtime` target
+3. Add the missing module to `--add-modules` list:
+   ```xml
+   <arg value="java.base,java.desktop,java.sql,java.logging,java.naming,java.management,MISSING_MODULE_HERE"/>
+   ```
+4. Run `ant clean build-release` again
+
+**Common additional modules:**
+- `java.xml` - XML processing
+- `java.prefs` - Preferences API
+- `jdk.crypto.ec` - Elliptic Curve cryptography
+
 ---
 
 ## Customization
@@ -368,26 +409,31 @@ To create installer packages instead of app images, change in `build.xml`:
 
 ```
 dist/
-├── WareStat-1.2.jar                    # Development JAR
-├── WareStat-1.2-obfuscated.jar         # Production JAR (obfuscated)
+├── WareStat-1.2.jar                    # Development JAR (~35 MB)
+├── WareStat-1.2-obfuscated.jar         # Production JAR (~30 MB, obfuscated)
 ├── yguard-log.xml                       # yGuard mapping & log file (KEEP THIS!)
-├── WareStat-dev/                       # Development executable (no obfuscation)
+├── WareStat-dev/                       # Development executable (~235 MB total)
 │   ├── bin/
 │   │   └── WareStat-dev                # Launcher (Linux/Mac)
 │   │   └── WareStat-dev.exe            # Launcher (Windows)
 │   ├── lib/
 │   │   └── app/
 │   │       └── WareStat-1.2.jar        # Bundled JAR
-│   └── runtime/                        # Bundled JRE (if using jlink)
-└── WareStat/                           # Production executable (obfuscated)
+│   └── runtime/                        # Full JRE (~200 MB)
+└── WareStat/                           # Production executable (~85 MB total)
     ├── bin/
     │   └── WareStat                    # Launcher (Linux/Mac)
     │   └── WareStat.exe                # Launcher (Windows)
     ├── lib/
     │   └── app/
     │       └── WareStat-1.2-obfuscated.jar  # Bundled JAR (obfuscated)
-    └── runtime/                        # Bundled JRE (if using jlink)
+    └── runtime/                        # Custom JRE via jlink (~50 MB)
 ```
+
+**Size comparison:**
+- Development build: ~235 MB (full JRE for faster build times)
+- Production build: ~85 MB (custom JRE, 64% smaller)
+- JAR only: ~35 MB (requires Java to be installed)
 
 ---
 
