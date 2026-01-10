@@ -152,17 +152,23 @@
 
             <!-- Rename settings -->
             <rename mainclass="${main.class}" logfile="${dist.dir}/yguard-log.xml">
-                <!-- Keep main class -->
+                <!-- Keep main class and external libraries -->
                 <keep>
                     <class classes="public" methods="public" fields="public">
                         <patternset>
                             <include name="${main.class}"/>
                         </patternset>
                     </class>
+                    <class classes="private" methods="private" fields="private">
+                        <patternset>
+                            <include name="org.sqlite.**"/>
+                            <include name="org.apache.**"/>
+                        </patternset>
+                    </class>
                 </keep>
 
-                <!-- Mapping file for decoding stack traces -->
-                <property name="error-checking" value="pedantic"/>
+                <!-- Disable pedantic error checking to ignore missing external dependencies -->
+                <property name="error-checking" value="none"/>
             </rename>
         </yguard>
 
