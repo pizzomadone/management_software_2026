@@ -213,18 +213,18 @@
         <!-- Common jpackage arguments -->
         <exec executable="jpackage" failonerror="true">
             <arg value="--input"/><arg value="${dist.dir}"/>
-            <arg value="--name"/><arg value="${app.name}"/>
+            <arg value="--name"/><arg value="${app.name}-dev"/>
             <arg value="--main-jar"/><arg value="${app.name}-${app.version}.jar"/>
             <arg value="--main-class"/><arg value="${main.class}"/>
             <arg value="--type"/><arg value="app-image"/>
             <arg value="--dest"/><arg value="${dist.dir}"/>
             <arg value="--app-version"/><arg value="${app.version}"/>
             <arg value="--vendor"/><arg value="${app.vendor}"/>
-            <arg value="--description"/><arg value="Business Management Software"/>
+            <arg value="--description"/><arg value="Business Management Software (Development Build)"/>
             <arg value="--java-options"/><arg value="-Xmx1024m"/>
         </exec>
 
-        <echo message="Native executable created in: ${dist.dir}/${app.name}/"/>
+        <echo message="Native executable created in: ${dist.dir}/${app.name}-dev/"/>
     </target>
 
     <!-- =================================
@@ -248,7 +248,7 @@
             <arg value="--dest"/><arg value="${dist.dir}"/>
             <arg value="--app-version"/><arg value="${app.version}"/>
             <arg value="--vendor"/><arg value="${app.vendor}"/>
-            <arg value="--description"/><arg value="Business Management Software"/>
+            <arg value="--description"/><arg value="Business Management Software (Production Build)"/>
             <arg value="--java-options"/><arg value="-Xmx1024m"/>
         </exec>
 
@@ -265,7 +265,7 @@
         <echo message="Development Build Complete!"/>
         <echo message="======================================"/>
         <echo message="JAR file: ${jar.file}"/>
-        <echo message="Executable: ${dist.dir}/${app.name}/"/>
+        <echo message="Executable: ${dist.dir}/${app.name}-dev/"/>
         <echo message=""/>
         <echo message="To test JAR: java -jar ${jar.file}"/>
         <echo message=""/>

@@ -119,11 +119,11 @@ See [Eclipse Integration](#eclipse-integration) section below.
 ### Step 3: Find Your Built Application
 
 After successful build:
-- **JAR file**: `dist/WareStat-1.2.jar`
-- **Obfuscated JAR**: `dist/WareStat-1.2-obfuscated.jar`
-- **Native executable**: `dist/WareStat/` (contains platform-specific launcher)
-- **Mapping file**: `dist/yguard-mapping.txt` (for decoding obfuscated stack traces)
-- **Log file**: `dist/yguard-log.xml` (obfuscation details)
+- **Development JAR**: `dist/WareStat-1.2.jar`
+- **Development executable**: `dist/WareStat-dev/` (no obfuscation)
+- **Production JAR**: `dist/WareStat-1.2-obfuscated.jar`
+- **Production executable**: `dist/WareStat/` (obfuscated)
+- **Mapping file**: `dist/yguard-log.xml` (for decoding obfuscated stack traces and obfuscation details)
 
 ---
 
@@ -370,15 +370,22 @@ To create installer packages instead of app images, change in `build.xml`:
 dist/
 ├── WareStat-1.2.jar                    # Development JAR
 ├── WareStat-1.2-obfuscated.jar         # Production JAR (obfuscated)
-├── yguard-mapping.txt                   # yGuard mapping file (KEEP THIS!)
-├── yguard-log.xml                       # Obfuscation log
-└── WareStat/                           # Native application directory
+├── yguard-log.xml                       # yGuard mapping & log file (KEEP THIS!)
+├── WareStat-dev/                       # Development executable (no obfuscation)
+│   ├── bin/
+│   │   └── WareStat-dev                # Launcher (Linux/Mac)
+│   │   └── WareStat-dev.exe            # Launcher (Windows)
+│   ├── lib/
+│   │   └── app/
+│   │       └── WareStat-1.2.jar        # Bundled JAR
+│   └── runtime/                        # Bundled JRE (if using jlink)
+└── WareStat/                           # Production executable (obfuscated)
     ├── bin/
     │   └── WareStat                    # Launcher (Linux/Mac)
     │   └── WareStat.exe                # Launcher (Windows)
     ├── lib/
     │   └── app/
-    │       └── WareStat-1.2.jar        # Bundled JAR
+    │       └── WareStat-1.2-obfuscated.jar  # Bundled JAR (obfuscated)
     └── runtime/                        # Bundled JRE (if using jlink)
 ```
 
