@@ -1,0 +1,381 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="WareStat" default="build" basedir=".">
+    <description>
+        WareStat - Business Management Software
+        Automated build for JAR and native executable creation
+    </description>
+
+    <!-- Load build properties -->
+    <property file="build.properties"/>
+
+    <!-- Default properties (can be overridden in build.properties) -->
+    <property name="app.name" value="WareStat"/>
+    <property name="app.version" value="1.2"/>
+    <property name="app.vendor" value="WareStat"/>
+    <property name="main.class" value="MainWindow"/>
+
+    <!-- Directory structure -->
+    <property name="src.dir" location="src"/>
+    <property name="lib.dir" location="lib"/>
+    <property name="build.dir" location="build"/>
+    <property name="build.classes.dir" location="${build.dir}/classes"/>
+    <property name="dist.dir" location="dist"/>
+    <property name="tools.dir" location="tools"/>
+    <property name="yguard.jar" location="${tools.dir}/yguard.jar"/>
+    <property name="custom.runtime.dir" location="${build.dir}/custom-runtime"/>
+
+    <!-- Output files -->
+    <property name="jar.file" value="${dist.dir}/${app.name}-${app.version}.jar"/>
+    <property name="jar.obfuscated.file" value="${dist.dir}/${app.name}-${app.version}-obfuscated.jar"/>
+
+    <!-- Classpath for compilation -->
+    <path id="compile.classpath">
+        <fileset dir="${lib.dir}">
+            <include name="**/*.jar"/>
+        </fileset>
+    </path>
+
+    <!-- =================================
+          Target: init
+         ================================= -->
+    <target name="init">
+        <echo message="Building ${app.name} v${app.version}"/>
+        <mkdir dir="${build.dir}"/>
+        <mkdir dir="${build.classes.dir}"/>
+        <mkdir dir="${dist.dir}"/>
+        <mkdir dir="${tools.dir}"/>
+    </target>
+
+    <!-- =================================
+          Target: clean
+         ================================= -->
+    <target name="clean" description="Clean build artifacts">
+        <echo message="Cleaning build directories..."/>
+        <delete dir="${build.dir}"/>
+        <delete dir="${dist.dir}"/>
+    </target>
+
+    <!-- =================================
+          Target: compile
+         ================================= -->
+    <target name="compile" depends="init" description="Compile Java sources">
+        <echo message="Compiling Java sources..."/>
+        <javac srcdir="${src.dir}"
+               destdir="${build.classes.dir}"
+               includeantruntime="false"
+               debug="true"
+               source="21"
+               target="21">
+            <classpath refid="compile.classpath"/>
+        </javac>
+        <echo message="Compilation complete!"/>
+    </target>
+
+    <!-- =================================
+          Target: jar
+         ================================= -->
+    <target name="jar" depends="compile" description="Create executable JAR with dependencies">
+        <echo message="Creating executable JAR..."/>
+
+        <!-- Create temporary directory for unpacking libraries -->
+        <mkdir dir="${build.dir}/jar-temp"/>
+
+        <!-- Unpack all dependency JARs -->
+        <unzip dest="${build.dir}/jar-temp">
+            <fileset dir="${lib.dir}">
+                <include name="**/*.jar"/>
+            </fileset>
+        </unzip>
+
+        <!-- Create the JAR with all classes -->
+        <jar destfile="${jar.file}" filesetmanifest="mergewithoutmain">
+            <manifest>
+                <attribute name="Main-Class" value="${main.class}"/>
+                <attribute name="Implementation-Title" value="${app.name}"/>
+                <attribute name="Implementation-Version" value="${app.version}"/>
+                <attribute name="Implementation-Vendor" value="${app.vendor}"/>
+                <attribute name="Built-By" value="${user.name}"/>
+                <attribute name="Built-Date" value="${TODAY}"/>
+            </manifest>
+
+            <!-- Add compiled classes -->
+            <fileset dir="${build.classes.dir}"/>
+
+            <!-- Add unpacked dependencies -->
+            <fileset dir="${build.dir}/jar-temp">
+                <!-- Exclude signature files to avoid security exceptions -->
+                <exclude name="META-INF/*.SF"/>
+                <exclude name="META-INF/*.DSA"/>
+                <exclude name="META-INF/*.RSA"/>
+            </fileset>
+        </jar>
+
+        <!-- Clean up temporary directory -->
+        <delete dir="${build.dir}/jar-temp"/>
+
+        <echo message="JAR created: ${jar.file}"/>
+    </target>
+
+    <!-- =================================
+          Target: check-yguard
+         ================================= -->
+    <target name="check-yguard">
+        <available file="${yguard.jar}" property="yguard.available"/>
+    </target>
+
+    <!-- =================================
+          Target: download-yguard
+         ================================= -->
+    <target name="download-yguard" depends="check-yguard" unless="yguard.available"
+            description="Download yGuard if not present">
+        <echo message="yGuard not found. Downloading..."/>
+        <mkdir dir="${tools.dir}"/>
+
+        <get src="https://repo1.maven.org/maven2/com/yworks/yguard/4.1.0/yguard-4.1.0.jar"
+             dest="${yguard.jar}"
+             verbose="true"
+             usetimestamp="true"/>
+
+        <echo message="yGuard downloaded successfully!"/>
+    </target>
+
+    <!-- =================================
+          Target: obfuscate
+         ================================= -->
+    <target name="obfuscate" depends="jar,download-yguard" description="Obfuscate JAR with yGuard">
+        <echo message="Obfuscating JAR with yGuard..."/>
+
+        <taskdef name="yguard" classname="com.yworks.yguard.YGuardTask" classpath="${yguard.jar}"/>
+
+        <yguard>
+            <!-- Input/Output -->
+            <inoutpair in="${jar.file}" out="${jar.obfuscated.file}"/>
+
+            <!-- Rename settings -->
+            <rename mainclass="${main.class}" logfile="${dist.dir}/yguard-log.xml">
+                <!-- Keep main class and external libraries -->
+                <keep>
+                    <class classes="public" methods="public" fields="public">
+                        <patternset>
+                            <include name="${main.class}"/>
+                        </patternset>
+                    </class>
+                    <class classes="private" methods="private" fields="private">
+                        <patternset>
+                            <include name="org.sqlite.**"/>
+                            <include name="org.apache.**"/>
+                        </patternset>
+                    </class>
+                </keep>
+
+                <!-- Disable pedantic error checking to ignore missing external dependencies -->
+                <property name="error-checking" value="none"/>
+            </rename>
+        </yguard>
+
+        <echo message="Obfuscation complete: ${jar.obfuscated.file}"/>
+        <echo message="Mapping file saved to: ${dist.dir}/yguard-log.xml"/>
+    </target>
+
+    <!-- =================================
+          Target: create-custom-runtime
+         ================================= -->
+    <target name="create-custom-runtime" description="Create custom JRE with jlink for smaller distribution">
+        <echo message="Creating custom JRE with jlink..."/>
+        <echo message="This will reduce the runtime size from ~200MB to ~50MB"/>
+
+        <!-- Delete existing custom runtime if present -->
+        <delete dir="${custom.runtime.dir}"/>
+
+        <!-- Create custom runtime with only required modules -->
+        <exec executable="jlink" failonerror="true">
+            <arg value="--add-modules"/>
+            <arg value="java.base,java.desktop,java.sql,java.logging,java.naming,java.management"/>
+            <arg value="--strip-debug"/>
+            <arg value="--no-header-files"/>
+            <arg value="--no-man-pages"/>
+            <arg value="--compress=2"/>
+            <arg value="--output"/>
+            <arg value="${custom.runtime.dir}"/>
+        </exec>
+
+        <echo message="Custom JRE created successfully at: ${custom.runtime.dir}"/>
+
+        <!-- Display size comparison -->
+        <exec executable="du" osfamily="unix" outputproperty="runtime.size">
+            <arg value="-sh"/>
+            <arg value="${custom.runtime.dir}"/>
+        </exec>
+        <echo message="Custom runtime size: ${runtime.size}"/>
+    </target>
+
+    <!-- =================================
+          Target: jpackage-check
+         ================================= -->
+    <target name="jpackage-check">
+        <exec executable="jpackage" failifexecutionfails="false" resultproperty="jpackage.present">
+            <arg value="--version"/>
+        </exec>
+        <condition property="jpackage.available">
+            <equals arg1="${jpackage.present}" arg2="0"/>
+        </condition>
+    </target>
+
+    <!-- =================================
+          Target: package-exe (Development - No obfuscation)
+         ================================= -->
+    <target name="package-exe" depends="jar,create-custom-runtime,jpackage-check"
+            description="Create native executable (development build, no obfuscation)">
+        <fail unless="jpackage.available"
+              message="jpackage not found! Please ensure you have JDK 14+ with jpackage in your PATH."/>
+
+        <echo message="Creating native executable from JAR (development build)..."/>
+        <echo message="Using custom JRE to reduce size by ~60%"/>
+        <echo message="This may take several minutes..."/>
+
+        <!-- Create clean input directory for jpackage -->
+        <mkdir dir="${build.dir}/jpackage-input-dev"/>
+        <copy file="${jar.file}" todir="${build.dir}/jpackage-input-dev"/>
+
+        <!-- Detect OS -->
+        <condition property="is.windows">
+            <os family="windows"/>
+        </condition>
+        <condition property="is.mac">
+            <os family="mac"/>
+        </condition>
+        <condition property="is.linux">
+            <os family="unix"/>
+        </condition>
+
+        <!-- Common jpackage arguments with custom runtime -->
+        <exec executable="jpackage" failonerror="true">
+            <arg value="--input"/><arg value="${build.dir}/jpackage-input-dev"/>
+            <arg value="--name"/><arg value="${app.name}-dev"/>
+            <arg value="--main-jar"/><arg value="${app.name}-${app.version}.jar"/>
+            <arg value="--main-class"/><arg value="${main.class}"/>
+            <arg value="--type"/><arg value="app-image"/>
+            <arg value="--dest"/><arg value="${dist.dir}"/>
+            <arg value="--app-version"/><arg value="${app.version}"/>
+            <arg value="--vendor"/><arg value="${app.vendor}"/>
+            <arg value="--description"/><arg value="Business Management Software (Development Build)"/>
+            <arg value="--runtime-image"/><arg value="${custom.runtime.dir}"/>
+            <arg value="--java-options"/><arg value="-Xmx1024m"/>
+        </exec>
+
+        <!-- Clean up temporary input directory -->
+        <delete dir="${build.dir}/jpackage-input-dev"/>
+
+        <echo message="Native executable created in: ${dist.dir}/${app.name}-dev/"/>
+        <echo message="Using optimized custom JRE"/>
+    </target>
+
+    <!-- =================================
+          Target: package-exe-release (Production - With obfuscation)
+         ================================= -->
+    <target name="package-exe-release" depends="obfuscate,create-custom-runtime,jpackage-check"
+            description="Create native executable (production build, obfuscated, with custom JRE)">
+        <fail unless="jpackage.available"
+              message="jpackage not found! Please ensure you have JDK 14+ with jpackage in your PATH."/>
+
+        <echo message="Creating native executable from obfuscated JAR (production build)..."/>
+        <echo message="Using custom JRE to reduce size by ~60%"/>
+        <echo message="This may take several minutes..."/>
+
+        <!-- Create clean input directory for jpackage -->
+        <mkdir dir="${build.dir}/jpackage-input-release"/>
+        <copy file="${jar.obfuscated.file}" todir="${build.dir}/jpackage-input-release"/>
+
+        <!-- Common jpackage arguments with custom runtime -->
+        <exec executable="jpackage" failonerror="true">
+            <arg value="--input"/><arg value="${build.dir}/jpackage-input-release"/>
+            <arg value="--name"/><arg value="${app.name}"/>
+            <arg value="--main-jar"/><arg value="${app.name}-${app.version}-obfuscated.jar"/>
+            <arg value="--main-class"/><arg value="${main.class}"/>
+            <arg value="--type"/><arg value="app-image"/>
+            <arg value="--dest"/><arg value="${dist.dir}"/>
+            <arg value="--app-version"/><arg value="${app.version}"/>
+            <arg value="--vendor"/><arg value="${app.vendor}"/>
+            <arg value="--description"/><arg value="Business Management Software (Production Build)"/>
+            <arg value="--runtime-image"/><arg value="${custom.runtime.dir}"/>
+            <arg value="--java-options"/><arg value="-Xmx1024m"/>
+        </exec>
+
+        <!-- Clean up temporary input directory -->
+        <delete dir="${build.dir}/jpackage-input-release"/>
+
+        <echo message="Native executable (obfuscated, optimized) created in: ${dist.dir}/${app.name}/"/>
+        <echo message="This build uses a custom JRE (~50MB instead of ~200MB)"/>
+    </target>
+
+    <!-- =================================
+          Target: build (Development)
+         ================================= -->
+    <target name="build" depends="package-exe"
+            description="Full build: compile, JAR, and native executable (no obfuscation)">
+        <echo message=""/>
+        <echo message="======================================"/>
+        <echo message="Development Build Complete!"/>
+        <echo message="======================================"/>
+        <echo message="JAR file: ${jar.file}"/>
+        <echo message="Executable: ${dist.dir}/${app.name}-dev/ (optimized with custom JRE)"/>
+        <echo message=""/>
+        <echo message="To test JAR: java -jar ${jar.file}"/>
+        <echo message=""/>
+    </target>
+
+    <!-- =================================
+          Target: build-release (Production)
+         ================================= -->
+    <target name="build-release" depends="package-exe-release"
+            description="Full release build: compile, obfuscated JAR, and native executable">
+        <echo message=""/>
+        <echo message="======================================"/>
+        <echo message="Production Build Complete!"/>
+        <echo message="======================================"/>
+        <echo message="Obfuscated JAR: ${jar.obfuscated.file}"/>
+        <echo message="Executable: ${dist.dir}/${app.name}/ (optimized with custom JRE)"/>
+        <echo message="Mapping file: ${dist.dir}/yguard-log.xml"/>
+        <echo message=""/>
+        <echo message="IMPORTANT: Keep yguard-log.xml safe to decode stack traces!"/>
+        <echo message="Size reduction: ~60% smaller than standard JRE bundle"/>
+        <echo message=""/>
+    </target>
+
+    <!-- =================================
+          Target: test-jar
+         ================================= -->
+    <target name="test-jar" depends="jar" description="Test the JAR file">
+        <echo message="Testing JAR file..."/>
+        <java jar="${jar.file}" fork="true" failonerror="true">
+            <jvmarg value="-Xmx1024m"/>
+        </java>
+    </target>
+
+    <!-- =================================
+          Target: help
+         ================================= -->
+    <target name="help" description="Display help information">
+        <echo message=""/>
+        <echo message="WareStat Build System"/>
+        <echo message="====================="/>
+        <echo message=""/>
+        <echo message="Available targets:"/>
+        <echo message=""/>
+        <echo message="  ant build              - Development build (JAR + executable, no obfuscation)"/>
+        <echo message="  ant build-release      - Production build (obfuscated JAR + executable)"/>
+        <echo message="  ant jar                - Create JAR only (no obfuscation)"/>
+        <echo message="  ant obfuscate          - Create obfuscated JAR only"/>
+        <echo message="  ant package-exe        - Create native executable from JAR"/>
+        <echo message="  ant package-exe-release - Create native executable from obfuscated JAR"/>
+        <echo message="  ant test-jar           - Test the JAR file"/>
+        <echo message="  ant clean              - Clean build artifacts"/>
+        <echo message="  ant help               - Display this help"/>
+        <echo message=""/>
+        <echo message="Quick start:"/>
+        <echo message="  Development: ant build"/>
+        <echo message="  Production:  ant build-release"/>
+        <echo message=""/>
+    </target>
+
+</project>
