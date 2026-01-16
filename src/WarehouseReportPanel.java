@@ -78,7 +78,6 @@ public class WarehouseReportPanel extends JPanel {
 
         // Add context menu
         TableInteractionUtil.addContextMenu(productsTable,
-            new TableInteractionUtil.TableAction("Print Report", this::printProductsReport, false),
             new TableInteractionUtil.TableAction("Export CSV", this::exportProductsToCSV, false),
             null, // Separator
             new TableInteractionUtil.TableAction("Refresh", this::loadProductsData, false)
@@ -86,17 +85,14 @@ public class WarehouseReportPanel extends JPanel {
 
         // Buttons
         JPanel buttonPanel = new JPanel();
-        JButton printButton = new JButton("Print Report");
         JButton exportPdfButton = new JButton("Export as PDF");
         JButton exportButton = new JButton("Export CSV");
         JButton refreshButton = new JButton("Refresh");
 
-        printButton.addActionListener(e -> printProductsReport());
         exportPdfButton.addActionListener(e -> exportProductsToPDF());
         exportButton.addActionListener(e -> exportProductsToCSV());
         refreshButton.addActionListener(e -> loadProductsData());
 
-        buttonPanel.add(printButton);
         buttonPanel.add(exportPdfButton);
         buttonPanel.add(exportButton);
         buttonPanel.add(refreshButton);
@@ -151,21 +147,17 @@ public class WarehouseReportPanel extends JPanel {
 
         // Add context menu
         TableInteractionUtil.addContextMenu(movementsTable,
-            new TableInteractionUtil.TableAction("Print Report", this::printMovementsReport, false),
             new TableInteractionUtil.TableAction("Export CSV", this::exportMovementsToCSV, false)
         );
 
         // Buttons
         JPanel buttonPanel = new JPanel();
-        JButton printButton = new JButton("Print Report");
         JButton exportPdfButton = new JButton("Export as PDF");
         JButton exportButton = new JButton("Export CSV");
 
-        printButton.addActionListener(e -> printMovementsReport());
         exportPdfButton.addActionListener(e -> exportMovementsToPDF());
         exportButton.addActionListener(e -> exportMovementsToCSV());
 
-        buttonPanel.add(printButton);
         buttonPanel.add(exportPdfButton);
         buttonPanel.add(exportButton);
 
@@ -352,20 +344,6 @@ public class WarehouseReportPanel extends JPanel {
                 "Error loading movements: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
-    }
-
-    private void printProductsReport() {
-        MessageFormat header = new MessageFormat("Warehouse Report - Product Status");
-        MessageFormat footer = new MessageFormat("Page {0,number,integer}");
-        PrintUtils.printTable(productsTable, this, "Warehouse Report - Product Status",
-                            header, footer, JTable.PrintMode.FIT_WIDTH);
-    }
-
-    private void printMovementsReport() {
-        MessageFormat header = new MessageFormat("Warehouse Report - Movement Analysis");
-        MessageFormat footer = new MessageFormat("Page {0,number,integer}");
-        PrintUtils.printTable(movementsTable, this, "Warehouse Report - Movement Analysis",
-                            header, footer, JTable.PrintMode.FIT_WIDTH);
     }
 
     private void exportProductsToPDF() {
