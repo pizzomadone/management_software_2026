@@ -144,8 +144,8 @@ public class WarehouseReportPanel extends JPanel {
         };
         movementsTable = new JTable(movementsModel);
 
-        // Enable column sorting
-        TableSorterUtil.enableSorting(movementsTable);
+        // Enable column sorting with date support (column 0 is "Date")
+        TableSorterUtil.enableSorting(movementsTable, new int[]{0}, dateFormat);
 
         // Add context menu
         TableInteractionUtil.addContextMenu(movementsTable,

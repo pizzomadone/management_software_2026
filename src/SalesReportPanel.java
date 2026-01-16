@@ -87,8 +87,8 @@ public class SalesReportPanel extends JPanel {
         };
         reportTable = new JTable(tableModel);
 
-        // Enable column sorting
-        TableSorterUtil.enableSorting(reportTable);
+        // Enable column sorting with date support (column 0 is "Date")
+        TableSorterUtil.enableSorting(reportTable, new int[]{0}, dateFormat);
 
         // Add context menu
         TableInteractionUtil.addContextMenu(reportTable,

@@ -55,8 +55,8 @@ public class OrdersPanel extends JPanel {
         ordersTable.getSelectionModel().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         ordersTable.getSelectionModel().addListSelectionListener(e -> updateButtonStates());
 
-        // Enable column sorting
-        TableSorterUtil.enableSorting(ordersTable);
+        // Enable column sorting with date support (column 2 is "Date")
+        TableSorterUtil.enableSorting(ordersTable, new int[]{2}, dateFormat);
 
         // Add Delete key shortcut
         TableInteractionUtil.addDeleteKeyAction(ordersTable, this::deleteSelectedOrder);
