@@ -350,11 +350,7 @@ public class SalesReportPanel extends JPanel {
         JPanel printButtonPanel = new JPanel();
         JButton printButton = new JButton("Print");
         printButton.addActionListener(e -> {
-            try {
-                previewTable.print();
-            } catch (Exception ex) {
-                JOptionPane.showMessageDialog(previewDialog, "Error during printing: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
-            }
+            PrintUtils.printTable(previewTable, previewDialog, "Sales Report");
         });
         JButton closeButton = new JButton("Close");
         closeButton.addActionListener(e -> previewDialog.dispose());

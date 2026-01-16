@@ -1,7 +1,6 @@
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
-import java.awt.print.PrinterException;
 import java.sql.*;
 import java.text.MessageFormat;
 import java.text.SimpleDateFormat;
@@ -352,27 +351,15 @@ public class WarehouseReportPanel extends JPanel {
     private void printProductsReport() {
         MessageFormat header = new MessageFormat("Warehouse Report - Product Status");
         MessageFormat footer = new MessageFormat("Page {0,number,integer}");
-        try {
-            productsTable.print(JTable.PrintMode.FIT_WIDTH, header, footer);
-        } catch (PrinterException e) {
-            JOptionPane.showMessageDialog(this,
-                "Error printing report: " + e.getMessage(),
-                "Error", JOptionPane.ERROR_MESSAGE);
-            e.printStackTrace();
-        }
+        PrintUtils.printTable(productsTable, this, "Warehouse Report - Product Status",
+                            header, footer, JTable.PrintMode.FIT_WIDTH);
     }
 
     private void printMovementsReport() {
         MessageFormat header = new MessageFormat("Warehouse Report - Movement Analysis");
         MessageFormat footer = new MessageFormat("Page {0,number,integer}");
-        try {
-            movementsTable.print(JTable.PrintMode.FIT_WIDTH, header, footer);
-        } catch (PrinterException e) {
-            JOptionPane.showMessageDialog(this,
-                "Error printing report: " + e.getMessage(),
-                "Error", JOptionPane.ERROR_MESSAGE);
-            e.printStackTrace();
-        }
+        PrintUtils.printTable(movementsTable, this, "Warehouse Report - Movement Analysis",
+                            header, footer, JTable.PrintMode.FIT_WIDTH);
     }
 
     private void exportProductsToCSV() {
