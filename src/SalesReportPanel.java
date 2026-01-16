@@ -101,14 +101,17 @@ public class SalesReportPanel extends JPanel {
         // Button panel
         JPanel buttonPanel = new JPanel(new FlowLayout());
         JButton printButton = new JButton("Print Report");
+        JButton exportPdfButton = new JButton("Export as PDF");
         JButton exportButton = new JButton("Export CSV");
         JButton detailsButton = new JButton("Order Details");
 
         printButton.addActionListener(e -> printReport());
+        exportPdfButton.addActionListener(e -> exportToPDF());
         exportButton.addActionListener(e -> exportToCSV());
         detailsButton.addActionListener(e -> showOrderDetails());
 
         buttonPanel.add(printButton);
+        buttonPanel.add(exportPdfButton);
         buttonPanel.add(exportButton);
         buttonPanel.add(detailsButton);
 
@@ -363,6 +366,20 @@ public class SalesReportPanel extends JPanel {
         previewDialog.pack();
         previewDialog.setLocationRelativeTo(null);
         previewDialog.setVisible(true);
+    }
+
+    private void exportToPDF() {
+        String subtitle = String.format("From: %s to: %s", startDateField.getText(), endDateField.getText());
+        String fileName = String.format("sales_report_%s.pdf", new SimpleDateFormat("yyyyMMdd").format(new Date()));
+
+        ReportPDFGenerator pdfGenerator = new ReportPDFGenerator(
+            tableModel,
+            "Sales Report",
+            subtitle,
+            fileName
+        );
+
+        pdfGenerator.generateAndSave(this);
     }
 
     private void exportToCSV() {

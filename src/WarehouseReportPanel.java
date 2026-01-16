@@ -87,14 +87,17 @@ public class WarehouseReportPanel extends JPanel {
         // Buttons
         JPanel buttonPanel = new JPanel();
         JButton printButton = new JButton("Print Report");
+        JButton exportPdfButton = new JButton("Export as PDF");
         JButton exportButton = new JButton("Export CSV");
         JButton refreshButton = new JButton("Refresh");
 
         printButton.addActionListener(e -> printProductsReport());
+        exportPdfButton.addActionListener(e -> exportProductsToPDF());
         exportButton.addActionListener(e -> exportProductsToCSV());
         refreshButton.addActionListener(e -> loadProductsData());
 
         buttonPanel.add(printButton);
+        buttonPanel.add(exportPdfButton);
         buttonPanel.add(exportButton);
         buttonPanel.add(refreshButton);
 
@@ -155,12 +158,15 @@ public class WarehouseReportPanel extends JPanel {
         // Buttons
         JPanel buttonPanel = new JPanel();
         JButton printButton = new JButton("Print Report");
+        JButton exportPdfButton = new JButton("Export as PDF");
         JButton exportButton = new JButton("Export CSV");
 
         printButton.addActionListener(e -> printMovementsReport());
+        exportPdfButton.addActionListener(e -> exportMovementsToPDF());
         exportButton.addActionListener(e -> exportMovementsToCSV());
 
         buttonPanel.add(printButton);
+        buttonPanel.add(exportPdfButton);
         buttonPanel.add(exportButton);
 
         panel.add(filterPanel, BorderLayout.NORTH);
@@ -360,6 +366,35 @@ public class WarehouseReportPanel extends JPanel {
         MessageFormat footer = new MessageFormat("Page {0,number,integer}");
         PrintUtils.printTable(movementsTable, this, "Warehouse Report - Movement Analysis",
                             header, footer, JTable.PrintMode.FIT_WIDTH);
+    }
+
+    private void exportProductsToPDF() {
+        String fileName = String.format("warehouse_products_%s.pdf", new SimpleDateFormat("yyyyMMdd").format(new Date()));
+
+        ReportPDFGenerator pdfGenerator = new ReportPDFGenerator(
+            productsModel,
+            "Warehouse Report - Product Status",
+            "Generated: " + new SimpleDateFormat("dd/MM/yyyy").format(new Date()),
+            fileName
+        );
+
+        pdfGenerator.generateAndSave(this);
+    }
+
+    private void exportMovementsToPDF() {
+        String subtitle = String.format("From: %s to: %s",
+            startDateField != null ? startDateField.getText() : "N/A",
+            endDateField != null ? endDateField.getText() : "N/A");
+        String fileName = String.format("warehouse_movements_%s.pdf", new SimpleDateFormat("yyyyMMdd").format(new Date()));
+
+        ReportPDFGenerator pdfGenerator = new ReportPDFGenerator(
+            movementsModel,
+            "Warehouse Report - Movement Analysis",
+            subtitle,
+            fileName
+        );
+
+        pdfGenerator.generateAndSave(this);
     }
 
     private void exportProductsToCSV() {
