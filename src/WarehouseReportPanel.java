@@ -1,7 +1,6 @@
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
-import java.awt.print.PrinterException;
 import java.sql.*;
 import java.text.MessageFormat;
 import java.text.SimpleDateFormat;
@@ -79,7 +78,6 @@ public class WarehouseReportPanel extends JPanel {
 
         // Add context menu
         TableInteractionUtil.addContextMenu(productsTable,
-            new TableInteractionUtil.TableAction("Print Report", this::printProductsReport, false),
             new TableInteractionUtil.TableAction("Export CSV", this::exportProductsToCSV, false),
             null, // Separator
             new TableInteractionUtil.TableAction("Refresh", this::loadProductsData, false)
@@ -87,15 +85,15 @@ public class WarehouseReportPanel extends JPanel {
 
         // Buttons
         JPanel buttonPanel = new JPanel();
-        JButton printButton = new JButton("Print Report");
+        JButton exportPdfButton = new JButton("Export as PDF");
         JButton exportButton = new JButton("Export CSV");
         JButton refreshButton = new JButton("Refresh");
 
-        printButton.addActionListener(e -> printProductsReport());
+        exportPdfButton.addActionListener(e -> exportProductsToPDF());
         exportButton.addActionListener(e -> exportProductsToCSV());
         refreshButton.addActionListener(e -> loadProductsData());
 
-        buttonPanel.add(printButton);
+        buttonPanel.add(exportPdfButton);
         buttonPanel.add(exportButton);
         buttonPanel.add(refreshButton);
 
@@ -144,24 +142,23 @@ public class WarehouseReportPanel extends JPanel {
         };
         movementsTable = new JTable(movementsModel);
 
-        // Enable column sorting
-        TableSorterUtil.enableSorting(movementsTable);
+        // Enable column sorting with date support (column 0 is "Date")
+        TableSorterUtil.enableSorting(movementsTable, new int[]{0}, dateFormat);
 
         // Add context menu
         TableInteractionUtil.addContextMenu(movementsTable,
-            new TableInteractionUtil.TableAction("Print Report", this::printMovementsReport, false),
             new TableInteractionUtil.TableAction("Export CSV", this::exportMovementsToCSV, false)
         );
 
         // Buttons
         JPanel buttonPanel = new JPanel();
-        JButton printButton = new JButton("Print Report");
+        JButton exportPdfButton = new JButton("Export as PDF");
         JButton exportButton = new JButton("Export CSV");
 
-        printButton.addActionListener(e -> printMovementsReport());
+        exportPdfButton.addActionListener(e -> exportMovementsToPDF());
         exportButton.addActionListener(e -> exportMovementsToCSV());
 
-        buttonPanel.add(printButton);
+        buttonPanel.add(exportPdfButton);
         buttonPanel.add(exportButton);
 
         panel.add(filterPanel, BorderLayout.NORTH);
@@ -349,30 +346,33 @@ public class WarehouseReportPanel extends JPanel {
         }
     }
 
-    private void printProductsReport() {
-        MessageFormat header = new MessageFormat("Warehouse Report - Product Status");
-        MessageFormat footer = new MessageFormat("Page {0,number,integer}");
-        try {
-            productsTable.print(JTable.PrintMode.FIT_WIDTH, header, footer);
-        } catch (PrinterException e) {
-            JOptionPane.showMessageDialog(this,
-                "Error printing report: " + e.getMessage(),
-                "Error", JOptionPane.ERROR_MESSAGE);
-            e.printStackTrace();
-        }
+    private void exportProductsToPDF() {
+        String fileName = String.format("warehouse_products_%s.pdf", new SimpleDateFormat("yyyyMMdd").format(new Date()));
+
+        ReportPDFGenerator pdfGenerator = new ReportPDFGenerator(
+            productsModel,
+            "Warehouse Report - Product Status",
+            "Generated: " + new SimpleDateFormat("dd/MM/yyyy").format(new Date()),
+            fileName
+        );
+
+        pdfGenerator.generateAndSave(this);
     }
 
-    private void printMovementsReport() {
-        MessageFormat header = new MessageFormat("Warehouse Report - Movement Analysis");
-        MessageFormat footer = new MessageFormat("Page {0,number,integer}");
-        try {
-            movementsTable.print(JTable.PrintMode.FIT_WIDTH, header, footer);
-        } catch (PrinterException e) {
-            JOptionPane.showMessageDialog(this,
-                "Error printing report: " + e.getMessage(),
-                "Error", JOptionPane.ERROR_MESSAGE);
-            e.printStackTrace();
-        }
+    private void exportMovementsToPDF() {
+        String subtitle = String.format("From: %s to: %s",
+            startDateField != null ? startDateField.getText() : "N/A",
+            endDateField != null ? endDateField.getText() : "N/A");
+        String fileName = String.format("warehouse_movements_%s.pdf", new SimpleDateFormat("yyyyMMdd").format(new Date()));
+
+        ReportPDFGenerator pdfGenerator = new ReportPDFGenerator(
+            movementsModel,
+            "Warehouse Report - Movement Analysis",
+            subtitle,
+            fileName
+        );
+
+        pdfGenerator.generateAndSave(this);
     }
 
     private void exportProductsToCSV() {

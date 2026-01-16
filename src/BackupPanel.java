@@ -12,6 +12,7 @@ public class BackupPanel extends JPanel {
     private JTable backupsTable;
     private DefaultTableModel tableModel;
     private BackupManager backupManager;
+    private SimpleDateFormat dateTimeFormat = new SimpleDateFormat("dd/MM/yyyy HH:mm:ss");
 
     public BackupPanel() {
         backupManager = BackupManager.getInstance();
@@ -75,8 +76,8 @@ public class BackupPanel extends JPanel {
         };
         backupsTable = new JTable(tableModel);
 
-        // Enable column sorting
-        TableSorterUtil.enableSorting(backupsTable);
+        // Enable column sorting with date support (column 0 is "Date")
+        TableSorterUtil.enableSorting(backupsTable, new int[]{0}, dateTimeFormat);
 
         // Add Delete key shortcut
         TableInteractionUtil.addDeleteKeyAction(backupsTable, this::deleteSelectedBackup);
@@ -126,12 +127,11 @@ public class BackupPanel extends JPanel {
 
     private void loadBackupsList() {
         tableModel.setRowCount(0);
-        SimpleDateFormat sdf = new SimpleDateFormat("dd/MM/yyyy HH:mm:ss");
 
         File[] backups = backupManager.listBackups();
         for (File backup : backups) {
             String[] row = {
-                sdf.format(new Date(backup.lastModified())),
+                dateTimeFormat.format(new Date(backup.lastModified())),
                 backup.getName(),
                 String.format("%.2f MB", backup.length() / (1024.0 * 1024.0))
             };

@@ -53,8 +53,8 @@ public class InvoicesPanel extends JPanel {
         invoicesTable = new JTable(tableModel);
         invoicesTable.getSelectionModel().addListSelectionListener(e -> updateButtonStates());
 
-        // Enable column sorting
-        TableSorterUtil.enableSorting(invoicesTable);
+        // Enable column sorting with date support (column 1 is "Date")
+        TableSorterUtil.enableSorting(invoicesTable, new int[]{1}, dateFormat);
 
         // Add Delete key shortcut
         TableInteractionUtil.addDeleteKeyAction(invoicesTable, this::deleteSelectedInvoice);

@@ -87,28 +87,27 @@ public class SalesReportPanel extends JPanel {
         };
         reportTable = new JTable(tableModel);
 
-        // Enable column sorting
-        TableSorterUtil.enableSorting(reportTable);
+        // Enable column sorting with date support (column 0 is "Date")
+        TableSorterUtil.enableSorting(reportTable, new int[]{0}, dateFormat);
 
         // Add context menu
         TableInteractionUtil.addContextMenu(reportTable,
             new TableInteractionUtil.TableAction("Order Details", this::showOrderDetails),
             null, // Separator
-            new TableInteractionUtil.TableAction("Print Report", this::printReport, false),
             new TableInteractionUtil.TableAction("Export CSV", this::exportToCSV, false)
         );
 
         // Button panel
         JPanel buttonPanel = new JPanel(new FlowLayout());
-        JButton printButton = new JButton("Print Report");
+        JButton exportPdfButton = new JButton("Export as PDF");
         JButton exportButton = new JButton("Export CSV");
         JButton detailsButton = new JButton("Order Details");
 
-        printButton.addActionListener(e -> printReport());
+        exportPdfButton.addActionListener(e -> exportToPDF());
         exportButton.addActionListener(e -> exportToCSV());
         detailsButton.addActionListener(e -> showOrderDetails());
 
-        buttonPanel.add(printButton);
+        buttonPanel.add(exportPdfButton);
         buttonPanel.add(exportButton);
         buttonPanel.add(detailsButton);
 
@@ -316,57 +315,18 @@ public class SalesReportPanel extends JPanel {
         }
     }
 
-    private void printReport() {
-        // Create a new window for print preview
-        Window parentWindow = SwingUtilities.getWindowAncestor(this);
+    private void exportToPDF() {
+        String subtitle = String.format("From: %s to: %s", startDateField.getText(), endDateField.getText());
+        String fileName = String.format("sales_report_%s.pdf", new SimpleDateFormat("yyyyMMdd").format(new Date()));
 
-        JDialog previewDialog;
-        if (parentWindow instanceof JFrame) {
-            previewDialog = new JDialog((JFrame) parentWindow, "Print Preview - Sales Report", true);
-        } else {
-            previewDialog = new JDialog((JDialog) parentWindow, "Print Preview - Sales Report", true);
-        }
+        ReportPDFGenerator pdfGenerator = new ReportPDFGenerator(
+            tableModel,
+            "Sales Report",
+            subtitle,
+            fileName
+        );
 
-        
-
-        JPanel previewPanel = new JPanel(new BorderLayout());
-        JPanel headerPanel = new JPanel(new BorderLayout());
-        headerPanel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
-        String title = "Sales Report - " + new SimpleDateFormat("dd/MM/yyyy").format(new Date());
-        JLabel titleLabel = new JLabel(title);
-        titleLabel.setFont(new Font("Serif", Font.BOLD, 18));
-        titleLabel.setHorizontalAlignment(SwingConstants.CENTER);
-        headerPanel.add(titleLabel, BorderLayout.NORTH);
-
-        JLabel dateRangeLabel = new JLabel(String.format("From: %s to: %s", startDateField.getText(), endDateField.getText()));
-        dateRangeLabel.setHorizontalAlignment(SwingConstants.CENTER);
-        headerPanel.add(dateRangeLabel, BorderLayout.CENTER);
-
-        JTable previewTable = new JTable(tableModel);
-
-        previewPanel.add(headerPanel, BorderLayout.NORTH);
-        previewPanel.add(new JScrollPane(previewTable), BorderLayout.CENTER);
-
-        JPanel printButtonPanel = new JPanel();
-        JButton printButton = new JButton("Print");
-        printButton.addActionListener(e -> {
-            try {
-                previewTable.print();
-            } catch (Exception ex) {
-                JOptionPane.showMessageDialog(previewDialog, "Error during printing: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
-            }
-        });
-        JButton closeButton = new JButton("Close");
-        closeButton.addActionListener(e -> previewDialog.dispose());
-
-        printButtonPanel.add(printButton);
-        printButtonPanel.add(closeButton);
-        previewDialog.add(previewPanel, BorderLayout.CENTER);
-        previewDialog.add(printButtonPanel, BorderLayout.SOUTH);
-
-        previewDialog.pack();
-        previewDialog.setLocationRelativeTo(null);
-        previewDialog.setVisible(true);
+        pdfGenerator.generateAndSave(this);
     }
 
     private void exportToCSV() {

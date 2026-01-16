@@ -113,8 +113,8 @@ public class WarehousePanel extends JPanel {
         };
         movementsTable = new JTable(movementsModel);
 
-        // Enable column sorting
-        TableSorterUtil.enableSorting(movementsTable);
+        // Enable column sorting with date support (column 1 is "Date")
+        TableSorterUtil.enableSorting(movementsTable, new int[]{1}, dateFormat);
 
         // Add Delete key shortcut
         TableInteractionUtil.addDeleteKeyAction(movementsTable, this::deleteSelectedMovement);
@@ -182,8 +182,8 @@ public class WarehousePanel extends JPanel {
         };
         notificationsTable = new JTable(notificationsModel);
 
-        // Enable column sorting
-        TableSorterUtil.enableSorting(notificationsTable);
+        // Enable column sorting with date support (column 0 is "Date")
+        TableSorterUtil.enableSorting(notificationsTable, new int[]{0}, dateFormat);
 
         // Add context menu
         TableInteractionUtil.addContextMenu(notificationsTable,
