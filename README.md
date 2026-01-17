@@ -75,8 +75,31 @@ See `LICENSE-THIRD-PARTY.txt` for the complete license text and `NOTICE.txt` for
 
 ## License
 
-The third-party libraries included with this software are licensed under the Apache License 2.0.
-See `LICENSE-THIRD-PARTY.txt` for details.
+**WareStat** is proprietary software © 2026 WareStat (www.warestat.com). All rights reserved.
+
+### Usage Rights
+
+✓ **Free for personal and commercial use**
+✓ **Unlimited installations**
+✓ **No registration required**
+
+### Restrictions
+
+✗ **Modification, reverse engineering, or decompilation is strictly prohibited**
+✗ **Redistribution, resale, or sublicensing is not permitted**
+✗ **Source code is not provided**
+
+This software is provided "AS IS" without warranty of any kind. Use at your own risk.
+
+For complete terms and conditions, see `LICENSE.txt`.
+
+### Third-Party Components
+
+This software includes open-source libraries:
+- **Apache PDFBox 3.0.6** - Apache License 2.0
+- **SQLite JDBC 3.50.3.0** - Apache License 2.0
+
+See `LICENSE-THIRD-PARTY.txt` for complete third-party license information.
 
 ## Barcode Support
 

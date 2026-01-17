@@ -1,3 +1,13 @@
+/*
+ * Copyright © 2026 WareStat (www.warestat.com). All rights reserved.
+ *
+ * This software is proprietary and confidential.
+ * Unauthorized copying, modification, distribution, or reverse engineering
+ * is strictly prohibited.
+ *
+ * See LICENSE.txt for full terms.
+ */
+
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;

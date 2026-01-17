@@ -1,3 +1,13 @@
+/*
+ * Copyright © 2026 WareStat (www.warestat.com). All rights reserved.
+ *
+ * This software is proprietary and confidential.
+ * Unauthorized copying, modification, distribution, or reverse engineering
+ * is strictly prohibited.
+ *
+ * See LICENSE.txt for full terms.
+ */
+
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
@@ -481,36 +491,7 @@ public class MainWindow extends JFrame {
     }
     
     private void showAboutDialog() {
-        String aboutText = """
-            %s
-            Professional Business Management System
-
-            Features:
-            • Customer Management
-            • Product Catalog
-            • Order Processing
-            • Invoice Generation
-            • Supplier Management
-            • Warehouse Control
-            • Sales Reports & Analytics
-            • Backup & Restore
-
-            %s
-
-            Third-Party Libraries:
-            • Apache PDFBox 3.0.6
-              Copyright © 1999-2024 The Apache Software Foundation
-              Licensed under Apache License 2.0
-
-            • SQLite JDBC 3.50.3.0
-              Copyright © Taro L. Saito
-              Licensed under Apache License 2.0
-            """.formatted(AppConstants.FULL_TITLE, AppConstants.COPYRIGHT);
-
-        JOptionPane.showMessageDialog(this,
-            aboutText,
-            "About " + AppConstants.SOFTWARE_NAME,
-            JOptionPane.INFORMATION_MESSAGE);
+        AboutDialog.showDialog(this);
     }
     
     private void showKeyboardShortcuts() {

@@ -1,3 +1,13 @@
+/*
+ * Copyright © 2026 WareStat (www.warestat.com). All rights reserved.
+ *
+ * This software is proprietary and confidential.
+ * Unauthorized copying, modification, distribution, or reverse engineering
+ * is strictly prohibited.
+ *
+ * See LICENSE.txt for full terms.
+ */
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -34,6 +44,56 @@ public class AppConstants {
      * Copyright notice.
      */
     public static final String COPYRIGHT = "© " + COPYRIGHT_YEAR + " " + SOFTWARE_NAME;
+
+    // License and Legal Information
+
+    /**
+     * Copyright holder (entity that owns the rights to this software).
+     */
+    public static final String COPYRIGHT_HOLDER = "WareStat";
+
+    /**
+     * Official website.
+     */
+    public static final String WEBSITE = "www.warestat.com";
+
+    /**
+     * Contact email for legal and licensing inquiries.
+     */
+    public static final String CONTACT_EMAIL = "info@warestat.com";
+
+    /**
+     * License type.
+     */
+    public static final String LICENSE_TYPE = "Proprietary Freeware";
+
+    /**
+     * Software version(s) to which the current license applies.
+     * Example: "1.x" means all versions 1.0, 1.1, 1.2, etc.
+     */
+    public static final String LICENSE_VERSION_APPLIES_TO = "1.x";
+
+    /**
+     * Jurisdiction country for legal matters.
+     */
+    public static final String JURISDICTION_COUNTRY = "Italy";
+
+    /**
+     * Competent court for legal disputes.
+     */
+    public static final String JURISDICTION_COURT = "Tribunale di Caltanissetta";
+
+    /**
+     * Full copyright notice for display in UI and documents.
+     */
+    public static final String COPYRIGHT_FULL = COPYRIGHT + ". All rights reserved.";
+
+    /**
+     * Short license summary for display.
+     */
+    public static final String LICENSE_SUMMARY =
+        "Free for personal and commercial use. " +
+        "Modification, reverse engineering, and redistribution are prohibited.";
 
     // File and Directory Names
 
