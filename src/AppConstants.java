@@ -68,10 +68,9 @@ public class AppConstants {
     public static final String LICENSE_TYPE = "Proprietary Freeware";
 
     /**
-     * Software version(s) to which the current license applies.
-     * Example: "1.x" means all versions 1.0, 1.1, 1.2, etc.
+     * Software version to which the current license applies.
      */
-    public static final String LICENSE_VERSION_APPLIES_TO = "1.x";
+    public static final String LICENSE_VERSION_APPLIES_TO = VERSION;
 
     /**
      * Jurisdiction country for legal matters.

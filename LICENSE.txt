@@ -9,7 +9,7 @@ All Rights Reserved.
 1. LICENSE GRANT
 ================================================================================
 
-This version of WareStat (version 1.x) is provided FREE OF CHARGE for both
+This version of WareStat (version 1.2) is provided FREE OF CHARGE for both
 PERSONAL and COMMERCIAL use, subject to the terms and conditions of this
 license agreement.
 
@@ -127,12 +127,12 @@ violation of these terms.
 9. FUTURE VERSIONS
 ================================================================================
 
-This license agreement applies specifically to WareStat version 1.x.
+This license agreement applies specifically to WareStat version 1.2.
 
 WareStat reserves the right to release future versions of the software under
 different license terms, including commercial licensing.
 
-Users of version 1.x may continue to use that version under these terms, but
+Users of version 1.2 may continue to use that version under these terms, but
 future versions may require separate licensing agreements and may not be free
 of charge.
 

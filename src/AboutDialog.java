@@ -60,10 +60,11 @@ public class AboutDialog extends JDialog {
 
         contentPanel.add(Box.createVerticalStrut(5));
 
-        // Website (clickable)
+        // Website (clickable) - centered panel
+        JPanel websitePanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        websitePanel.setBackground(Color.WHITE);
         JLabel websiteLabel = new JLabel("<html><a href=''>www.warestat.com</a></html>");
         websiteLabel.setFont(new Font("SansSerif", Font.PLAIN, 11));
-        websiteLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
         websiteLabel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         websiteLabel.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override
@@ -71,7 +72,8 @@ public class AboutDialog extends JDialog {
                 openWebsite();
             }
         });
-        contentPanel.add(websiteLabel);
+        websitePanel.add(websiteLabel);
+        contentPanel.add(websitePanel);
 
         contentPanel.add(Box.createVerticalStrut(20));
 
@@ -114,12 +116,24 @@ public class AboutDialog extends JDialog {
 
         contentPanel.add(Box.createVerticalStrut(15));
 
-        // Contact info
-        JLabel contactLabel = new JLabel("Contact: " + AppConstants.CONTACT_EMAIL);
-        contactLabel.setFont(new Font("SansSerif", Font.PLAIN, 10));
-        contactLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-        contactLabel.setForeground(Color.GRAY);
-        contentPanel.add(contactLabel);
+        // Contact info (email as clickable link)
+        JPanel contactPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        contactPanel.setBackground(Color.WHITE);
+        JLabel contactTextLabel = new JLabel("Contact: ");
+        contactTextLabel.setFont(new Font("SansSerif", Font.PLAIN, 10));
+        contactTextLabel.setForeground(Color.GRAY);
+        JLabel emailLabel = new JLabel("<html><a href=''>" + AppConstants.CONTACT_EMAIL + "</a></html>");
+        emailLabel.setFont(new Font("SansSerif", Font.PLAIN, 10));
+        emailLabel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        emailLabel.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                openEmail();
+            }
+        });
+        contactPanel.add(contactTextLabel);
+        contactPanel.add(emailLabel);
+        contentPanel.add(contactPanel);
 
         add(contentPanel, BorderLayout.CENTER);
 
@@ -147,41 +161,77 @@ public class AboutDialog extends JDialog {
         }
     }
 
-    private void openLicenseFile() {
-        File licenseFile = new File("LICENSE.txt");
-        if (!licenseFile.exists()) {
-            JOptionPane.showMessageDialog(this,
-                "LICENSE.txt file not found in the application directory.",
-                "File Not Found",
-                JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-
+    private void openEmail() {
         try {
-            Desktop.getDesktop().open(licenseFile);
-        } catch (IOException e) {
+            Desktop.getDesktop().mail(new URI("mailto:" + AppConstants.CONTACT_EMAIL));
+        } catch (Exception e) {
             JOptionPane.showMessageDialog(this,
-                "Could not open LICENSE.txt file.\nPlease open it manually from the application folder.",
-                "Error",
-                JOptionPane.ERROR_MESSAGE);
+                "Could not open email client. Please send email to: " + AppConstants.CONTACT_EMAIL,
+                "Information",
+                JOptionPane.INFORMATION_MESSAGE);
         }
     }
 
+    private void openLicenseFile() {
+        showTextFileDialog("LICENSE.txt", "Software License");
+    }
+
     private void openThirdPartyLicenses() {
-        File thirdPartyFile = new File("LICENSE-THIRD-PARTY.txt");
-        if (!thirdPartyFile.exists()) {
+        showTextFileDialog("LICENSE-THIRD-PARTY.txt", "Third-Party Licenses");
+    }
+
+    /**
+     * Display a text file in a dialog window within the application.
+     */
+    private void showTextFileDialog(String fileName, String title) {
+        File file = new File(fileName);
+        if (!file.exists()) {
             JOptionPane.showMessageDialog(this,
-                "LICENSE-THIRD-PARTY.txt file not found in the application directory.",
+                fileName + " file not found in the application directory.",
                 "File Not Found",
                 JOptionPane.WARNING_MESSAGE);
             return;
         }
 
         try {
-            Desktop.getDesktop().open(thirdPartyFile);
+            // Read file content
+            StringBuilder content = new StringBuilder();
+            java.io.BufferedReader reader = new java.io.BufferedReader(
+                new java.io.FileReader(file));
+            String line;
+            while ((line = reader.readLine()) != null) {
+                content.append(line).append("\n");
+            }
+            reader.close();
+
+            // Create dialog
+            JDialog dialog = new JDialog(this, title, true);
+            dialog.setLayout(new BorderLayout());
+
+            // Text area with scrolling
+            JTextArea textArea = new JTextArea(content.toString());
+            textArea.setEditable(false);
+            textArea.setFont(new Font("Monospaced", Font.PLAIN, 11));
+            textArea.setCaretPosition(0);
+
+            JScrollPane scrollPane = new JScrollPane(textArea);
+            scrollPane.setPreferredSize(new Dimension(700, 500));
+            dialog.add(scrollPane, BorderLayout.CENTER);
+
+            // Close button
+            JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+            JButton closeButton = new JButton("Close");
+            closeButton.addActionListener(e -> dialog.dispose());
+            buttonPanel.add(closeButton);
+            dialog.add(buttonPanel, BorderLayout.SOUTH);
+
+            dialog.pack();
+            dialog.setLocationRelativeTo(this);
+            dialog.setVisible(true);
+
         } catch (IOException e) {
             JOptionPane.showMessageDialog(this,
-                "Could not open LICENSE-THIRD-PARTY.txt file.\nPlease open it manually from the application folder.",
+                "Error reading " + fileName + ":\n" + e.getMessage(),
                 "Error",
                 JOptionPane.ERROR_MESSAGE);
         }
