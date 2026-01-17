@@ -24,6 +24,7 @@ public class SalesReportPanel extends JPanel {
     private JLabel totalOrdersLabel;
     private JLabel averageOrderLabel;
     private SimpleDateFormat dateFormat;
+    private JButton detailsButton;
 
     public SalesReportPanel() {
         dateFormat = new SimpleDateFormat("dd/MM/yyyy");
@@ -101,11 +102,21 @@ public class SalesReportPanel extends JPanel {
         JPanel buttonPanel = new JPanel(new FlowLayout());
         JButton exportPdfButton = new JButton("Export as PDF");
         JButton exportButton = new JButton("Export CSV");
-        JButton detailsButton = new JButton("Order Details");
+        detailsButton = new JButton("Order Details");
 
         exportPdfButton.addActionListener(e -> exportToPDF());
         exportButton.addActionListener(e -> exportToCSV());
         detailsButton.addActionListener(e -> showOrderDetails());
+
+        // Initially disable the details button (no row selected)
+        detailsButton.setEnabled(false);
+
+        // Add selection listener to enable/disable the details button
+        reportTable.getSelectionModel().addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting()) {
+                detailsButton.setEnabled(reportTable.getSelectedRow() != -1);
+            }
+        });
 
         buttonPanel.add(exportPdfButton);
         buttonPanel.add(exportButton);
