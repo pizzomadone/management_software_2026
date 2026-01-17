@@ -21,8 +21,15 @@
     <property name="build.classes.dir" location="${build.dir}/classes"/>
     <property name="dist.dir" location="dist"/>
     <property name="tools.dir" location="tools"/>
+    <property name="resources.dir" location="resources"/>
+    <property name="icons.dir" location="${resources.dir}/icons"/>
     <property name="yguard.jar" location="${tools.dir}/yguard.jar"/>
     <property name="custom.runtime.dir" location="${build.dir}/custom-runtime"/>
+
+    <!-- Icon files for different platforms -->
+    <property name="icon.windows" location="${icons.dir}/warestat.ico"/>
+    <property name="icon.mac" location="${icons.dir}/warestat.icns"/>
+    <property name="icon.linux" location="${icons.dir}/warestat.png"/>
 
     <!-- Output files -->
     <property name="jar.file" value="${dist.dir}/${app.name}-${app.version}.jar"/>
@@ -237,7 +244,7 @@
         <mkdir dir="${build.dir}/jpackage-input-dev"/>
         <copy file="${jar.file}" todir="${build.dir}/jpackage-input-dev"/>
 
-        <!-- Detect OS -->
+        <!-- Detect OS and set icon file accordingly -->
         <condition property="is.windows">
             <os family="windows"/>
         </condition>
@@ -245,8 +252,39 @@
             <os family="mac"/>
         </condition>
         <condition property="is.linux">
-            <os family="unix"/>
+            <and>
+                <os family="unix"/>
+                <not><os family="mac"/></not>
+            </and>
         </condition>
+
+        <!-- Determine which icon file to use based on OS -->
+        <condition property="icon.file" value="${icon.windows}">
+            <isset property="is.windows"/>
+        </condition>
+        <condition property="icon.file" value="${icon.mac}">
+            <isset property="is.mac"/>
+        </condition>
+        <condition property="icon.file" value="${icon.linux}">
+            <isset property="is.linux"/>
+        </condition>
+
+        <!-- Check if icon file exists -->
+        <available file="${icon.file}" property="icon.exists"/>
+        <condition property="use.icon">
+            <and>
+                <isset property="icon.file"/>
+                <isset property="icon.exists"/>
+            </and>
+        </condition>
+
+        <!-- Display icon status -->
+        <echo message="Platform: ${os.name}"/>
+        <echo message="Icon file: ${icon.file}"/>
+        <condition property="icon.status" value="found - will be included" else="not found - using default">
+            <isset property="use.icon"/>
+        </condition>
+        <echo message="Icon status: ${icon.status}"/>
 
         <!-- Common jpackage arguments with custom runtime -->
         <exec executable="jpackage" failonerror="true">
@@ -261,6 +299,9 @@
             <arg value="--description"/><arg value="Business Management Software (Development Build)"/>
             <arg value="--runtime-image"/><arg value="${custom.runtime.dir}"/>
             <arg value="--java-options"/><arg value="-Xmx1024m"/>
+            <!-- Add icon if available -->
+            <arg value="--icon" if="use.icon"/>
+            <arg value="${icon.file}" if="use.icon"/>
         </exec>
 
         <!-- Clean up temporary input directory -->
@@ -286,6 +327,48 @@
         <mkdir dir="${build.dir}/jpackage-input-release"/>
         <copy file="${jar.obfuscated.file}" todir="${build.dir}/jpackage-input-release"/>
 
+        <!-- Detect OS and set icon file accordingly (same as dev build) -->
+        <condition property="is.windows.release">
+            <os family="windows"/>
+        </condition>
+        <condition property="is.mac.release">
+            <os family="mac"/>
+        </condition>
+        <condition property="is.linux.release">
+            <and>
+                <os family="unix"/>
+                <not><os family="mac"/></not>
+            </and>
+        </condition>
+
+        <!-- Determine which icon file to use based on OS -->
+        <condition property="icon.file.release" value="${icon.windows}">
+            <isset property="is.windows.release"/>
+        </condition>
+        <condition property="icon.file.release" value="${icon.mac}">
+            <isset property="is.mac.release"/>
+        </condition>
+        <condition property="icon.file.release" value="${icon.linux}">
+            <isset property="is.linux.release"/>
+        </condition>
+
+        <!-- Check if icon file exists -->
+        <available file="${icon.file.release}" property="icon.exists.release"/>
+        <condition property="use.icon.release">
+            <and>
+                <isset property="icon.file.release"/>
+                <isset property="icon.exists.release"/>
+            </and>
+        </condition>
+
+        <!-- Display icon status -->
+        <echo message="Platform: ${os.name}"/>
+        <echo message="Icon file: ${icon.file.release}"/>
+        <condition property="icon.status.release" value="found - will be included" else="not found - using default">
+            <isset property="use.icon.release"/>
+        </condition>
+        <echo message="Icon status: ${icon.status.release}"/>
+
         <!-- Common jpackage arguments with custom runtime -->
         <exec executable="jpackage" failonerror="true">
             <arg value="--input"/><arg value="${build.dir}/jpackage-input-release"/>
@@ -299,6 +382,9 @@
             <arg value="--description"/><arg value="Business Management Software (Production Build)"/>
             <arg value="--runtime-image"/><arg value="${custom.runtime.dir}"/>
             <arg value="--java-options"/><arg value="-Xmx1024m"/>
+            <!-- Add icon if available -->
+            <arg value="--icon" if="use.icon.release"/>
+            <arg value="${icon.file.release}" if="use.icon.release"/>
         </exec>
 
         <!-- Clean up temporary input directory -->
