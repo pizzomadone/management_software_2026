@@ -287,7 +287,9 @@
         <echo message="Icon status: ${icon.status}"/>
 
         <!-- Common jpackage arguments with custom runtime -->
-        <exec executable="jpackage" failonerror="true">
+        <!-- Execute with icon if available -->
+        <exec executable="jpackage" failonerror="true" if:set="use.icon"
+              xmlns:if="ant:if">
             <arg value="--input"/><arg value="${build.dir}/jpackage-input-dev"/>
             <arg value="--name"/><arg value="${app.name}-dev"/>
             <arg value="--main-jar"/><arg value="${app.name}-${app.version}.jar"/>
@@ -299,9 +301,24 @@
             <arg value="--description"/><arg value="Business Management Software (Development Build)"/>
             <arg value="--runtime-image"/><arg value="${custom.runtime.dir}"/>
             <arg value="--java-options"/><arg value="-Xmx1024m"/>
-            <!-- Add icon if available -->
-            <arg value="--icon" if="use.icon"/>
-            <arg value="${icon.file}" if="use.icon"/>
+            <arg value="--icon"/>
+            <arg value="${icon.file}"/>
+        </exec>
+
+        <!-- Execute without icon if not available -->
+        <exec executable="jpackage" failonerror="true" unless:set="use.icon"
+              xmlns:unless="ant:unless">
+            <arg value="--input"/><arg value="${build.dir}/jpackage-input-dev"/>
+            <arg value="--name"/><arg value="${app.name}-dev"/>
+            <arg value="--main-jar"/><arg value="${app.name}-${app.version}.jar"/>
+            <arg value="--main-class"/><arg value="${main.class}"/>
+            <arg value="--type"/><arg value="app-image"/>
+            <arg value="--dest"/><arg value="${dist.dir}"/>
+            <arg value="--app-version"/><arg value="${app.version}"/>
+            <arg value="--vendor"/><arg value="${app.vendor}"/>
+            <arg value="--description"/><arg value="Business Management Software (Development Build)"/>
+            <arg value="--runtime-image"/><arg value="${custom.runtime.dir}"/>
+            <arg value="--java-options"/><arg value="-Xmx1024m"/>
         </exec>
 
         <!-- Clean up temporary input directory -->
@@ -370,7 +387,9 @@
         <echo message="Icon status: ${icon.status.release}"/>
 
         <!-- Common jpackage arguments with custom runtime -->
-        <exec executable="jpackage" failonerror="true">
+        <!-- Execute with icon if available -->
+        <exec executable="jpackage" failonerror="true" if:set="use.icon.release"
+              xmlns:if="ant:if">
             <arg value="--input"/><arg value="${build.dir}/jpackage-input-release"/>
             <arg value="--name"/><arg value="${app.name}"/>
             <arg value="--main-jar"/><arg value="${app.name}-${app.version}-obfuscated.jar"/>
@@ -382,9 +401,24 @@
             <arg value="--description"/><arg value="Business Management Software (Production Build)"/>
             <arg value="--runtime-image"/><arg value="${custom.runtime.dir}"/>
             <arg value="--java-options"/><arg value="-Xmx1024m"/>
-            <!-- Add icon if available -->
-            <arg value="--icon" if="use.icon.release"/>
-            <arg value="${icon.file.release}" if="use.icon.release"/>
+            <arg value="--icon"/>
+            <arg value="${icon.file.release}"/>
+        </exec>
+
+        <!-- Execute without icon if not available -->
+        <exec executable="jpackage" failonerror="true" unless:set="use.icon.release"
+              xmlns:unless="ant:unless">
+            <arg value="--input"/><arg value="${build.dir}/jpackage-input-release"/>
+            <arg value="--name"/><arg value="${app.name}"/>
+            <arg value="--main-jar"/><arg value="${app.name}-${app.version}-obfuscated.jar"/>
+            <arg value="--main-class"/><arg value="${main.class}"/>
+            <arg value="--type"/><arg value="app-image"/>
+            <arg value="--dest"/><arg value="${dist.dir}"/>
+            <arg value="--app-version"/><arg value="${app.version}"/>
+            <arg value="--vendor"/><arg value="${app.vendor}"/>
+            <arg value="--description"/><arg value="Business Management Software (Production Build)"/>
+            <arg value="--runtime-image"/><arg value="${custom.runtime.dir}"/>
+            <arg value="--java-options"/><arg value="-Xmx1024m"/>
         </exec>
 
         <!-- Clean up temporary input directory -->
