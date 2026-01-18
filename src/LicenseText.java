@@ -218,18 +218,41 @@ public class LicenseText {
 
     /**
      * Generate LICENSE.txt file if it doesn't exist.
+     * The file is saved in the same directory as the executable/JAR.
      * Should be called at application startup.
      */
     public static void ensureLicenseFileExists() {
-        java.io.File licenseFile = new java.io.File("LICENSE.txt");
-        if (!licenseFile.exists()) {
-            try {
+        try {
+            // Determine the directory where the executable/JAR is located
+            String jarPath = LicenseText.class.getProtectionDomain()
+                .getCodeSource().getLocation().toURI().getPath();
+            java.io.File jarFile = new java.io.File(jarPath);
+
+            // If jarFile is a directory (running from classes), use it
+            // If jarFile is a JAR file, get its parent directory
+            java.io.File executableDir = jarFile.isDirectory() ? jarFile : jarFile.getParentFile();
+
+            java.io.File licenseFile = new java.io.File(executableDir, "LICENSE.txt");
+
+            if (!licenseFile.exists()) {
                 java.io.FileWriter writer = new java.io.FileWriter(licenseFile);
                 writer.write(getSoftwareLicense());
                 writer.close();
-                System.out.println("LICENSE.txt generated successfully.");
-            } catch (java.io.IOException e) {
-                System.err.println("Warning: Could not create LICENSE.txt: " + e.getMessage());
+                System.out.println("LICENSE.txt generated successfully at: " + licenseFile.getAbsolutePath());
+            }
+        } catch (Exception e) {
+            System.err.println("Warning: Could not create LICENSE.txt: " + e.getMessage());
+            // Fallback: try to create in working directory
+            try {
+                java.io.File fallbackFile = new java.io.File("LICENSE.txt");
+                if (!fallbackFile.exists()) {
+                    java.io.FileWriter writer = new java.io.FileWriter(fallbackFile);
+                    writer.write(getSoftwareLicense());
+                    writer.close();
+                    System.out.println("LICENSE.txt generated in working directory (fallback).");
+                }
+            } catch (java.io.IOException ex) {
+                System.err.println("Warning: Could not create LICENSE.txt even in fallback location: " + ex.getMessage());
             }
         }
     }

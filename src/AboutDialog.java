@@ -212,9 +212,28 @@ public class AboutDialog extends JDialog {
 
     /**
      * Display a text file in a dialog window within the application.
+     * Looks for the file in the executable directory first, then in working directory.
      */
     private void showTextFileDialog(String fileName, String title) {
-        File file = new File(fileName);
+        File file = null;
+
+        try {
+            // Try to find file in executable/JAR directory first
+            String jarPath = AboutDialog.class.getProtectionDomain()
+                .getCodeSource().getLocation().toURI().getPath();
+            File jarFile = new File(jarPath);
+            File executableDir = jarFile.isDirectory() ? jarFile : jarFile.getParentFile();
+            file = new File(executableDir, fileName);
+
+            // If not found in executable dir, try working directory as fallback
+            if (!file.exists()) {
+                file = new File(fileName);
+            }
+        } catch (Exception e) {
+            // If any error determining executable dir, use working directory
+            file = new File(fileName);
+        }
+
         if (!file.exists()) {
             JOptionPane.showMessageDialog(this,
                 fileName + " file not found in the application directory.",
