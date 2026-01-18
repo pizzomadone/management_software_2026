@@ -218,7 +218,7 @@ public class LicenseText {
 
     /**
      * Generate LICENSE.txt file if it doesn't exist.
-     * The file is saved in the same directory as the executable/JAR.
+     * Checks both executable directory and database directory before creating.
      * Should be called at application startup.
      */
     public static void ensureLicenseFileExists() {
@@ -227,19 +227,31 @@ public class LicenseText {
             String jarPath = LicenseText.class.getProtectionDomain()
                 .getCodeSource().getLocation().toURI().getPath();
             java.io.File jarFile = new java.io.File(jarPath);
-
-            // If jarFile is a directory (running from classes), use it
-            // If jarFile is a JAR file, get its parent directory
             java.io.File executableDir = jarFile.isDirectory() ? jarFile : jarFile.getParentFile();
 
-            java.io.File licenseFile = new java.io.File(executableDir, "LICENSE.txt");
+            // Check if LICENSE.txt exists in executable directory
+            java.io.File licenseInExeDir = new java.io.File(executableDir, "LICENSE.txt");
 
-            if (!licenseFile.exists()) {
-                java.io.FileWriter writer = new java.io.FileWriter(licenseFile);
-                writer.write(getSoftwareLicense());
-                writer.close();
-                System.out.println("LICENSE.txt generated successfully at: " + licenseFile.getAbsolutePath());
+            // Check if LICENSE.txt exists in database directory
+            java.io.File licenseInDataDir = new java.io.File(
+                AppConstants.getAppDataDirectory().toFile(), "LICENSE.txt");
+
+            // If exists in either location, don't create it
+            if (licenseInExeDir.exists()) {
+                System.out.println("LICENSE.txt found in executable directory, skipping creation.");
+                return;
             }
+            if (licenseInDataDir.exists()) {
+                System.out.println("LICENSE.txt found in data directory, skipping creation.");
+                return;
+            }
+
+            // Create in executable directory (doesn't exist in either location)
+            java.io.FileWriter writer = new java.io.FileWriter(licenseInExeDir);
+            writer.write(getSoftwareLicense());
+            writer.close();
+            System.out.println("LICENSE.txt generated successfully at: " + licenseInExeDir.getAbsolutePath());
+
         } catch (Exception e) {
             System.err.println("Warning: Could not create LICENSE.txt: " + e.getMessage());
             // Fallback: try to create in working directory
