@@ -59,6 +59,9 @@ public class MainWindow extends JFrame {
         // Initialize the database FIRST before any UI setup
         DatabaseManager.getInstance().initDatabase();
 
+        // Ensure license file exists
+        LicenseText.ensureLicenseFileExists();
+
         setupWindow();
         setupMenuBar();
         setupToolBar();

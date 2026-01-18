@@ -173,11 +173,41 @@ public class AboutDialog extends JDialog {
     }
 
     private void openLicenseFile() {
-        showTextFileDialog("LICENSE.txt", "Software License");
+        showTextDialog("Software License", LicenseText.getSoftwareLicense());
     }
 
     private void openThirdPartyLicenses() {
         showTextFileDialog("LICENSE-THIRD-PARTY.txt", "Third-Party Licenses");
+    }
+
+    /**
+     * Display text content in a dialog window.
+     */
+    private void showTextDialog(String title, String content) {
+        // Create dialog
+        JDialog dialog = new JDialog(this, title, true);
+        dialog.setLayout(new BorderLayout());
+
+        // Text area with scrolling
+        JTextArea textArea = new JTextArea(content);
+        textArea.setEditable(false);
+        textArea.setFont(new Font("Monospaced", Font.PLAIN, 11));
+        textArea.setCaretPosition(0);
+
+        JScrollPane scrollPane = new JScrollPane(textArea);
+        scrollPane.setPreferredSize(new Dimension(700, 500));
+        dialog.add(scrollPane, BorderLayout.CENTER);
+
+        // Close button
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        JButton closeButton = new JButton("Close");
+        closeButton.addActionListener(e -> dialog.dispose());
+        buttonPanel.add(closeButton);
+        dialog.add(buttonPanel, BorderLayout.SOUTH);
+
+        dialog.pack();
+        dialog.setLocationRelativeTo(this);
+        dialog.setVisible(true);
     }
 
     /**
@@ -204,30 +234,8 @@ public class AboutDialog extends JDialog {
             }
             reader.close();
 
-            // Create dialog
-            JDialog dialog = new JDialog(this, title, true);
-            dialog.setLayout(new BorderLayout());
-
-            // Text area with scrolling
-            JTextArea textArea = new JTextArea(content.toString());
-            textArea.setEditable(false);
-            textArea.setFont(new Font("Monospaced", Font.PLAIN, 11));
-            textArea.setCaretPosition(0);
-
-            JScrollPane scrollPane = new JScrollPane(textArea);
-            scrollPane.setPreferredSize(new Dimension(700, 500));
-            dialog.add(scrollPane, BorderLayout.CENTER);
-
-            // Close button
-            JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
-            JButton closeButton = new JButton("Close");
-            closeButton.addActionListener(e -> dialog.dispose());
-            buttonPanel.add(closeButton);
-            dialog.add(buttonPanel, BorderLayout.SOUTH);
-
-            dialog.pack();
-            dialog.setLocationRelativeTo(this);
-            dialog.setVisible(true);
+            // Show using common method
+            showTextDialog(title, content.toString());
 
         } catch (IOException e) {
             JOptionPane.showMessageDialog(this,
