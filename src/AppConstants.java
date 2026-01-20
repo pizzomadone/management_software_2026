@@ -251,11 +251,31 @@ public class AppConstants {
 
     /**
      * Gets the full path to the EULA acceptance tracking file.
+     * On Windows: uses executable directory.
+     * On other OS: uses app data directory.
      *
      * @return The path to the EULA acceptance file
      */
     public static Path getEulaAcceptedPath() {
-        return getAppDataDirectory().resolve(EULA_ACCEPTED_FILE_NAME);
+        String os = System.getProperty("os.name").toLowerCase();
+        boolean isWindows = os.contains("win");
+
+        if (isWindows) {
+            // On Windows: use executable directory
+            try {
+                String jarPath = AppConstants.class.getProtectionDomain()
+                    .getCodeSource().getLocation().toURI().getPath();
+                java.io.File jarFile = new java.io.File(jarPath);
+                java.io.File executableDir = jarFile.isDirectory() ? jarFile : jarFile.getParentFile();
+                return executableDir.toPath().resolve(EULA_ACCEPTED_FILE_NAME);
+            } catch (Exception e) {
+                System.err.println("Warning: Could not determine executable directory, using app data directory: " + e.getMessage());
+                return getAppDataDirectory().resolve(EULA_ACCEPTED_FILE_NAME);
+            }
+        } else {
+            // On other OS: use app data directory
+            return getAppDataDirectory().resolve(EULA_ACCEPTED_FILE_NAME);
+        }
     }
 
     /**
