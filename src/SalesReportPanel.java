@@ -352,7 +352,7 @@ public class SalesReportPanel extends JPanel {
                 fileToSave = new File(fileToSave + ".csv");
             }
 
-            try (PrintWriter writer = new PrintWriter(new FileWriter(fileToSave))) {
+            try (PrintWriter writer = new PrintWriter(new FileWriter(fileToSave, java.nio.charset.StandardCharsets.UTF_8))) {
                 // Column headers
                 for (int i = 0; i < tableModel.getColumnCount(); i++) {
                     if (i > 0) writer.print(",");

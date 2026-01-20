@@ -138,6 +138,11 @@ public class AppConstants {
     public static final String SETTINGS_FILE_NAME = "app_settings.properties";
 
     /**
+     * The name of the EULA acceptance tracking file.
+     */
+    public static final String EULA_ACCEPTED_FILE_NAME = "eula_accepted.txt";
+
+    /**
      * The default backup directory name (relative to app data directory).
      */
     public static final String BACKUP_DIR_NAME = "backups";
@@ -181,11 +186,31 @@ public class AppConstants {
 
     /**
      * Gets the full path to the database file.
+     * On Windows: uses executable directory.
+     * On other OS: uses app data directory.
      *
      * @return The path to the database file
      */
     public static Path getDatabasePath() {
-        return getAppDataDirectory().resolve(DATABASE_FILE_NAME);
+        String os = System.getProperty("os.name").toLowerCase();
+        boolean isWindows = os.contains("win");
+
+        if (isWindows) {
+            // On Windows: use executable directory
+            try {
+                String jarPath = AppConstants.class.getProtectionDomain()
+                    .getCodeSource().getLocation().toURI().getPath();
+                java.io.File jarFile = new java.io.File(jarPath);
+                java.io.File executableDir = jarFile.isDirectory() ? jarFile : jarFile.getParentFile();
+                return executableDir.toPath().resolve(DATABASE_FILE_NAME);
+            } catch (Exception e) {
+                System.err.println("Warning: Could not determine executable directory, using app data directory: " + e.getMessage());
+                return getAppDataDirectory().resolve(DATABASE_FILE_NAME);
+            }
+        } else {
+            // On other OS: use app data directory
+            return getAppDataDirectory().resolve(DATABASE_FILE_NAME);
+        }
     }
 
     /**
@@ -222,6 +247,38 @@ public class AppConstants {
             System.err.println("Warning: Could not create backup directory: " + e.getMessage());
         }
         return backupDir;
+    }
+
+    /**
+     * Gets the full path to the EULA acceptance tracking file.
+     *
+     * @return The path to the EULA acceptance file
+     */
+    public static Path getEulaAcceptedPath() {
+        return getAppDataDirectory().resolve(EULA_ACCEPTED_FILE_NAME);
+    }
+
+    /**
+     * Checks if the EULA has been accepted by the user.
+     *
+     * @return true if EULA has been accepted, false otherwise
+     */
+    public static boolean isEulaAccepted() {
+        return Files.exists(getEulaAcceptedPath());
+    }
+
+    /**
+     * Marks the EULA as accepted by creating the acceptance tracking file.
+     */
+    public static void markEulaAsAccepted() {
+        try {
+            Files.writeString(getEulaAcceptedPath(),
+                "EULA accepted on: " + java.time.LocalDateTime.now().toString(),
+                java.nio.charset.StandardCharsets.UTF_8);
+            System.out.println("EULA acceptance recorded at: " + getEulaAcceptedPath());
+        } catch (IOException e) {
+            System.err.println("Warning: Could not create EULA acceptance file: " + e.getMessage());
+        }
     }
 
     // Private constructor to prevent instantiation

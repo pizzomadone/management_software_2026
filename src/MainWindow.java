@@ -56,6 +56,15 @@ public class MainWindow extends JFrame {
     private String currentPanel = "HOME";
     
     public MainWindow() {
+        // Check EULA acceptance FIRST before any initialization
+        if (!AppConstants.isEulaAccepted()) {
+            // Show EULA dialog - must accept to continue
+            boolean accepted = EulaDialog.showDialog(null);
+            if (!accepted) {
+                System.exit(0);
+            }
+        }
+
         // Initialize the database FIRST before any UI setup
         DatabaseManager.getInstance().initDatabase();
 

@@ -381,7 +381,7 @@ public class WarehouseReportPanel extends JPanel {
         fileChooser.setSelectedFile(new File("warehouse_report.csv"));
 
         if (fileChooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
-            try (PrintWriter writer = new PrintWriter(new FileWriter(fileChooser.getSelectedFile()))) {
+            try (PrintWriter writer = new PrintWriter(new FileWriter(fileChooser.getSelectedFile(), java.nio.charset.StandardCharsets.UTF_8))) {
                 // Headers
                 for (int i = 0; i < productsModel.getColumnCount(); i++) {
                     writer.print(productsModel.getColumnName(i));
@@ -420,7 +420,7 @@ public class WarehouseReportPanel extends JPanel {
         fileChooser.setSelectedFile(new File("warehouse_movements_report.csv"));
 
         if (fileChooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
-            try (PrintWriter writer = new PrintWriter(new FileWriter(fileChooser.getSelectedFile()))) {
+            try (PrintWriter writer = new PrintWriter(new FileWriter(fileChooser.getSelectedFile(), java.nio.charset.StandardCharsets.UTF_8))) {
                 // Headers
                 writer.println("Warehouse Movements Report");
                 writer.println("Period: " + startDateField.getText() + " - " + endDateField.getText());
