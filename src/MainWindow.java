@@ -775,6 +775,10 @@ public class MainWindow extends JFrame {
             } catch (Exception e) {
                 e.printStackTrace();
             }
+
+            // Check and show license acceptance dialog on first run
+            LicenseAcceptanceDialog.checkAndShowLicenseDialog(null);
+
             MainWindow mainWindow = new MainWindow();
             mainWindow.setVisible(true);
         });
