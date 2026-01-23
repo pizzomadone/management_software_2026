@@ -431,16 +431,20 @@ public class SettingsPanel extends JPanel {
         settings.setProperty("currency", (String)currencyCombo.getSelectedItem());
         settings.setProperty("default_vat", defaultVatField.getText().trim());
 
-        try (FileOutputStream fos = new FileOutputStream(AppConstants.getSettingsPath().toFile())) {
-            settings.store(fos, "Application Settings");
+        try (OutputStreamWriter writer = new OutputStreamWriter(
+                new FileOutputStream(AppConstants.getSettingsPath().toFile()),
+                java.nio.charset.StandardCharsets.UTF_8)) {
+            settings.store(writer, "Application Settings");
         } catch (IOException e) {
             throw new RuntimeException("Failed to save settings file", e);
         }
     }
 
     private void loadSettings() {
-        try (FileInputStream fis = new FileInputStream(AppConstants.getSettingsPath().toFile())) {
-            settings.load(fis);
+        try (InputStreamReader reader = new InputStreamReader(
+                new FileInputStream(AppConstants.getSettingsPath().toFile()),
+                java.nio.charset.StandardCharsets.UTF_8)) {
+            settings.load(reader);
         } catch (IOException e) {
             setDefaultSettings();
         }

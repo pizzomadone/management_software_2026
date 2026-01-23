@@ -25,8 +25,10 @@ public class BackupManager {
         try {
             Path configPath = AppConstants.getBackupConfigPath();
             if (Files.exists(configPath)) {
-                try (FileInputStream fis = new FileInputStream(configPath.toFile())) {
-                    config.load(fis);
+                try (InputStreamReader reader = new InputStreamReader(
+                        new FileInputStream(configPath.toFile()),
+                        java.nio.charset.StandardCharsets.UTF_8)) {
+                    config.load(reader);
                 }
             } else {
                 // Default settings
@@ -41,8 +43,10 @@ public class BackupManager {
     }
 
     private void saveConfig() {
-        try (FileOutputStream fos = new FileOutputStream(AppConstants.getBackupConfigPath().toFile())) {
-            config.store(fos, "Backup Configuration");
+        try (OutputStreamWriter writer = new OutputStreamWriter(
+                new FileOutputStream(AppConstants.getBackupConfigPath().toFile()),
+                java.nio.charset.StandardCharsets.UTF_8)) {
+            config.store(writer, "Backup Configuration");
         } catch (IOException e) {
             e.printStackTrace();
         }
