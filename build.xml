@@ -197,7 +197,7 @@
                debug="false"
                source="21"
                target="21"
-               includes="LicenseViewer.java,LicenseText.java,AppConstants.java">
+               includes="LicenseText.java,AppConstants.java">
             <classpath refid="compile.classpath"/>
         </javac>
         <echo message="License viewer compilation complete!"/>
@@ -211,7 +211,7 @@
 
         <jar destfile="${jar.license.file}" filesetmanifest="mergewithoutmain">
             <manifest>
-                <attribute name="Main-Class" value="LicenseViewer"/>
+                <attribute name="Main-Class" value="LicenseText"/>
                 <attribute name="Implementation-Title" value="${app.name} License Viewer"/>
                 <attribute name="Implementation-Version" value="${app.version}"/>
                 <attribute name="Implementation-Vendor" value="${app.vendor}"/>
@@ -529,7 +529,7 @@
             <arg value="--input"/><arg value="${build.dir}/jpackage-input-license"/>
             <arg value="--name"/><arg value="license"/>
             <arg value="--main-jar"/><arg value="License-Viewer.jar"/>
-            <arg value="--main-class"/><arg value="LicenseViewer"/>
+            <arg value="--main-class"/><arg value="LicenseText"/>
             <arg value="--type"/><arg value="app-image"/>
             <arg value="--dest"/><arg value="${build.dir}"/>
             <arg value="--app-version"/><arg value="${app.version}"/>
@@ -547,7 +547,7 @@
             <arg value="--input"/><arg value="${build.dir}/jpackage-input-license"/>
             <arg value="--name"/><arg value="license"/>
             <arg value="--main-jar"/><arg value="License-Viewer.jar"/>
-            <arg value="--main-class"/><arg value="LicenseViewer"/>
+            <arg value="--main-class"/><arg value="LicenseText"/>
             <arg value="--type"/><arg value="app-image"/>
             <arg value="--dest"/><arg value="${build.dir}"/>
             <arg value="--app-version"/><arg value="${app.version}"/>

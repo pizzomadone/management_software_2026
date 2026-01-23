@@ -242,4 +242,71 @@ public class LicenseText {
             System.err.println("Warning: Could not create LICENSE.txt: " + e.getMessage());
         }
     }
+
+    /**
+     * Main method to display the license in a GUI window.
+     * Used when running license.exe as a standalone application.
+     */
+    public static void main(String[] args) {
+        // Set look and feel
+        try {
+            javax.swing.UIManager.setLookAndFeel(javax.swing.UIManager.getSystemLookAndFeelClassName());
+        } catch (Exception e) {
+            // Use default look and feel if system LAF fails
+        }
+
+        // Create and show GUI on Event Dispatch Thread
+        javax.swing.SwingUtilities.invokeLater(() -> createAndShowGUI());
+    }
+
+    private static void createAndShowGUI() {
+        // Create main frame
+        javax.swing.JFrame frame = new javax.swing.JFrame(AppConstants.SOFTWARE_NAME + " - License Agreement");
+        frame.setDefaultCloseOperation(javax.swing.JFrame.EXIT_ON_CLOSE);
+        frame.setSize(800, 600);
+
+        // Create text area for license
+        javax.swing.JTextArea textArea = new javax.swing.JTextArea();
+        textArea.setText(getSoftwareLicense());
+        textArea.setEditable(false);
+        textArea.setFont(new java.awt.Font("Monospaced", java.awt.Font.PLAIN, 12));
+        textArea.setMargin(new java.awt.Insets(10, 10, 10, 10));
+        textArea.setCaretPosition(0); // Scroll to top
+
+        // Add text area to scroll pane
+        javax.swing.JScrollPane scrollPane = new javax.swing.JScrollPane(textArea);
+        scrollPane.setVerticalScrollBarPolicy(javax.swing.JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
+
+        // Create button panel
+        javax.swing.JPanel buttonPanel = new javax.swing.JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.CENTER, 10, 10));
+
+        // Add close button
+        javax.swing.JButton closeButton = new javax.swing.JButton("Close");
+        closeButton.addActionListener(e -> System.exit(0));
+        buttonPanel.add(closeButton);
+
+        // Add copy button
+        javax.swing.JButton copyButton = new javax.swing.JButton("Copy to Clipboard");
+        copyButton.addActionListener(e -> {
+            textArea.selectAll();
+            textArea.copy();
+            textArea.setCaretPosition(0);
+            javax.swing.JOptionPane.showMessageDialog(frame,
+                "License text copied to clipboard!",
+                "Copied",
+                javax.swing.JOptionPane.INFORMATION_MESSAGE);
+        });
+        buttonPanel.add(copyButton);
+
+        // Layout frame
+        frame.setLayout(new java.awt.BorderLayout());
+        frame.add(scrollPane, java.awt.BorderLayout.CENTER);
+        frame.add(buttonPanel, java.awt.BorderLayout.SOUTH);
+
+        // Center frame on screen
+        frame.setLocationRelativeTo(null);
+
+        // Show frame
+        frame.setVisible(true);
+    }
 }
