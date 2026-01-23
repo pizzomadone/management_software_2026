@@ -34,6 +34,7 @@
     <!-- Output files -->
     <property name="jar.file" value="${dist.dir}/${app.name}-${app.version}.jar"/>
     <property name="jar.obfuscated.file" value="${dist.dir}/${app.name}-${app.version}-obfuscated.jar"/>
+    <property name="jar.license.file" value="${dist.dir}/License-Viewer.jar"/>
 
     <!-- Classpath for compilation -->
     <path id="compile.classpath">
@@ -182,6 +183,45 @@
 
         <echo message="Obfuscation complete: ${jar.obfuscated.file}"/>
         <echo message="Mapping file saved to: ${dist.dir}/yguard-log.xml"/>
+    </target>
+
+    <!-- =================================
+          Target: compile-license-viewer
+         ================================= -->
+    <target name="compile-license-viewer" depends="init" description="Compile license viewer sources">
+        <echo message="Compiling license viewer..."/>
+        <mkdir dir="${build.dir}/license-classes"/>
+        <javac srcdir="${src.dir}"
+               destdir="${build.dir}/license-classes"
+               includeantruntime="false"
+               debug="false"
+               source="21"
+               target="21"
+               includes="LicenseViewer.java,LicenseText.java,AppConstants.java">
+            <classpath refid="compile.classpath"/>
+        </javac>
+        <echo message="License viewer compilation complete!"/>
+    </target>
+
+    <!-- =================================
+          Target: jar-license
+         ================================= -->
+    <target name="jar-license" depends="compile-license-viewer" description="Create executable JAR for license viewer">
+        <echo message="Creating license viewer JAR..."/>
+
+        <jar destfile="${jar.license.file}" filesetmanifest="mergewithoutmain">
+            <manifest>
+                <attribute name="Main-Class" value="LicenseViewer"/>
+                <attribute name="Implementation-Title" value="${app.name} License Viewer"/>
+                <attribute name="Implementation-Version" value="${app.version}"/>
+                <attribute name="Implementation-Vendor" value="${app.vendor}"/>
+            </manifest>
+
+            <!-- Add compiled classes -->
+            <fileset dir="${build.dir}/license-classes"/>
+        </jar>
+
+        <echo message="License viewer JAR created: ${jar.license.file}"/>
     </target>
 
     <!-- =================================
@@ -429,6 +469,101 @@
     </target>
 
     <!-- =================================
+          Target: package-license-exe
+         ================================= -->
+    <target name="package-license-exe" depends="jar-license,create-custom-runtime,jpackage-check"
+            description="Create license.exe executable">
+        <fail unless="jpackage.available"
+              message="jpackage not found! Please ensure you have JDK 14+ with jpackage in your PATH."/>
+
+        <echo message="Creating license.exe executable..."/>
+
+        <!-- Create clean input directory for jpackage -->
+        <mkdir dir="${build.dir}/jpackage-input-license"/>
+        <copy file="${jar.license.file}" todir="${build.dir}/jpackage-input-license"/>
+
+        <!-- Detect OS and set icon file accordingly -->
+        <condition property="is.windows.license">
+            <os family="windows"/>
+        </condition>
+        <condition property="is.mac.license">
+            <os family="mac"/>
+        </condition>
+        <condition property="is.linux.license">
+            <and>
+                <os family="unix"/>
+                <not><os family="mac"/></not>
+            </and>
+        </condition>
+
+        <!-- Determine which icon file to use based on OS -->
+        <condition property="icon.file.license" value="${icon.windows}">
+            <isset property="is.windows.license"/>
+        </condition>
+        <condition property="icon.file.license" value="${icon.mac}">
+            <isset property="is.mac.license"/>
+        </condition>
+        <condition property="icon.file.license" value="${icon.linux}">
+            <isset property="is.linux.license"/>
+        </condition>
+
+        <!-- Check if icon file exists -->
+        <available file="${icon.file.license}" property="icon.exists.license"/>
+        <condition property="use.icon.license">
+            <and>
+                <isset property="icon.file.license"/>
+                <isset property="icon.exists.license"/>
+            </and>
+        </condition>
+
+        <!-- Display icon status -->
+        <echo message="Creating license viewer executable for: ${os.name}"/>
+        <condition property="icon.status.license" value="found - will be included" else="not found - using default">
+            <isset property="use.icon.license"/>
+        </condition>
+        <echo message="Icon status: ${icon.status.license}"/>
+
+        <!-- Execute with icon if available -->
+        <exec executable="jpackage" failonerror="true" if:set="use.icon.license"
+              xmlns:if="ant:if">
+            <arg value="--input"/><arg value="${build.dir}/jpackage-input-license"/>
+            <arg value="--name"/><arg value="license"/>
+            <arg value="--main-jar"/><arg value="License-Viewer.jar"/>
+            <arg value="--main-class"/><arg value="LicenseViewer"/>
+            <arg value="--type"/><arg value="app-image"/>
+            <arg value="--dest"/><arg value="${build.dir}"/>
+            <arg value="--app-version"/><arg value="${app.version}"/>
+            <arg value="--vendor"/><arg value="${app.vendor}"/>
+            <arg value="--description"/><arg value="License Agreement Viewer"/>
+            <arg value="--runtime-image"/><arg value="${custom.runtime.dir}"/>
+            <arg value="--java-options"/><arg value="-Xmx256m"/>
+            <arg value="--icon"/>
+            <arg value="${icon.file.license}"/>
+        </exec>
+
+        <!-- Execute without icon if not available -->
+        <exec executable="jpackage" failonerror="true" unless:set="use.icon.license"
+              xmlns:unless="ant:unless">
+            <arg value="--input"/><arg value="${build.dir}/jpackage-input-license"/>
+            <arg value="--name"/><arg value="license"/>
+            <arg value="--main-jar"/><arg value="License-Viewer.jar"/>
+            <arg value="--main-class"/><arg value="LicenseViewer"/>
+            <arg value="--type"/><arg value="app-image"/>
+            <arg value="--dest"/><arg value="${build.dir}"/>
+            <arg value="--app-version"/><arg value="${app.version}"/>
+            <arg value="--vendor"/><arg value="${app.vendor}"/>
+            <arg value="--description"/><arg value="License Agreement Viewer"/>
+            <arg value="--runtime-image"/><arg value="${custom.runtime.dir}"/>
+            <arg value="--java-options"/><arg value="-Xmx256m"/>
+        </exec>
+
+        <!-- Clean up temporary input directory -->
+        <delete dir="${build.dir}/jpackage-input-license"/>
+
+        <echo message="License viewer executable created in: ${build.dir}/license/"/>
+    </target>
+
+    <!-- =================================
           Target: build (Development)
          ================================= -->
     <target name="build" depends="package-exe"
@@ -463,6 +598,37 @@
     </target>
 
     <!-- =================================
+          Target: build-release-with-license
+         ================================= -->
+    <target name="build-release-with-license" depends="package-exe-release,package-license-exe"
+            description="Full release build with license.exe included">
+        <echo message="Copying license executable to release directory..."/>
+
+        <!-- Detect platform and copy appropriate executable -->
+        <condition property="license.exe.name" value="license.exe" else="license">
+            <os family="windows"/>
+        </condition>
+
+        <!-- Copy license executable to main application directory -->
+        <copy file="${build.dir}/license/${license.exe.name}"
+              tofile="${dist.dir}/${app.name}/${license.exe.name}"
+              failonerror="true"/>
+
+        <echo message=""/>
+        <echo message="======================================"/>
+        <echo message="Production Build Complete (with License)!"/>
+        <echo message="======================================"/>
+        <echo message="Obfuscated JAR: ${jar.obfuscated.file}"/>
+        <echo message="Executable: ${dist.dir}/${app.name}/ (optimized with custom JRE)"/>
+        <echo message="License Viewer: ${dist.dir}/${app.name}/${license.exe.name}"/>
+        <echo message="Mapping file: ${dist.dir}/yguard-log.xml"/>
+        <echo message=""/>
+        <echo message="IMPORTANT: Keep yguard-log.xml safe to decode stack traces!"/>
+        <echo message="Size reduction: ~60% smaller than standard JRE bundle"/>
+        <echo message=""/>
+    </target>
+
+    <!-- =================================
           Target: test-jar
          ================================= -->
     <target name="test-jar" depends="jar" description="Test the JAR file">
@@ -482,9 +648,10 @@
         <echo message=""/>
         <echo message="Available targets:"/>
         <echo message=""/>
-        <echo message="  ant build              - Development build (JAR + executable, no obfuscation)"/>
-        <echo message="  ant build-release      - Production build (obfuscated JAR + executable)"/>
-        <echo message="  ant jar                - Create JAR only (no obfuscation)"/>
+        <echo message="  ant build                      - Development build (JAR + executable, no obfuscation)"/>
+        <echo message="  ant build-release              - Production build (obfuscated JAR + executable)"/>
+        <echo message="  ant build-release-with-license - Production build with license.exe included"/>
+        <echo message="  ant jar                        - Create JAR only (no obfuscation)"/>
         <echo message="  ant obfuscate          - Create obfuscated JAR only"/>
         <echo message="  ant package-exe        - Create native executable from JAR"/>
         <echo message="  ant package-exe-release - Create native executable from obfuscated JAR"/>
