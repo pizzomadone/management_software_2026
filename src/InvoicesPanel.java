@@ -156,9 +156,9 @@ public class InvoicesPanel extends JPanel {
                     }
 
                     row.add(rs.getString("customer_name"));
-                    row.add(String.format("%.2f €", taxableAmount));
-                    row.add(String.format("%.2f €", vat));
-                    row.add(String.format("%.2f €", total));
+                    row.add(SettingsPanel.formatCurrency(taxableAmount));
+                    row.add(SettingsPanel.formatCurrency(vat));
+                    row.add(SettingsPanel.formatCurrency(total));
                     row.add(rs.getString("status"));
                     tableModel.addRow(row);
                 }
@@ -240,9 +240,9 @@ public class InvoicesPanel extends JPanel {
                         }
 
                         row.add(rs.getString("customer_name"));
-                        row.add(String.format("%.2f €", totals[0]));
-                        row.add(String.format("%.2f €", totals[1]));
-                        row.add(String.format("%.2f €", totals[2]));
+                        row.add(SettingsPanel.formatCurrency(totals[0]));
+                        row.add(SettingsPanel.formatCurrency(totals[1]));
+                        row.add(SettingsPanel.formatCurrency(totals[2]));
                         row.add(rs.getString("status"));
                         tableModel.addRow(row);
                     }

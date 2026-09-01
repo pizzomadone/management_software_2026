@@ -86,7 +86,7 @@ public class SupplierPriceListDialog extends JDialog {
         // Price
         gbc.gridx = 0; gbc.gridy = 3;
         gbc.weightx = 0.0;
-        formPanel.add(new JLabel("* Price €:"), gbc);
+        formPanel.add(new JLabel("* Price " + SettingsPanel.getCurrencySymbol() + ":"), gbc);
 
         gbc.gridx = 1;
         gbc.weightx = 1.0;

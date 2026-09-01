@@ -131,7 +131,8 @@ public class InvoiceDialog extends JDialog {
         invoicePanel.add(statusCombo, gbc);
 
         // Products table
-        String[] columns = {"Code", "Product", "Quantity", "Unit Price €", "VAT Rate %", "Total €"};
+        String symbol = SettingsPanel.getCurrencySymbol();
+        String[] columns = {"Code", "Product", "Quantity", "Unit Price " + symbol, "VAT Rate %", "Total " + symbol};
         itemsTableModel = new InvoiceTableModel(columns, 0);
         itemsTable = new JTable(itemsTableModel);
 
@@ -170,9 +171,9 @@ public class InvoiceDialog extends JDialog {
         totalsPanel.setLayout(new BoxLayout(totalsPanel, BoxLayout.Y_AXIS));
         totalsPanel.setBorder(BorderFactory.createTitledBorder("Totals"));
 
-        taxableAmountLabel = new JLabel("Taxable Amount: € 0.00");
-        vatLabel = new JLabel("VAT: € 0.00");
-        totalLabel = new JLabel("TOTAL: € 0.00");
+        taxableAmountLabel = new JLabel("Taxable Amount: " + SettingsPanel.formatCurrency(0));
+        vatLabel = new JLabel("VAT: " + SettingsPanel.formatCurrency(0));
+        totalLabel = new JLabel("TOTAL: " + SettingsPanel.formatCurrency(0));
 
         totalLabel.setFont(totalLabel.getFont().deriveFont(Font.BOLD, 16f));
 
@@ -458,21 +459,10 @@ public class InvoiceDialog extends JDialog {
     }
 
     private void setupNewInvoice() {
-        try {
-            Calendar cal = Calendar.getInstance();
-            int year = cal.get(Calendar.YEAR);
-            String number = DatabaseManager.getInstance().getNextInvoiceNumber(year);
-            numberField.setText(number);
-
-            dateField.setText(dateFormat.format(cal.getTime()));
-            statusCombo.setSelectedItem("Draft");
-
-        } catch (SQLException e) {
-            e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
-                "Error while generating invoice number: " + e.getMessage(),
-                "Error", JOptionPane.ERROR_MESSAGE);
-        }
+        Calendar cal = Calendar.getInstance();
+        numberField.setText("Assigned when saved");
+        dateField.setText(dateFormat.format(cal.getTime()));
+        statusCombo.setSelectedItem("Draft");
     }
 
     private void loadInvoiceData() {
@@ -545,9 +535,9 @@ public class InvoiceDialog extends JDialog {
             currentVat = totalVat;
             currentTotal = total;
 
-            taxableAmountLabel.setText(String.format("Taxable Amount: € %.2f", taxableAmount));
-            vatLabel.setText(String.format("VAT: € %.2f", totalVat));
-            totalLabel.setText(String.format("TOTAL: € %.2f", total));
+            taxableAmountLabel.setText("Taxable Amount: " + SettingsPanel.formatCurrency(taxableAmount));
+            vatLabel.setText("VAT: " + SettingsPanel.formatCurrency(totalVat));
+            totalLabel.setText("TOTAL: " + SettingsPanel.formatCurrency(total));
 
         } finally {
             isUpdatingTotals = false;
@@ -615,6 +605,10 @@ public class InvoiceDialog extends JDialog {
                 int invoiceId;
 
                 if (invoice == null) {
+                    Calendar invoiceCalendar = Calendar.getInstance();
+                    invoiceCalendar.setTime(invoiceDate);
+                    number = DatabaseManager.getInstance().getNextInvoiceNumber(
+                        conn, invoiceCalendar.get(Calendar.YEAR));
                     // New invoice
                     String invoiceQuery = """
                         INSERT INTO invoices (number, date, customer_id, taxable_amount, vat, total, status)
@@ -640,6 +634,7 @@ public class InvoiceDialog extends JDialog {
                     }
 
                     insertInvoiceDetails(conn, invoiceId);
+                    numberField.setText(number);
 
                 } else {
                     // Update existing invoice

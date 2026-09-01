@@ -225,16 +225,16 @@ public class CustomersPanel extends JPanel {
 
                 if (hasOrders || hasInvoices) {
                     StringBuilder message = new StringBuilder();
-                    message.append("Cannot delete customer '").append(fullName).append("' because they have:\n");
+                    message.append("Customer '").append(fullName).append("' has related business records:\n");
 
                     if (hasOrders) message.append("- Existing orders\n");
                     if (hasInvoices) message.append("- Invoices\n");
 
-                    message.append("\nOptions:\n");
-                    message.append("1. Delete/reassign related records first\n");
-                    message.append("2. Use 'Force Delete' to remove all related data");
+                    message.append("\nChoose what should happen:\n");
+                    message.append("- Keep: nothing is deleted; customer, orders, invoices, stock and reservations remain unchanged.\n");
+                    message.append("- Delete all: orders and invoices are permanently deleted; completed stock is restored, active reservations are removed and related movements are deleted.");
 
-                    String[] options = {"Cancel", "Force Delete (All Data)"};
+                    String[] options = {"Keep Customer and Records", "Delete Customer and All Related Data"};
                     int choice = JOptionPane.showOptionDialog(this,
                         message.toString(),
                         "Cannot Delete Customer",
@@ -282,7 +282,10 @@ public class CustomersPanel extends JPanel {
             "WARNING: This will permanently delete customer '" + fullName + "' and ALL related data:\n" +
             "- All orders from this customer\n" +
             "- All invoices\n" +
-            "- All order and invoice details\n\n" +
+            "- All order and invoice details\n" +
+            "- All related warehouse movements and stock reservations\n\n" +
+            "Completed order quantities will be returned to stock before deletion.\n" +
+            "Active reservations will be cancelled and removed.\n\n" +
             "This action CANNOT be undone!\n\n" +
             "Are you absolutely sure?",
             "FORCE DELETE - Final Confirmation",
@@ -297,6 +300,20 @@ public class CustomersPanel extends JPanel {
             conn.setAutoCommit(false);
 
             try {
+                try (PreparedStatement pstmt = conn.prepareStatement(
+                        "UPDATE invoices SET order_id = NULL WHERE customer_id = ?")) {
+                    pstmt.setInt(1, id);
+                    pstmt.executeUpdate();
+                }
+                String orderQuery = "SELECT id, status FROM orders WHERE customer_id = ?";
+                try (PreparedStatement pstmt = conn.prepareStatement(orderQuery)) {
+                    pstmt.setInt(1, id);
+                    try (ResultSet rs = pstmt.executeQuery()) {
+                        while (rs.next()) {
+                            StockManager.deleteOrder(conn, rs.getInt("id"), rs.getString("status"));
+                        }
+                    }
+                }
                 // Delete in order to respect foreign key constraints
 
                 // 1. Delete order details for this customer's orders

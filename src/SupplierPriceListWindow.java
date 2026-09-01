@@ -49,7 +49,7 @@ public class SupplierPriceListWindow extends JDialog {
 
     private void initComponents() {
         // Price list table
-        String[] columns = {"Product", "Supplier Code", "Price €", "Min. Qty.", "Valid From", "Valid Until", "Notes"};
+        String[] columns = {"Product", "Supplier Code", "Price " + SettingsPanel.getCurrencySymbol(), "Min. Qty.", "Valid From", "Valid Until", "Notes"};
         tableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {

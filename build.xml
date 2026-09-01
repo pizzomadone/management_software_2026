@@ -109,6 +109,11 @@
             <!-- Add compiled classes -->
             <fileset dir="${build.classes.dir}"/>
 
+            <!-- Add localization resource bundles -->
+            <fileset dir="${resources.dir}">
+                <include name="i18n/**"/>
+            </fileset>
+
             <!-- Add unpacked dependencies -->
             <fileset dir="${build.dir}/jar-temp">
                 <!-- Exclude signature files to avoid security exceptions -->

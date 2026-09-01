@@ -54,7 +54,7 @@ public class WarehouseReportPanel extends JPanel {
         statsPanel.setBorder(BorderFactory.createTitledBorder("General Statistics"));
 
         JLabel totalProductsLabel = new JLabel("Total Products: 0");
-        JLabel totalValueLabel = new JLabel("Total Value: € 0.00");
+        JLabel totalValueLabel = new JLabel("Total Value: " + SettingsPanel.formatCurrency(0));
         JLabel lowStockLabel = new JLabel("Low Stock Products: 0");
         JLabel outOfStockLabel = new JLabel("Out of Stock Products: 0");
 
@@ -243,7 +243,7 @@ public class WarehouseReportPanel extends JPanel {
 
             if (statsPanel.getComponentCount() >= 4) {
                 ((JLabel) statsPanel.getComponent(0)).setText("Total Products: " + totalProducts);
-                ((JLabel) statsPanel.getComponent(1)).setText(String.format("Total Value: € %.2f", totalValue));
+                ((JLabel) statsPanel.getComponent(1)).setText("Total Value: " + SettingsPanel.formatCurrency(totalValue));
                 ((JLabel) statsPanel.getComponent(2)).setText("Low Stock Products: " + lowStock);
                 ((JLabel) statsPanel.getComponent(3)).setText("Out of Stock Products: " + outOfStock);
             }

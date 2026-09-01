@@ -70,16 +70,16 @@ public class SalesReportPanel extends JPanel {
         JPanel statsPanel = new JPanel(new GridLayout(1, 3, 10, 10));
         statsPanel.setBorder(BorderFactory.createTitledBorder("Statistics"));
 
-        totalSalesLabel = new JLabel("Total Sales: € 0.00");
+        totalSalesLabel = new JLabel("Total Sales: " + SettingsPanel.formatCurrency(0));
         totalOrdersLabel = new JLabel("Number of Orders: 0");
-        averageOrderLabel = new JLabel("Average per Order: € 0.00");
+        averageOrderLabel = new JLabel("Average per Order: " + SettingsPanel.formatCurrency(0));
 
         statsPanel.add(totalSalesLabel);
         statsPanel.add(totalOrdersLabel);
         statsPanel.add(averageOrderLabel);
 
         // Report table
-        String[] columns = {"Date", "Order ID", "Customer", "Status", "Total €"};
+        String[] columns = {"Date", "Order ID", "Customer", "Status", "Total " + SettingsPanel.getCurrencySymbol()};
         tableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -193,20 +193,28 @@ public class SalesReportPanel extends JPanel {
                                COALESCE(c.first_name || ' ' || c.last_name, 'N/A') as customer_name
                         FROM orders o
                         LEFT JOIN customers c ON o.customer_id = c.id
-                        WHERE o.order_date >= ? AND o.order_date <= ?
+                        WHERE ((typeof(o.order_date) IN ('integer', 'real')
+                                AND CAST(o.order_date AS INTEGER) >= ? AND CAST(o.order_date AS INTEGER) < ?)
+                            OR (typeof(o.order_date) = 'text'
+                                AND datetime(o.order_date) >= datetime(?) AND datetime(o.order_date) < datetime(?)))
                         ORDER BY o.order_date DESC
                     """;
 
                     pstmt = conn.prepareStatement(query);
 
                     // CONVERT DATES TO ISO STRING FOR COMPARISON
-                    String startDateISO = String.format("%04d-%02d-%02d 00:00:00",
-                        startDate.getYear() + 1900, startDate.getMonth() + 1, startDate.getDate());
-                    String endDateISO = String.format("%04d-%02d-%02d 23:59:59",
-                        endDate.getYear() + 1900, endDate.getMonth() + 1, endDate.getDate());
+                    String startDateISO = new SimpleDateFormat("yyyy-MM-dd 00:00:00").format(startDate);
+                    Calendar endExclusive = Calendar.getInstance();
+                    endExclusive.setTime(endDate);
+                    endExclusive.add(Calendar.DAY_OF_MONTH, 1);
+                    String endDateISO = String.format("%04d-%02d-%02d 00:00:00",
+                        endExclusive.get(Calendar.YEAR), endExclusive.get(Calendar.MONTH) + 1,
+                        endExclusive.get(Calendar.DAY_OF_MONTH));
 
-                    pstmt.setString(1, startDateISO);
-                    pstmt.setString(2, endDateISO);
+                    pstmt.setLong(1, startDate.getTime());
+                    pstmt.setLong(2, endExclusive.getTimeInMillis());
+                    pstmt.setString(3, startDateISO);
+                    pstmt.setString(4, endDateISO);
 
                     System.out.println("Filtering orders from " + startDateISO + " to " + endDateISO);
                 }
@@ -240,15 +248,15 @@ public class SalesReportPanel extends JPanel {
                 }
 
                 // Update statistics
-                totalSalesLabel.setText(String.format("Total Sales: € %.2f", totalSales));
+                totalSalesLabel.setText("Total Sales: " + SettingsPanel.formatCurrency(totalSales));
                 totalOrdersLabel.setText("Number of Orders: " + totalOrders);
                 if (totalOrders > 0) {
-                    averageOrderLabel.setText(String.format("Average per Order: € %.2f", totalSales / totalOrders));
+                    averageOrderLabel.setText("Average per Order: " + SettingsPanel.formatCurrency(totalSales / totalOrders));
                 } else {
-                    averageOrderLabel.setText("Average per Order: € 0.00");
+                    averageOrderLabel.setText("Average per Order: " + SettingsPanel.formatCurrency(0));
                 }
 
-                System.out.println("Loaded " + totalOrders + " orders, total sales: €" + totalSales);
+                System.out.println("Loaded " + totalOrders + " orders, total sales: " + SettingsPanel.formatCurrency(totalSales));
             }
 
             if (pstmt != null) pstmt.close();

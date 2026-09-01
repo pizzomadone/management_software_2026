@@ -248,17 +248,17 @@ public class SuppliersPanel extends JPanel {
 
                 if (hasOrders || hasPriceList || hasMinStockReferences) {
                     StringBuilder message = new StringBuilder();
-                    message.append("Cannot delete supplier '").append(name).append("' because it has:\n");
+                    message.append("Supplier '").append(name).append("' has related business records:\n");
 
                     if (hasOrders) message.append("- Existing orders\n");
                     if (hasPriceList) message.append("- Price list entries\n");
                     if (hasMinStockReferences) message.append("- Minimum stock references\n");
 
-                    message.append("\nOptions:\n");
-                    message.append("1. Delete/reassign related records first\n");
-                    message.append("2. Use 'Force Delete' to remove all related data");
+                    message.append("\nChoose what should happen:\n");
+                    message.append("- Keep: nothing is deleted; supplier, orders, stock and references remain unchanged.\n");
+                    message.append("- Delete all: supplier orders and price lists are permanently deleted; stock received from completed orders is reversed and related movements are deleted.");
 
-                    String[] options = {"Cancel", "Force Delete (All Data)"};
+                    String[] options = {"Keep Supplier and Records", "Delete Supplier and All Related Data"};
                     int choice = JOptionPane.showOptionDialog(this,
                         message.toString(),
                         "Cannot Delete Supplier",
@@ -307,7 +307,9 @@ public class SuppliersPanel extends JPanel {
             "- All orders from this supplier\n" +
             "- All price list entries\n" +
             "- All references in minimum stock settings\n" +
-            "- All supplier references in products (will be set to none)\n\n" +
+            "- All supplier references in products (will be set to none)\n" +
+            "- All related warehouse movements\n\n" +
+            "Stock received from completed supplier orders will be removed before deletion.\n\n" +
             "This action CANNOT be undone!\n\n" +
             "Are you absolutely sure?",
             "FORCE DELETE - Final Confirmation",
@@ -322,6 +324,7 @@ public class SuppliersPanel extends JPanel {
             conn.setAutoCommit(false);
 
             try {
+                StockManager.reverseCompletedSupplierOrders(conn, id);
                 // Delete in order to respect foreign key constraints
 
                 // 1. Delete supplier order details

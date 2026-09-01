@@ -89,7 +89,7 @@ public class ProductSelectionDialog extends JDialog {
         searchPanel.add(searchInputPanel, BorderLayout.CENTER);
 
         // Products table with detailed information
-        String[] columns = {"ID", "Code", "Name", "Description", "Price €", "Stock", "Status"};
+        String[] columns = {"ID", "Code", "Name", "Description", "Price " + SettingsPanel.getCurrencySymbol(), "Stock", "Status"};
         tableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -375,11 +375,10 @@ public class ProductSelectionDialog extends JDialog {
                     try (ResultSet rs = pstmt.executeQuery()) {
                         if (rs.next()) {
                             double productVatRate = rs.getDouble("vat_rate");
-                            // Use product VAT if set (> 0), otherwise use default
-                            if (productVatRate > 0) {
-                                vatRateField.setText(String.format("%.1f", productVatRate));
-                            } else {
+                            if (rs.wasNull()) {
                                 vatRateField.setText(String.valueOf(SettingsPanel.getDefaultVatRate()));
+                            } else {
+                                vatRateField.setText(String.format("%.1f", productVatRate));
                             }
                         }
                     }
@@ -392,8 +391,8 @@ public class ProductSelectionDialog extends JDialog {
             // Update note with detailed and better formatted information
             if (noteLabel != null) {
                 String info = String.format(
-                    "Selected: %s - %s | Price: €%s | Stock: %d units (%s)",
-                    code, name, priceStr, stock, status
+                    "Selected: %s - %s | Price: %s | Stock: %d units (%s)",
+                    code, name, SettingsPanel.formatCurrency(parsePrice(priceStr)), stock, status
                 );
                 noteLabel.setText(info);
 
@@ -415,6 +414,14 @@ public class ProductSelectionDialog extends JDialog {
                 noteLabel.setForeground(new Color(60, 60, 60));
                 noteLabel.setBackground(new Color(248, 248, 248));
             }
+        }
+    }
+
+    private double parsePrice(String value) {
+        try {
+            return Double.parseDouble(value.replace(',', '.'));
+        } catch (NumberFormatException e) {
+            return 0.0;
         }
     }
     

@@ -56,6 +56,19 @@ public class MainWindow extends JFrame {
     private String currentPanel = "HOME";
     
     public MainWindow() {
+        SettingsPanel.loadGlobalSettings();
+        String language = SettingsPanel.getGlobalSetting("language", "");
+        if (language.isBlank()) {
+            String selected = (String) JOptionPane.showInputDialog(null,
+                "Lingua / Idioma / Langue / Sprache / Język",
+                "WareStat - Language", JOptionPane.QUESTION_MESSAGE, null,
+                I18n.languageNames(), I18n.nameForCode("it"));
+            language = I18n.codeForName(selected != null ? selected : I18n.nameForCode("it"));
+            SettingsPanel.setGlobalSetting("language", language);
+        }
+        I18n.setLanguage(language);
+        I18n.install();
+
         // Check EULA acceptance FIRST before any initialization
         if (!AppConstants.isEulaAccepted()) {
             // Show EULA dialog - must accept to continue
@@ -78,8 +91,8 @@ public class MainWindow extends JFrame {
         setupPanels();
 
         // Apply global settings on startup
-        SettingsPanel.loadGlobalSettings();
         SettingsPanel.applyGlobalSettings();
+        I18n.localize(this);
     }
     
     private void setupWindow() {
@@ -677,6 +690,7 @@ public class MainWindow extends JFrame {
         if (panel != null) {
             panel.setName(panelName);
             mainPanel.add(panel, panelName);
+            I18n.localize(panel);
         }
     }
     

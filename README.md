@@ -2,6 +2,17 @@
 
 Professional Business Management System
 
+## Data Model Changes
+
+- **2026-09-01:** invoices generated from orders now persist their source order in
+  `invoices.order_id`. Existing databases are migrated automatically; a unique
+  index prevents an order from generating more than one invoice.
+
+Database upgrades are managed centrally by `DatabaseMigrationManager`. Applied
+migration versions are recorded in `schema_migrations`, so each ordered migration
+runs once and future releases can add schema changes without expanding normal
+database access code.
+
 ## Features
 
 - **Customer Management** - Complete customer database with contact information
@@ -12,6 +23,16 @@ Professional Business Management System
 - **Warehouse Control** - Stock movements, notifications, and minimum stock levels
 - **Sales Reports & Analytics** - Detailed sales reports and business insights
 - **Backup & Restore** - Database backup and recovery system
+- **Localized Interface** - Italian, Spanish, Brazilian Portuguese, French,
+  German and Polish; selectable on first launch and from Settings
+
+## Localization
+
+Runtime localization is managed by `I18n`. Translation catalogs live in
+`resources/i18n/messages_<locale>.properties`, keeping translations separate
+from application logic. Swing components, dialog buttons, table headers and
+displayed status values are localized without changing the underlying database
+values used by business logic.
 
 ## System Requirements
 

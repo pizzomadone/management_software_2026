@@ -264,6 +264,14 @@ public class StockManager {
         }
     }
 
+    public static void reverseSupplierOrder(Connection conn, List<StockItem> items,
+                                            String documentNumber) throws SQLException {
+        for (StockItem item : items) {
+            decrementStock(conn, item.getProductId(), item.getQuantity());
+        }
+        deleteWarehouseMovements(conn, "SUPPLIER_ORDER", documentNumber);
+    }
+
     /**
      * Restore stock from a previous document (when editing/deleting)
      */
@@ -391,6 +399,36 @@ public class StockManager {
 
         // Delete warehouse movements related to this order
         deleteWarehouseMovements(conn, "ORDER", String.valueOf(orderId));
+
+        try (PreparedStatement pstmt = conn.prepareStatement(
+                "DELETE FROM stock_reservations WHERE document_type = 'ORDER' AND document_id = ?")) {
+            pstmt.setInt(1, orderId);
+            pstmt.executeUpdate();
+        }
+    }
+
+    public static void reverseCompletedSupplierOrders(Connection conn, int supplierId)
+            throws SQLException {
+        String ordersQuery = "SELECT id, number FROM supplier_orders WHERE supplier_id = ? AND status = 'Completed'";
+        try (PreparedStatement ordersStmt = conn.prepareStatement(ordersQuery)) {
+            ordersStmt.setInt(1, supplierId);
+            try (ResultSet orders = ordersStmt.executeQuery()) {
+                while (orders.next()) {
+                    List<StockItem> items = new ArrayList<>();
+                    try (PreparedStatement itemsStmt = conn.prepareStatement(
+                            "SELECT product_id, quantity FROM supplier_order_details WHERE order_id = ?")) {
+                        itemsStmt.setInt(1, orders.getInt("id"));
+                        try (ResultSet itemRows = itemsStmt.executeQuery()) {
+                            while (itemRows.next()) {
+                                items.add(new StockItem(itemRows.getInt("product_id"), "",
+                                    itemRows.getInt("quantity")));
+                            }
+                        }
+                    }
+                    reverseSupplierOrder(conn, items, orders.getString("number"));
+                }
+            }
+        }
     }
 
     /**

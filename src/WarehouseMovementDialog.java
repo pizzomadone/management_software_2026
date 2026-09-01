@@ -240,8 +240,8 @@ public class WarehouseMovementDialog extends JDialog {
                 selectedProduct.getName());
 
             selectProductButton.setText(buttonText);
-            selectProductButton.setToolTipText("Selected: " + buttonText + " (Price: €" +
-                String.format("%.2f", selectedProduct.getPrice()) + ")");
+            selectProductButton.setToolTipText("Selected: " + buttonText + " (Price: " +
+                SettingsPanel.formatCurrency(selectedProduct.getPrice()) + ")");
         }
     }
 

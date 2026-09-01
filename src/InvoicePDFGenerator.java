@@ -4,10 +4,13 @@ import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
+import org.apache.pdfbox.pdmodel.graphics.image.LosslessFactory;
+import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.sql.*;
@@ -15,6 +18,7 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
 import java.util.ArrayList;
+import javax.imageio.ImageIO;
 
 public class InvoicePDFGenerator {
     private static final float MARGIN = 40f;
@@ -188,7 +192,7 @@ public class InvoicePDFGenerator {
                 float yPosition = page.getMediaBox().getHeight() - MARGIN;
 
                 // Header with INVOICE title
-                yPosition = drawHeader(contentStream, yPosition, page);
+                yPosition = drawHeader(document, contentStream, yPosition, page);
                 yPosition -= 25f;
 
                 // Company and customer information
@@ -214,7 +218,8 @@ public class InvoicePDFGenerator {
         }
     }
 
-    private float drawHeader(PDPageContentStream contentStream, float yPosition, PDPage page) throws IOException {
+    private float drawHeader(PDDocument document, PDPageContentStream contentStream, float yPosition, PDPage page) throws IOException {
+        drawCompanyLogo(document, contentStream, yPosition);
         // Invoice title centered and prominent
         contentStream.beginText();
         contentStream.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 28f);
@@ -234,6 +239,38 @@ public class InvoicePDFGenerator {
         contentStream.stroke();
 
         return lineY - 15f;
+    }
+
+    private void drawCompanyLogo(PDDocument document, PDPageContentStream contentStream,
+                                 float yPosition) throws IOException {
+        String logoPath = companyData.getLogoPath();
+        if (logoPath == null || logoPath.isBlank()) return;
+
+        File logoFile = new File(logoPath);
+        if (!logoFile.isFile()) {
+            System.err.println("Company logo not found: " + logoPath);
+            return;
+        }
+
+        BufferedImage image;
+        try {
+            image = ImageIO.read(logoFile);
+        } catch (IOException e) {
+            System.err.println("Unable to read company logo: " + e.getMessage());
+            return;
+        }
+        if (image == null) {
+            System.err.println("Unsupported company logo image: " + logoPath);
+            return;
+        }
+
+        PDImageXObject pdfImage = LosslessFactory.createFromImage(document, image);
+        float maxWidth = 110f;
+        float maxHeight = 55f;
+        float scale = Math.min(maxWidth / image.getWidth(), maxHeight / image.getHeight());
+        float width = image.getWidth() * scale;
+        float height = image.getHeight() * scale;
+        contentStream.drawImage(pdfImage, MARGIN, yPosition - height + 8f, width, height);
     }
 
     private float drawCompanyAndCustomerInfo(PDPageContentStream contentStream, float yPosition, PDPage page) throws IOException {
@@ -387,7 +424,8 @@ public class InvoicePDFGenerator {
         contentStream.stroke();
 
         // Header texts
-        String[] headers = {"Code", "Description", "Qty", "Price €", "VAT%", "Total €"};
+        String currencyCode = SettingsPanel.getCurrencyCode();
+        String[] headers = {"Code", "Description", "Qty", "Price " + currencyCode, "VAT%", "Total " + currencyCode};
         drawTableRow(contentStream, MARGIN, yPosition, columnWidths, headerHeight, headers, true);
         yPosition -= headerHeight;
 
@@ -468,9 +506,9 @@ public class InvoicePDFGenerator {
 
         yPosition -= 35f;
         String[][] totals = {
-            {"Subtotal:", String.format("€ %.2f", invoice.getTaxableAmount())},
-            {"VAT:", String.format("€ %.2f", invoice.getVat())},
-            {"TOTAL:", String.format("€ %.2f", invoice.getTotal())}
+            {"Subtotal:", formatPdfCurrency(invoice.getTaxableAmount())},
+            {"VAT:", formatPdfCurrency(invoice.getVat())},
+            {"TOTAL:", formatPdfCurrency(invoice.getTotal())}
         };
 
         for (int i = 0; i < totals.length; i++) {
@@ -528,6 +566,10 @@ public class InvoicePDFGenerator {
         }
         text = text.trim();
         return text.length() > maxLength ? text.substring(0, maxLength - 3) + "..." : text;
+    }
+
+    private String formatPdfCurrency(double amount) {
+        return String.format("%s %.2f", SettingsPanel.getCurrencyCode(), amount);
     }
 
     // Static method for easy use
