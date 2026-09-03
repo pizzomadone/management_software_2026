@@ -165,8 +165,6 @@ java -cp "bin:lib/*" MainWindow
 
 On Windows, replace the classpath separator `:` with `;`.
 
-WareStat is not currently distributed as a Linux application.
-
 ## Application data
 
 WareStat stores its database and configuration files in a per-user directory:
