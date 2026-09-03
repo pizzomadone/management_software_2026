@@ -14,8 +14,8 @@ public class SupplierPriceListDialog extends JDialog {
     private JTextField supplierCodeField;
     private JTextField priceField;
     private JSpinner minimumQuantitySpinner;
-    private JTextField startDateField;
-    private JTextField endDateField;
+    private DatePickerField startDateField;
+    private DatePickerField endDateField;
     private JTextArea notesArea;
     private SimpleDateFormat dateFormat;
 
@@ -113,7 +113,7 @@ public class SupplierPriceListDialog extends JDialog {
 
         gbc.gridx = 1;
         gbc.weightx = 1.0;
-        startDateField = new JTextField(10);
+        startDateField = new DatePickerField(10);
         startDateField.setText(DateUtils.formatDate(new Date(), dateFormat));
         startDateField.setToolTipText("Format: dd/MM/yyyy");
         startDateField.setPreferredSize(new Dimension(300, 28));
@@ -126,7 +126,7 @@ public class SupplierPriceListDialog extends JDialog {
 
         gbc.gridx = 1;
         gbc.weightx = 1.0;
-        endDateField = new JTextField(10);
+        endDateField = new DatePickerField(10, true);
         endDateField.setToolTipText("Format: dd/MM/yyyy (optional)");
         endDateField.setPreferredSize(new Dimension(300, 28));
         formPanel.add(endDateField, gbc);

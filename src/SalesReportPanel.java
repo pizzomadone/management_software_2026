@@ -16,8 +16,8 @@ import java.awt.Desktop;
 import javax.swing.filechooser.FileNameExtensionFilter;
 
 public class SalesReportPanel extends JPanel {
-    private JTextField startDateField;
-    private JTextField endDateField;
+    private DatePickerField startDateField;
+    private DatePickerField endDateField;
     private JTable reportTable;
     private DefaultTableModel tableModel;
     private JLabel totalSalesLabel;
@@ -45,8 +45,8 @@ public class SalesReportPanel extends JPanel {
         filterPanel.setBorder(BorderFactory.createTitledBorder("Filters"));
 
         // Date fields
-        startDateField = new JTextField(10);
-        endDateField = new JTextField(10);
+        startDateField = new DatePickerField(10);
+        endDateField = new DatePickerField(10, true);
 
         // SET DEFAULT DATES (LAST MONTH)
         Calendar cal = Calendar.getInstance();

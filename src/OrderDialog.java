@@ -17,7 +17,7 @@ public class OrderDialog extends JDialog {
     private boolean orderSaved = false;
     private JButton selectCustomerButton;
     private Customer selectedCustomer;
-    private JTextField dateField;
+    private DatePickerField dateField;
     private JComboBox<String> statusCombo;
     private JComboBox<String> paymentStatusCombo;
     private JTextField paidAmountField;
@@ -108,7 +108,7 @@ public class OrderDialog extends JDialog {
         orderPanel.add(new JLabel("Date:"), gbc);
         
         gbc.gridx = 1;
-        dateField = new JTextField(dateFormat.format(new Date()));
+        dateField = new DatePickerField(dateFormat.format(new Date()));
         orderPanel.add(dateField, gbc);
 
         // Status

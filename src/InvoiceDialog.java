@@ -15,7 +15,7 @@ public class InvoiceDialog extends JDialog {
     private Invoice invoice;
     private boolean invoiceSaved = false;
     private JTextField numberField;
-    private JTextField dateField;
+    private DatePickerField dateField;
     private JButton selectCustomerButton;
     private Customer selectedCustomer;
     private JComboBox<String> statusCombo;
@@ -102,7 +102,7 @@ public class InvoiceDialog extends JDialog {
         invoicePanel.add(new JLabel("Date:"), gbc);
 
         gbc.gridx = 3;
-        dateField = new JTextField(10);
+        dateField = new DatePickerField(10);
         dateField.setText(dateFormat.format(new Date()));
         invoicePanel.add(dateField, gbc);
 

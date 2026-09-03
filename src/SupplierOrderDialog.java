@@ -19,8 +19,8 @@ public class SupplierOrderDialog extends JDialog {
     private String previousStatus = null;
 
     private JTextField numberField;
-    private JTextField dateField;
-    private JTextField deliveryDateField;
+    private DatePickerField dateField;
+    private DatePickerField deliveryDateField;
     private JComboBox<String> statusCombo;
     private JTextArea notesArea;
     private JTable itemsTable;
@@ -87,7 +87,7 @@ public class SupplierOrderDialog extends JDialog {
         orderPanel.add(new JLabel("Order Date:"), gbc);
 
         gbc.gridx = 1;
-        dateField = new JTextField(10);
+        dateField = new DatePickerField(10);
         dateField.setText(DateUtils.formatDate(new Date(), dateFormat));
         orderPanel.add(dateField, gbc);
 
@@ -96,7 +96,7 @@ public class SupplierOrderDialog extends JDialog {
         orderPanel.add(new JLabel("Delivery Date:"), gbc);
 
         gbc.gridx = 3;
-        deliveryDateField = new JTextField(10);
+        deliveryDateField = new DatePickerField(10, true);
         orderPanel.add(deliveryDateField, gbc);
 
         // Status

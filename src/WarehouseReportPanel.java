@@ -15,8 +15,8 @@ public class WarehouseReportPanel extends JPanel {
     private DefaultTableModel productsModel;
     private DefaultTableModel movementsModel;
     private SimpleDateFormat dateFormat;
-    private JTextField startDateField;
-    private JTextField endDateField;
+    private DatePickerField startDateField;
+    private DatePickerField endDateField;
     private JComboBox<String> typeCombo;
 
     public WarehouseReportPanel() {
@@ -111,8 +111,8 @@ public class WarehouseReportPanel extends JPanel {
         JPanel filterPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         filterPanel.setBorder(BorderFactory.createTitledBorder("Filters"));
 
-        startDateField = new JTextField(10);
-        endDateField = new JTextField(10);
+        startDateField = new DatePickerField(10);
+        endDateField = new DatePickerField(10, true);
         typeCombo = new JComboBox<>(new String[]{"All", "INWARD", "OUTWARD"});
 
         // Set default dates (last month)
