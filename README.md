@@ -1,6 +1,6 @@
 # WareStat 1.3
 
-**Professional business management software for Windows, macOS, and Linux.**
+**Professional business management software for Windows and macOS.**
 
 WareStat brings customers, products, orders, invoices, suppliers, warehouse
 operations, reports, and backups together in one desktop application.
@@ -100,7 +100,7 @@ association.
 ## System requirements
 
 - Java 21 or later
-- Windows, macOS, or Linux
+- Windows or macOS
 - 4 GB RAM recommended
 - 500 MB of free disk space
 - Internet connection for WareStat Online
@@ -156,7 +156,7 @@ see [BUILD.md](BUILD.md).
 
 ### Manual compilation
 
-On Linux and macOS:
+On macOS:
 
 ```bash
 javac -d bin -cp "lib/*:src" src/*.java
@@ -165,13 +165,14 @@ java -cp "bin:lib/*" MainWindow
 
 On Windows, replace the classpath separator `:` with `;`.
 
+WareStat is not currently distributed as a Linux application.
+
 ## Application data
 
 WareStat stores its database and configuration files in a per-user directory:
 
 - **Windows:** `%USERPROFILE%\AppData\Local\WareStat\`
 - **macOS:** `~/Library/Application Support/WareStat/`
-- **Linux:** `~/.warestat/`
 
 The primary database file is `data.db`. Backups are stored in the configured
 backup directory, which defaults to the `backups` subdirectory of the WareStat
