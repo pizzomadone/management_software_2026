@@ -22,6 +22,7 @@ public class MainWindow extends JFrame {
 
     // Toolbar buttons
     private JButton homeButton;
+    private JButton webButton;
     private JButton customersButton;
     private JButton productsButton;
     private JButton ordersButton;
@@ -40,6 +41,7 @@ public class MainWindow extends JFrame {
 
     // Panel instances
     private DashboardPanel dashboardPanel;
+    private WebPanel webPanel;
     private CustomersPanel customersPanel;
     private ProductsPanel productsPanel;
     private OrdersPanel ordersPanel;
@@ -93,6 +95,9 @@ public class MainWindow extends JFrame {
         // Apply global settings on startup
         SettingsPanel.applyGlobalSettings();
         I18n.localize(this);
+
+        // Show the online WareStat page at every application start.
+        SwingUtilities.invokeLater(() -> showPanel("WEB"));
     }
     
     private void setupWindow() {
@@ -243,11 +248,15 @@ public class MainWindow extends JFrame {
         homeItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_H, 
             Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx()));
         homeItem.addActionListener(e -> showPanel("HOME"));
+
+        JMenuItem webItem = new JMenuItem("WareStat Online");
+        webItem.addActionListener(e -> showPanel("WEB"));
         
         JCheckBoxMenuItem showToolbarItem = new JCheckBoxMenuItem("Show Toolbar", true);
         showToolbarItem.addActionListener(e -> toggleToolbar(showToolbarItem.isSelected()));
         
         viewMenu.add(homeItem);
+        viewMenu.add(webItem);
         viewMenu.addSeparator();
         viewMenu.add(showToolbarItem);
         
@@ -286,6 +295,10 @@ public class MainWindow extends JFrame {
         homeButton = createToolBarButton("🏠", "Home", "Go to Dashboard");
         homeButton.addActionListener(e -> showPanel("HOME"));
         toolBar.add(homeButton);
+
+        webButton = createToolBarButton("🌐", "WareStat Online", "WareStat news and communications");
+        webButton.addActionListener(e -> showPanel("WEB"));
+        toolBar.add(webButton);
 
         toolBar.addSeparator();
 
@@ -416,6 +429,7 @@ public class MainWindow extends JFrame {
     private JButton getButtonForPanel(String panelName) {
         return switch (panelName) {
             case "HOME" -> homeButton;
+            case "WEB" -> webButton;
             case "CUSTOMERS" -> customersButton;
             case "PRODUCTS" -> productsButton;
             case "ORDERS" -> ordersButton;
@@ -609,6 +623,12 @@ public class MainWindow extends JFrame {
         JPanel panel = null;
         
         switch (panelName) {
+            case "WEB":
+                if (webPanel == null) {
+                    webPanel = new WebPanel();
+                }
+                panel = webPanel;
+                break;
             case "CUSTOMERS":
                 if (customersPanel == null) {
                     customersPanel = new CustomersPanel();
@@ -698,6 +718,7 @@ public class MainWindow extends JFrame {
         String title = AppConstants.SOFTWARE_NAME + " - ";
         switch (panelName) {
             case "HOME": title += "Dashboard"; break;
+            case "WEB": title += "WareStat Online"; break;
             case "CUSTOMERS": title += "Customer Management"; break;
             case "PRODUCTS": title += "Product Management"; break;
             case "ORDERS": title += "Order Management"; break;

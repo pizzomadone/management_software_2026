@@ -192,3 +192,13 @@ Both libraries are licensed under the Apache License, Version 2.0:
       of your accepting any such warranty or additional liability.
 
    END OF TERMS AND CONDITIONS
+
+================================================================================
+
+3. OpenJFX / JavaFX
+   Copyright (c) Oracle and/or its affiliates and OpenJFX contributors
+   https://openjfx.io/
+
+OpenJFX is licensed under the GNU General Public License, version 2, with the
+Classpath Exception. Distributions that include OpenJFX must also include the
+complete OpenJFX license and attribution files supplied with that distribution.

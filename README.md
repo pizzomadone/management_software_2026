@@ -136,3 +136,15 @@ See documentation for complete barcode integration guide.
 ## Support
 
 For issues, questions, or feature requests, please contact your software provider.
+
+## WareStat Online
+
+WareStat 1.3 includes a Swing-hosted embedded web panel for
+`https://www.warestat.com/app/`, with Back, Forward, Refresh and external-browser
+controls and no address bar. The request uses a WareStat-specific user agent with
+application and runtime environment information; it never includes business data.
+
+The panel uses JavaFX WebView through `JFXPanel` while keeping the surrounding UI
+in Swing. JavaFX is loaded at runtime so the core application can still start when
+it is unavailable. Native distributions must include a JavaFX SDK compatible with
+the build JDK; place its platform-specific JAR files in `lib/` before building.
