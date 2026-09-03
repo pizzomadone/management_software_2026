@@ -10,7 +10,7 @@ operations, reports, and backups together in one desktop application.
 - **Six interface languages:** Italian, Spanish, Brazilian Portuguese, French,
   German, and Polish, selectable on first launch and from Settings.
 - **WareStat Online:** an embedded page for product news and communications,
-  loaded from <https://www.warestat.com/app/> at startup.
+  loaded from <https://www.warestat.com/discover/> at startup.
 - **Calendar date picker:** localized date selection in orders, invoices,
   supplier workflows, price lists, and report filters.
 - **Consistent currency formatting:** the currency selected in Settings is used
@@ -50,7 +50,7 @@ and **Open in browser** controls.
 The page is always loaded from:
 
 ```text
-https://www.warestat.com/app/
+https://www.warestat.com/discover/
 ```
 
 Requests use a WareStat-specific user agent containing the application version
@@ -192,4 +192,4 @@ in its per-user data directory; see that file for the complete terms and
 ## Support
 
 For support, product news, and release communications, visit
-<https://www.warestat.com/app/> or contact your software provider.
+<https://www.warestat.com/discover/> or contact your software provider.
