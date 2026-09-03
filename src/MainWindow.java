@@ -296,7 +296,7 @@ public class MainWindow extends JFrame {
         homeButton.addActionListener(e -> showPanel("HOME"));
         toolBar.add(homeButton);
 
-        webButton = createToolBarButton("🌐", "WareStat Online", "WareStat news and communications");
+        webButton = createToolBarButton("🌐", "Discover", "WareStat news and communications");
         webButton.addActionListener(e -> showPanel("WEB"));
         toolBar.add(webButton);
 
