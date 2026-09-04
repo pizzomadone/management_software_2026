@@ -59,9 +59,14 @@ public final class I18n {
     private static void loadTranslations() {
         String[] parts = language.split("_", 2);
         Locale locale = parts.length == 2 ? Locale.of(parts[0], parts[1]) : Locale.of(parts[0]);
-        ResourceBundle bundle = ResourceBundle.getBundle("i18n.messages", locale);
         Map<String, String> loaded = new HashMap<>();
-        for (String key : bundle.keySet()) loaded.put(key, bundle.getString(key));
+        try {
+            ResourceBundle bundle = ResourceBundle.getBundle("i18n.messages", locale);
+            for (String key : bundle.keySet()) loaded.put(key, bundle.getString(key));
+        } catch (MissingResourceException exception) {
+            System.err.printf("Translation catalog i18n.messages_%s.properties is not on the classpath; " +
+                    "using source text.%n", language);
+        }
         translations = loaded;
     }
 
