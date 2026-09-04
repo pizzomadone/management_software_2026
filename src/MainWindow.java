@@ -26,6 +26,7 @@ public class MainWindow extends JFrame {
     private JButton customersButton;
     private JButton productsButton;
     private JButton ordersButton;
+    private JButton supplierOrdersButton;
     private JButton invoicesButton;
     private JButton suppliersButton;
     private JButton warehouseButton;
@@ -45,6 +46,7 @@ public class MainWindow extends JFrame {
     private CustomersPanel customersPanel;
     private ProductsPanel productsPanel;
     private OrdersPanel ordersPanel;
+    private SupplierOrdersPanel supplierOrdersPanel;
     private InvoicesPanel invoicesPanel;
     private SuppliersPanel suppliersPanel;
     private WarehousePanel warehousePanel;
@@ -189,10 +191,13 @@ public class MainWindow extends JFrame {
             Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx()));
         productsItem.addActionListener(e -> showPanel("PRODUCTS"));
         
-        JMenuItem ordersItem = new JMenuItem("Orders");
+        JMenuItem ordersItem = new JMenuItem("Customer Orders");
         ordersItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_3, 
             Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx()));
         ordersItem.addActionListener(e -> showPanel("ORDERS"));
+
+        JMenuItem supplierOrdersItem = new JMenuItem("Supplier Orders");
+        supplierOrdersItem.addActionListener(e -> showPanel("SUPPLIER_ORDERS"));
         
         JMenuItem invoicesItem = new JMenuItem("Invoices");
         invoicesItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_4, 
@@ -212,6 +217,7 @@ public class MainWindow extends JFrame {
         managementMenu.add(customersItem);
         managementMenu.add(productsItem);
         managementMenu.add(ordersItem);
+        managementMenu.add(supplierOrdersItem);
         managementMenu.add(invoicesItem);
         managementMenu.addSeparator();
         managementMenu.add(suppliersItem);
@@ -326,9 +332,13 @@ public class MainWindow extends JFrame {
         productsButton.addActionListener(e -> showPanel("PRODUCTS"));
         toolBar.add(productsButton);
 
-        ordersButton = createToolBarButton("📝", "Orders", "Order Management");
+        ordersButton = createToolBarButton("📝", "Customer Orders", "Customer Order Management");
         ordersButton.addActionListener(e -> showPanel("ORDERS"));
         toolBar.add(ordersButton);
+
+        supplierOrdersButton = createToolBarButton("🚚", "Supplier Orders", "Supplier Order Management");
+        supplierOrdersButton.addActionListener(e -> showPanel("SUPPLIER_ORDERS"));
+        toolBar.add(supplierOrdersButton);
 
         invoicesButton = createToolBarButton("📋", "Invoices", "Invoice Management");
         invoicesButton.addActionListener(e -> showPanel("INVOICES"));
@@ -448,6 +458,7 @@ public class MainWindow extends JFrame {
             case "CUSTOMERS" -> customersButton;
             case "PRODUCTS" -> productsButton;
             case "ORDERS" -> ordersButton;
+            case "SUPPLIER_ORDERS" -> supplierOrdersButton;
             case "INVOICES" -> invoicesButton;
             case "SUPPLIERS" -> suppliersButton;
             case "WAREHOUSE" -> warehouseButton;
@@ -606,6 +617,9 @@ public class MainWindow extends JFrame {
             if ("HOME".equals(panelName) && dashboardPanel != null) {
                 dashboardPanel.loadData();
             }
+            if ("SUPPLIER_ORDERS".equals(panelName) && supplierOrdersPanel != null) {
+                supplierOrdersPanel.loadOrders();
+            }
 
             // Update window title
             updateWindowTitle(panelName);
@@ -663,6 +677,13 @@ public class MainWindow extends JFrame {
                     ordersPanel = new OrdersPanel();
                 }
                 panel = ordersPanel;
+                break;
+
+            case "SUPPLIER_ORDERS":
+                if (supplierOrdersPanel == null) {
+                    supplierOrdersPanel = new SupplierOrdersPanel();
+                }
+                panel = supplierOrdersPanel;
                 break;
                 
             case "INVOICES":
@@ -735,7 +756,8 @@ public class MainWindow extends JFrame {
             case "WEB" -> "Discover";
             case "CUSTOMERS" -> "Customer Management";
             case "PRODUCTS" -> "Product Catalog";
-            case "ORDERS" -> "Order Management";
+            case "ORDERS" -> "Customer Order Management";
+            case "SUPPLIER_ORDERS" -> "Supplier Order Management";
             case "INVOICES" -> "Invoice Management";
             case "SUPPLIERS" -> "Supplier Management";
             case "WAREHOUSE" -> "Warehouse Management";
