@@ -42,10 +42,10 @@ operations, reports, and backups together in one desktop application.
 
 ## WareStat Online
 
-WareStat Online is implemented as a Swing panel containing JavaFX `WebView`
-through `JFXPanel`, so the rest of the desktop interface remains Swing-based.
-The panel has no address bar and provides only **Back**, **Forward**, **Refresh**,
-and **Open in browser** controls.
+Discover is implemented with `ca.weblite.webview.swing.WebViewComponent`, which
+uses the operating system web view and supports JavaScript, iframe, HTML5 video,
+and YouTube embeds inside Swing.
+The panel has no address bar and provides only back, forward, and refresh controls.
 
 The page is always loaded from:
 
@@ -59,7 +59,7 @@ architecture, language, locale, time zone, screen size, and selected theme. It
 does not include customers, products, orders, invoices, company details, file
 paths, or other business data.
 
-If JavaFX or the network is unavailable, WareStat continues to run and the panel
+If the system web view or network is unavailable, WareStat continues to run and the panel
 shows an unavailable message instead of blocking application startup.
 
 ## Localization
@@ -104,10 +104,9 @@ association.
 - 4 GB RAM recommended
 - 500 MB of free disk space
 - Internet connection for WareStat Online
-- Platform-compatible JavaFX SDK for the embedded web panel
+- `lib/webview-1.0.10.jar`
 
-JavaFX is loaded at runtime. Without it, all core management features remain
-available, but WareStat Online cannot be displayed inside the application.
+No JavaFX, Maven, JCEF, or embedded Chromium installation is required.
 
 ## Dependencies
 
@@ -115,12 +114,10 @@ Place the required JAR files in `lib/` before building:
 
 - **Apache PDFBox 3.0.6** — invoice and report PDF generation
 - **SQLite JDBC 3.50.3.0** — SQLite database connectivity
-- **OpenJFX / JavaFX** — embedded WareStat Online page
+- **WebLite WebView 1.0.10** — embedded Discover page
 
-For JavaFX, use the SDK matching both the build JDK and target operating system,
-and include the modules required by WebView and Swing interoperability:
-`javafx.base`, `javafx.graphics`, `javafx.controls`, `javafx.web`, and
-`javafx.media`, plus `javafx.swing`.
+The WebView JAR is kept in `lib/` with PDFBox and SQLite and is copied beside the
+application JAR and into the jpackage input directory by Ant.
 
 See `LICENSE-THIRD-PARTY.txt` and `NOTICE.txt` for license and attribution
 information.
@@ -135,7 +132,7 @@ WareStat uses Apache Ant.
 ant build
 ```
 
-This produces the runnable JAR and a native development application image.
+This produces the JAR and a native development application image.
 
 ### Production build
 
@@ -160,7 +157,7 @@ On macOS:
 
 ```bash
 javac -d bin -cp "lib/*:src" src/*.java
-java -cp "bin:resources:lib/*" MainWindow
+java -cp "bin:resources:lib/*:target/dependency/*" MainWindow
 ```
 
 On Windows, replace the classpath separator `:` with `;`.

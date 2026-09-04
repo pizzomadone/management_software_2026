@@ -6,6 +6,8 @@ import javax.swing.table.TableCellRenderer;
 import java.awt.*;
 import java.awt.event.AWTEventListener;
 import java.awt.event.WindowEvent;
+import java.io.*;
+import java.nio.file.*;
 import java.util.*;
 
 /** Central runtime localization service backed by per-language resource bundles. */
@@ -20,6 +22,7 @@ public final class I18n {
     private static boolean installed;
 
     static {
+        LANGUAGE_NAMES.put("en", "English");
         LANGUAGE_NAMES.put("it", "Italiano");
         LANGUAGE_NAMES.put("es", "Español");
         LANGUAGE_NAMES.put("pt_BR", "Português (Brasil)");
@@ -64,8 +67,13 @@ public final class I18n {
             ResourceBundle bundle = ResourceBundle.getBundle("i18n.messages", locale);
             for (String key : bundle.keySet()) loaded.put(key, bundle.getString(key));
         } catch (MissingResourceException exception) {
-            System.err.printf("Translation catalog i18n.messages_%s.properties is not on the classpath; " +
-                    "using source text.%n", language);
+            Path sourceCatalog = Path.of("resources", "i18n", "messages_" + language + ".properties");
+            try (Reader reader = Files.newBufferedReader(sourceCatalog)) {
+                ResourceBundle bundle = new PropertyResourceBundle(reader);
+                for (String key : bundle.keySet()) loaded.put(key, bundle.getString(key));
+            } catch (IOException missingSourceCatalog) {
+                System.err.printf("Translation catalog for %s is unavailable; using source text.%n", language);
+            }
         }
         translations = loaded;
     }

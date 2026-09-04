@@ -65,8 +65,12 @@ public class DatePickerField extends JTextField {
         JPanel navigation = new JPanel(new BorderLayout());
         JButton previous = new JButton("‹");
         JButton next = new JButton("›");
-        JLabel month = new JLabel(monthLabel(), SwingConstants.CENTER);
+        JButton month = new JButton(monthLabel());
+        month.setBorderPainted(false);
+        month.setContentAreaFilled(false);
         month.setFont(month.getFont().deriveFont(Font.BOLD));
+        month.setToolTipText(I18n.tr("Choose month and year"));
+        month.addActionListener(event -> showMonthYearChooser(selected));
         previous.setToolTipText(I18n.tr("Previous month"));
         next.setToolTipText(I18n.tr("Next month"));
         previous.addActionListener(event -> changeMonth(-1, selected));
@@ -117,8 +121,37 @@ public class DatePickerField extends JTextField {
         rebuildPopup(selected);
     }
 
+    private void showMonthYearChooser(LocalDate selected) {
+        JComboBox<String> months = new JComboBox<>();
+        Locale locale = currentLocale();
+        for (Month value : Month.values()) {
+            String name = value.getDisplayName(TextStyle.FULL_STANDALONE, locale);
+            months.addItem(name.substring(0, 1).toUpperCase(locale) + name.substring(1));
+        }
+        months.setSelectedIndex(displayedMonth.getMonthValue() - 1);
+        JSpinner year = new JSpinner(new SpinnerNumberModel(displayedMonth.getYear(), 1900, 2200, 1));
+        JPanel chooser = new JPanel(new GridLayout(2, 2, 6, 6));
+        chooser.add(new JLabel(I18n.tr("Month")));
+        chooser.add(months);
+        chooser.add(new JLabel(I18n.tr("Year")));
+        chooser.add(year);
+        int result = JOptionPane.showConfirmDialog(this, chooser, I18n.tr("Choose month and year"),
+            JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        if (result == JOptionPane.OK_OPTION) {
+            displayedMonth = YearMonth.of((Integer) year.getValue(), months.getSelectedIndex() + 1);
+            rebuildPopup(selected);
+        }
+    }
+
     private String monthLabel() {
-        Locale locale = switch (I18n.getLanguage()) {
+        Locale locale = currentLocale();
+        String name = displayedMonth.getMonth().getDisplayName(TextStyle.FULL_STANDALONE, locale);
+        return name.substring(0, 1).toUpperCase(locale) + name.substring(1) + " " + displayedMonth.getYear();
+    }
+
+    private Locale currentLocale() {
+        return switch (I18n.getLanguage()) {
+            case "en" -> Locale.ENGLISH;
             case "es" -> Locale.of("es");
             case "pt_BR" -> Locale.of("pt", "BR");
             case "fr" -> Locale.of("fr");
@@ -126,8 +159,6 @@ public class DatePickerField extends JTextField {
             case "pl" -> Locale.of("pl");
             default -> Locale.of("it");
         };
-        String name = displayedMonth.getMonth().getDisplayName(TextStyle.FULL_STANDALONE, locale);
-        return name.substring(0, 1).toUpperCase(locale) + name.substring(1) + " " + displayedMonth.getYear();
     }
 
     private void selectDate(LocalDate date) {

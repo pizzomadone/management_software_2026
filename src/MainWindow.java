@@ -102,10 +102,12 @@ public class MainWindow extends JFrame {
     
     private void setupWindow() {
         setTitle(AppConstants.SOFTWARE_NAME + " - Management System");
+        Image applicationIcon = loadApplicationIcon();
+        if (applicationIcon != null) setIconImage(applicationIcon);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setExtendedState(JFrame.MAXIMIZED_BOTH);
         setLocationRelativeTo(null);
-        
+
         // Add shutdown management to correctly close the database
         addWindowListener(new java.awt.event.WindowAdapter() {
             @Override
@@ -113,6 +115,19 @@ public class MainWindow extends JFrame {
                 DatabaseManager.getInstance().closeConnection();
             }
         });
+    }
+
+    private static Image loadApplicationIcon() {
+        java.net.URL iconUrl = MainWindow.class.getResource("/icons/logo.png");
+        return iconUrl == null ? null : new ImageIcon(iconUrl).getImage();
+    }
+
+    private static void configureTaskbarIcon() {
+        Image icon = loadApplicationIcon();
+        if (icon != null && Taskbar.isTaskbarSupported() &&
+                Taskbar.getTaskbar().isSupported(Taskbar.Feature.ICON_IMAGE)) {
+            Taskbar.getTaskbar().setIconImage(icon);
+        }
     }
     
     private void setupMenuBar() {
@@ -715,24 +730,27 @@ public class MainWindow extends JFrame {
     }
     
     private void updateWindowTitle(String panelName) {
-        String title = AppConstants.SOFTWARE_NAME + " - ";
-        switch (panelName) {
-            case "HOME": title += "Dashboard"; break;
-            case "WEB": title += "WareStat Online"; break;
-            case "CUSTOMERS": title += "Customer Management"; break;
-            case "PRODUCTS": title += "Product Management"; break;
-            case "ORDERS": title += "Order Management"; break;
-            case "INVOICES": title += "Invoice Management"; break;
-            case "SUPPLIERS": title += "Supplier Management"; break;
-            case "WAREHOUSE": title += "Warehouse Management"; break;
-            case "SALES_REPORT": title += "Sales Report"; break;
-            case "ADVANCED_STATS": title += "Advanced Statistics"; break;
-            case "WAREHOUSE_REPORT": title += "Warehouse Report"; break;
-            case "BACKUP": title += "Backup Management"; break;
-            case "SETTINGS": title += "Settings"; break;
-            default: title += "Management System";
-        }
-        setTitle(title);
+        String titleKey = switch (panelName) {
+            case "HOME" -> "Dashboard";
+            case "WEB" -> "Discover";
+            case "CUSTOMERS" -> "Customer Management";
+            case "PRODUCTS" -> "Product Catalog";
+            case "ORDERS" -> "Order Management";
+            case "INVOICES" -> "Invoice Management";
+            case "SUPPLIERS" -> "Supplier Management";
+            case "WAREHOUSE" -> "Warehouse Management";
+            case "SALES_REPORT" -> "Sales Report";
+            case "ADVANCED_STATS" -> "Advanced Statistics";
+            case "WAREHOUSE_REPORT" -> "Warehouse Report";
+            case "BACKUP" -> "Backup Management";
+            case "SETTINGS" -> "Settings";
+            default -> "Management System";
+        };
+        setTitle(AppConstants.SOFTWARE_NAME + " - " + I18n.tr(titleKey));
+    }
+
+    void refreshLocalizedTitle() {
+        updateWindowTitle(currentPanel);
     }
     
     private void openSettings() {
@@ -814,6 +832,7 @@ public class MainWindow extends JFrame {
         }
 
         SwingUtilities.invokeLater(() -> {
+            configureTaskbarIcon();
             try {
                 UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
             } catch (Exception e) {
