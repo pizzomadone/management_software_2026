@@ -236,7 +236,7 @@ public class InvoicePDFGenerator {
     }
 
     private float drawHeader(PDDocument document, PDPageContentStream contentStream, float yPosition, PDPage page) throws IOException {
-        drawCompanyLogo(document, contentStream, yPosition);
+        float logoWidth = drawCompanyLogo(document, contentStream, yPosition);
         // Invoice title centered and prominent
         contentStream.beginText();
         contentStream.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 28f);
@@ -250,7 +250,9 @@ public class InvoicePDFGenerator {
 
         // Line under title
         float lineY = yPosition - 8f;
-        contentStream.moveTo(MARGIN, lineY);
+        // Leave a deliberate gap for the logo instead of drawing through it.
+        float lineStartX = logoWidth > 0f ? MARGIN + logoWidth + 12f : MARGIN;
+        contentStream.moveTo(lineStartX, lineY);
         contentStream.lineTo(page.getMediaBox().getWidth() - MARGIN, lineY);
         contentStream.setLineWidth(1.5f);
         contentStream.stroke();
@@ -258,14 +260,14 @@ public class InvoicePDFGenerator {
         return lineY - 15f;
     }
 
-    private void drawCompanyLogo(PDDocument document, PDPageContentStream contentStream,
-                                 float yPosition) throws IOException {
+    private float drawCompanyLogo(PDDocument document, PDPageContentStream contentStream,
+                                  float yPosition) throws IOException {
         String logoPath = companyData.getLogoPath();
         BufferedImage image = readCompanyLogo(logoPath);
         if (image == null) image = readBundledApplicationLogo();
         if (image == null) {
             System.err.println("No usable invoice logo was found");
-            return;
+            return 0f;
         }
 
         PDImageXObject pdfImage = LosslessFactory.createFromImage(document, image);
@@ -275,6 +277,7 @@ public class InvoicePDFGenerator {
         float width = image.getWidth() * scale;
         float height = image.getHeight() * scale;
         contentStream.drawImage(pdfImage, MARGIN, yPosition - height + 8f, width, height);
+        return width;
     }
 
     private BufferedImage readCompanyLogo(String logoPath) {
