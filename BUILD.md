@@ -68,6 +68,29 @@ See [Eclipse Integration](#eclipse-integration) section below.
 
 ## Eclipse Integration
 
+### Step 0: Install JavaFX for Eclipse
+
+Eclipse does not use the native runtime produced by Ant. A normal **Run As →
+Java Application** launch therefore omits JavaFX and Discover cannot start.
+
+1. Download the JavaFX SDK matching the JDK major version, operating system, and
+   CPU architecture used by Eclipse (for example, macOS/aarch64 for Apple
+   Silicon).
+2. Extract it so this file exists:
+   `lib/javafx-sdk/lib/javafx.web.jar`.
+3. Refresh the project in Eclipse.
+4. Open **Run → Run Configurations… → Java Application → WareStat**, then click
+   **Run**. Afterwards it is available from the Run toolbar history.
+
+The checked-in launch configuration supplies this VM argument automatically:
+
+```text
+--module-path "${workspace_loc:/WareStat}/lib/javafx-sdk/lib" --add-modules javafx.swing,javafx.web
+```
+
+Do not use Eclipse's generic **Run As → Java Application** entry for
+`MainWindow`; that launch configuration does not contain the JavaFX module path.
+
 ### Step 1: Configure Ant Builder
 
 1. **Open Project Properties**

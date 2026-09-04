@@ -23,6 +23,10 @@ replay_pid*
 .vscode/
 .DS_Store
 
+# Platform-specific JavaFX SDK/JMOD distributions are installed locally.
+lib/javafx-sdk/
+lib/javafx-jmods/
+
 # Build directories
 bin/
 build/
