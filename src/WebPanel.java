@@ -9,9 +9,13 @@
  */
 
 import javax.swing.*;
+import javax.swing.event.HyperlinkEvent;
 import java.awt.*;
 import java.lang.reflect.*;
+import java.net.URI;
+import java.net.URL;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -24,6 +28,9 @@ public class WebPanel extends JPanel {
     private final JLabel statusLabel = new JLabel("Loading...");
     private Object webEngine;
     private volatile String currentUrl = AppConstants.APP_WEB_URL;
+    private JEditorPane swingBrowser;
+    private final List<String> swingHistory = new ArrayList<>();
+    private int swingHistoryIndex = -1;
 
     public WebPanel() {
         super(new BorderLayout());
@@ -40,7 +47,7 @@ public class WebPanel extends JPanel {
         refreshButton.setToolTipText("Reload Discover");
         backButton.addActionListener(event -> navigateHistory(-1));
         forwardButton.addActionListener(event -> navigateHistory(1));
-        refreshButton.addActionListener(event -> invokeEngine("reload"));
+        refreshButton.addActionListener(event -> refresh());
         navigation.add(backButton);
         navigation.add(forwardButton);
         navigation.add(refreshButton);
@@ -55,7 +62,7 @@ public class WebPanel extends JPanel {
             add(jfxPanel, BorderLayout.CENTER);
             runOnFxThread(() -> createWebView(jfxPanel));
         } catch (ReflectiveOperationException | LinkageError error) {
-            showUnavailableMessage();
+            initializeSwingBrowser();
         }
     }
 
@@ -75,7 +82,7 @@ public class WebPanel extends JPanel {
             webEngine.getClass().getMethod("load", String.class)
                 .invoke(webEngine, AppConstants.APP_WEB_URL);
         } catch (ReflectiveOperationException | LinkageError error) {
-            SwingUtilities.invokeLater(this::showUnavailableMessage);
+            SwingUtilities.invokeLater(this::initializeSwingBrowser);
         }
     }
 
@@ -144,6 +151,14 @@ public class WebPanel extends JPanel {
     }
 
     private void navigateHistory(int offset) {
+        if (webEngine == null) {
+            int destination = swingHistoryIndex + offset;
+            if (destination >= 0 && destination < swingHistory.size()) {
+                swingHistoryIndex = destination;
+                loadSwingPage(swingHistory.get(destination), false);
+            }
+            return;
+        }
         runOnFxThread(() -> {
             try {
                 Object history = webEngine.getClass().getMethod("getHistory").invoke(webEngine);
@@ -152,6 +167,71 @@ public class WebPanel extends JPanel {
                 // The buttons are disabled whenever that history direction is unavailable.
             }
         });
+    }
+
+    private void refresh() {
+        if (webEngine != null) invokeEngine("reload");
+        else loadSwingPage(currentUrl, false);
+    }
+
+    private void initializeSwingBrowser() {
+        if (swingBrowser != null) return;
+        removeCenterComponents();
+        swingBrowser = new JEditorPane();
+        swingBrowser.setEditable(false);
+        swingBrowser.setContentType("text/html");
+        swingBrowser.addHyperlinkListener(event -> {
+            if (event.getEventType() == HyperlinkEvent.EventType.ACTIVATED && event.getURL() != null) {
+                loadSwingPage(event.getURL().toExternalForm(), true);
+            }
+        });
+        add(new JScrollPane(swingBrowser), BorderLayout.CENTER);
+        loadSwingPage(AppConstants.APP_WEB_URL, true);
+        revalidate();
+        repaint();
+    }
+
+    private void loadSwingPage(String address, boolean addToHistory) {
+        statusLabel.setText(I18n.tr("Loading..."));
+        backButton.setEnabled(false);
+        forwardButton.setEnabled(false);
+        new SwingWorker<String, Void>() {
+            @Override
+            protected String doInBackground() throws Exception {
+                URL url = URI.create(address).toURL();
+                swingBrowser.setPage(url);
+                return url.toExternalForm();
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    currentUrl = get();
+                    if (addToHistory) {
+                        while (swingHistory.size() > swingHistoryIndex + 1) {
+                            swingHistory.remove(swingHistory.size() - 1);
+                        }
+                        swingHistory.add(currentUrl);
+                        swingHistoryIndex = swingHistory.size() - 1;
+                    }
+                    statusLabel.setText("");
+                    updateSwingHistoryButtons();
+                } catch (Exception error) {
+                    showUnavailableMessage();
+                }
+            }
+        }.execute();
+    }
+
+    private void updateSwingHistoryButtons() {
+        backButton.setEnabled(swingHistoryIndex > 0);
+        forwardButton.setEnabled(swingHistoryIndex >= 0 && swingHistoryIndex < swingHistory.size() - 1);
+    }
+
+    private void removeCenterComponents() {
+        for (Component component : getComponents()) {
+            if (component != getComponent(0)) remove(component);
+        }
     }
 
     private void invokeEngine(String method) {
@@ -167,6 +247,7 @@ public class WebPanel extends JPanel {
 
     private void showUnavailableMessage() {
         statusLabel.setText("");
+        removeCenterComponents();
         JPanel unavailable = new JPanel(new GridBagLayout());
         JLabel message = new JLabel(I18n.tr("Discover is temporarily unavailable"));
         unavailable.add(message);
