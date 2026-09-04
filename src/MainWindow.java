@@ -149,7 +149,7 @@ public class MainWindow extends JFrame {
             Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx() | KeyEvent.SHIFT_DOWN_MASK));
         newProductItem.addActionListener(e -> createNewProduct());
         
-        JMenuItem newOrderItem = new JMenuItem("New Order");
+        JMenuItem newOrderItem = new JMenuItem("New Customer Order");
         newOrderItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_O, 
             Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx() | KeyEvent.SHIFT_DOWN_MASK));
         newOrderItem.addActionListener(e -> createNewOrder());
@@ -402,7 +402,8 @@ public class MainWindow extends JFrame {
         button.add(textLabel, BorderLayout.SOUTH);
         
         button.setToolTipText(tooltip);
-        button.setPreferredSize(new Dimension(80, 60));
+        int buttonWidth = Math.max(80, textLabel.getFontMetrics(textLabel.getFont()).stringWidth(text) + 20);
+        button.setPreferredSize(new Dimension(buttonWidth, 60));
         button.setFocusPainted(false);
         button.setBorderPainted(false);
         button.setContentAreaFilled(false);
@@ -566,7 +567,7 @@ public class MainWindow extends JFrame {
             File Menu:
             Ctrl+Shift+N    New Customer
             Ctrl+Shift+P    New Product
-            Ctrl+Shift+O    New Order
+            Ctrl+Shift+O    New Customer Order
             Ctrl+Shift+I    New Invoice
             Ctrl+Q          Exit
             

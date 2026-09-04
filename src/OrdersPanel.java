@@ -65,7 +65,7 @@ public class OrdersPanel extends JPanel {
 
         // Add context menu
         TableInteractionUtil.addContextMenu(ordersTable,
-            new TableInteractionUtil.TableAction("New Order", () -> showOrderDialog(null), false),
+            new TableInteractionUtil.TableAction("New Customer Order", () -> showOrderDialog(null), false),
             new TableInteractionUtil.TableAction("Modify", this::editSelectedOrder),
             new TableInteractionUtil.TableAction("Delete", this::deleteSelectedOrder),
             null, // Separator
@@ -89,7 +89,7 @@ public class OrdersPanel extends JPanel {
 
         // Buttons panel
         JPanel buttonPanel = new JPanel(new FlowLayout());
-        addButton = new JButton("New Order");
+        addButton = new JButton("New Customer Order");
         editButton = new JButton("Modify");
         deleteButton = new JButton("Delete");
         generateInvoiceButton = new JButton("Generate Invoice");

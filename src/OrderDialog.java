@@ -34,7 +34,7 @@ public class OrderDialog extends JDialog {
     
     // Constructor for JFrame parent
     public OrderDialog(JFrame parent, Order order) {
-        super(parent, order == null ? "New Order" : "Edit Order", true);
+        super(parent, order == null ? "New Customer Order" : "Edit Customer Order", true);
         this.order = order;
         this.dateFormat = new SimpleDateFormat("dd/MM/yyyy");
         this.productsCache = new HashMap<>();
@@ -49,7 +49,7 @@ public class OrderDialog extends JDialog {
     
     // Constructor for JDialog parent
     public OrderDialog(JDialog parent, Order order) {
-        super(parent, order == null ? "New Order" : "Edit Order", true);
+        super(parent, order == null ? "New Customer Order" : "Edit Customer Order", true);
         this.order = order;
         this.dateFormat = new SimpleDateFormat("dd/MM/yyyy");
         this.productsCache = new HashMap<>();
