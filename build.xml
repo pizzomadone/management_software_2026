@@ -266,6 +266,17 @@
             <arg value="${custom.runtime.dir}"/>
         </exec>
 
+        <!-- Do not allow a package to be produced unless WebView is really in the image. -->
+        <exec executable="${custom.runtime.dir}/bin/java" failonerror="true"
+              outputproperty="custom.runtime.modules">
+            <arg value="--list-modules"/>
+        </exec>
+        <condition property="custom.runtime.has.javafx.web">
+            <contains string="${custom.runtime.modules}" substring="javafx.web@"/>
+        </condition>
+        <fail unless="custom.runtime.has.javafx.web"
+              message="The generated runtime does not contain javafx.web; native packaging has been stopped."/>
+
         <echo message="Custom JRE created successfully at: ${custom.runtime.dir}"/>
 
         <!-- Display size comparison -->

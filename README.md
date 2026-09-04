@@ -137,7 +137,9 @@ WareStat uses Apache Ant.
 ant build
 ```
 
-This produces the runnable JAR and a native development application image.
+This produces the JAR and a native development application image. Run the
+native image: unlike the standalone JAR, it contains the required JavaFX
+runtime used by Discover.
 
 ### Production build
 
@@ -162,7 +164,9 @@ On macOS:
 
 ```bash
 javac -d bin -cp "lib/*:src" src/*.java
-java -cp "bin:resources:lib/*" MainWindow
+java --module-path "/path/to/javafx-sdk/lib" \
+  --add-modules javafx.swing,javafx.web \
+  -cp "bin:resources:lib/*" MainWindow
 ```
 
 On Windows, replace the classpath separator `:` with `;`.

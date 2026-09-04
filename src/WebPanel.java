@@ -242,11 +242,19 @@ public class WebPanel extends JPanel {
         JPanel details = new JPanel();
         details.setLayout(new BoxLayout(details, BoxLayout.Y_AXIS));
         JLabel message = new JLabel(I18n.tr("Discover is temporarily unavailable"), SwingConstants.CENTER);
+        boolean javafxMissing = ModuleLayer.boot().findModule("javafx.web").isEmpty() ||
+            ModuleLayer.boot().findModule("javafx.swing").isEmpty();
+        JLabel reason = new JLabel(javafxMissing
+            ? "JavaFX WebView is missing from this application build."
+            : "JavaFX is present; see the log for the WebView or network error.", SwingConstants.CENTER);
         JLabel logLocation = new JLabel("Debug: " + AppConstants.getAppDataDirectory()
             .resolve("discover-debug.log"), SwingConstants.CENTER);
         message.setAlignmentX(Component.CENTER_ALIGNMENT);
+        reason.setAlignmentX(Component.CENTER_ALIGNMENT);
         logLocation.setAlignmentX(Component.CENTER_ALIGNMENT);
         details.add(message);
+        details.add(Box.createVerticalStrut(8));
+        details.add(reason);
         details.add(Box.createVerticalStrut(8));
         details.add(logLocation);
         unavailable.add(details);
