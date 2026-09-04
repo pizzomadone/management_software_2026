@@ -160,7 +160,7 @@ On macOS:
 
 ```bash
 javac -d bin -cp "lib/*:src" src/*.java
-java -cp "bin:lib/*" MainWindow
+java -cp "bin:resources:lib/*" MainWindow
 ```
 
 On Windows, replace the classpath separator `:` with `;`.
