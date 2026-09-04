@@ -151,6 +151,7 @@ public class DatePickerField extends JTextField {
 
     private Locale currentLocale() {
         return switch (I18n.getLanguage()) {
+            case "en" -> Locale.ENGLISH;
             case "es" -> Locale.of("es");
             case "pt_BR" -> Locale.of("pt", "BR");
             case "fr" -> Locale.of("fr");

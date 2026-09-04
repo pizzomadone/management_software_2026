@@ -22,6 +22,7 @@ public final class I18n {
     private static boolean installed;
 
     static {
+        LANGUAGE_NAMES.put("en", "English");
         LANGUAGE_NAMES.put("it", "Italiano");
         LANGUAGE_NAMES.put("es", "Español");
         LANGUAGE_NAMES.put("pt_BR", "Português (Brasil)");

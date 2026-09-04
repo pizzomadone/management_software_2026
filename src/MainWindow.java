@@ -730,24 +730,27 @@ public class MainWindow extends JFrame {
     }
     
     private void updateWindowTitle(String panelName) {
-        String title = AppConstants.SOFTWARE_NAME + " - ";
-        switch (panelName) {
-            case "HOME": title += "Dashboard"; break;
-            case "WEB": title += "Discover"; break;
-            case "CUSTOMERS": title += "Customer Management"; break;
-            case "PRODUCTS": title += "Product Management"; break;
-            case "ORDERS": title += "Order Management"; break;
-            case "INVOICES": title += "Invoice Management"; break;
-            case "SUPPLIERS": title += "Supplier Management"; break;
-            case "WAREHOUSE": title += "Warehouse Management"; break;
-            case "SALES_REPORT": title += "Sales Report"; break;
-            case "ADVANCED_STATS": title += "Advanced Statistics"; break;
-            case "WAREHOUSE_REPORT": title += "Warehouse Report"; break;
-            case "BACKUP": title += "Backup Management"; break;
-            case "SETTINGS": title += "Settings"; break;
-            default: title += "Management System";
-        }
-        setTitle(title);
+        String titleKey = switch (panelName) {
+            case "HOME" -> "Dashboard";
+            case "WEB" -> "Discover";
+            case "CUSTOMERS" -> "Customer Management";
+            case "PRODUCTS" -> "Product Catalog";
+            case "ORDERS" -> "Order Management";
+            case "INVOICES" -> "Invoice Management";
+            case "SUPPLIERS" -> "Supplier Management";
+            case "WAREHOUSE" -> "Warehouse Management";
+            case "SALES_REPORT" -> "Sales Report";
+            case "ADVANCED_STATS" -> "Advanced Statistics";
+            case "WAREHOUSE_REPORT" -> "Warehouse Report";
+            case "BACKUP" -> "Backup Management";
+            case "SETTINGS" -> "Settings";
+            default -> "Management System";
+        };
+        setTitle(AppConstants.SOFTWARE_NAME + " - " + I18n.tr(titleKey));
+    }
+
+    void refreshLocalizedTitle() {
+        updateWindowTitle(currentPanel);
     }
     
     private void openSettings() {

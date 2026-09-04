@@ -497,6 +497,8 @@ public class SettingsPanel extends JPanel {
         String theme = getSetting("theme", "System");
         updateLookAndFeel(theme);
         I18n.setLanguage(getSetting("language", "it"));
+        Window owner = SwingUtilities.getWindowAncestor(this);
+        if (owner instanceof MainWindow mainWindow) mainWindow.refreshLocalizedTitle();
     }
 
     private void updateGlobalFont(int size) {
