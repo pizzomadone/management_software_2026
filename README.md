@@ -44,8 +44,7 @@ operations, reports, and backups together in one desktop application.
 
 WareStat Online is implemented as a Swing panel containing JavaFX `WebView`
 through `JFXPanel`, so the rest of the desktop interface remains Swing-based.
-The panel has no address bar and provides only **Back**, **Forward**, **Refresh**,
-and refresh controls.
+The panel has no address bar and provides only back, forward, and refresh controls.
 
 The page is always loaded from:
 
@@ -106,8 +105,10 @@ association.
 - Internet connection for WareStat Online
 - Platform-compatible JavaFX SDK for the embedded web panel
 
-JavaFX is loaded at runtime. Without it, all core management features remain
-available, but WareStat Online cannot be displayed inside the application.
+Native packages include JavaFX in their custom runtime. Packaging stops with a
+clear error if the platform-compatible JavaFX JMODs are missing from
+`lib/javafx-jmods/`;
+this prevents distribution of the unstyled legacy Swing HTML renderer.
 
 ## Dependencies
 
@@ -117,8 +118,9 @@ Place the required JAR files in `lib/` before building:
 - **SQLite JDBC 3.50.3.0** — SQLite database connectivity
 - **OpenJFX / JavaFX** — embedded WareStat Online page
 
-For JavaFX, use the SDK matching both the build JDK and target operating system,
-and include the modules required by WebView and Swing interoperability:
+For JavaFX, use the JMOD bundle matching both the build JDK and target operating
+system, extract its `.jmod` files into `lib/javafx-jmods/`, and include the
+modules required by WebView and Swing interoperability:
 `javafx.base`, `javafx.graphics`, `javafx.controls`, `javafx.web`, and
 `javafx.media`, plus `javafx.swing`.
 
