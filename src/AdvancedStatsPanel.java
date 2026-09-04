@@ -101,12 +101,15 @@ public class AdvancedStatsPanel extends JPanel {
             };
 
             // Query with proper period filtering
-            String query = "SELECT strftime('%Y-%m', o.order_date) as month, " +
+            String normalizedDate = "CASE WHEN typeof(o.order_date) IN ('integer','real') " +
+                "THEN datetime(o.order_date / 1000, 'unixepoch', 'localtime') " +
+                "ELSE datetime(o.order_date) END";
+            String query = "SELECT strftime('%Y-%m', " + normalizedDate + ") as month, " +
                           "SUM(o.total) as total, " +
                           "COUNT(*) as num_orders " +
                           "FROM orders o " +
                           "WHERE o.order_date IS NOT NULL " +
-                          "AND o.order_date >= datetime('now', '-" + months + " months') " +
+                          "AND " + normalizedDate + " >= datetime('now', 'localtime', '-" + months + " months') " +
                           "GROUP BY month " +
                           "ORDER BY month";
 
@@ -123,7 +126,7 @@ public class AdvancedStatsPanel extends JPanel {
                         double total = rs.getDouble("total");
                         int numOrders = rs.getInt("num_orders");
                         newMonthlySales.put(month, new double[]{total, numOrders});
-                        System.out.println("Month: " + month + ", Total: €" + total + ", Orders: " + numOrders);
+                        System.out.println("Month: " + month + ", Total: " + SettingsPanel.formatCurrency(total) + ", Orders: " + numOrders);
                     }
                 }
 
@@ -219,7 +222,7 @@ public class AdvancedStatsPanel extends JPanel {
         for (int i = 0; i <= 5; i++) {
             int y = height - padding - (i * (height - 2 * padding) / 5);
             double value = (maxSale * i) / 5;
-            g2d.drawString(String.format("€ %.0f", value), 5, y + 5);
+            g2d.drawString(SettingsPanel.formatCurrency(value), 5, y + 5);
         }
     }
 
@@ -234,6 +237,9 @@ public class AdvancedStatsPanel extends JPanel {
                 default -> 12;
             };
 
+            String normalizedDate = "CASE WHEN typeof(o.order_date) IN ('integer','real') " +
+                "THEN datetime(o.order_date / 1000, 'unixepoch', 'localtime') " +
+                "ELSE datetime(o.order_date) END";
             String query = "SELECT COALESCE(p.name, 'Product N/A') as name, " +
                           "SUM(d.quantity) as total_quantity, " +
                           "SUM(d.quantity * d.unit_price) as revenue, " +
@@ -242,7 +248,7 @@ public class AdvancedStatsPanel extends JPanel {
                           "LEFT JOIN products p ON d.product_id = p.id " +
                           "LEFT JOIN orders o ON d.order_id = o.id " +
                           "WHERE o.order_date IS NOT NULL " +
-                          "AND o.order_date >= datetime('now', '-" + months + " months') " +
+                          "AND " + normalizedDate + " >= datetime('now', 'localtime', '-" + months + " months') " +
                           "GROUP BY d.product_id, p.name " +
                           "ORDER BY revenue DESC " +
                           "LIMIT 10";
@@ -263,7 +269,7 @@ public class AdvancedStatsPanel extends JPanel {
                     productStats.add(new Object[]{name, quantity, revenue});
                 }
 
-                System.out.println("Loaded " + productStats.size() + " products, total revenue: €" + totalRevenue);
+                System.out.println("Loaded " + productStats.size() + " products, total revenue: " + SettingsPanel.formatCurrency(totalRevenue));
 
                 // Update table
                 Object[][] data = new Object[productStats.size()][4];
@@ -271,7 +277,7 @@ public class AdvancedStatsPanel extends JPanel {
                     Object[] row = productStats.get(i);
                     data[i][0] = row[0];
                     data[i][1] = row[1];
-                    data[i][2] = String.format("€ %.2f", (double)row[2]);
+                    data[i][2] = SettingsPanel.formatCurrency((double)row[2]);
                     if (totalRevenue > 0) {
                         data[i][3] = String.format("%.1f%%", ((double)row[2] / totalRevenue) * 100);
                     } else {

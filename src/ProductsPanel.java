@@ -331,32 +331,41 @@ public class ProductsPanel extends JPanel {
                 boolean hasPriceLists = hasProductInPriceLists(conn, id);
                 boolean hasWarehouseMovements = hasProductInWarehouseMovements(conn, id);
                 boolean hasMinStock = hasProductInMinStock(conn, id);
+                boolean hasReservations = hasProductInReservations(conn, id);
+                boolean hasNotifications = hasProductInNotifications(conn, id);
                 
-                if (hasOrders || hasInvoices || hasSupplierOrders || hasPriceLists || hasWarehouseMovements || hasMinStock) {
+                boolean hasCriticalData = hasOrders || hasInvoices || hasSupplierOrders ||
+                    hasWarehouseMovements || hasReservations;
+                if (hasCriticalData) {
                     StringBuilder message = new StringBuilder();
-                    message.append("Cannot delete product '").append(name).append("' because it has:\n");
+                    message.append("Product '").append(name).append("' cannot be deleted because it is part of critical business history:\n");
                     
                     if (hasOrders) message.append("- Customer orders\n");
                     if (hasInvoices) message.append("- Invoice entries\n");
                     if (hasSupplierOrders) message.append("- Supplier orders\n");
                     if (hasPriceLists) message.append("- Price list entries\n");
                     if (hasWarehouseMovements) message.append("- Warehouse movements\n");
-                    if (hasMinStock) message.append("- Minimum stock settings\n");
-                    
-                    message.append("\nOptions:\n");
-                    message.append("1. Delete/reassign related records first\n");
-                    message.append("2. Use 'Force Delete' to remove all related data");
-                    
-                    String[] options = {"Cancel", "Force Delete (All Data)"};
-                    int choice = JOptionPane.showOptionDialog(this,
+                    if (hasReservations) message.append("- Active or historical stock reservations\n");
+                    message.append("\nDeleting it would alter orders, invoices or stock history. " +
+                        "Set the product as inactive instead.");
+                    JOptionPane.showMessageDialog(this,
                         message.toString(),
-                        "Cannot Delete Product",
-                        JOptionPane.YES_NO_OPTION,
-                        JOptionPane.WARNING_MESSAGE,
-                        null, options, options[0]);
-                    
-                    if (choice == 1) { // Force Delete
-                        performCascadeDelete(conn, id, name);
+                        "Product Cannot Be Deleted", JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
+
+                if (hasPriceLists || hasMinStock || hasNotifications) {
+                    String details = (hasPriceLists ? "- Price list entries\n" : "") +
+                        (hasMinStock ? "- Minimum stock settings\n" : "") +
+                        (hasNotifications ? "- Warehouse notifications\n" : "");
+                    int cleanup = JOptionPane.showConfirmDialog(this,
+                        "Product '" + name + "' has only non-critical configuration data:\n" + details +
+                        "\nThese records will also be deleted. Continue?",
+                        "Confirm Product Cleanup", JOptionPane.YES_NO_OPTION,
+                        JOptionPane.WARNING_MESSAGE);
+                    if (cleanup == JOptionPane.YES_OPTION) {
+                        deleteProductAndNonCriticalData(conn, id);
+                        loadProducts();
                     }
                     return;
                 }
@@ -389,116 +398,45 @@ public class ProductsPanel extends JPanel {
             }
         }
     }
-    
-    private void performCascadeDelete(Connection conn, int id, String name) {
-        int confirmResult = JOptionPane.showConfirmDialog(this,
-            "WARNING: This will permanently delete product '" + name + "' and ALL related data:\n" +
-            "- All customer orders containing this product\n" +
-            "- All invoice entries\n" +
-            "- All supplier orders\n" +
-            "- All price list entries\n" +
-            "- All warehouse movements\n" +
-            "- All minimum stock settings\n\n" +
-            "This action CANNOT be undone!\n\n" +
-            "Are you absolutely sure?",
-            "FORCE DELETE - Final Confirmation",
-            JOptionPane.YES_NO_OPTION,
-            JOptionPane.ERROR_MESSAGE);
-            
-        if (confirmResult != JOptionPane.YES_OPTION) {
-            return;
-        }
-        
+
+    private void deleteProductAndNonCriticalData(Connection conn, int productId) throws SQLException {
+        conn.setAutoCommit(false);
         try {
-            conn.setAutoCommit(false);
-            
-            try {
-                // Delete in order to respect foreign key constraints
-                
-                // 1. Delete order details
-                String deleteOrderDetails = "DELETE FROM order_details WHERE product_id = ?";
-                try (PreparedStatement pstmt = conn.prepareStatement(deleteOrderDetails)) {
-                    pstmt.setInt(1, id);
-                    int deleted = pstmt.executeUpdate();
-                    System.out.println("Deleted " + deleted + " order details");
-                }
-                
-                // 2. Delete invoice details
-                String deleteInvoiceDetails = "DELETE FROM invoice_details WHERE product_id = ?";
-                try (PreparedStatement pstmt = conn.prepareStatement(deleteInvoiceDetails)) {
-                    pstmt.setInt(1, id);
-                    int deleted = pstmt.executeUpdate();
-                    System.out.println("Deleted " + deleted + " invoice details");
-                }
-                
-                // 3. Delete supplier order details
-                String deleteSupplierOrderDetails = "DELETE FROM supplier_order_details WHERE product_id = ?";
-                try (PreparedStatement pstmt = conn.prepareStatement(deleteSupplierOrderDetails)) {
-                    pstmt.setInt(1, id);
-                    int deleted = pstmt.executeUpdate();
-                    System.out.println("Deleted " + deleted + " supplier order details");
-                }
-                
-                // 4. Delete price lists
-                String deletePriceLists = "DELETE FROM supplier_price_lists WHERE product_id = ?";
-                try (PreparedStatement pstmt = conn.prepareStatement(deletePriceLists)) {
-                    pstmt.setInt(1, id);
-                    int deleted = pstmt.executeUpdate();
-                    System.out.println("Deleted " + deleted + " price list entries");
-                }
-                
-                // 5. Delete warehouse movements
-                String deleteWarehouseMovements = "DELETE FROM warehouse_movements WHERE product_id = ?";
-                try (PreparedStatement pstmt = conn.prepareStatement(deleteWarehouseMovements)) {
-                    pstmt.setInt(1, id);
-                    int deleted = pstmt.executeUpdate();
-                    System.out.println("Deleted " + deleted + " warehouse movements");
-                }
-                
-                // 6. Delete warehouse notifications
-                String deleteNotifications = "DELETE FROM warehouse_notifications WHERE product_id = ?";
-                try (PreparedStatement pstmt = conn.prepareStatement(deleteNotifications)) {
-                    pstmt.setInt(1, id);
-                    int deleted = pstmt.executeUpdate();
-                    System.out.println("Deleted " + deleted + " warehouse notifications");
-                }
-                
-                // 7. Delete minimum stock settings
-                String deleteMinStock = "DELETE FROM minimum_stock WHERE product_id = ?";
-                try (PreparedStatement pstmt = conn.prepareStatement(deleteMinStock)) {
-                    pstmt.setInt(1, id);
-                    int deleted = pstmt.executeUpdate();
-                    System.out.println("Deleted " + deleted + " minimum stock settings");
-                }
-                
-                // 8. Finally delete the product
-                String deleteProduct = "DELETE FROM products WHERE id = ?";
-                try (PreparedStatement pstmt = conn.prepareStatement(deleteProduct)) {
-                    pstmt.setInt(1, id);
+            String[] statements = {
+                "DELETE FROM supplier_price_lists WHERE product_id = ?",
+                "DELETE FROM warehouse_notifications WHERE product_id = ?",
+                "DELETE FROM minimum_stock WHERE product_id = ?",
+                "DELETE FROM products WHERE id = ?"
+            };
+            for (String statement : statements) {
+                try (PreparedStatement pstmt = conn.prepareStatement(statement)) {
+                    pstmt.setInt(1, productId);
                     pstmt.executeUpdate();
-                    System.out.println("Deleted product");
                 }
-
-                conn.commit();
-                loadProducts();
-
-                JOptionPane.showMessageDialog(this,
-                    "Product '" + name + "' and all related records deleted successfully",
-                    "Force Delete Completed",
-                    JOptionPane.INFORMATION_MESSAGE);
-                    
-            } catch (SQLException e) {
-                conn.rollback();
-                throw e;
-            } finally {
-                conn.setAutoCommit(true);
             }
-            
+            conn.commit();
         } catch (SQLException e) {
-            e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
-                "Error during force delete: " + e.getMessage(),
-                "Error", JOptionPane.ERROR_MESSAGE);
+            conn.rollback();
+            throw e;
+        } finally {
+            conn.setAutoCommit(true);
+        }
+    }
+
+    private boolean hasProductInReservations(Connection conn, int productId) throws SQLException {
+        return hasRows(conn, "SELECT COUNT(*) FROM stock_reservations WHERE product_id = ?", productId);
+    }
+
+    private boolean hasProductInNotifications(Connection conn, int productId) throws SQLException {
+        return hasRows(conn, "SELECT COUNT(*) FROM warehouse_notifications WHERE product_id = ?", productId);
+    }
+
+    private boolean hasRows(Connection conn, String query, int productId) throws SQLException {
+        try (PreparedStatement pstmt = conn.prepareStatement(query)) {
+            pstmt.setInt(1, productId);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                return rs.next() && rs.getInt(1) > 0;
+            }
         }
     }
     

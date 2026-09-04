@@ -31,7 +31,6 @@ public class DashboardPanel extends JPanel {
     private JTable topProductsTable;
     private JTable abcAnalysisTable;
 
-    private NumberFormat currencyFormat;
     private NumberFormat percentFormat;
     private SimpleDateFormat dateFormat;
 
@@ -40,7 +39,6 @@ public class DashboardPanel extends JPanel {
     public DashboardPanel(MainWindow mainWindow) {
         this.mainWindow = mainWindow;
 
-        currencyFormat = NumberFormat.getCurrencyInstance(Locale.ITALY);
         percentFormat = NumberFormat.getPercentInstance();
         percentFormat.setMinimumFractionDigits(1);
         percentFormat.setMaximumFractionDigits(1);
@@ -125,10 +123,10 @@ public class DashboardPanel extends JPanel {
         ));
 
         // Create 6 KPI cards with consistent color scheme
-        panel.add(createKPICard("Warehouse Value", "0.00 €", SECONDARY_COLOR, "warehouseValue"));
+        panel.add(createKPICard("Warehouse Value", SettingsPanel.formatCurrency(0), SECONDARY_COLOR, "warehouseValue"));
         panel.add(createKPICard("Low Stock Products", "0", DANGER_COLOR, "lowStock"));
         panel.add(createKPICard("Pending Orders", "0", WARNING_COLOR, "pendingOrders"));
-        panel.add(createKPICard("Monthly Revenue", "0.00 €", SUCCESS_COLOR, "monthRevenue"));
+        panel.add(createKPICard("Monthly Revenue", SettingsPanel.formatCurrency(0), SUCCESS_COLOR, "monthRevenue"));
         panel.add(createKPICard("Average Margin", "0.0%", ACCENT_COLOR, "avgMargin"));
         panel.add(createKPICard("Zero Stock Products", "0", WARNING_COLOR, "zeroStock"));
 
@@ -362,7 +360,7 @@ public class DashboardPanel extends JPanel {
                  ResultSet rs = stmt.executeQuery(warehouseQuery)) {
                 if (rs.next()) {
                     double value = rs.getDouble("total");
-                    warehouseValueLabel.setText(currencyFormat.format(value));
+                    warehouseValueLabel.setText(SettingsPanel.formatCurrency(value));
                 }
             }
 
@@ -391,15 +389,27 @@ public class DashboardPanel extends JPanel {
             cal.set(Calendar.HOUR_OF_DAY, 0);
             cal.set(Calendar.MINUTE, 0);
             cal.set(Calendar.SECOND, 0);
-            String monthStart = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(cal.getTime());
+            long monthStart = cal.getTimeInMillis();
+            cal.add(Calendar.MONTH, 1);
+            long nextMonthStart = cal.getTimeInMillis();
 
-            String revenueQuery = "SELECT SUM(total) as revenue FROM invoices WHERE date >= ?";
+            String revenueQuery = """
+                SELECT COALESCE(SUM(total), 0) AS revenue
+                FROM invoices
+                WHERE ((typeof(date) IN ('integer', 'real')
+                        AND CAST(date AS INTEGER) >= ? AND CAST(date AS INTEGER) < ?)
+                    OR (typeof(date) = 'text'
+                        AND datetime(date) >= datetime(?) AND datetime(date) < datetime(?)))
+            """;
             try (PreparedStatement pstmt = conn.prepareStatement(revenueQuery)) {
-                pstmt.setString(1, monthStart);
+                pstmt.setLong(1, monthStart);
+                pstmt.setLong(2, nextMonthStart);
+                pstmt.setString(3, new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date(monthStart)));
+                pstmt.setString(4, new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date(nextMonthStart)));
                 ResultSet rs = pstmt.executeQuery();
                 if (rs.next()) {
                     double revenue = rs.getDouble("revenue");
-                    monthRevenueLabel.setText(currencyFormat.format(revenue));
+                    monthRevenueLabel.setText(SettingsPanel.formatCurrency(revenue));
                 }
             }
 
@@ -603,7 +613,7 @@ public class DashboardPanel extends JPanel {
         infoPanel.add(idLabel);
         infoPanel.add(detailsLabel);
 
-        JLabel totalLabel = new JLabel(currencyFormat.format(total));
+        JLabel totalLabel = new JLabel(SettingsPanel.formatCurrency(total));
         totalLabel.setFont(new Font("Arial", Font.BOLD, 14));
         totalLabel.setForeground(SUCCESS_COLOR);
 
@@ -660,7 +670,7 @@ public class DashboardPanel extends JPanel {
                         rank++,
                         name,
                         qty,
-                        currencyFormat.format(revenue)
+                        SettingsPanel.formatCurrency(revenue)
                     });
                 }
             }
@@ -702,7 +712,7 @@ public class DashboardPanel extends JPanel {
             }
 
             if (products.isEmpty() || totalRevenue == 0) {
-                model.addRow(new Object[]{"N/A", "0", "0%", currencyFormat.format(0), "0%", "No data available"});
+                model.addRow(new Object[]{"N/A", "0", "0%", SettingsPanel.formatCurrency(0), "0%", "No data available"});
                 return;
             }
 
@@ -733,7 +743,7 @@ public class DashboardPanel extends JPanel {
                 "A",
                 classACount,
                 String.format("%.1f%%", (classACount * 100.0 / totalProducts)),
-                currencyFormat.format(classARevenue),
+                SettingsPanel.formatCurrency(classARevenue),
                 String.format("%.1f%%", (classARevenue * 100.0 / totalRevenue)),
                 "High-value products - Priority focus"
             });
@@ -742,7 +752,7 @@ public class DashboardPanel extends JPanel {
                 "B",
                 classBCount,
                 String.format("%.1f%%", (classBCount * 100.0 / totalProducts)),
-                currencyFormat.format(classBRevenue),
+                SettingsPanel.formatCurrency(classBRevenue),
                 String.format("%.1f%%", (classBRevenue * 100.0 / totalRevenue)),
                 "Medium-value products - Monitor"
             });
@@ -751,7 +761,7 @@ public class DashboardPanel extends JPanel {
                 "C",
                 classCCount,
                 String.format("%.1f%%", (classCCount * 100.0 / totalProducts)),
-                currencyFormat.format(classCRevenue),
+                SettingsPanel.formatCurrency(classCRevenue),
                 String.format("%.1f%%", (classCRevenue * 100.0 / totalRevenue)),
                 "Low-value products - Consider liquidation"
             });

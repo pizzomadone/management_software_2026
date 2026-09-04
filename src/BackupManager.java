@@ -4,6 +4,7 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import javax.swing.*;
 import java.util.Properties;
+import java.sql.*;
 
 public class BackupManager {
     private static BackupManager instance;
@@ -67,10 +68,28 @@ public class BackupManager {
                 throw new IOException("Database file '" + sourceDb + "' not found");
             }
 
-            Files.copy(sourceDb, Paths.get(backupPath), StandardCopyOption.REPLACE_EXISTING);
+            Path target = Paths.get(backupPath);
+            Files.deleteIfExists(target);
+            try (Connection snapshotConn = DriverManager.getConnection("jdbc:sqlite:" + sourceDb)) {
+                try (Statement settings = snapshotConn.createStatement()) {
+                    settings.execute("PRAGMA busy_timeout = 10000");
+                }
+                try (PreparedStatement pstmt = snapshotConn.prepareStatement("VACUUM INTO ?")) {
+                    pstmt.setString(1, target.toAbsolutePath().toString());
+                    pstmt.execute();
+                }
+            }
+            try (Connection backupConn = DriverManager.getConnection("jdbc:sqlite:" + target);
+                 Statement stmt = backupConn.createStatement();
+                 ResultSet rs = stmt.executeQuery("PRAGMA integrity_check")) {
+                if (!rs.next() || !"ok".equalsIgnoreCase(rs.getString(1))) {
+                    Files.deleteIfExists(target);
+                    throw new IOException("Backup database failed integrity check");
+                }
+            }
             cleanOldBackups();
 
-        } catch (IOException e) {
+        } catch (IOException | SQLException e) {
             e.printStackTrace();
             throw new RuntimeException("Error during backup: " + e.getMessage());
         }
@@ -129,6 +148,7 @@ public class BackupManager {
             // Handle reconnection failure
             try {
                 DatabaseManager.getInstance().initDatabase();
+                CompanyData.getInstance().reloadFromDatabase();
             } catch (Exception e) {
                 // Restore previous backup if reconnection fails
                 if (Files.exists(preRestoreBackup)) {

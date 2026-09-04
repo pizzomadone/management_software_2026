@@ -25,3 +25,11 @@ Project: https://github.com/xerial/sqlite-jdbc
 
 Both libraries are licensed under the Apache License 2.0.
 See LICENSE-THIRD-PARTY.txt for the complete license text.
+
+================================================================================
+
+OpenJFX / JavaFX
+Copyright (c) Oracle and/or its affiliates and OpenJFX contributors
+
+Project: https://openjfx.io/
+License: GNU General Public License, version 2, with the Classpath Exception

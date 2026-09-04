@@ -5,6 +5,8 @@ import java.sql.*;
 import java.util.Vector;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.Map;
+import java.util.HashMap;
 
 public class OrdersPanel extends JPanel {
     private JTable ordersTable;
@@ -44,7 +46,7 @@ public class OrdersPanel extends JPanel {
         searchPanel.add(searchButton);
 
         // Orders table
-        String[] columns = {"ID", "Customer", "Date", "Status", "Total €", "Payment"};
+        String[] columns = {"ID", "Customer", "Date", "Status", "Total " + SettingsPanel.getCurrencySymbol(), "Payment"};
         tableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -344,6 +346,27 @@ public class OrdersPanel extends JPanel {
             String customer = (String)tableModel.getValueAt(modelRow, 1);
             String status = (String)tableModel.getValueAt(modelRow, 3);
 
+            try {
+                Connection connection = DatabaseManager.getInstance().getConnection();
+                try (PreparedStatement pstmt = connection.prepareStatement(
+                        "SELECT number FROM invoices WHERE order_id = ?")) {
+                    pstmt.setInt(1, id);
+                    try (ResultSet rs = pstmt.executeQuery()) {
+                        if (rs.next()) {
+                            JOptionPane.showMessageDialog(this,
+                                "Order cannot be deleted because invoice " + rs.getString("number") +
+                                " was generated from it. Delete the invoice first.",
+                                "Order Cannot Be Deleted", JOptionPane.WARNING_MESSAGE);
+                            return;
+                        }
+                    }
+                }
+            } catch (SQLException e) {
+                JOptionPane.showMessageDialog(this, "Unable to verify linked invoices: " + e.getMessage(),
+                    "Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
             int result = JOptionPane.showConfirmDialog(this,
                 "Are you sure you want to delete the order from customer '" + customer + "'?\n" +
                 "Status: " + status + "\n" +
@@ -418,6 +441,26 @@ public class OrdersPanel extends JPanel {
         String customer = (String)tableModel.getValueAt(modelRow, 1);
         String status = (String)tableModel.getValueAt(modelRow, 3);
 
+        try {
+            Connection connection = DatabaseManager.getInstance().getConnection();
+            try (PreparedStatement check = connection.prepareStatement(
+                    "SELECT number FROM invoices WHERE order_id = ?")) {
+                check.setInt(1, orderId);
+                try (ResultSet rs = check.executeQuery()) {
+                    if (rs.next()) {
+                        JOptionPane.showMessageDialog(this,
+                            "This order has already been invoiced as " + rs.getString("number") + ".",
+                            "Invoice Already Exists", JOptionPane.WARNING_MESSAGE);
+                        return;
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, "Unable to verify existing invoices: " + e.getMessage(),
+                "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
         // Confirm with user
         int result = JOptionPane.showConfirmDialog(this,
             "Generate invoice for order from customer: " + customer + "?\n" +
@@ -453,20 +496,31 @@ public class OrdersPanel extends JPanel {
                     .setInstant(order.getOrderDate())
                     .build()
                     .get(java.util.Calendar.YEAR);
-                String invoiceNumber = DatabaseManager.getInstance().getNextInvoiceNumber(year);
+                String invoiceNumber = DatabaseManager.getInstance().getNextInvoiceNumber(conn, year);
 
-                // getNextInvoiceNumber commits its own transaction, resetting auto-commit
-                // Re-disable auto-commit for our transaction
-                conn.setAutoCommit(false);
-
-                // Calculate totals with default VAT rate (22%)
-                final double DEFAULT_VAT_RATE = 22.0;
+                // Use each product's VAT rate; fall back to the configured default only
+                // when no product rate is available.
+                Map<Integer, Double> vatRates = new HashMap<>();
+                String vatQuery = "SELECT vat_rate FROM products WHERE id = ?";
+                try (PreparedStatement vatStmt = conn.prepareStatement(vatQuery)) {
+                    for (OrderItem item : order.getItems()) {
+                        vatStmt.setInt(1, item.getProductId());
+                        try (ResultSet vatRs = vatStmt.executeQuery()) {
+                            double rate = SettingsPanel.getDefaultVatRate();
+                            if (vatRs.next()) {
+                                double productRate = vatRs.getDouble("vat_rate");
+                                if (!vatRs.wasNull()) rate = productRate;
+                            }
+                            vatRates.put(item.getProductId(), rate);
+                        }
+                    }
+                }
                 double taxableAmount = 0.0;
                 double vatTotal = 0.0;
 
                 for (OrderItem item : order.getItems()) {
                     double itemTaxable = item.getQuantity() * item.getUnitPrice();
-                    double itemVat = itemTaxable * DEFAULT_VAT_RATE / 100.0;
+                    double itemVat = itemTaxable * vatRates.get(item.getProductId()) / 100.0;
                     taxableAmount += itemTaxable;
                     vatTotal += itemVat;
                 }
@@ -475,8 +529,8 @@ public class OrdersPanel extends JPanel {
 
                 // Insert invoice
                 String insertInvoice = """
-                    INSERT INTO invoices (number, date, customer_id, taxable_amount, vat, total, status)
-                    VALUES (?, ?, ?, ?, ?, ?, 'Draft')
+                    INSERT INTO invoices (number, date, customer_id, taxable_amount, vat, total, status, order_id)
+                    VALUES (?, ?, ?, ?, ?, ?, 'Draft', ?)
                 """;
 
                 int invoiceId = 0;
@@ -487,6 +541,7 @@ public class OrdersPanel extends JPanel {
                     pstmt.setDouble(4, taxableAmount);
                     pstmt.setDouble(5, vatTotal);
                     pstmt.setDouble(6, total);
+                    pstmt.setInt(7, orderId);
                     pstmt.executeUpdate();
 
                     ResultSet rs = pstmt.getGeneratedKeys();
@@ -504,15 +559,14 @@ public class OrdersPanel extends JPanel {
                 try (PreparedStatement pstmt = conn.prepareStatement(insertDetails)) {
                     for (OrderItem item : order.getItems()) {
                         double itemTaxable = item.getQuantity() * item.getUnitPrice();
-                        double itemVat = itemTaxable * DEFAULT_VAT_RATE / 100.0;
-                        double itemTotal = itemTaxable + itemVat;
+                        double vatRate = vatRates.get(item.getProductId());
 
                         pstmt.setInt(1, invoiceId);
                         pstmt.setInt(2, item.getProductId());
                         pstmt.setInt(3, item.getQuantity());
                         pstmt.setDouble(4, item.getUnitPrice());
-                        pstmt.setDouble(5, DEFAULT_VAT_RATE);
-                        pstmt.setDouble(6, itemTotal);
+                        pstmt.setDouble(5, vatRate);
+                        pstmt.setDouble(6, itemTaxable);
                         pstmt.addBatch();
                     }
                     pstmt.executeBatch();
@@ -568,7 +622,7 @@ public class OrdersPanel extends JPanel {
         } else if ("PAID".equals(paymentStatus)) {
             return "Paid";
         } else if ("PARTIALLY_PAID".equals(paymentStatus)) {
-            return String.format("Partial (€%.2f)", paidAmount);
+            return "Partial (" + SettingsPanel.formatCurrency(paidAmount) + ")";
         }
         return "Not Paid";
     }

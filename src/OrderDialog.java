@@ -17,7 +17,7 @@ public class OrderDialog extends JDialog {
     private boolean orderSaved = false;
     private JButton selectCustomerButton;
     private Customer selectedCustomer;
-    private JTextField dateField;
+    private DatePickerField dateField;
     private JComboBox<String> statusCombo;
     private JComboBox<String> paymentStatusCombo;
     private JTextField paidAmountField;
@@ -108,7 +108,7 @@ public class OrderDialog extends JDialog {
         orderPanel.add(new JLabel("Date:"), gbc);
         
         gbc.gridx = 1;
-        dateField = new JTextField(dateFormat.format(new Date()));
+        dateField = new DatePickerField(dateFormat.format(new Date()));
         orderPanel.add(dateField, gbc);
 
         // Status
@@ -186,7 +186,7 @@ public class OrderDialog extends JDialog {
         
         // Panel for total
         JPanel totalPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        totalLabel = new JLabel("Total: € 0.00");
+        totalLabel = new JLabel("Total: " + SettingsPanel.formatCurrency(0));
         totalLabel.setFont(new Font(totalLabel.getFont().getName(), Font.BOLD, 14));
         totalPanel.add(totalLabel);
         
@@ -439,7 +439,7 @@ public class OrderDialog extends JDialog {
             }
 
             currentTotal = total; // Store total value
-            totalLabel.setText(String.format("Total: € %.2f", total));
+            totalLabel.setText("Total: " + SettingsPanel.formatCurrency(total));
 
             // Update paid amount if payment status is "Paid"
             if ("Paid".equals(paymentStatusCombo.getSelectedItem())) {

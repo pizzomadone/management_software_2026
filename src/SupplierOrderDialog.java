@@ -19,8 +19,8 @@ public class SupplierOrderDialog extends JDialog {
     private String previousStatus = null;
 
     private JTextField numberField;
-    private JTextField dateField;
-    private JTextField deliveryDateField;
+    private DatePickerField dateField;
+    private DatePickerField deliveryDateField;
     private JComboBox<String> statusCombo;
     private JTextArea notesArea;
     private JTable itemsTable;
@@ -87,7 +87,7 @@ public class SupplierOrderDialog extends JDialog {
         orderPanel.add(new JLabel("Order Date:"), gbc);
 
         gbc.gridx = 1;
-        dateField = new JTextField(10);
+        dateField = new DatePickerField(10);
         dateField.setText(DateUtils.formatDate(new Date(), dateFormat));
         orderPanel.add(dateField, gbc);
 
@@ -96,7 +96,7 @@ public class SupplierOrderDialog extends JDialog {
         orderPanel.add(new JLabel("Delivery Date:"), gbc);
 
         gbc.gridx = 3;
-        deliveryDateField = new JTextField(10);
+        deliveryDateField = new DatePickerField(10, true);
         orderPanel.add(deliveryDateField, gbc);
 
         // Status
@@ -148,7 +148,7 @@ public class SupplierOrderDialog extends JDialog {
 
         // Total panel
         JPanel totalPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        totalLabel = new JLabel("Total: € 0.00");
+        totalLabel = new JLabel("Total: " + SettingsPanel.formatCurrency(0));
         totalLabel.setFont(new Font(totalLabel.getFont().getName(), Font.BOLD, 14));
         totalPanel.add(totalLabel);
 
@@ -371,8 +371,8 @@ public class SupplierOrderDialog extends JDialog {
 
         @Override
         public String toString() {
-            return String.format("%s - %s (€ %.2f)",
-                product.getCode(), product.getName(), product.getPrice());
+            return String.format("%s - %s (%s)",
+                product.getCode(), product.getName(), SettingsPanel.formatCurrency(product.getPrice()));
         }
     }
 
@@ -405,7 +405,7 @@ public class SupplierOrderDialog extends JDialog {
             }
 
             // Update the total label
-            totalLabel.setText(String.format("Total: € %.2f", total));
+            totalLabel.setText("Total: " + SettingsPanel.formatCurrency(total));
 
             // Update row totals in a separate EDT event
             SwingUtilities.invokeLater(() -> {
@@ -495,8 +495,11 @@ public class SupplierOrderDialog extends JDialog {
             }
 
             // Calculate total
-            double total = Double.parseDouble(
-                totalLabel.getText().replace("Total: € ", "").replace(",", "."));
+            double total = 0.0;
+            for (int i = 0; i < itemsTableModel.getRowCount(); i++) {
+                total += parseInteger(itemsTableModel.getValueAt(i, 2))
+                    * parseDouble(itemsTableModel.getValueAt(i, 3));
+            }
 
             String newStatus = (String)statusCombo.getSelectedItem();
 
@@ -566,6 +569,11 @@ public class SupplierOrderDialog extends JDialog {
                 } else {
                     // Update existing order
                     orderId = order.getId();
+                    List<StockManager.StockItem> oldStockItems = loadStoredStockItems(conn, orderId);
+
+                    if ("Completed".equals(previousStatus)) {
+                        StockManager.reverseSupplierOrder(conn, oldStockItems, order.getNumber());
+                    }
 
                     String orderQuery = """
                         UPDATE supplier_orders SET
@@ -594,8 +602,10 @@ public class SupplierOrderDialog extends JDialog {
                     // Insert new details
                     insertOrderDetails(conn, orderId);
 
-                    // Handle status change for stock
-                    handleStatusChange(conn, orderId, previousStatus, newStatus, stockItems, orderDate);
+                    if ("Completed".equals(newStatus)) {
+                        StockManager.incrementStock(conn, stockItems, orderDate,
+                            numberField.getText(), "SUPPLIER_ORDER");
+                    }
                 }
 
                 conn.commit();
@@ -615,6 +625,27 @@ public class SupplierOrderDialog extends JDialog {
                 "Error saving the order: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
+    }
+
+    private List<StockManager.StockItem> loadStoredStockItems(Connection conn, int orderId)
+            throws SQLException {
+        List<StockManager.StockItem> items = new ArrayList<>();
+        String query = """
+            SELECT d.product_id, d.quantity, COALESCE(p.name, '') AS product_name
+            FROM supplier_order_details d
+            LEFT JOIN products p ON p.id = d.product_id
+            WHERE d.order_id = ?
+        """;
+        try (PreparedStatement pstmt = conn.prepareStatement(query)) {
+            pstmt.setInt(1, orderId);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                while (rs.next()) {
+                    items.add(new StockManager.StockItem(rs.getInt("product_id"),
+                        rs.getString("product_name"), rs.getInt("quantity")));
+                }
+            }
+        }
+        return items;
     }
 
     private void insertOrderDetails(Connection conn, int orderId) throws SQLException {

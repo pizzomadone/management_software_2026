@@ -55,6 +55,10 @@ public class CompanyData {
             setDefaults();
         }
     }
+
+    public void reloadFromDatabase() {
+        loadFromDatabase();
+    }
     
     private void setDefaults() {
         this.companyName = "";

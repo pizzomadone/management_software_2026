@@ -3,6 +3,9 @@ import java.awt.*;
 import java.awt.event.*;
 import java.util.Properties;
 import java.io.*;
+import java.text.NumberFormat;
+import java.util.Currency;
+import java.util.Locale;
 
 public class SettingsPanel extends JPanel {
     private static Properties settings = new Properties();
@@ -20,6 +23,7 @@ public class SettingsPanel extends JPanel {
     // Currency and VAT Settings
     private JComboBox<String> currencyCombo;
     private JTextField defaultVatField;
+    private JComboBox<String> languageCombo;
 
     // Company Data fields
     private JTextField companyNameField;
@@ -185,8 +189,17 @@ public class SettingsPanel extends JPanel {
         defaultVatField.setPreferredSize(new Dimension(200, 25));
         panel.add(defaultVatField, gbc);
 
+        // Language
+        gbc.gridx = 0; gbc.gridy = 5;
+        panel.add(new JLabel("Language:"), gbc);
+
+        gbc.gridx = 1;
+        languageCombo = new JComboBox<>(I18n.languageNames());
+        languageCombo.setSelectedItem(I18n.nameForCode(getSetting("language", "it")));
+        panel.add(languageCombo, gbc);
+
         // Add vertical glue to push components to top
-        gbc.gridx = 0; gbc.gridy = 5; gbc.gridwidth = 2; gbc.weighty = 1.0;
+        gbc.gridx = 0; gbc.gridy = 6; gbc.gridwidth = 2; gbc.weighty = 1.0;
         gbc.fill = GridBagConstraints.VERTICAL;
         panel.add(Box.createVerticalGlue(), gbc);
 
@@ -423,13 +436,24 @@ public class SettingsPanel extends JPanel {
     }
 
     private void saveAppSettings() {
+        double vatRate;
+        try {
+            vatRate = Double.parseDouble(defaultVatField.getText().trim().replace(',', '.'));
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Default VAT rate must be a number between 0 and 100");
+        }
+        if (vatRate < 0 || vatRate > 100) {
+            throw new IllegalArgumentException("Default VAT rate must be between 0 and 100");
+        }
+
         settings.setProperty("font_size", String.valueOf(fontSizeSlider.getValue()));
         settings.setProperty("theme", (String)themeCombo.getSelectedItem());
         settings.setProperty("auto_backup", String.valueOf(autoBackupCheck.isSelected()));
         settings.setProperty("backup_interval", String.valueOf(backupIntervalSpinner.getValue()));
         settings.setProperty("pdf_default_directory", pdfDirectoryField.getText().trim());
         settings.setProperty("currency", (String)currencyCombo.getSelectedItem());
-        settings.setProperty("default_vat", defaultVatField.getText().trim());
+        settings.setProperty("default_vat", String.valueOf(vatRate));
+        settings.setProperty("language", I18n.codeForName((String) languageCombo.getSelectedItem()));
 
         try (OutputStreamWriter writer = new OutputStreamWriter(
                 new FileOutputStream(AppConstants.getSettingsPath().toFile()),
@@ -458,6 +482,7 @@ public class SettingsPanel extends JPanel {
         settings.setProperty("pdf_default_directory", System.getProperty("user.home"));
         settings.setProperty("currency", "EUR - Euro (€)");
         settings.setProperty("default_vat", "22.0");
+        settings.setProperty("language", "it");
     }
 
     private void applyCurrentSettings() {
@@ -470,6 +495,7 @@ public class SettingsPanel extends JPanel {
 
         String theme = getSetting("theme", "System");
         updateLookAndFeel(theme);
+        I18n.setLanguage(getSetting("language", "it"));
     }
 
     private void updateGlobalFont(int size) {
@@ -536,16 +562,20 @@ public class SettingsPanel extends JPanel {
         }
         settings.setProperty(key, value);
 
-        try (FileOutputStream fos = new FileOutputStream(AppConstants.getSettingsPath().toFile())) {
-            settings.store(fos, "Application Settings");
+        try (OutputStreamWriter writer = new OutputStreamWriter(
+                new FileOutputStream(AppConstants.getSettingsPath().toFile()),
+                java.nio.charset.StandardCharsets.UTF_8)) {
+            settings.store(writer, "Application Settings");
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
     public static void loadGlobalSettings() {
-        try (FileInputStream fis = new FileInputStream(AppConstants.getSettingsPath().toFile())) {
-            settings.load(fis);
+        try (InputStreamReader reader = new InputStreamReader(
+                new FileInputStream(AppConstants.getSettingsPath().toFile()),
+                java.nio.charset.StandardCharsets.UTF_8)) {
+            settings.load(reader);
         } catch (IOException e) {
             // Use defaults
         }
@@ -577,6 +607,28 @@ public class SettingsPanel extends JPanel {
             return currency.substring(startIdx + 1, endIdx);
         }
         return "€"; // Default
+    }
+
+    public static String getCurrencyCode() {
+        String currency = getCurrency();
+        int separatorIndex = currency.indexOf(" - ");
+        return separatorIndex > 0 ? currency.substring(0, separatorIndex) : "EUR";
+    }
+
+    public static String formatCurrency(double amount) {
+        try {
+            NumberFormat formatter = NumberFormat.getCurrencyInstance(Locale.getDefault());
+            Currency currency = Currency.getInstance(getCurrencyCode());
+            formatter.setCurrency(currency);
+            int fractionDigits = currency.getDefaultFractionDigits();
+            if (fractionDigits >= 0) {
+                formatter.setMinimumFractionDigits(fractionDigits);
+                formatter.setMaximumFractionDigits(fractionDigits);
+            }
+            return formatter.format(amount);
+        } catch (IllegalArgumentException e) {
+            return String.format("%s %.2f", getCurrencySymbol(), amount);
+        }
     }
 
     public static double getDefaultVatRate() {

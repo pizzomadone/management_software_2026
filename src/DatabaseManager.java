@@ -135,6 +135,8 @@ public class DatabaseManager {
                 vat REAL NOT NULL,
                 total REAL NOT NULL,
                 status TEXT NOT NULL,
+                order_id INTEGER,
+                FOREIGN KEY (order_id) REFERENCES orders (id),
                 FOREIGN KEY (customer_id) REFERENCES customers (id)
             )
         """;
@@ -320,183 +322,11 @@ public class DatabaseManager {
             stmt.execute(createCompanyDataTable);
         }
 
-        // Migrate existing data from supplier TEXT to supplier_id INTEGER
-        migrateSupplierData();
-
-        // Migrate existing databases to add reserved_quantity column
-        migrateStockReservationData();
-
-        // Migrate existing databases to add warehouse_position and vat_rate columns
-        migrateWarehousePositionAndVat();
-
-        // Migrate existing databases to add payment tracking columns to orders
-        migratePaymentTracking();
+        // Apply ordered, versioned schema migrations for existing databases.
+        DatabaseMigrationManager.migrate(connection);
 
         // Create triggers for stock reservation synchronization
         createStockReservationTriggers();
-    }
-
-    private void migrateSupplierData() throws SQLException {
-        // Check if old 'supplier' column exists (TEXT type)
-        try (Statement stmt = connection.createStatement();
-             ResultSet rs = stmt.executeQuery("PRAGMA table_info(products)")) {
-
-            boolean hasOldSupplierColumn = false;
-            boolean hasNewSupplierIdColumn = false;
-
-            while (rs.next()) {
-                String columnName = rs.getString("name");
-                String columnType = rs.getString("type");
-
-                if ("supplier".equals(columnName) && "TEXT".equalsIgnoreCase(columnType)) {
-                    hasOldSupplierColumn = true;
-                } else if ("supplier_id".equals(columnName)) {
-                    hasNewSupplierIdColumn = true;
-                }
-            }
-
-            // If old column exists, we need to migrate
-            if (hasOldSupplierColumn && !hasNewSupplierIdColumn) {
-                System.out.println("Migrating supplier data from TEXT to INTEGER foreign key...");
-
-                // Create temporary table with new schema
-                String createTempTable = """
-                    CREATE TABLE products_new (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        code TEXT UNIQUE NOT NULL,
-                        name TEXT NOT NULL,
-                        description TEXT,
-                        price REAL NOT NULL,
-                        quantity INTEGER DEFAULT 0,
-                        category TEXT DEFAULT '',
-                        alternative_sku TEXT DEFAULT '',
-                        weight REAL DEFAULT 0.0,
-                        unit_of_measure TEXT DEFAULT 'pcs',
-                        minimum_quantity INTEGER DEFAULT 0,
-                        acquisition_cost REAL DEFAULT 0.0,
-                        active INTEGER DEFAULT 1,
-                        supplier_id INTEGER,
-                        FOREIGN KEY (supplier_id) REFERENCES suppliers (id)
-                    )
-                """;
-
-                stmt.execute(createTempTable);
-
-                // Copy data and convert supplier names to IDs
-                String copyData = """
-                    INSERT INTO products_new
-                    (id, code, name, description, price, quantity, category,
-                     alternative_sku, weight, unit_of_measure, minimum_quantity,
-                     acquisition_cost, active, supplier_id)
-                    SELECT
-                        p.id, p.code, p.name, p.description, p.price, p.quantity,
-                        p.category, p.alternative_sku, p.weight, p.unit_of_measure,
-                        p.minimum_quantity, p.acquisition_cost, p.active,
-                        f.id as supplier_id
-                    FROM products p
-                    LEFT JOIN suppliers f ON p.supplier = f.company_name
-                """;
-
-                stmt.execute(copyData);
-
-                // Drop old table and rename new one
-                stmt.execute("DROP TABLE products");
-                stmt.execute("ALTER TABLE products_new RENAME TO products");
-
-                System.out.println("Supplier data migration completed successfully!");
-            } else if (!hasOldSupplierColumn && !hasNewSupplierIdColumn) {
-                // Brand new database, supplier_id already created correctly
-                System.out.println("New database detected, no migration needed.");
-            }
-        }
-    }
-
-    private void migrateStockReservationData() throws SQLException {
-        // Check if reserved_quantity column exists
-        try (Statement stmt = connection.createStatement();
-             ResultSet rs = stmt.executeQuery("PRAGMA table_info(products)")) {
-
-            boolean hasReservedQuantity = false;
-
-            while (rs.next()) {
-                String columnName = rs.getString("name");
-                if ("reserved_quantity".equals(columnName)) {
-                    hasReservedQuantity = true;
-                    break;
-                }
-            }
-
-            // If column doesn't exist, add it
-            if (!hasReservedQuantity) {
-                System.out.println("Adding reserved_quantity column to products table...");
-                stmt.execute("ALTER TABLE products ADD COLUMN reserved_quantity INTEGER DEFAULT 0");
-                System.out.println("Column reserved_quantity added successfully!");
-            }
-        }
-    }
-
-    private void migrateWarehousePositionAndVat() throws SQLException {
-        try (Statement stmt = connection.createStatement();
-             ResultSet rs = stmt.executeQuery("PRAGMA table_info(products)")) {
-
-            boolean hasWarehousePosition = false;
-            boolean hasVatRate = false;
-
-            while (rs.next()) {
-                String columnName = rs.getString("name");
-                if ("warehouse_position".equals(columnName)) {
-                    hasWarehousePosition = true;
-                } else if ("vat_rate".equals(columnName)) {
-                    hasVatRate = true;
-                }
-            }
-
-            // Add warehouse_position column if it doesn't exist
-            if (!hasWarehousePosition) {
-                System.out.println("Adding warehouse_position column to products table...");
-                stmt.execute("ALTER TABLE products ADD COLUMN warehouse_position TEXT DEFAULT ''");
-                System.out.println("Column warehouse_position added successfully!");
-            }
-
-            // Add vat_rate column if it doesn't exist
-            if (!hasVatRate) {
-                System.out.println("Adding vat_rate column to products table...");
-                stmt.execute("ALTER TABLE products ADD COLUMN vat_rate REAL DEFAULT 0.0");
-                System.out.println("Column vat_rate added successfully!");
-            }
-        }
-    }
-
-    private void migratePaymentTracking() throws SQLException {
-        try (Statement stmt = connection.createStatement();
-             ResultSet rs = stmt.executeQuery("PRAGMA table_info(orders)")) {
-
-            boolean hasPaymentStatus = false;
-            boolean hasPaidAmount = false;
-
-            while (rs.next()) {
-                String columnName = rs.getString("name");
-                if ("payment_status".equals(columnName)) {
-                    hasPaymentStatus = true;
-                } else if ("paid_amount".equals(columnName)) {
-                    hasPaidAmount = true;
-                }
-            }
-
-            // Add payment_status column if it doesn't exist
-            if (!hasPaymentStatus) {
-                System.out.println("Adding payment_status column to orders table...");
-                stmt.execute("ALTER TABLE orders ADD COLUMN payment_status TEXT DEFAULT 'NOT_PAID'");
-                System.out.println("Column payment_status added successfully!");
-            }
-
-            // Add paid_amount column if it doesn't exist
-            if (!hasPaidAmount) {
-                System.out.println("Adding paid_amount column to orders table...");
-                stmt.execute("ALTER TABLE orders ADD COLUMN paid_amount REAL DEFAULT 0.0");
-                System.out.println("Column paid_amount added successfully!");
-            }
-        }
     }
 
     private void createStockReservationTriggers() throws SQLException {
@@ -616,5 +446,33 @@ public class DatabaseManager {
         } finally {
             conn.setAutoCommit(true);
         }
+    }
+
+    public String getNextInvoiceNumber(Connection conn, int year) throws SQLException {
+        int nextNumber;
+        String checkQuery = "SELECT last_number FROM invoice_numbering WHERE year = ?";
+        try (PreparedStatement pstmt = conn.prepareStatement(checkQuery)) {
+            pstmt.setInt(1, year);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) {
+                    nextNumber = rs.getInt("last_number") + 1;
+                    try (PreparedStatement updateStmt = conn.prepareStatement(
+                            "UPDATE invoice_numbering SET last_number = ? WHERE year = ?")) {
+                        updateStmt.setInt(1, nextNumber);
+                        updateStmt.setInt(2, year);
+                        updateStmt.executeUpdate();
+                    }
+                } else {
+                    nextNumber = 1;
+                    try (PreparedStatement insertStmt = conn.prepareStatement(
+                            "INSERT INTO invoice_numbering (year, last_number) VALUES (?, ?)")) {
+                        insertStmt.setInt(1, year);
+                        insertStmt.setInt(2, nextNumber);
+                        insertStmt.executeUpdate();
+                    }
+                }
+            }
+        }
+        return String.format("%d/%04d", year, nextNumber);
     }
 }
