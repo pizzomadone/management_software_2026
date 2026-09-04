@@ -11,6 +11,9 @@
 import javax.swing.*;
 import java.awt.*;
 import java.lang.reflect.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
+import java.time.Instant;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Locale;
@@ -49,18 +52,23 @@ public class WebPanel extends JPanel {
     }
 
     private void initializeBrowser() {
+        logEnvironment();
         try {
+            diagnostic("Initializing JavaFX Swing bridge...");
             Class<?> jfxPanelClass = Class.forName("javafx.embed.swing.JFXPanel");
             Component jfxPanel = (Component) jfxPanelClass.getConstructor().newInstance();
             add(jfxPanel, BorderLayout.CENTER);
             runOnFxThread(() -> createWebView(jfxPanel));
-        } catch (ReflectiveOperationException | LinkageError error) {
+        } catch (ReflectiveOperationException | LinkageError | RuntimeException error) {
+            logFailure("JavaFX Swing bridge initialization", error);
             showUnavailableMessage();
         }
     }
 
     private void createWebView(Component jfxPanel) {
         try {
+            diagnostic("Creating JavaFX WebView on thread " +
+                Thread.currentThread().getName() + "...");
             Class<?> webViewClass = Class.forName("javafx.scene.web.WebView");
             Object webView = webViewClass.getConstructor().newInstance();
             webEngine = webViewClass.getMethod("getEngine").invoke(webView);
@@ -72,9 +80,11 @@ public class WebPanel extends JPanel {
             Class<?> sceneClass = Class.forName("javafx.scene.Scene");
             Object scene = sceneClass.getConstructor(parentClass).newInstance(webView);
             jfxPanel.getClass().getMethod("setScene", sceneClass).invoke(jfxPanel, scene);
+            diagnostic("Loading " + AppConstants.APP_WEB_URL);
             webEngine.getClass().getMethod("load", String.class)
                 .invoke(webEngine, AppConstants.APP_WEB_URL);
-        } catch (ReflectiveOperationException | LinkageError error) {
+        } catch (ReflectiveOperationException | LinkageError | RuntimeException error) {
+            logFailure("WebView creation", error);
             SwingUtilities.invokeLater(this::showUnavailableMessage);
         }
     }
@@ -132,14 +142,68 @@ public class WebPanel extends JPanel {
         try {
             Class<?> workerClass = Class.forName("javafx.concurrent.Worker");
             Object state = workerClass.getMethod("getState").invoke(worker);
-            String key = switch (String.valueOf(state)) {
+            String stateName = String.valueOf(state);
+            diagnostic("Load state: " + stateName);
+            if ("FAILED".equals(stateName)) logWorkerFailure(workerClass, worker);
+            String key = switch (stateName) {
                 case "RUNNING", "SCHEDULED" -> "Loading...";
                 case "FAILED", "CANCELLED" -> "Unable to load the page";
                 default -> "";
             };
             SwingUtilities.invokeLater(() -> statusLabel.setText(I18n.tr(key)));
-        } catch (ReflectiveOperationException ignored) {
+        } catch (ReflectiveOperationException error) {
+            logFailure("load-state inspection", error);
             SwingUtilities.invokeLater(() -> statusLabel.setText(""));
+        }
+    }
+
+    private void logWorkerFailure(Class<?> workerClass, Object worker) {
+        try {
+            Object exception = workerClass.getMethod("getException").invoke(worker);
+            if (exception instanceof Throwable throwable) {
+                logFailure("page load for " + currentUrl, throwable);
+            } else {
+                diagnostic("Page load failed without a reported exception: " + currentUrl);
+            }
+        } catch (ReflectiveOperationException error) {
+            logFailure("page-load error inspection", error);
+        }
+    }
+
+    private static void logEnvironment() {
+        diagnostic(String.format(Locale.ROOT,
+            "Starting diagnostics: url=%s, java=%s, runtime=%s, os=%s %s, arch=%s",
+            AppConstants.APP_WEB_URL, System.getProperty("java.version", "unknown"),
+            System.getProperty("java.runtime.name", "unknown"),
+            System.getProperty("os.name", "unknown"), System.getProperty("os.version", "unknown"),
+            System.getProperty("os.arch", "unknown")));
+        for (String module : new String[]{"javafx.base", "javafx.graphics", "javafx.swing", "javafx.web"}) {
+            diagnostic(String.format(Locale.ROOT, "Module %-15s %s", module,
+                ModuleLayer.boot().findModule(module).map(value -> "loaded (" +
+                    value.getDescriptor().version().map(Object::toString).orElse("unknown version") + ")")
+                    .orElse("MISSING")));
+        }
+    }
+
+    private static void logFailure(String stage, Throwable error) {
+        Throwable cause = error;
+        while (cause instanceof InvocationTargetException invocation && invocation.getCause() != null) {
+            cause = invocation.getCause();
+        }
+        java.io.StringWriter trace = new java.io.StringWriter();
+        cause.printStackTrace(new java.io.PrintWriter(trace));
+        diagnostic("ERROR during " + stage + ": " + cause + System.lineSeparator() + trace);
+    }
+
+    private static void diagnostic(String message) {
+        String line = "[Discover] " + Instant.now() + " " + message;
+        System.err.println(line);
+        try {
+            Files.writeString(AppConstants.getAppDataDirectory().resolve("discover-debug.log"),
+                line + System.lineSeparator(), StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        } catch (Exception logError) {
+            System.err.println("[Discover] Unable to write discover-debug.log: " + logError);
         }
     }
 
@@ -175,8 +239,17 @@ public class WebPanel extends JPanel {
         statusLabel.setText("");
         removeCenterComponents();
         JPanel unavailable = new JPanel(new GridBagLayout());
-        JLabel message = new JLabel(I18n.tr("Discover is temporarily unavailable"));
-        unavailable.add(message);
+        JPanel details = new JPanel();
+        details.setLayout(new BoxLayout(details, BoxLayout.Y_AXIS));
+        JLabel message = new JLabel(I18n.tr("Discover is temporarily unavailable"), SwingConstants.CENTER);
+        JLabel logLocation = new JLabel("Debug: " + AppConstants.getAppDataDirectory()
+            .resolve("discover-debug.log"), SwingConstants.CENTER);
+        message.setAlignmentX(Component.CENTER_ALIGNMENT);
+        logLocation.setAlignmentX(Component.CENTER_ALIGNMENT);
+        details.add(message);
+        details.add(Box.createVerticalStrut(8));
+        details.add(logLocation);
+        unavailable.add(details);
         add(unavailable, BorderLayout.CENTER);
         revalidate();
         repaint();
@@ -187,7 +260,7 @@ public class WebPanel extends JPanel {
             Class<?> platform = Class.forName("javafx.application.Platform");
             platform.getMethod("runLater", Runnable.class).invoke(null, action);
         } catch (ReflectiveOperationException | LinkageError ignored) {
-            // JavaFX availability is reported by initializeBrowser().
+            logFailure("JavaFX Platform.runLater", ignored);
         }
     }
 
