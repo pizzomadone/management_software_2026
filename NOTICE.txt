@@ -28,8 +28,6 @@ See LICENSE-THIRD-PARTY.txt for the complete license text.
 
 ================================================================================
 
-OpenJFX / JavaFX
-Copyright (c) Oracle and/or its affiliates and OpenJFX contributors
-
-Project: https://openjfx.io/
-License: GNU General Public License, version 2, with the Classpath Exception
+WebLite WebView 1.0.10
+Java package: ca.weblite.webview
+License and attribution: META-INF files inside lib/webview-1.0.10.jar

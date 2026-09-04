@@ -402,10 +402,16 @@ public class SettingsPanel extends JPanel {
     }
 
     private void applyAllSettings() {
-        applySettings();
-        JOptionPane.showMessageDialog(this,
-            "Settings applied successfully!",
-            "Settings", JOptionPane.INFORMATION_MESSAGE);
+        try {
+            updateSettingsFromFields();
+            applySettings();
+            JOptionPane.showMessageDialog(this,
+                "Settings applied successfully!",
+                "Settings", JOptionPane.INFORMATION_MESSAGE);
+        } catch (IllegalArgumentException e) {
+            JOptionPane.showMessageDialog(this, e.getMessage(),
+                "Error", JOptionPane.ERROR_MESSAGE);
+        }
     }
 
     private void saveAllSettings() {
@@ -436,6 +442,19 @@ public class SettingsPanel extends JPanel {
     }
 
     private void saveAppSettings() {
+        updateSettingsFromFields();
+
+        try (OutputStreamWriter writer = new OutputStreamWriter(
+                new FileOutputStream(AppConstants.getSettingsPath().toFile()),
+                java.nio.charset.StandardCharsets.UTF_8)) {
+            settings.store(writer, "Application Settings");
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to save settings file", e);
+        }
+    }
+
+    /** Copies every editable application option into the live settings. */
+    private void updateSettingsFromFields() {
         double vatRate;
         try {
             vatRate = Double.parseDouble(defaultVatField.getText().trim().replace(',', '.'));
@@ -454,14 +473,6 @@ public class SettingsPanel extends JPanel {
         settings.setProperty("currency", (String)currencyCombo.getSelectedItem());
         settings.setProperty("default_vat", String.valueOf(vatRate));
         settings.setProperty("language", I18n.codeForName((String) languageCombo.getSelectedItem()));
-
-        try (OutputStreamWriter writer = new OutputStreamWriter(
-                new FileOutputStream(AppConstants.getSettingsPath().toFile()),
-                java.nio.charset.StandardCharsets.UTF_8)) {
-            settings.store(writer, "Application Settings");
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to save settings file", e);
-        }
     }
 
     private void loadSettings() {
@@ -496,6 +507,8 @@ public class SettingsPanel extends JPanel {
         String theme = getSetting("theme", "System");
         updateLookAndFeel(theme);
         I18n.setLanguage(getSetting("language", "it"));
+        Window owner = SwingUtilities.getWindowAncestor(this);
+        if (owner instanceof MainWindow mainWindow) mainWindow.refreshLocalizedTitle();
     }
 
     private void updateGlobalFont(int size) {

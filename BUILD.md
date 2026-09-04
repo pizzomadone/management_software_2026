@@ -68,6 +68,12 @@ See [Eclipse Integration](#eclipse-integration) section below.
 
 ## Eclipse Integration
 
+### Step 0: Verify SwingWebView for Eclipse
+
+Discover uses `ca.weblite.webview.swing.WebViewComponent`. Confirm that
+`lib/webview-1.0.10.jar` appears under **Referenced Libraries**, then open
+**Run → Run Configurations… → Java Application → WareStat** and click **Run**.
+
 ### Step 1: Configure Ant Builder
 
 1. **Open Project Properties**

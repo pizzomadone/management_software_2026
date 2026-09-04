@@ -48,6 +48,9 @@
          ================================= -->
     <target name="init">
         <echo message="Building ${app.name} v${app.version}"/>
+        <available file="${lib.dir}/webview-1.0.10.jar" property="webview.jar.available"/>
+        <fail unless="webview.jar.available"
+              message="Missing lib/webview-1.0.10.jar; Discover requires WebViewComponent."/>
         <mkdir dir="${build.dir}"/>
         <mkdir dir="${build.classes.dir}"/>
         <mkdir dir="${dist.dir}"/>
@@ -76,10 +79,11 @@
                target="21">
             <classpath refid="compile.classpath"/>
         </javac>
-        <!-- Keep resource bundles available when running directly from build/classes. -->
+        <!-- Keep runtime resources available when running directly from build/classes. -->
         <copy todir="${build.classes.dir}">
             <fileset dir="${resources.dir}">
                 <include name="i18n/**"/>
+                <include name="icons/**"/>
             </fileset>
         </copy>
         <echo message="Compilation complete!"/>
@@ -98,6 +102,7 @@
         <unzip dest="${build.dir}/jar-temp">
             <fileset dir="${lib.dir}">
                 <include name="**/*.jar"/>
+                <exclude name="webview-1.0.10.jar"/>
             </fileset>
         </unzip>
 
@@ -110,6 +115,7 @@
                 <attribute name="Implementation-Vendor" value="${app.vendor}"/>
                 <attribute name="Built-By" value="${user.name}"/>
                 <attribute name="Built-Date" value="${TODAY}"/>
+                <attribute name="Class-Path" value="webview-1.0.10.jar"/>
             </manifest>
 
             <!-- Add compiled classes -->
@@ -118,6 +124,7 @@
             <!-- Add localization resource bundles -->
             <fileset dir="${resources.dir}">
                 <include name="i18n/**"/>
+                <include name="icons/**"/>
             </fileset>
 
             <!-- Add unpacked dependencies -->
@@ -128,6 +135,7 @@
                 <exclude name="META-INF/*.RSA"/>
             </fileset>
         </jar>
+        <copy file="${lib.dir}/webview-1.0.10.jar" todir="${dist.dir}"/>
 
         <!-- Clean up temporary directory -->
         <delete dir="${build.dir}/jar-temp"/>
@@ -245,10 +253,10 @@
         <!-- Delete existing custom runtime if present -->
         <delete dir="${custom.runtime.dir}"/>
 
-        <!-- Create custom runtime with only required modules -->
+        <!-- Create custom runtime with the modules used by the Swing application. -->
         <exec executable="jlink" failonerror="true">
             <arg value="--add-modules"/>
-            <arg value="java.base,java.desktop,java.sql,java.logging,java.naming,java.management"/>
+            <arg value="java.base,java.desktop,java.sql,java.logging,java.naming,java.management,java.net.http,jdk.crypto.ec,jdk.unsupported"/>
             <arg value="--strip-debug"/>
             <arg value="--no-header-files"/>
             <arg value="--no-man-pages"/>
@@ -294,6 +302,7 @@
         <!-- Create clean input directory for jpackage -->
         <mkdir dir="${build.dir}/jpackage-input-dev"/>
         <copy file="${jar.file}" todir="${build.dir}/jpackage-input-dev"/>
+        <copy file="${lib.dir}/webview-1.0.10.jar" todir="${build.dir}/jpackage-input-dev"/>
 
         <!-- Detect OS and set icon file accordingly -->
         <condition property="is.windows">
@@ -394,6 +403,7 @@
         <!-- Create clean input directory for jpackage -->
         <mkdir dir="${build.dir}/jpackage-input-release"/>
         <copy file="${jar.obfuscated.file}" todir="${build.dir}/jpackage-input-release"/>
+        <copy file="${lib.dir}/webview-1.0.10.jar" todir="${build.dir}/jpackage-input-release"/>
 
         <!-- Detect OS and set icon file accordingly (same as dev build) -->
         <condition property="is.windows.release">
