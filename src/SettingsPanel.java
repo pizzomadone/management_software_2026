@@ -402,6 +402,7 @@ public class SettingsPanel extends JPanel {
     }
 
     private void applyAllSettings() {
+        settings.setProperty("language", I18n.codeForName((String) languageCombo.getSelectedItem()));
         applySettings();
         JOptionPane.showMessageDialog(this,
             "Settings applied successfully!",

@@ -13,6 +13,10 @@ import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.sql.*;
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -214,7 +218,20 @@ public class InvoicePDFGenerator {
                 drawFooter(contentStream, page);
             }
 
-            document.save(outputFile);
+            // Never write directly over a PDF that may still be open in a viewer.
+            File parent = outputFile.getAbsoluteFile().getParentFile();
+            File temporary = File.createTempFile("warestat-invoice-", ".pdf", parent);
+            try {
+                document.save(temporary);
+                try {
+                    Files.move(temporary.toPath(), outputFile.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                } catch (AtomicMoveNotSupportedException unsupported) {
+                    Files.move(temporary.toPath(), outputFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                }
+            } finally {
+                Files.deleteIfExists(temporary.toPath());
+            }
         }
     }
 
@@ -244,23 +261,10 @@ public class InvoicePDFGenerator {
     private void drawCompanyLogo(PDDocument document, PDPageContentStream contentStream,
                                  float yPosition) throws IOException {
         String logoPath = companyData.getLogoPath();
-        if (logoPath == null || logoPath.isBlank()) return;
-
-        File logoFile = new File(logoPath);
-        if (!logoFile.isFile()) {
-            System.err.println("Company logo not found: " + logoPath);
-            return;
-        }
-
-        BufferedImage image;
-        try {
-            image = ImageIO.read(logoFile);
-        } catch (IOException e) {
-            System.err.println("Unable to read company logo: " + e.getMessage());
-            return;
-        }
+        BufferedImage image = readCompanyLogo(logoPath);
+        if (image == null) image = readBundledApplicationLogo();
         if (image == null) {
-            System.err.println("Unsupported company logo image: " + logoPath);
+            System.err.println("No usable invoice logo was found");
             return;
         }
 
@@ -271,6 +275,33 @@ public class InvoicePDFGenerator {
         float width = image.getWidth() * scale;
         float height = image.getHeight() * scale;
         contentStream.drawImage(pdfImage, MARGIN, yPosition - height + 8f, width, height);
+    }
+
+    private BufferedImage readCompanyLogo(String logoPath) {
+        if (logoPath == null || logoPath.isBlank()) return null;
+        File logoFile = new File(logoPath);
+        if (!logoFile.isFile()) {
+            System.err.println("Company logo not found: " + logoPath + "; using the WareStat logo");
+            return null;
+        }
+        try {
+            BufferedImage image = ImageIO.read(logoFile);
+            if (image == null) {
+                System.err.println("Unsupported company logo image: " + logoPath +
+                    "; using the WareStat logo");
+            }
+            return image;
+        } catch (IOException e) {
+            System.err.println("Unable to read company logo: " + e.getMessage() +
+                "; using the WareStat logo");
+            return null;
+        }
+    }
+
+    private BufferedImage readBundledApplicationLogo() throws IOException {
+        try (InputStream stream = InvoicePDFGenerator.class.getResourceAsStream("/icons/logo.png")) {
+            return stream == null ? null : ImageIO.read(stream);
+        }
     }
 
     private float drawCompanyAndCustomerInfo(PDPageContentStream contentStream, float yPosition, PDPage page) throws IOException {
@@ -499,10 +530,11 @@ public class InvoicePDFGenerator {
     }
 
     private float drawTotals(PDPageContentStream contentStream, float yPosition, PDPage page) throws IOException {
-        float rightColumn = page.getMediaBox().getWidth() - MARGIN - 120f;
+        float boxWidth = 155f;
+        float rightColumn = page.getMediaBox().getWidth() - MARGIN - boxWidth;
 
         // Totals box
-        drawInfoBox(contentStream, rightColumn, yPosition - 80f, 120f, 80f, "TOTALS");
+        drawInfoBox(contentStream, rightColumn, yPosition - 80f, boxWidth, 80f, "TOTALS");
 
         yPosition -= 35f;
         String[][] totals = {
@@ -517,7 +549,7 @@ public class InvoicePDFGenerator {
             if (isTotal) {
                 // Line above total - moved higher to avoid cutting text
                 contentStream.moveTo(rightColumn + 5f, yPosition + 12f);
-                contentStream.lineTo(rightColumn + 115f, yPosition + 12f);
+                contentStream.lineTo(rightColumn + boxWidth - 5f, yPosition + 12f);
                 contentStream.setLineWidth(1f);
                 contentStream.stroke();
             }
@@ -529,9 +561,14 @@ public class InvoicePDFGenerator {
             contentStream.showText(totals[i][0]);
             contentStream.endText();
 
+            PDType1Font amountFont = new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD);
+            float amountSize = isTotal ? 11f : 9f;
+            String amount = totals[i][1];
+            float amountWidth = amountFont.getStringWidth(amount) / 1000f * amountSize;
             contentStream.beginText();
-            contentStream.newLineAtOffset(rightColumn + 60f, yPosition);
-            contentStream.showText(totals[i][1]);
+            contentStream.setFont(amountFont, amountSize);
+            contentStream.newLineAtOffset(rightColumn + boxWidth - amountWidth - 6f, yPosition);
+            contentStream.showText(amount);
             contentStream.endText();
 
             yPosition -= isTotal ? 20f : 15f;

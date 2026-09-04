@@ -10,20 +10,17 @@
 
 import javax.swing.*;
 import java.awt.*;
-import java.io.IOException;
 import java.lang.reflect.*;
-import java.net.URI;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Locale;
 
-/** Swing panel hosting the optional JavaFX WebView used for WareStat Online. */
+/** Swing panel hosting the optional JavaFX WebView used for Discover. */
 public class WebPanel extends JPanel {
     private static final long serialVersionUID = 1L;
-    private final JButton backButton = new JButton("Back");
-    private final JButton forwardButton = new JButton("Forward");
+    private final JButton backButton = new JButton("←");
+    private final JButton forwardButton = new JButton("→");
     private final JButton refreshButton = new JButton("Refresh");
-    private final JButton externalButton = new JButton("Open in browser");
     private final JLabel statusLabel = new JLabel("Loading...");
     private Object webEngine;
     private volatile String currentUrl = AppConstants.APP_WEB_URL;
@@ -40,16 +37,13 @@ public class WebPanel extends JPanel {
         forwardButton.setEnabled(false);
         backButton.setToolTipText("Go back in browser history");
         forwardButton.setToolTipText("Go forward in browser history");
-        refreshButton.setToolTipText("Reload WareStat Online");
-        externalButton.setToolTipText("Open this page in the default browser");
+        refreshButton.setToolTipText("Reload Discover");
         backButton.addActionListener(event -> navigateHistory(-1));
         forwardButton.addActionListener(event -> navigateHistory(1));
         refreshButton.addActionListener(event -> invokeEngine("reload"));
-        externalButton.addActionListener(event -> openExternally());
         navigation.add(backButton);
         navigation.add(forwardButton);
         navigation.add(refreshButton);
-        navigation.add(externalButton);
         navigation.add(statusLabel);
         return navigation;
     }
@@ -171,21 +165,10 @@ public class WebPanel extends JPanel {
         });
     }
 
-    private void openExternally() {
-        try {
-            if (Desktop.isDesktopSupported()) {
-                Desktop.getDesktop().browse(URI.create(currentUrl));
-            }
-        } catch (IOException | IllegalArgumentException error) {
-            JOptionPane.showMessageDialog(this, I18n.tr("Unable to open the page"),
-                I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
-        }
-    }
-
     private void showUnavailableMessage() {
         statusLabel.setText("");
         JPanel unavailable = new JPanel(new GridBagLayout());
-        JLabel message = new JLabel(I18n.tr("WareStat Online is temporarily unavailable"));
+        JLabel message = new JLabel(I18n.tr("Discover is temporarily unavailable"));
         unavailable.add(message);
         add(unavailable, BorderLayout.CENTER);
         revalidate();

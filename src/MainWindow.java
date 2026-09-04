@@ -102,10 +102,12 @@ public class MainWindow extends JFrame {
     
     private void setupWindow() {
         setTitle(AppConstants.SOFTWARE_NAME + " - Management System");
+        Image applicationIcon = loadApplicationIcon();
+        if (applicationIcon != null) setIconImage(applicationIcon);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setExtendedState(JFrame.MAXIMIZED_BOTH);
         setLocationRelativeTo(null);
-        
+
         // Add shutdown management to correctly close the database
         addWindowListener(new java.awt.event.WindowAdapter() {
             @Override
@@ -113,6 +115,19 @@ public class MainWindow extends JFrame {
                 DatabaseManager.getInstance().closeConnection();
             }
         });
+    }
+
+    private static Image loadApplicationIcon() {
+        java.net.URL iconUrl = MainWindow.class.getResource("/icons/logo.png");
+        return iconUrl == null ? null : new ImageIcon(iconUrl).getImage();
+    }
+
+    private static void configureTaskbarIcon() {
+        Image icon = loadApplicationIcon();
+        if (icon != null && Taskbar.isTaskbarSupported() &&
+                Taskbar.getTaskbar().isSupported(Taskbar.Feature.ICON_IMAGE)) {
+            Taskbar.getTaskbar().setIconImage(icon);
+        }
     }
     
     private void setupMenuBar() {
@@ -718,7 +733,7 @@ public class MainWindow extends JFrame {
         String title = AppConstants.SOFTWARE_NAME + " - ";
         switch (panelName) {
             case "HOME": title += "Dashboard"; break;
-            case "WEB": title += "WareStat Online"; break;
+            case "WEB": title += "Discover"; break;
             case "CUSTOMERS": title += "Customer Management"; break;
             case "PRODUCTS": title += "Product Management"; break;
             case "ORDERS": title += "Order Management"; break;
@@ -814,6 +829,7 @@ public class MainWindow extends JFrame {
         }
 
         SwingUtilities.invokeLater(() -> {
+            configureTaskbarIcon();
             try {
                 UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
             } catch (Exception e) {

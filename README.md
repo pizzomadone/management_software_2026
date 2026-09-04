@@ -45,7 +45,7 @@ operations, reports, and backups together in one desktop application.
 WareStat Online is implemented as a Swing panel containing JavaFX `WebView`
 through `JFXPanel`, so the rest of the desktop interface remains Swing-based.
 The panel has no address bar and provides only **Back**, **Forward**, **Refresh**,
-and **Open in browser** controls.
+and refresh controls.
 
 The page is always loaded from:
 

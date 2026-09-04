@@ -76,10 +76,11 @@
                target="21">
             <classpath refid="compile.classpath"/>
         </javac>
-        <!-- Keep resource bundles available when running directly from build/classes. -->
+        <!-- Keep runtime resources available when running directly from build/classes. -->
         <copy todir="${build.classes.dir}">
             <fileset dir="${resources.dir}">
                 <include name="i18n/**"/>
+                <include name="icons/**"/>
             </fileset>
         </copy>
         <echo message="Compilation complete!"/>
@@ -118,6 +119,7 @@
             <!-- Add localization resource bundles -->
             <fileset dir="${resources.dir}">
                 <include name="i18n/**"/>
+                <include name="icons/**"/>
             </fileset>
 
             <!-- Add unpacked dependencies -->
