@@ -42,8 +42,8 @@ operations, reports, and backups together in one desktop application.
 
 ## WareStat Online
 
-WareStat Online is implemented as a Swing panel containing JavaFX `WebView`
-through `JFXPanel`, so the rest of the desktop interface remains Swing-based.
+Discover is implemented with the Chromium-based `SwingWebView`/JCEF component,
+so modern CSS, JavaScript, HTML5 video, and YouTube embeds work inside Swing.
 The panel has no address bar and provides only back, forward, and refresh controls.
 
 The page is always loaded from:
@@ -58,7 +58,7 @@ architecture, language, locale, time zone, screen size, and selected theme. It
 does not include customers, products, orders, invoices, company details, file
 paths, or other business data.
 
-If JavaFX or the network is unavailable, WareStat continues to run and the panel
+If Chromium or the network is unavailable, WareStat continues to run and the panel
 shows an unavailable message instead of blocking application startup.
 
 ## Localization
@@ -103,12 +103,11 @@ association.
 - 4 GB RAM recommended
 - 500 MB of free disk space
 - Internet connection for WareStat Online
-- Platform-compatible JavaFX SDK for the embedded web panel
+- Internet access on first Discover launch so JCEF Maven can install its
+  platform-specific Chromium bundle
 
-Native packages include JavaFX in their custom runtime. Packaging stops with a
-clear error if the platform-compatible JavaFX JMODs are missing from
-`lib/javafx-jmods/`;
-this prevents distribution of the unstyled legacy Swing HTML renderer.
+The Maven dependency `me.friwi:jcefmaven` installs the Chromium bundle matching
+the current operating system and architecture. No JavaFX SDK or JMODs are used.
 
 ## Dependencies
 
@@ -116,13 +115,10 @@ Place the required JAR files in `lib/` before building:
 
 - **Apache PDFBox 3.0.6** — invoice and report PDF generation
 - **SQLite JDBC 3.50.3.0** — SQLite database connectivity
-- **OpenJFX / JavaFX** — embedded WareStat Online page
+- **JCEF Maven / Chromium** — embedded Discover page
 
-For JavaFX, use the JMOD bundle matching both the build JDK and target operating
-system, extract its `.jmod` files into `lib/javafx-jmods/`, and include the
-modules required by WebView and Swing interoperability:
-`javafx.base`, `javafx.graphics`, `javafx.controls`, `javafx.web`, and
-`javafx.media`, plus `javafx.swing`.
+Maven resolves the JCEF Java dependencies declared in `pom.xml`; the native
+Chromium files are installed under the WareStat application-data directory.
 
 See `LICENSE-THIRD-PARTY.txt` and `NOTICE.txt` for license and attribution
 information.
@@ -137,9 +133,7 @@ WareStat uses Apache Ant.
 ant build
 ```
 
-This produces the JAR and a native development application image. Run the
-native image: unlike the standalone JAR, it contains the required JavaFX
-runtime used by Discover.
+This produces the JAR and a native development application image.
 
 ### Production build
 
@@ -164,9 +158,7 @@ On macOS:
 
 ```bash
 javac -d bin -cp "lib/*:src" src/*.java
-java --module-path "/path/to/javafx-sdk/lib" \
-  --add-modules javafx.swing,javafx.web \
-  -cp "bin:resources:lib/*" MainWindow
+java -cp "bin:resources:lib/*:target/dependency/*" MainWindow
 ```
 
 On Windows, replace the classpath separator `:` with `;`.

@@ -25,7 +25,6 @@
     <property name="icons.dir" location="${resources.dir}/icons"/>
     <property name="yguard.jar" location="${tools.dir}/yguard.jar"/>
     <property name="custom.runtime.dir" location="${build.dir}/custom-runtime"/>
-    <property name="javafx.jmods.dir" location="${lib.dir}/javafx-jmods"/>
 
     <!-- Icon files for different platforms -->
     <property name="icon.windows" location="${icons.dir}/warestat.ico"/>
@@ -90,7 +89,15 @@
     <!-- =================================
           Target: jar
          ================================= -->
-    <target name="jar" depends="compile" description="Create executable JAR with dependencies">
+    <target name="maven-dependencies" description="Resolve the Chromium SwingWebView dependencies">
+        <exec executable="mvn" failonerror="true">
+            <arg value="-q"/>
+            <arg value="dependency:copy-dependencies"/>
+            <arg value="-DoutputDirectory=${build.dir}/maven-dependencies"/>
+        </exec>
+    </target>
+
+    <target name="jar" depends="compile,maven-dependencies" description="Create executable JAR with dependencies">
         <echo message="Creating executable JAR..."/>
 
         <!-- Create temporary directory for unpacking libraries -->
@@ -99,6 +106,9 @@
         <!-- Unpack all dependency JARs -->
         <unzip dest="${build.dir}/jar-temp">
             <fileset dir="${lib.dir}">
+                <include name="**/*.jar"/>
+            </fileset>
+            <fileset dir="${build.dir}/maven-dependencies">
                 <include name="**/*.jar"/>
             </fileset>
         </unzip>
@@ -248,16 +258,10 @@
         <!-- Delete existing custom runtime if present -->
         <delete dir="${custom.runtime.dir}"/>
 
-        <!-- JavaFX must be part of the packaged runtime; JEditorPane cannot render modern Discover pages. -->
-        <available file="${javafx.jmods.dir}/javafx.web.jmod" property="javafx.available"/>
-        <fail unless="javafx.available"
-              message="OpenJFX is required for native packages. Put the platform-compatible JavaFX JMODs in lib/javafx-jmods/."/>
-
+        <!-- Create custom runtime with the modules used by the Swing application. -->
         <exec executable="jlink" failonerror="true">
-            <arg value="--module-path"/>
-            <arg value="${java.home}/jmods${path.separator}${javafx.jmods.dir}"/>
             <arg value="--add-modules"/>
-            <arg value="java.base,java.desktop,java.sql,java.logging,java.naming,java.management,javafx.base,javafx.graphics,javafx.controls,javafx.media,javafx.web,javafx.swing"/>
+            <arg value="java.base,java.desktop,java.sql,java.logging,java.naming,java.management,java.net.http,jdk.crypto.ec,jdk.unsupported"/>
             <arg value="--strip-debug"/>
             <arg value="--no-header-files"/>
             <arg value="--no-man-pages"/>
@@ -265,17 +269,6 @@
             <arg value="--output"/>
             <arg value="${custom.runtime.dir}"/>
         </exec>
-
-        <!-- Do not allow a package to be produced unless WebView is really in the image. -->
-        <exec executable="${custom.runtime.dir}/bin/java" failonerror="true"
-              outputproperty="custom.runtime.modules">
-            <arg value="--list-modules"/>
-        </exec>
-        <condition property="custom.runtime.has.javafx.web">
-            <contains string="${custom.runtime.modules}" substring="javafx.web@"/>
-        </condition>
-        <fail unless="custom.runtime.has.javafx.web"
-              message="The generated runtime does not contain javafx.web; native packaging has been stopped."/>
 
         <echo message="Custom JRE created successfully at: ${custom.runtime.dir}"/>
 
@@ -372,7 +365,6 @@
             <arg value="--description"/><arg value="Business Management Software (Development Build)"/>
             <arg value="--runtime-image"/><arg value="${custom.runtime.dir}"/>
             <arg value="--java-options"/><arg value="-Xmx1024m"/>
-            <arg value="--java-options"/><arg value="--add-modules=javafx.swing,javafx.web"/>
             <arg value="--icon"/>
             <arg value="${icon.file}"/>
         </exec>
@@ -391,7 +383,6 @@
             <arg value="--description"/><arg value="Business Management Software (Development Build)"/>
             <arg value="--runtime-image"/><arg value="${custom.runtime.dir}"/>
             <arg value="--java-options"/><arg value="-Xmx1024m"/>
-            <arg value="--java-options"/><arg value="--add-modules=javafx.swing,javafx.web"/>
         </exec>
 
         <!-- Clean up temporary input directory -->
@@ -474,7 +465,6 @@
             <arg value="--description"/><arg value="Business Management Software (Production Build)"/>
             <arg value="--runtime-image"/><arg value="${custom.runtime.dir}"/>
             <arg value="--java-options"/><arg value="-Xmx1024m"/>
-            <arg value="--java-options"/><arg value="--add-modules=javafx.swing,javafx.web"/>
             <arg value="--icon"/>
             <arg value="${icon.file.release}"/>
         </exec>
@@ -493,7 +483,6 @@
             <arg value="--description"/><arg value="Business Management Software (Production Build)"/>
             <arg value="--runtime-image"/><arg value="${custom.runtime.dir}"/>
             <arg value="--java-options"/><arg value="-Xmx1024m"/>
-            <arg value="--java-options"/><arg value="--add-modules=javafx.swing,javafx.web"/>
         </exec>
 
         <!-- Clean up temporary input directory -->
