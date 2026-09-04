@@ -68,13 +68,11 @@ See [Eclipse Integration](#eclipse-integration) section below.
 
 ## Eclipse Integration
 
-### Step 0: Resolve SwingWebView for Eclipse
+### Step 0: Verify SwingWebView for Eclipse
 
-Discover uses the Chromium-based SwingWebView supplied by JCEF Maven. In
-Eclipse, right-click `pom.xml`, choose **Maven → Update Project…**, enable
-**Force Update**, and confirm. Then open **Run → Run Configurations… → Java
-Application → WareStat** and click **Run**. On its first launch JCEF Maven
-downloads and installs the native Chromium bundle for the current platform.
+Discover uses `ca.weblite.webview.swing.WebViewComponent`. Confirm that
+`lib/webview-1.0.10.jar` appears under **Referenced Libraries**, then open
+**Run → Run Configurations… → Java Application → WareStat** and click **Run**.
 
 ### Step 1: Configure Ant Builder
 

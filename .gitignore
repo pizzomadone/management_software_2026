@@ -6,6 +6,7 @@
 
 # Package files
 *.jar
+!lib/webview-1.0.10.jar
 *.war
 *.nar
 *.ear

@@ -3,7 +3,7 @@ import java.awt.*;
 import java.time.ZoneId;
 import java.util.Locale;
 
-/** Discover page hosted by the Chromium-based SwingWebView component. */
+/** Discover page hosted by the native SwingWebView component. */
 public class WebPanel extends JPanel {
     private static final long serialVersionUID = 1L;
     private final JButton backButton = new JButton("←");
@@ -55,7 +55,7 @@ public class WebPanel extends JPanel {
             ? new Dimension(0, 0) : Toolkit.getDefaultToolkit().getScreenSize();
         String theme = SettingsPanel.getGlobalSetting("theme", "System Default");
         String value = String.format(Locale.ROOT,
-            "%s/%s (Java/%s; %s/%s; %s; lang=%s; locale=%s; timezone=%s; screen=%dx%d; theme=%s; embedded-chromium)",
+            "%s/%s (Java/%s; %s/%s; %s; lang=%s; locale=%s; timezone=%s; screen=%dx%d; theme=%s; embedded-webview)",
             AppConstants.SOFTWARE_NAME, AppConstants.VERSION,
             System.getProperty("java.version", "unknown"),
             System.getProperty("os.name", "unknown"),

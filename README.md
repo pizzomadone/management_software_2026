@@ -42,8 +42,9 @@ operations, reports, and backups together in one desktop application.
 
 ## WareStat Online
 
-Discover is implemented with the Chromium-based `SwingWebView`/JCEF component,
-so modern CSS, JavaScript, HTML5 video, and YouTube embeds work inside Swing.
+Discover is implemented with `ca.weblite.webview.swing.WebViewComponent`, which
+uses the operating system web view and supports JavaScript, iframe, HTML5 video,
+and YouTube embeds inside Swing.
 The panel has no address bar and provides only back, forward, and refresh controls.
 
 The page is always loaded from:
@@ -58,7 +59,7 @@ architecture, language, locale, time zone, screen size, and selected theme. It
 does not include customers, products, orders, invoices, company details, file
 paths, or other business data.
 
-If Chromium or the network is unavailable, WareStat continues to run and the panel
+If the system web view or network is unavailable, WareStat continues to run and the panel
 shows an unavailable message instead of blocking application startup.
 
 ## Localization
@@ -103,11 +104,9 @@ association.
 - 4 GB RAM recommended
 - 500 MB of free disk space
 - Internet connection for WareStat Online
-- Internet access on first Discover launch so JCEF Maven can install its
-  platform-specific Chromium bundle
+- `lib/webview-1.0.10.jar`
 
-The Maven dependency `me.friwi:jcefmaven` installs the Chromium bundle matching
-the current operating system and architecture. No JavaFX SDK or JMODs are used.
+No JavaFX, Maven, JCEF, or embedded Chromium installation is required.
 
 ## Dependencies
 
@@ -115,10 +114,10 @@ Place the required JAR files in `lib/` before building:
 
 - **Apache PDFBox 3.0.6** — invoice and report PDF generation
 - **SQLite JDBC 3.50.3.0** — SQLite database connectivity
-- **JCEF Maven / Chromium** — embedded Discover page
+- **WebLite WebView 1.0.10** — embedded Discover page
 
-Maven resolves the JCEF Java dependencies declared in `pom.xml`; the native
-Chromium files are installed under the WareStat application-data directory.
+The WebView JAR is kept in `lib/` with PDFBox and SQLite and is copied beside the
+application JAR and into the jpackage input directory by Ant.
 
 See `LICENSE-THIRD-PARTY.txt` and `NOTICE.txt` for license and attribution
 information.

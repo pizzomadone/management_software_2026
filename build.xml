@@ -48,6 +48,9 @@
          ================================= -->
     <target name="init">
         <echo message="Building ${app.name} v${app.version}"/>
+        <available file="${lib.dir}/webview-1.0.10.jar" property="webview.jar.available"/>
+        <fail unless="webview.jar.available"
+              message="Missing lib/webview-1.0.10.jar; Discover requires WebViewComponent."/>
         <mkdir dir="${build.dir}"/>
         <mkdir dir="${build.classes.dir}"/>
         <mkdir dir="${dist.dir}"/>
@@ -89,15 +92,7 @@
     <!-- =================================
           Target: jar
          ================================= -->
-    <target name="maven-dependencies" description="Resolve the Chromium SwingWebView dependencies">
-        <exec executable="mvn" failonerror="true">
-            <arg value="-q"/>
-            <arg value="dependency:copy-dependencies"/>
-            <arg value="-DoutputDirectory=${build.dir}/maven-dependencies"/>
-        </exec>
-    </target>
-
-    <target name="jar" depends="compile,maven-dependencies" description="Create executable JAR with dependencies">
+    <target name="jar" depends="compile" description="Create executable JAR with dependencies">
         <echo message="Creating executable JAR..."/>
 
         <!-- Create temporary directory for unpacking libraries -->
@@ -107,9 +102,7 @@
         <unzip dest="${build.dir}/jar-temp">
             <fileset dir="${lib.dir}">
                 <include name="**/*.jar"/>
-            </fileset>
-            <fileset dir="${build.dir}/maven-dependencies">
-                <include name="**/*.jar"/>
+                <exclude name="webview-1.0.10.jar"/>
             </fileset>
         </unzip>
 
@@ -122,6 +115,7 @@
                 <attribute name="Implementation-Vendor" value="${app.vendor}"/>
                 <attribute name="Built-By" value="${user.name}"/>
                 <attribute name="Built-Date" value="${TODAY}"/>
+                <attribute name="Class-Path" value="webview-1.0.10.jar"/>
             </manifest>
 
             <!-- Add compiled classes -->
@@ -141,6 +135,7 @@
                 <exclude name="META-INF/*.RSA"/>
             </fileset>
         </jar>
+        <copy file="${lib.dir}/webview-1.0.10.jar" todir="${dist.dir}"/>
 
         <!-- Clean up temporary directory -->
         <delete dir="${build.dir}/jar-temp"/>
@@ -307,6 +302,7 @@
         <!-- Create clean input directory for jpackage -->
         <mkdir dir="${build.dir}/jpackage-input-dev"/>
         <copy file="${jar.file}" todir="${build.dir}/jpackage-input-dev"/>
+        <copy file="${lib.dir}/webview-1.0.10.jar" todir="${build.dir}/jpackage-input-dev"/>
 
         <!-- Detect OS and set icon file accordingly -->
         <condition property="is.windows">
@@ -407,6 +403,7 @@
         <!-- Create clean input directory for jpackage -->
         <mkdir dir="${build.dir}/jpackage-input-release"/>
         <copy file="${jar.obfuscated.file}" todir="${build.dir}/jpackage-input-release"/>
+        <copy file="${lib.dir}/webview-1.0.10.jar" todir="${build.dir}/jpackage-input-release"/>
 
         <!-- Detect OS and set icon file accordingly (same as dev build) -->
         <condition property="is.windows.release">
