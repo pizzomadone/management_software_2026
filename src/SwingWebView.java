@@ -24,7 +24,7 @@ public final class SwingWebView extends JPanel {
         webView.setUrl(url);
         stateTimer = new Timer(350, event -> webView.evalAsync("document.readyState")
             .thenAccept(state -> SwingUtilities.invokeLater(() ->
-                navigationListener.changed(true, true, !"complete".equals(String.valueOf(state)))))
+                navigationListener.changed(true, true, !isDocumentComplete(state))))
             .exceptionally(error -> {
                 SwingUtilities.invokeLater(() -> failureListener.accept(
                     "SwingWebView error: " + error.getMessage()));
@@ -42,6 +42,15 @@ public final class SwingWebView extends JPanel {
         String html = "<main style='font-family:sans-serif;text-align:center;padding-top:20vh'>" +
             "<h2>" + html(heading) + "</h2><p>" + html(detail) + "</p></main>";
         webView.eval("document.body.innerHTML = " + javascriptString(html));
+    }
+
+    static boolean isDocumentComplete(String state) {
+        if (state == null) return false;
+        String normalized = state.trim();
+        if (normalized.length() >= 2 && normalized.startsWith("\"") && normalized.endsWith("\"")) {
+            normalized = normalized.substring(1, normalized.length() - 1);
+        }
+        return "complete".equalsIgnoreCase(normalized.trim());
     }
 
     private static String javascriptString(String value) {
