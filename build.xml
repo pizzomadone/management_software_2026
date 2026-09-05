@@ -85,6 +85,12 @@
                 <include name="i18n/**"/>
                 <include name="icons/**"/>
             </fileset>
+
+            <!-- Legal notices must remain readable in every distribution. -->
+            <fileset dir=".">
+                <include name="LICENSE-THIRD-PARTY.txt"/>
+                <include name="NOTICE.txt"/>
+            </fileset>
         </copy>
         <echo message="Compilation complete!"/>
     </target>
@@ -136,6 +142,8 @@
             </fileset>
         </jar>
         <copy file="${lib.dir}/webview-1.0.10.jar" todir="${dist.dir}"/>
+        <copy file="LICENSE-THIRD-PARTY.txt" todir="${dist.dir}"/>
+        <copy file="NOTICE.txt" todir="${dist.dir}"/>
 
         <!-- Clean up temporary directory -->
         <delete dir="${build.dir}/jar-temp"/>
