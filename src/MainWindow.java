@@ -485,8 +485,12 @@ public class MainWindow extends JFrame {
     }
     
     private void setupPanels() {
-        // Initialize panels lazily to improve startup time
-        // Panels will be created when first accessed
+        // Discover is the startup page: create its browser eagerly so that the
+        // configured URL starts loading even before the card is made visible.
+        // The remaining management panels stay lazy to preserve startup cost.
+        webPanel = new WebPanel();
+        webPanel.setName("WEB");
+        mainPanel.add(webPanel, "WEB");
     }
     
     // Menu action methods
