@@ -115,14 +115,9 @@ public class BackupPanel extends JPanel {
     }
 
     private void selectBackupDirectory() {
-        JFileChooser chooser = new JFileChooser();
-        chooser.setCurrentDirectory(new File(backupManager.getBackupDirectory()));
-        chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-        chooser.setDialogTitle("Select Backup Directory");
-
-        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-            backupDirField.setText(chooser.getSelectedFile().getAbsolutePath());
-        }
+        File selectedDirectory = FileChooserUtil.chooseDirectory(this,
+            "Select Backup Directory", new File(backupManager.getBackupDirectory()));
+        if (selectedDirectory != null) backupDirField.setText(selectedDirectory.getAbsolutePath());
     }
 
     private void loadBackupsList() {

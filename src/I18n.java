@@ -212,7 +212,14 @@ public final class I18n {
         @Override
         public Component getListCellRendererComponent(JList<?> list, Object value, int index,
                 boolean selected, boolean focus) {
-            Object displayValue = value instanceof String text ? tr(text) : value;
+            Object displayValue;
+            if (value instanceof String text) {
+                displayValue = tr(text);
+            } else if (value instanceof javax.swing.filechooser.FileFilter filter) {
+                displayValue = tr(filter.getDescription());
+            } else {
+                displayValue = value;
+            }
             return delegate.getListCellRendererComponent(list, displayValue, index, selected, focus);
         }
     }

@@ -207,22 +207,11 @@ public class SettingsPanel extends JPanel {
     }
 
     private void browsePdfDirectory() {
-        JFileChooser fileChooser = new JFileChooser();
-        fileChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-        fileChooser.setDialogTitle("Select Default PDF Directory");
-
         String currentDir = pdfDirectoryField.getText();
-        if (currentDir != null && !currentDir.trim().isEmpty()) {
-            File dir = new File(currentDir);
-            if (dir.exists() && dir.isDirectory()) {
-                fileChooser.setCurrentDirectory(dir);
-            }
-        }
-
-        Window parentWindow = SwingUtilities.getWindowAncestor(this);
-        if (fileChooser.showOpenDialog(parentWindow) == JFileChooser.APPROVE_OPTION) {
-            pdfDirectoryField.setText(fileChooser.getSelectedFile().getAbsolutePath());
-        }
+        File selectedDirectory = FileChooserUtil.chooseDirectory(this,
+            "Select Default PDF Directory",
+            currentDir == null || currentDir.isBlank() ? null : new File(currentDir));
+        if (selectedDirectory != null) pdfDirectoryField.setText(selectedDirectory.getAbsolutePath());
     }
 
     private JPanel createCompanyDataPanel() {
