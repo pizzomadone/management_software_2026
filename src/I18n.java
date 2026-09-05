@@ -163,7 +163,7 @@ public final class I18n {
         }
         if (component instanceof JComboBox<?> comboBox &&
                 !(comboBox.getRenderer() instanceof LocalizedListRenderer)) {
-            comboBox.setRenderer(new LocalizedListRenderer());
+            installLocalizedListRenderer(comboBox);
         }
         if (component instanceof JComponent swingComponent) {
             localizeTooltip(swingComponent);
@@ -194,12 +194,26 @@ public final class I18n {
         component.setToolTipText(translated);
     }
 
-    private static final class LocalizedListRenderer extends DefaultListCellRenderer {
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static void installLocalizedListRenderer(JComboBox<?> comboBox) {
+        ListCellRenderer delegate = comboBox.getRenderer();
+        if (delegate == null) delegate = new DefaultListCellRenderer();
+        comboBox.setRenderer(new LocalizedListRenderer(delegate));
+    }
+
+    private static final class LocalizedListRenderer implements ListCellRenderer<Object> {
+        private final ListCellRenderer<Object> delegate;
+
+        @SuppressWarnings("unchecked")
+        private LocalizedListRenderer(ListCellRenderer<?> delegate) {
+            this.delegate = (ListCellRenderer<Object>) delegate;
+        }
+
         @Override
         public Component getListCellRendererComponent(JList<?> list, Object value, int index,
                 boolean selected, boolean focus) {
             Object displayValue = value instanceof String text ? tr(text) : value;
-            return super.getListCellRendererComponent(list, displayValue, index, selected, focus);
+            return delegate.getListCellRendererComponent(list, displayValue, index, selected, focus);
         }
     }
 
