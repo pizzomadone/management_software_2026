@@ -81,12 +81,43 @@ public final class I18n {
     public static String tr(String source) {
         if (source == null) return null;
         if (translations.containsKey(source)) return translations.get(source);
-        String translated = source;
-        for (String key : translations.keySet().stream()
-                .sorted(Comparator.comparingInt(String::length).reversed()).toList()) {
-            translated = translated.replace(key, translations.get(key));
+
+        // Translate complete words/phrases in dynamic labels without repeatedly
+        // translating the result. Plain String.replace() used to turn "Backup"
+        // into values such as "Indietroup" because the key "Back" matched inside it.
+        java.util.List<String> keys = translations.keySet().stream()
+            .filter(key -> !key.isEmpty())
+            .sorted(Comparator.comparingInt(String::length).reversed()).toList();
+        StringBuilder translated = new StringBuilder(source.length());
+        for (int offset = 0; offset < source.length();) {
+            String match = null;
+            for (String key : keys) {
+                if (source.startsWith(key, offset) && hasTranslationBoundaries(source, offset, key)) {
+                    match = key;
+                    break;
+                }
+            }
+            if (match == null) {
+                translated.append(source.charAt(offset++));
+            } else {
+                translated.append(translations.get(match));
+                offset += match.length();
+            }
         }
-        return translated;
+        return translated.toString();
+    }
+
+    private static boolean hasTranslationBoundaries(String source, int offset, String key) {
+        int end = offset + key.length();
+        boolean leftBoundary = !isTranslationWordCharacter(key.charAt(0)) || offset == 0 ||
+            !isTranslationWordCharacter(source.charAt(offset - 1));
+        boolean rightBoundary = !isTranslationWordCharacter(key.charAt(key.length() - 1)) ||
+            end == source.length() || !isTranslationWordCharacter(source.charAt(end));
+        return leftBoundary && rightBoundary;
+    }
+
+    private static boolean isTranslationWordCharacter(char value) {
+        return Character.isLetterOrDigit(value) || value == '_';
     }
 
     private static String localized(Object owner, String current) {
@@ -163,7 +194,12 @@ public final class I18n {
         }
         if (component instanceof JComboBox<?> comboBox &&
                 !(comboBox.getRenderer() instanceof LocalizedListRenderer)) {
-            comboBox.setRenderer(new LocalizedListRenderer());
+            installLocalizedListRenderer(comboBox);
+        }
+        // JMenu stores its entries in a separate popup, so they are not returned
+        // by Container.getComponents(). Localize the actual drop-down contents.
+        if (component instanceof JMenu menu) {
+            for (Component menuComponent : menu.getMenuComponents()) localize(menuComponent);
         }
         if (component instanceof JComponent swingComponent) {
             localizeTooltip(swingComponent);
@@ -171,6 +207,9 @@ public final class I18n {
             if (border instanceof TitledBorder titledBorder) {
                 titledBorder.setTitle(localized(titledBorder, titledBorder.getTitle()));
             }
+            // Context menus are also detached from the normal component tree.
+            JPopupMenu popupMenu = swingComponent.getComponentPopupMenu();
+            if (popupMenu != null) localize(popupMenu);
         }
         if (component instanceof Container container) {
             for (Component child : container.getComponents()) localize(child);
@@ -194,12 +233,33 @@ public final class I18n {
         component.setToolTipText(translated);
     }
 
-    private static final class LocalizedListRenderer extends DefaultListCellRenderer {
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static void installLocalizedListRenderer(JComboBox<?> comboBox) {
+        ListCellRenderer delegate = comboBox.getRenderer();
+        if (delegate == null) delegate = new DefaultListCellRenderer();
+        comboBox.setRenderer(new LocalizedListRenderer(delegate));
+    }
+
+    private static final class LocalizedListRenderer implements ListCellRenderer<Object> {
+        private final ListCellRenderer<Object> delegate;
+
+        @SuppressWarnings("unchecked")
+        private LocalizedListRenderer(ListCellRenderer<?> delegate) {
+            this.delegate = (ListCellRenderer<Object>) delegate;
+        }
+
         @Override
         public Component getListCellRendererComponent(JList<?> list, Object value, int index,
                 boolean selected, boolean focus) {
-            Object displayValue = value instanceof String text ? tr(text) : value;
-            return super.getListCellRendererComponent(list, displayValue, index, selected, focus);
+            Object displayValue;
+            if (value instanceof String text) {
+                displayValue = tr(text);
+            } else if (value instanceof javax.swing.filechooser.FileFilter filter) {
+                displayValue = tr(filter.getDescription());
+            } else {
+                displayValue = value;
+            }
+            return delegate.getListCellRendererComponent(list, displayValue, index, selected, focus);
         }
     }
 

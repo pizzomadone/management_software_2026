@@ -12,8 +12,6 @@ public class SettingsPanel extends JPanel {
 
     private JSlider fontSizeSlider;
     private JComboBox<String> themeCombo;
-    private JCheckBox autoBackupCheck;
-    private JSpinner backupIntervalSpinner;
     private JLabel previewLabel;
 
     // PDF Settings
@@ -128,24 +126,8 @@ public class SettingsPanel extends JPanel {
         gbc.anchor = GridBagConstraints.WEST;
         gbc.fill = GridBagConstraints.HORIZONTAL;
 
-        // Auto Backup
-        gbc.gridx = 0; gbc.gridy = 0; gbc.gridwidth = 2;
-        autoBackupCheck = new JCheckBox("Enable Auto Backup");
-        autoBackupCheck.setSelected(Boolean.parseBoolean(getSetting("auto_backup", "true")));
-        panel.add(autoBackupCheck, gbc);
-
-        // Backup Interval
-        gbc.gridx = 0; gbc.gridy = 1; gbc.gridwidth = 1;
-        panel.add(new JLabel("Backup Interval (hours):"), gbc);
-
-        gbc.gridx = 1;
-        SpinnerNumberModel spinnerModel = new SpinnerNumberModel(
-            Integer.parseInt(getSetting("backup_interval", "24")), 1, 168, 1);
-        backupIntervalSpinner = new JSpinner(spinnerModel);
-        panel.add(backupIntervalSpinner, gbc);
-
         // PDF Default Directory
-        gbc.gridx = 0; gbc.gridy = 2;
+        gbc.gridx = 0; gbc.gridy = 0; gbc.gridwidth = 1;
         panel.add(new JLabel("PDF Default Directory:"), gbc);
 
         gbc.gridx = 1; gbc.weightx = 1.0;
@@ -161,7 +143,7 @@ public class SettingsPanel extends JPanel {
         panel.add(pdfDirPanel, gbc);
 
         // Currency
-        gbc.gridx = 0; gbc.gridy = 3; gbc.weightx = 0.0;
+        gbc.gridx = 0; gbc.gridy = 1; gbc.weightx = 0.0;
         panel.add(new JLabel("Currency:"), gbc);
 
         gbc.gridx = 1; gbc.weightx = 1.0;
@@ -181,7 +163,7 @@ public class SettingsPanel extends JPanel {
         panel.add(currencyCombo, gbc);
 
         // Default VAT
-        gbc.gridx = 0; gbc.gridy = 4;
+        gbc.gridx = 0; gbc.gridy = 2;
         panel.add(new JLabel("Default VAT Rate (%):"), gbc);
 
         gbc.gridx = 1;
@@ -190,7 +172,7 @@ public class SettingsPanel extends JPanel {
         panel.add(defaultVatField, gbc);
 
         // Language
-        gbc.gridx = 0; gbc.gridy = 5;
+        gbc.gridx = 0; gbc.gridy = 3;
         panel.add(new JLabel("Language:"), gbc);
 
         gbc.gridx = 1;
@@ -199,7 +181,7 @@ public class SettingsPanel extends JPanel {
         panel.add(languageCombo, gbc);
 
         // Add vertical glue to push components to top
-        gbc.gridx = 0; gbc.gridy = 6; gbc.gridwidth = 2; gbc.weighty = 1.0;
+        gbc.gridx = 0; gbc.gridy = 4; gbc.gridwidth = 2; gbc.weighty = 1.0;
         gbc.fill = GridBagConstraints.VERTICAL;
         panel.add(Box.createVerticalGlue(), gbc);
 
@@ -207,22 +189,38 @@ public class SettingsPanel extends JPanel {
     }
 
     private void browsePdfDirectory() {
-        JFileChooser fileChooser = new JFileChooser();
-        fileChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-        fileChooser.setDialogTitle("Select Default PDF Directory");
-
         String currentDir = pdfDirectoryField.getText();
-        if (currentDir != null && !currentDir.trim().isEmpty()) {
-            File dir = new File(currentDir);
-            if (dir.exists() && dir.isDirectory()) {
-                fileChooser.setCurrentDirectory(dir);
+        File selectedDirectory = chooseDirectory(
+            "Select Default PDF Directory",
+            currentDir == null || currentDir.isBlank() ? null : new File(currentDir));
+        if (selectedDirectory != null) pdfDirectoryField.setText(selectedDirectory.getAbsolutePath());
+    }
+
+    private File chooseDirectory(String title, File initialDirectory) {
+        File initial = initialDirectory != null && initialDirectory.isDirectory()
+            ? initialDirectory : new File(System.getProperty("user.home", "."));
+        if (System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac")) {
+            String property = "apple.awt.fileDialogForDirectories";
+            String previous = System.getProperty(property);
+            System.setProperty(property, "true");
+            FileDialog dialog = new FileDialog((Frame) SwingUtilities.getWindowAncestor(this),
+                title, FileDialog.LOAD);
+            try {
+                dialog.setDirectory(initial.getAbsolutePath());
+                dialog.setVisible(true);
+                return dialog.getFile() == null ? null : new File(dialog.getDirectory(), dialog.getFile());
+            } finally {
+                dialog.dispose();
+                if (previous == null) System.clearProperty(property);
+                else System.setProperty(property, previous);
             }
         }
-
-        Window parentWindow = SwingUtilities.getWindowAncestor(this);
-        if (fileChooser.showOpenDialog(parentWindow) == JFileChooser.APPROVE_OPTION) {
-            pdfDirectoryField.setText(fileChooser.getSelectedFile().getAbsolutePath());
-        }
+        JFileChooser chooser = new JFileChooser(initial);
+        chooser.setDialogTitle(title);
+        chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        chooser.setAcceptAllFileFilterUsed(false);
+        return chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION
+            ? chooser.getSelectedFile() : null;
     }
 
     private JPanel createCompanyDataPanel() {
@@ -289,7 +287,7 @@ public class SettingsPanel extends JPanel {
 
         gbc.gridx = 1; gbc.weightx = 1.0;
         countryField = new JTextField(25);
-        countryField.setText("Italy");
+        countryField.setText(I18n.tr("Italy"));
         formPanel.add(countryField, gbc);
 
         // Phone
@@ -398,7 +396,7 @@ public class SettingsPanel extends JPanel {
         int fontSize = fontSizeSlider.getValue();
         Font newFont = new Font(Font.SANS_SERIF, Font.PLAIN, fontSize);
         previewLabel.setFont(newFont);
-        previewLabel.setText("Sample text - Size: " + fontSize);
+        previewLabel.setText(I18n.tr("Sample text - Size") + ": " + fontSize);
     }
 
     private void applyAllSettings() {
@@ -406,8 +404,8 @@ public class SettingsPanel extends JPanel {
             updateSettingsFromFields();
             applySettings();
             JOptionPane.showMessageDialog(this,
-                "Settings applied successfully!",
-                "Settings", JOptionPane.INFORMATION_MESSAGE);
+                I18n.tr("Settings applied successfully!"),
+                I18n.tr("Settings"), JOptionPane.INFORMATION_MESSAGE);
         } catch (IllegalArgumentException e) {
             JOptionPane.showMessageDialog(this, e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
@@ -436,8 +434,8 @@ public class SettingsPanel extends JPanel {
         if (success) {
             applySettings();
             JOptionPane.showMessageDialog(this,
-                "Settings saved successfully!",
-                "Settings", JOptionPane.INFORMATION_MESSAGE);
+                I18n.tr("Settings saved successfully!"),
+                I18n.tr("Settings"), JOptionPane.INFORMATION_MESSAGE);
         }
     }
 
@@ -467,8 +465,6 @@ public class SettingsPanel extends JPanel {
 
         settings.setProperty("font_size", String.valueOf(fontSizeSlider.getValue()));
         settings.setProperty("theme", (String)themeCombo.getSelectedItem());
-        settings.setProperty("auto_backup", String.valueOf(autoBackupCheck.isSelected()));
-        settings.setProperty("backup_interval", String.valueOf(backupIntervalSpinner.getValue()));
         settings.setProperty("pdf_default_directory", pdfDirectoryField.getText().trim());
         settings.setProperty("currency", (String)currencyCombo.getSelectedItem());
         settings.setProperty("default_vat", String.valueOf(vatRate));
@@ -488,8 +484,6 @@ public class SettingsPanel extends JPanel {
     private void setDefaultSettings() {
         settings.setProperty("font_size", "12");
         settings.setProperty("theme", "System");
-        settings.setProperty("auto_backup", "true");
-        settings.setProperty("backup_interval", "24");
         settings.setProperty("pdf_default_directory", System.getProperty("user.home"));
         settings.setProperty("currency", "EUR - Euro (€)");
         settings.setProperty("default_vat", "22.0");

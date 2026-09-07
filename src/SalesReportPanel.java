@@ -70,9 +70,10 @@ public class SalesReportPanel extends JPanel {
         JPanel statsPanel = new JPanel(new GridLayout(1, 3, 10, 10));
         statsPanel.setBorder(BorderFactory.createTitledBorder("Statistics"));
 
-        totalSalesLabel = new JLabel("Total Sales: " + SettingsPanel.formatCurrency(0));
-        totalOrdersLabel = new JLabel("Number of Orders: 0");
-        averageOrderLabel = new JLabel("Average per Order: " + SettingsPanel.formatCurrency(0));
+        totalSalesLabel = new JLabel();
+        totalOrdersLabel = new JLabel();
+        averageOrderLabel = new JLabel();
+        updateStatistics(0, 0);
 
         statsPanel.add(totalSalesLabel);
         statsPanel.add(totalOrdersLabel);
@@ -248,13 +249,7 @@ public class SalesReportPanel extends JPanel {
                 }
 
                 // Update statistics
-                totalSalesLabel.setText("Total Sales: " + SettingsPanel.formatCurrency(totalSales));
-                totalOrdersLabel.setText("Number of Orders: " + totalOrders);
-                if (totalOrders > 0) {
-                    averageOrderLabel.setText("Average per Order: " + SettingsPanel.formatCurrency(totalSales / totalOrders));
-                } else {
-                    averageOrderLabel.setText("Average per Order: " + SettingsPanel.formatCurrency(0));
-                }
+                updateStatistics(totalSales, totalOrders);
 
                 System.out.println("Loaded " + totalOrders + " orders, total sales: " + SettingsPanel.formatCurrency(totalSales));
             }
@@ -267,6 +262,19 @@ public class SalesReportPanel extends JPanel {
                 "Error loading the report: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
+    }
+
+    private void updateStatistics(double totalSales, int totalOrders) {
+        double averageOrder = totalOrders > 0 ? totalSales / totalOrders : 0;
+        totalSalesLabel.setText("Total Sales: " + SettingsPanel.formatCurrency(totalSales));
+        totalOrdersLabel.setText("Number of Orders: " + totalOrders);
+        averageOrderLabel.setText("Average per Order: " + SettingsPanel.formatCurrency(averageOrder));
+
+        // These labels are updated after the window has been localized, so apply
+        // localization again whenever their dynamic values change.
+        I18n.localize(totalSalesLabel);
+        I18n.localize(totalOrdersLabel);
+        I18n.localize(averageOrderLabel);
     }
 
     private void showOrderDetails() {

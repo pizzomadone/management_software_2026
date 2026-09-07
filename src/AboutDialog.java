@@ -112,6 +112,10 @@ public class AboutDialog extends JDialog {
         thirdPartyButton.addActionListener(e -> openThirdPartyLicenses());
         buttonsPanel.add(thirdPartyButton);
 
+        JButton creditsButton = new JButton("Credits");
+        creditsButton.addActionListener(e -> showCredits());
+        buttonsPanel.add(creditsButton);
+
         contentPanel.add(buttonsPanel);
 
         contentPanel.add(Box.createVerticalStrut(15));
@@ -180,6 +184,19 @@ public class AboutDialog extends JDialog {
         showTextFileDialog("LICENSE-THIRD-PARTY.txt", "Third-Party Licenses");
     }
 
+    private void showCredits() {
+        String credits = I18n.tr("Open-source components used by WareStat:") + "\n\n" +
+            "Apache PDFBox 3.0.6\n" +
+            "  © The Apache Software Foundation — Apache License 2.0\n\n" +
+            "SQLite JDBC 3.50.3.0\n" +
+            "  © Taro L. Saito / Xerial Project — Apache License 2.0\n\n" +
+            "WebLite WebView 1.0.10\n" +
+            "  Steve Hannah / WebLite; based on webview by Serge Zaitsev — MIT License\n\n" +
+            I18n.tr("These licenses permit commercial use subject to their terms and notices.") +
+            "\n" + I18n.tr("See Third-Party Licenses for the complete legal information.");
+        showTextDialog(I18n.tr("Credits"), credits);
+    }
+
     /**
      * Display text content in a dialog window.
      */
@@ -215,6 +232,16 @@ public class AboutDialog extends JDialog {
      * Looks for the file in the executable directory first, then in working directory.
      */
     private void showTextFileDialog(String fileName, String title) {
+        java.io.InputStream bundled = AboutDialog.class.getResourceAsStream("/" + fileName);
+        if (bundled != null) {
+            try (bundled) {
+                String content = new String(bundled.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                showTextDialog(I18n.tr(title), content);
+                return;
+            } catch (IOException exception) {
+                // Continue with the external-file fallback below.
+            }
+        }
         File file = null;
 
         try {

@@ -5,8 +5,19 @@ import java.util.Date;
 import javax.swing.*;
 import java.util.Properties;
 import java.sql.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.UUID;
 
 public class BackupManager {
+    public record BackupRecord(String id, String name, String absolutePath,
+            long createdAt, long size) {
+        public boolean exists() {
+            return Files.isRegularFile(Path.of(absolutePath));
+        }
+    }
+
     private static BackupManager instance;
     private Properties config;
 
@@ -36,6 +47,7 @@ public class BackupManager {
                 config.setProperty("backup.directory", AppConstants.getBackupDirectory().toString());
                 config.setProperty("backup.autobackup", "true");
                 config.setProperty("backup.retention", "7");
+                config.setProperty("backup.interval", "24");
                 saveConfig();
             }
         } catch (IOException e) {
@@ -53,7 +65,7 @@ public class BackupManager {
         }
     }
     
-    public void performBackup() {
+    public Path performBackup() {
         try {
             String backupDir = config.getProperty("backup.directory", AppConstants.getBackupDirectory().toString());
             Files.createDirectories(Paths.get(backupDir));
@@ -88,11 +100,98 @@ public class BackupManager {
                 }
             }
             cleanOldBackups();
+            registerBackup(target);
+            return target;
 
         } catch (IOException | SQLException e) {
             e.printStackTrace();
             throw new RuntimeException("Error during backup: " + e.getMessage());
         }
+    }
+
+    public synchronized BackupRecord importBackup(Path file) {
+        Path normalized = file.toAbsolutePath().normalize();
+        validateBackup(normalized);
+        return registerBackup(normalized);
+    }
+
+    private void validateBackup(Path file) {
+        if (!Files.isRegularFile(file) || !Files.isReadable(file)) {
+            throw new IllegalArgumentException("Backup file not found or not readable");
+        }
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + file);
+             Statement statement = connection.createStatement()) {
+            try (ResultSet result = statement.executeQuery("PRAGMA integrity_check")) {
+                if (!result.next() || !"ok".equalsIgnoreCase(result.getString(1))) {
+                    throw new IllegalArgumentException("The selected file is not a valid SQLite backup");
+                }
+            }
+            try (ResultSet result = statement.executeQuery(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' " +
+                    "AND name IN ('products', 'orders')")) {
+                if (!result.next() || result.getInt(1) < 2) {
+                    throw new IllegalArgumentException("The selected file is not a WareStat backup");
+                }
+            }
+        } catch (SQLException exception) {
+            throw new IllegalArgumentException("Unable to validate backup: " + exception.getMessage(), exception);
+        }
+    }
+
+    private synchronized BackupRecord registerBackup(Path file) {
+        Path normalized = file.toAbsolutePath().normalize();
+        for (BackupRecord record : listBackupRecords()) {
+            if (Path.of(record.absolutePath()).toAbsolutePath().normalize().equals(normalized)) {
+                return record;
+            }
+        }
+        String id = UUID.randomUUID().toString();
+        long createdAt;
+        long size;
+        try {
+            createdAt = Files.getLastModifiedTime(normalized).toMillis();
+            size = Files.size(normalized);
+        } catch (IOException exception) {
+            throw new IllegalArgumentException("Unable to read backup file: " + exception.getMessage(), exception);
+        }
+        String prefix = "backup.record." + id + ".";
+        config.setProperty(prefix + "path", normalized.toString());
+        config.setProperty(prefix + "name", normalized.getFileName().toString());
+        config.setProperty(prefix + "created", Long.toString(createdAt));
+        config.setProperty(prefix + "size", Long.toString(size));
+        saveConfig();
+        return new BackupRecord(id, normalized.getFileName().toString(), normalized.toString(), createdAt, size);
+    }
+
+    public synchronized List<BackupRecord> listBackupRecords() {
+        List<BackupRecord> records = new ArrayList<>();
+        String suffix = ".path";
+        for (String key : config.stringPropertyNames()) {
+            if (!key.startsWith("backup.record.") || !key.endsWith(suffix)) continue;
+            String id = key.substring("backup.record.".length(), key.length() - suffix.length());
+            String prefix = "backup.record." + id + ".";
+            String path = config.getProperty(prefix + "path");
+            String name = config.getProperty(prefix + "name", Path.of(path).getFileName().toString());
+            long created = parseLong(config.getProperty(prefix + "created"), 0);
+            long size = parseLong(config.getProperty(prefix + "size"), 0);
+            records.add(new BackupRecord(id, name, path, created, size));
+        }
+        records.sort(Comparator.comparingLong(BackupRecord::createdAt).reversed());
+        return records;
+    }
+
+    public synchronized void removeBackupRecord(String id) {
+        String prefix = "backup.record." + id + ".";
+        config.remove(prefix + "path");
+        config.remove(prefix + "name");
+        config.remove(prefix + "created");
+        config.remove(prefix + "size");
+        saveConfig();
+    }
+
+    private long parseLong(String value, long fallback) {
+        try { return Long.parseLong(value); }
+        catch (NumberFormatException exception) { return fallback; }
     }
     
     private void cleanOldBackups() {
@@ -107,7 +206,9 @@ public class BackupManager {
                     long cutoffTime = System.currentTimeMillis() - (retentionDays * 24L * 60L * 60L * 1000L);
                     for (File file : files) {
                         if (file.lastModified() < cutoffTime) {
-                            if (!file.delete()) {
+                            if (file.delete()) {
+                                removeBackupRecordByPath(file.toPath());
+                            } else {
                                 System.err.println("Failed to delete old backup: " + file.getName());
                             }
                         }
@@ -116,6 +217,16 @@ public class BackupManager {
             }
         } catch (Exception e) {
             e.printStackTrace();
+        }
+    }
+
+    private void removeBackupRecordByPath(Path path) {
+        Path normalized = path.toAbsolutePath().normalize();
+        for (BackupRecord record : listBackupRecords()) {
+            if (Path.of(record.absolutePath()).toAbsolutePath().normalize().equals(normalized)) {
+                removeBackupRecord(record.id());
+                return;
+            }
         }
     }
     
@@ -188,6 +299,15 @@ public class BackupManager {
     
     public void setRetentionDays(int days) {
         config.setProperty("backup.retention", String.valueOf(days));
+        saveConfig();
+    }
+
+    public int getBackupIntervalHours() {
+        return Integer.parseInt(config.getProperty("backup.interval", "24"));
+    }
+
+    public void setBackupIntervalHours(int hours) {
+        config.setProperty("backup.interval", String.valueOf(hours));
         saveConfig();
     }
     

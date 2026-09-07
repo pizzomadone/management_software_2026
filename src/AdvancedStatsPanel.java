@@ -158,7 +158,7 @@ public class AdvancedStatsPanel extends JPanel {
             // Draw "No data" message
             g2d.setColor(Color.BLACK);
             g2d.setFont(new Font("Arial", Font.BOLD, 16));
-            String message = "No sales data available";
+            String message = I18n.tr("No sales data available");
             int messageWidth = g2d.getFontMetrics().stringWidth(message);
             g2d.drawString(message, (width - messageWidth) / 2, height / 2);
             return;
@@ -171,7 +171,7 @@ public class AdvancedStatsPanel extends JPanel {
 
         if (maxSale == 0) {
             g2d.setColor(Color.BLACK);
-            g2d.drawString("No sales in this period", padding, height / 2);
+            g2d.drawString(I18n.tr("No sales in this period"), padding, height / 2);
             return;
         }
 
@@ -289,6 +289,7 @@ public class AdvancedStatsPanel extends JPanel {
                     data,
                     new String[]{"Product", "Quantity Sold", "Revenue", "% of Total"}
                 ));
+                I18n.localize(topProductsTable);
             }
 
         } catch (SQLException e) {
@@ -310,7 +311,7 @@ public class AdvancedStatsPanel extends JPanel {
         if (productStats.isEmpty()) {
             g2d.setColor(Color.BLACK);
             g2d.setFont(new Font("Arial", Font.BOLD, 16));
-            String message = "No product data available";
+            String message = I18n.tr("No product data available");
             int messageWidth = g2d.getFontMetrics().stringWidth(message);
             g2d.drawString(message, (width - messageWidth) / 2, height / 2);
             return;
@@ -322,7 +323,7 @@ public class AdvancedStatsPanel extends JPanel {
 
         if (totalRevenue == 0) {
             g2d.setColor(Color.BLACK);
-            g2d.drawString("No revenue data", padding, height / 2);
+            g2d.drawString(I18n.tr("No revenue data"), padding, height / 2);
             return;
         }
 
