@@ -11,6 +11,7 @@ public final class SwingWebView extends JPanel {
     private final WebViewComponent webView;
     private final NavigationListener navigationListener;
     private final Timer stateTimer;
+    private final Timer loadingTimeoutTimer;
     private boolean stateRequestPending;
     private int statePollAttempts;
 
@@ -25,7 +26,13 @@ public final class SwingWebView extends JPanel {
         webView.eval("window.wareStatUserAgent = " + javascriptString(userAgent) + ";");
         webView.setUrl(url);
         stateTimer = new Timer(350, event -> pollDocumentState(failureListener));
+        loadingTimeoutTimer = new Timer(8_000, event -> {
+            navigationListener.changed(true, true, false);
+            stateTimer.stop();
+        });
+        loadingTimeoutTimer.setRepeats(false);
         stateTimer.start();
+        loadingTimeoutTimer.start();
     }
 
     private void pollDocumentState(java.util.function.Consumer<String> failureListener) {
@@ -39,7 +46,10 @@ public final class SwingWebView extends JPanel {
                 if (error == null) {
                     boolean loading = !isDocumentReady(state);
                     navigationListener.changed(true, true, loading);
-                    if (!loading) stateTimer.stop();
+                    if (!loading) {
+                        stateTimer.stop();
+                        loadingTimeoutTimer.stop();
+                    }
                 } else if (webView.isShowing() && !isNotDisplayedError(error)) {
                     failureListener.accept("SwingWebView error: " + error.getMessage());
                 }
@@ -50,6 +60,7 @@ public final class SwingWebView extends JPanel {
                 if (statePollAttempts >= 30) {
                     navigationListener.changed(true, true, false);
                     stateTimer.stop();
+                    loadingTimeoutTimer.stop();
                 }
             }));
     }
@@ -69,10 +80,12 @@ public final class SwingWebView extends JPanel {
         navigationListener.changed(false, false, true);
         webView.eval("location.reload()");
         stateTimer.restart();
+        loadingTimeoutTimer.restart();
     }
 
     public void showError(String heading, String detail) {
         stateTimer.stop();
+        loadingTimeoutTimer.stop();
         String html = "<main style='font-family:sans-serif;text-align:center;padding-top:20vh'>" +
             "<h2>" + html(heading) + "</h2><p>" + html(detail) + "</p></main>";
         webView.eval("document.body.innerHTML = " + javascriptString(html));
