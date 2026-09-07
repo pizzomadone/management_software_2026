@@ -208,10 +208,37 @@ public class SettingsPanel extends JPanel {
 
     private void browsePdfDirectory() {
         String currentDir = pdfDirectoryField.getText();
-        File selectedDirectory = FileChooserUtil.chooseDirectory(this,
+        File selectedDirectory = chooseDirectory(
             "Select Default PDF Directory",
             currentDir == null || currentDir.isBlank() ? null : new File(currentDir));
         if (selectedDirectory != null) pdfDirectoryField.setText(selectedDirectory.getAbsolutePath());
+    }
+
+    private File chooseDirectory(String title, File initialDirectory) {
+        File initial = initialDirectory != null && initialDirectory.isDirectory()
+            ? initialDirectory : new File(System.getProperty("user.home", "."));
+        if (System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac")) {
+            String property = "apple.awt.fileDialogForDirectories";
+            String previous = System.getProperty(property);
+            System.setProperty(property, "true");
+            FileDialog dialog = new FileDialog((Frame) SwingUtilities.getWindowAncestor(this),
+                title, FileDialog.LOAD);
+            try {
+                dialog.setDirectory(initial.getAbsolutePath());
+                dialog.setVisible(true);
+                return dialog.getFile() == null ? null : new File(dialog.getDirectory(), dialog.getFile());
+            } finally {
+                dialog.dispose();
+                if (previous == null) System.clearProperty(property);
+                else System.setProperty(property, previous);
+            }
+        }
+        JFileChooser chooser = new JFileChooser(initial);
+        chooser.setDialogTitle(title);
+        chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        chooser.setAcceptAllFileFilterUsed(false);
+        return chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION
+            ? chooser.getSelectedFile() : null;
     }
 
     private JPanel createCompanyDataPanel() {

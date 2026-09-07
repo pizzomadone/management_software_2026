@@ -161,14 +161,6 @@
         </available>
         <fail unless="runtime.jar.about.available"
               message="Invalid application JAR: AboutDialog.class is missing."/>
-        <available classname="FileChooserUtil" ignoresystemclasses="true"
-                   property="runtime.jar.filechooser.available">
-            <classpath>
-                <pathelement location="${jar.file}"/>
-            </classpath>
-        </available>
-        <fail unless="runtime.jar.filechooser.available"
-              message="Invalid application JAR: FileChooserUtil.class is missing."/>
     </target>
 
     <!-- =================================
@@ -215,7 +207,6 @@
                             <include name="${main.class}"/>
                             <!-- Referenced by the macOS application menu; keep its stable name. -->
                             <include name="AboutDialog"/>
-                            <include name="FileChooserUtil"/>
                         </patternset>
                     </class>
                     <class classes="private" methods="private" fields="private">
@@ -239,14 +230,6 @@
         </available>
         <fail unless="runtime.obfuscated.jar.about.available"
               message="Invalid obfuscated JAR: AboutDialog.class is missing."/>
-        <available classname="FileChooserUtil" ignoresystemclasses="true"
-                   property="runtime.obfuscated.jar.filechooser.available">
-            <classpath>
-                <pathelement location="${jar.obfuscated.file}"/>
-            </classpath>
-        </available>
-        <fail unless="runtime.obfuscated.jar.filechooser.available"
-              message="Invalid obfuscated JAR: FileChooserUtil.class is missing."/>
 
         <echo message="Obfuscation complete: ${jar.obfuscated.file}"/>
         <echo message="Mapping file saved to: ${dist.dir}/yguard-log.xml"/>

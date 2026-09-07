@@ -37,10 +37,18 @@ public final class SwingWebView extends JPanel {
                 stateRequestPending = false;
                 if (error == null) {
                     navigationListener.changed(true, true, !isDocumentComplete(state));
-                } else if (webView.isShowing()) {
+                } else if (webView.isShowing() && !isNotDisplayedError(error)) {
                     failureListener.accept("SwingWebView error: " + error.getMessage());
                 }
             }));
+    }
+
+    private static boolean isNotDisplayedError(Throwable error) {
+        for (Throwable current = error; current != null; current = current.getCause()) {
+            String message = current.getMessage();
+            if (message != null && message.contains("WebViewComponent not displayed")) return true;
+        }
+        return false;
     }
 
     public void goBack() { webView.eval("history.back()"); }
