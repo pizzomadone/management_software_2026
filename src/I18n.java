@@ -196,12 +196,20 @@ public final class I18n {
                 !(comboBox.getRenderer() instanceof LocalizedListRenderer)) {
             installLocalizedListRenderer(comboBox);
         }
+        // JMenu stores its entries in a separate popup, so they are not returned
+        // by Container.getComponents(). Localize the actual drop-down contents.
+        if (component instanceof JMenu menu) {
+            for (Component menuComponent : menu.getMenuComponents()) localize(menuComponent);
+        }
         if (component instanceof JComponent swingComponent) {
             localizeTooltip(swingComponent);
             Border border = swingComponent.getBorder();
             if (border instanceof TitledBorder titledBorder) {
                 titledBorder.setTitle(localized(titledBorder, titledBorder.getTitle()));
             }
+            // Context menus are also detached from the normal component tree.
+            JPopupMenu popupMenu = swingComponent.getComponentPopupMenu();
+            if (popupMenu != null) localize(popupMenu);
         }
         if (component instanceof Container container) {
             for (Component child : container.getComponents()) localize(child);
