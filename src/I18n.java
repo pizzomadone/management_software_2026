@@ -81,12 +81,43 @@ public final class I18n {
     public static String tr(String source) {
         if (source == null) return null;
         if (translations.containsKey(source)) return translations.get(source);
-        String translated = source;
-        for (String key : translations.keySet().stream()
-                .sorted(Comparator.comparingInt(String::length).reversed()).toList()) {
-            translated = translated.replace(key, translations.get(key));
+
+        // Translate complete words/phrases in dynamic labels without repeatedly
+        // translating the result. Plain String.replace() used to turn "Backup"
+        // into values such as "Indietroup" because the key "Back" matched inside it.
+        java.util.List<String> keys = translations.keySet().stream()
+            .filter(key -> !key.isEmpty())
+            .sorted(Comparator.comparingInt(String::length).reversed()).toList();
+        StringBuilder translated = new StringBuilder(source.length());
+        for (int offset = 0; offset < source.length();) {
+            String match = null;
+            for (String key : keys) {
+                if (source.startsWith(key, offset) && hasTranslationBoundaries(source, offset, key)) {
+                    match = key;
+                    break;
+                }
+            }
+            if (match == null) {
+                translated.append(source.charAt(offset++));
+            } else {
+                translated.append(translations.get(match));
+                offset += match.length();
+            }
         }
-        return translated;
+        return translated.toString();
+    }
+
+    private static boolean hasTranslationBoundaries(String source, int offset, String key) {
+        int end = offset + key.length();
+        boolean leftBoundary = !isTranslationWordCharacter(key.charAt(0)) || offset == 0 ||
+            !isTranslationWordCharacter(source.charAt(offset - 1));
+        boolean rightBoundary = !isTranslationWordCharacter(key.charAt(key.length() - 1)) ||
+            end == source.length() || !isTranslationWordCharacter(source.charAt(end));
+        return leftBoundary && rightBoundary;
+    }
+
+    private static boolean isTranslationWordCharacter(char value) {
+        return Character.isLetterOrDigit(value) || value == '_';
     }
 
     private static String localized(Object owner, String current) {
