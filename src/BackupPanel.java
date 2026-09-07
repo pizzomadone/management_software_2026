@@ -213,7 +213,9 @@ public class BackupPanel extends JPanel {
                 I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
             return;
         }
-        if (JOptionPane.showConfirmDialog(this, I18n.tr("Are you sure you want to restore this backup?"),
+        if (JOptionPane.showConfirmDialog(this,
+                I18n.tr("Restoring this backup will replace the current data. " +
+                    "All changes made after the backup was created will be lost. Continue?"),
                 I18n.tr("Confirm Restore"), JOptionPane.YES_NO_OPTION,
                 JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) return;
         try {
@@ -249,8 +251,11 @@ public class BackupPanel extends JPanel {
     private void removeSelectedFromHistory() {
         int row = selectedModelRow();
         if (row < 0) return;
-        if (JOptionPane.showConfirmDialog(this, I18n.tr("Remove the selected backup from history?"),
-                I18n.tr("Confirm Deletion"), JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) return;
+        if (JOptionPane.showConfirmDialog(this,
+                I18n.tr("Remove the selected backup from history? " +
+                    "The backup file will remain saved at its current path."),
+                I18n.tr("Confirm Removal"), JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) return;
         backupManager.removeBackupRecord((String) tableModel.getValueAt(row, 0));
         loadBackupsList();
     }
