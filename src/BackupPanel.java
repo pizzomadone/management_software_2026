@@ -48,18 +48,21 @@ public class BackupPanel extends JPanel {
         autoBackupCheck = new JCheckBox("Enable", backupManager.isAutoBackupEnabled());
         configPanel.add(autoBackupCheck, gbc);
 
-        gbc.gridx = 0; gbc.gridy = 2;
+        gbc.gridx = 0; gbc.gridy = 2; gbc.weightx = 0;
         configPanel.add(new JLabel("Backup Interval (hours):"), gbc);
-        gbc.gridx = 1;
+        gbc.gridx = 1; gbc.weightx = 0; gbc.fill = GridBagConstraints.NONE;
+        gbc.anchor = GridBagConstraints.WEST;
         backupIntervalSpinner = new JSpinner(new SpinnerNumberModel(
             backupManager.getBackupIntervalHours(), 1, 168, 1));
+        configureCompactSpinner(backupIntervalSpinner);
         configPanel.add(backupIntervalSpinner, gbc);
 
-        gbc.gridx = 0; gbc.gridy = 3;
+        gbc.gridx = 0; gbc.gridy = 3; gbc.weightx = 0;
         configPanel.add(new JLabel("Retention Days:"), gbc);
         gbc.gridx = 1;
         retentionSpinner = new JSpinner(new SpinnerNumberModel(
             backupManager.getRetentionDays(), 1, 365, 1));
+        configureCompactSpinner(retentionSpinner);
         configPanel.add(retentionSpinner, gbc);
 
         String[] columns = {"Registry ID", "Date", "File Name", "Size", "Path", "Status"};
@@ -94,6 +97,15 @@ public class BackupPanel extends JPanel {
         add(configPanel, BorderLayout.NORTH);
         add(new JScrollPane(backupsTable), BorderLayout.CENTER);
         add(buttons, BorderLayout.SOUTH);
+    }
+
+    private void configureCompactSpinner(JSpinner spinner) {
+        if (spinner.getEditor() instanceof JSpinner.DefaultEditor editor) {
+            editor.getTextField().setColumns(4);
+        }
+        Dimension preferred = spinner.getPreferredSize();
+        spinner.setPreferredSize(new Dimension(80, preferred.height));
+        spinner.setMinimumSize(spinner.getPreferredSize());
     }
 
     private void addButton(JPanel panel, String text, Runnable action) {
