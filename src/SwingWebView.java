@@ -12,6 +12,7 @@ public final class SwingWebView extends JPanel {
     private final NavigationListener navigationListener;
     private final Timer stateTimer;
     private boolean stateRequestPending;
+    private int statePollAttempts;
 
     public SwingWebView(String url, String userAgent, NavigationListener navigationListener,
             java.util.function.Consumer<String> failureListener) {
@@ -36,9 +37,19 @@ public final class SwingWebView extends JPanel {
             SwingUtilities.invokeLater(() -> {
                 stateRequestPending = false;
                 if (error == null) {
-                    navigationListener.changed(true, true, !isDocumentComplete(state));
+                    boolean loading = !isDocumentReady(state);
+                    navigationListener.changed(true, true, loading);
+                    if (!loading) stateTimer.stop();
                 } else if (webView.isShowing() && !isNotDisplayedError(error)) {
                     failureListener.accept("SwingWebView error: " + error.getMessage());
+                }
+                statePollAttempts++;
+                // A remote page may keep document.readyState incomplete because
+                // of a slow third-party resource. Do not leave a permanent
+                // "Loading..." message once the page has had time to render.
+                if (statePollAttempts >= 30) {
+                    navigationListener.changed(true, true, false);
+                    stateTimer.stop();
                 }
             }));
     }
@@ -53,7 +64,12 @@ public final class SwingWebView extends JPanel {
 
     public void goBack() { webView.eval("history.back()"); }
     public void goForward() { webView.eval("history.forward()"); }
-    public void reload() { webView.eval("location.reload()"); }
+    public void reload() {
+        statePollAttempts = 0;
+        navigationListener.changed(false, false, true);
+        webView.eval("location.reload()");
+        stateTimer.restart();
+    }
 
     public void showError(String heading, String detail) {
         stateTimer.stop();
@@ -62,13 +78,16 @@ public final class SwingWebView extends JPanel {
         webView.eval("document.body.innerHTML = " + javascriptString(html));
     }
 
-    static boolean isDocumentComplete(String state) {
+    static boolean isDocumentReady(String state) {
         if (state == null) return false;
-        String normalized = state.trim();
-        if (normalized.length() >= 2 && normalized.startsWith("\"") && normalized.endsWith("\"")) {
-            normalized = normalized.substring(1, normalized.length() - 1);
-        }
-        return "complete".equalsIgnoreCase(normalized.trim());
+        String normalized = state.trim().toLowerCase(java.util.Locale.ROOT)
+            .replace("\"", "").replace("'", "");
+        return normalized.contains("complete") || normalized.contains("interactive");
+    }
+
+    /** Retained for compatibility with existing readiness tests. */
+    static boolean isDocumentComplete(String state) {
+        return isDocumentReady(state);
     }
 
     private static String javascriptString(String value) {

@@ -196,7 +196,9 @@ public class DashboardPanel extends JPanel {
         button.setContentAreaFilled(true);  // Critical: ensures background color is painted
         button.setOpaque(true);
         button.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        button.setPreferredSize(new Dimension(170, 38));
+        int translatedTextWidth = button.getFontMetrics(button.getFont())
+            .stringWidth(I18n.tr(text));
+        button.setPreferredSize(new Dimension(Math.max(170, translatedTextWidth + 48), 38));
         button.setBorder(BorderFactory.createCompoundBorder(
             BorderFactory.createLineBorder(color.darker(), 1),
             BorderFactory.createEmptyBorder(5, 12, 5, 12)
