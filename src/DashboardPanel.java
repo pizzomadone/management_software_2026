@@ -513,7 +513,7 @@ public class DashboardPanel extends JPanel {
         stockLabel.setFont(new Font("Arial", Font.PLAIN, 11));
         stockLabel.setForeground(new Color(100, 40, 40));
 
-        JButton actionButton = new JButton("View");
+        JButton actionButton = new JButton(I18n.tr("View"));
         actionButton.setFont(new Font("Arial", Font.PLAIN, 11));
         actionButton.setFocusPainted(false);
         actionButton.setBackground(ACCENT_COLOR);
@@ -619,7 +619,7 @@ public class DashboardPanel extends JPanel {
         totalLabel.setFont(new Font("Arial", Font.BOLD, 14));
         totalLabel.setForeground(SUCCESS_COLOR);
 
-        JButton viewButton = new JButton("View");
+        JButton viewButton = new JButton(I18n.tr("View"));
         viewButton.setFont(new Font("Arial", Font.PLAIN, 11));
         viewButton.setFocusPainted(false);
         viewButton.setBackground(ACCENT_COLOR);
