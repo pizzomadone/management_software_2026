@@ -305,7 +305,7 @@ public class SettingsPanel extends JPanel {
 
         gbc.gridx = 1; gbc.weightx = 1.0;
         countryField = new JTextField(25);
-        countryField.setText("Italy");
+        countryField.setText(I18n.tr("Italy"));
         formPanel.add(countryField, gbc);
 
         // Phone
@@ -414,7 +414,7 @@ public class SettingsPanel extends JPanel {
         int fontSize = fontSizeSlider.getValue();
         Font newFont = new Font(Font.SANS_SERIF, Font.PLAIN, fontSize);
         previewLabel.setFont(newFont);
-        previewLabel.setText("Sample text - Size: " + fontSize);
+        previewLabel.setText(I18n.tr("Sample text - Size") + ": " + fontSize);
     }
 
     private void applyAllSettings() {
