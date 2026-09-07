@@ -480,7 +480,7 @@ public class DashboardPanel extends JPanel {
                 }
 
                 if (!hasAlerts) {
-                    JLabel noAlerts = new JLabel("No products below minimum stock");
+                    JLabel noAlerts = new JLabel(I18n.tr("No products below minimum stock"));
                     noAlerts.setFont(new Font("Arial", Font.BOLD, 13));
                     noAlerts.setForeground(SUCCESS_COLOR);
                     alertsPanel.add(noAlerts);
@@ -507,8 +507,9 @@ public class DashboardPanel extends JPanel {
         JLabel productLabel = new JLabel(String.format("%s - %s", code, name));
         productLabel.setFont(new Font("Arial", Font.BOLD, 12));
 
-        JLabel stockLabel = new JLabel(String.format("Stock: %d / Min: %d (Short: %d)",
-            quantity, minQuantity, shortage));
+        JLabel stockLabel = new JLabel(String.format("%s: %d / %s: %d (%s: %d)",
+            I18n.tr("Stock"), quantity, I18n.tr("Min"), minQuantity,
+            I18n.tr("Short"), shortage));
         stockLabel.setFont(new Font("Arial", Font.PLAIN, 11));
         stockLabel.setForeground(new Color(100, 40, 40));
 
@@ -564,7 +565,7 @@ public class DashboardPanel extends JPanel {
                 }
 
                 if (!hasOrders) {
-                    JLabel noOrders = new JLabel("No pending orders");
+                    JLabel noOrders = new JLabel(I18n.tr("No pending orders"));
                     noOrders.setFont(new Font("Arial", Font.BOLD, 13));
                     noOrders.setForeground(SUCCESS_COLOR);
                     pendingOrdersPanel.add(noOrders);
@@ -596,7 +597,8 @@ public class DashboardPanel extends JPanel {
         infoPanel.setLayout(new BoxLayout(infoPanel, BoxLayout.Y_AXIS));
         infoPanel.setOpaque(false);
 
-        JLabel idLabel = new JLabel(String.format("Order #%d - %s", id, status));
+        JLabel idLabel = new JLabel(String.format("%s #%d - %s",
+            I18n.tr("Order"), id, I18n.tr(status)));
         idLabel.setFont(new Font("Arial", Font.BOLD, 12));
 
         String dateStr = date;
@@ -605,8 +607,8 @@ public class DashboardPanel extends JPanel {
             dateStr = dateFormat.format(d);
         } catch (Exception ignored) {}
 
-        JLabel detailsLabel = new JLabel(String.format("%s - %s - %d days old",
-            customer != null ? customer : "N/A", dateStr, daysOld));
+        JLabel detailsLabel = new JLabel(String.format("%s - %s - %d %s",
+            customer != null ? customer : "N/A", dateStr, daysOld, I18n.tr("days old")));
         detailsLabel.setFont(new Font("Arial", Font.PLAIN, 11));
         detailsLabel.setForeground(new Color(100, 100, 100));
 
