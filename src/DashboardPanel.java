@@ -125,7 +125,7 @@ public class DashboardPanel extends JPanel {
         // Create 6 KPI cards with consistent color scheme
         panel.add(createKPICard("Warehouse Value", SettingsPanel.formatCurrency(0), SECONDARY_COLOR, "warehouseValue"));
         panel.add(createKPICard("Low Stock Products", "0", DANGER_COLOR, "lowStock"));
-        panel.add(createKPICard("Pending Orders", "0", WARNING_COLOR, "pendingOrders"));
+        panel.add(createKPICard("Pending Customer Orders", "0", WARNING_COLOR, "pendingOrders"));
         panel.add(createKPICard("Monthly Revenue", SettingsPanel.formatCurrency(0), SUCCESS_COLOR, "monthRevenue"));
         panel.add(createKPICard("Average Margin", "0.0%", ACCENT_COLOR, "avgMargin"));
         panel.add(createKPICard("Zero Stock Products", "0", WARNING_COLOR, "zeroStock"));
@@ -177,7 +177,7 @@ public class DashboardPanel extends JPanel {
             PRIMARY_COLOR
         ));
 
-        panel.add(createQuickActionButton("New Order", ACCENT_COLOR, this::createNewOrder));
+        panel.add(createQuickActionButton("New Customer Order", ACCENT_COLOR, this::createNewOrder));
         panel.add(createQuickActionButton("New Invoice", SUCCESS_COLOR, this::createNewInvoice));
         panel.add(createQuickActionButton("Warehouse Movement", SECONDARY_COLOR, this::createWarehouseMovement));
         panel.add(createQuickActionButton("Manage Customers", ACCENT_COLOR, this::openCustomers));
@@ -245,7 +245,7 @@ public class DashboardPanel extends JPanel {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBorder(BorderFactory.createTitledBorder(
             BorderFactory.createLineBorder(BORDER_COLOR),
-            "Pending Orders",
+            "Pending Customer Orders",
             TitledBorder.LEFT,
             TitledBorder.TOP,
             new Font("Arial", Font.BOLD, 14),
@@ -600,7 +600,7 @@ public class DashboardPanel extends JPanel {
         infoPanel.setOpaque(false);
 
         JLabel idLabel = new JLabel(String.format("%s #%d - %s",
-            I18n.tr("Order"), id, I18n.tr(status)));
+            I18n.tr("Customer Order"), id, I18n.tr(status)));
         idLabel.setFont(new Font("Arial", Font.BOLD, 12));
 
         String dateStr = date;
