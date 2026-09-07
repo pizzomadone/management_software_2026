@@ -11,6 +11,7 @@ public final class SwingWebView extends JPanel {
     private final WebViewComponent webView;
     private final NavigationListener navigationListener;
     private final Timer stateTimer;
+    private boolean stateRequestPending;
 
     public SwingWebView(String url, String userAgent, NavigationListener navigationListener,
             java.util.function.Consumer<String> failureListener) {
@@ -22,15 +23,24 @@ public final class SwingWebView extends JPanel {
         // eval() configures browser-side behaviour; evalAsync() monitors loading.
         webView.eval("window.wareStatUserAgent = " + javascriptString(userAgent) + ";");
         webView.setUrl(url);
-        stateTimer = new Timer(350, event -> webView.evalAsync("document.readyState")
-            .thenAccept(state -> SwingUtilities.invokeLater(() ->
-                navigationListener.changed(true, true, !isDocumentComplete(state))))
-            .exceptionally(error -> {
-                SwingUtilities.invokeLater(() -> failureListener.accept(
-                    "SwingWebView error: " + error.getMessage()));
-                return null;
-            }));
+        stateTimer = new Timer(350, event -> pollDocumentState(failureListener));
         stateTimer.start();
+    }
+
+    private void pollDocumentState(java.util.function.Consumer<String> failureListener) {
+        // Native WebViews cannot evaluate JavaScript until their AWT peer is visible.
+        // This also prevents background cards from producing false startup errors.
+        if (!webView.isShowing() || stateRequestPending) return;
+        stateRequestPending = true;
+        webView.evalAsync("document.readyState").whenComplete((state, error) ->
+            SwingUtilities.invokeLater(() -> {
+                stateRequestPending = false;
+                if (error == null) {
+                    navigationListener.changed(true, true, !isDocumentComplete(state));
+                } else if (webView.isShowing()) {
+                    failureListener.accept("SwingWebView error: " + error.getMessage());
+                }
+            }));
     }
 
     public void goBack() { webView.eval("history.back()"); }
