@@ -22,7 +22,6 @@ public class MultiSupplierOrderDialog extends JDialog {
     public MultiSupplierOrderDialog(Window owner) {
         super(owner, "New Supplier Order", ModalityType.APPLICATION_MODAL);
         setSize(900, 620);
-        setLocationRelativeTo(owner);
 
         JPanel root = new JPanel(new BorderLayout(10, 10));
         root.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
@@ -75,6 +74,13 @@ public class MultiSupplierOrderDialog extends JDialog {
         JPanel actions = new JPanel(); actions.add(review); actions.add(cancel);
         root.add(header, BorderLayout.NORTH); root.add(center, BorderLayout.CENTER); root.add(actions, BorderLayout.SOUTH);
         setContentPane(root);
+        setLocationRelativeTo(owner);
+    }
+
+    @Override
+    public void setVisible(boolean visible) {
+        if (visible) setLocationRelativeTo(getOwner());
+        super.setVisible(visible);
     }
 
     private void hideColumn(int modelIndex) {

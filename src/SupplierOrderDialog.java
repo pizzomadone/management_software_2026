@@ -175,7 +175,13 @@ public class SupplierOrderDialog extends JDialog {
 
         add(mainPanel);
         pack();
-        setLocationRelativeTo(null);
+        setLocationRelativeTo(getOwner());
+    }
+
+    @Override
+    public void setVisible(boolean visible) {
+        if (visible) setLocationRelativeTo(getOwner());
+        super.setVisible(visible);
     }
 
     private void generateOrderNumber() {
