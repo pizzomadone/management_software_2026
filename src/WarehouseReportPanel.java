@@ -242,15 +242,20 @@ public class WarehouseReportPanel extends JPanel {
             JPanel statsPanel = (JPanel) productsTab.getComponent(0);
 
             if (statsPanel.getComponentCount() >= 4) {
-                ((JLabel) statsPanel.getComponent(0)).setText("Total Products: " + totalProducts);
-                ((JLabel) statsPanel.getComponent(1)).setText("Total Value: " + SettingsPanel.formatCurrency(totalValue));
-                ((JLabel) statsPanel.getComponent(2)).setText("Low Stock Products: " + lowStock);
-                ((JLabel) statsPanel.getComponent(3)).setText("Out of Stock Products: " + outOfStock);
+                updateLocalizedStatistic((JLabel) statsPanel.getComponent(0), "Total Products", totalProducts);
+                updateLocalizedStatistic((JLabel) statsPanel.getComponent(1), "Total Value",
+                    SettingsPanel.formatCurrency(totalValue));
+                updateLocalizedStatistic((JLabel) statsPanel.getComponent(2), "Low Stock Products", lowStock);
+                updateLocalizedStatistic((JLabel) statsPanel.getComponent(3), "Out of Stock Products", outOfStock);
             }
         } catch (Exception e) {
             // If updating fails, just log it - not critical
             System.err.println("Failed to update statistics: " + e.getMessage());
         }
+    }
+
+    private void updateLocalizedStatistic(JLabel label, String name, Object value) {
+        label.setText(I18n.tr(name) + ": " + value);
     }
 
     private void loadMovementsData() {

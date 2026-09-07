@@ -85,6 +85,12 @@
                 <include name="i18n/**"/>
                 <include name="icons/**"/>
             </fileset>
+
+            <!-- Legal notices must remain readable in every distribution. -->
+            <fileset dir=".">
+                <include name="LICENSE-THIRD-PARTY.txt"/>
+                <include name="NOTICE.txt"/>
+            </fileset>
         </copy>
         <echo message="Compilation complete!"/>
     </target>
@@ -136,11 +142,25 @@
             </fileset>
         </jar>
         <copy file="${lib.dir}/webview-1.0.10.jar" todir="${dist.dir}"/>
+        <copy file="LICENSE-THIRD-PARTY.txt" todir="${dist.dir}"/>
+        <copy file="NOTICE.txt" todir="${dist.dir}"/>
 
         <!-- Clean up temporary directory -->
         <delete dir="${build.dir}/jar-temp"/>
 
         <echo message="JAR created: ${jar.file}"/>
+    </target>
+
+    <target name="verify-runtime-jar" depends="jar"
+            description="Verify that required application classes are packaged">
+        <available classname="AboutDialog" ignoresystemclasses="true"
+                   property="runtime.jar.about.available">
+            <classpath>
+                <pathelement location="${jar.file}"/>
+            </classpath>
+        </available>
+        <fail unless="runtime.jar.about.available"
+              message="Invalid application JAR: AboutDialog.class is missing."/>
     </target>
 
     <!-- =================================
@@ -169,7 +189,7 @@
     <!-- =================================
           Target: obfuscate
          ================================= -->
-    <target name="obfuscate" depends="jar,download-yguard" description="Obfuscate JAR with yGuard">
+    <target name="obfuscate" depends="verify-runtime-jar,download-yguard" description="Obfuscate JAR with yGuard">
         <echo message="Obfuscating JAR with yGuard..."/>
 
         <taskdef name="yguard" classname="com.yworks.yguard.YGuardTask" classpath="${yguard.jar}"/>
@@ -185,6 +205,8 @@
                     <class classes="public" methods="public" fields="public">
                         <patternset>
                             <include name="${main.class}"/>
+                            <!-- Referenced by the macOS application menu; keep its stable name. -->
+                            <include name="AboutDialog"/>
                         </patternset>
                     </class>
                     <class classes="private" methods="private" fields="private">
@@ -199,6 +221,15 @@
                 <property name="error-checking" value="none"/>
             </rename>
         </yguard>
+
+        <available classname="AboutDialog" ignoresystemclasses="true"
+                   property="runtime.obfuscated.jar.about.available">
+            <classpath>
+                <pathelement location="${jar.obfuscated.file}"/>
+            </classpath>
+        </available>
+        <fail unless="runtime.obfuscated.jar.about.available"
+              message="Invalid obfuscated JAR: AboutDialog.class is missing."/>
 
         <echo message="Obfuscation complete: ${jar.obfuscated.file}"/>
         <echo message="Mapping file saved to: ${dist.dir}/yguard-log.xml"/>
@@ -290,7 +321,7 @@
     <!-- =================================
           Target: package-exe (Development - No obfuscation)
          ================================= -->
-    <target name="package-exe" depends="jar,create-custom-runtime,jpackage-check"
+    <target name="package-exe" depends="verify-runtime-jar,create-custom-runtime,jpackage-check"
             description="Create native executable (development build, no obfuscation)">
         <fail unless="jpackage.available"
               message="jpackage not found! Please ensure you have JDK 14+ with jpackage in your PATH."/>
@@ -652,7 +683,7 @@
     <!-- =================================
           Target: test-jar
          ================================= -->
-    <target name="test-jar" depends="jar" description="Test the JAR file">
+    <target name="test-jar" depends="verify-runtime-jar" description="Test the JAR file">
         <echo message="Testing JAR file..."/>
         <java jar="${jar.file}" fork="true" failonerror="true">
             <jvmarg value="-Xmx1024m"/>

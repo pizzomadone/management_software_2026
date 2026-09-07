@@ -207,22 +207,38 @@ public class SettingsPanel extends JPanel {
     }
 
     private void browsePdfDirectory() {
-        JFileChooser fileChooser = new JFileChooser();
-        fileChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-        fileChooser.setDialogTitle("Select Default PDF Directory");
-
         String currentDir = pdfDirectoryField.getText();
-        if (currentDir != null && !currentDir.trim().isEmpty()) {
-            File dir = new File(currentDir);
-            if (dir.exists() && dir.isDirectory()) {
-                fileChooser.setCurrentDirectory(dir);
+        File selectedDirectory = chooseDirectory(
+            "Select Default PDF Directory",
+            currentDir == null || currentDir.isBlank() ? null : new File(currentDir));
+        if (selectedDirectory != null) pdfDirectoryField.setText(selectedDirectory.getAbsolutePath());
+    }
+
+    private File chooseDirectory(String title, File initialDirectory) {
+        File initial = initialDirectory != null && initialDirectory.isDirectory()
+            ? initialDirectory : new File(System.getProperty("user.home", "."));
+        if (System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac")) {
+            String property = "apple.awt.fileDialogForDirectories";
+            String previous = System.getProperty(property);
+            System.setProperty(property, "true");
+            FileDialog dialog = new FileDialog((Frame) SwingUtilities.getWindowAncestor(this),
+                title, FileDialog.LOAD);
+            try {
+                dialog.setDirectory(initial.getAbsolutePath());
+                dialog.setVisible(true);
+                return dialog.getFile() == null ? null : new File(dialog.getDirectory(), dialog.getFile());
+            } finally {
+                dialog.dispose();
+                if (previous == null) System.clearProperty(property);
+                else System.setProperty(property, previous);
             }
         }
-
-        Window parentWindow = SwingUtilities.getWindowAncestor(this);
-        if (fileChooser.showOpenDialog(parentWindow) == JFileChooser.APPROVE_OPTION) {
-            pdfDirectoryField.setText(fileChooser.getSelectedFile().getAbsolutePath());
-        }
+        JFileChooser chooser = new JFileChooser(initial);
+        chooser.setDialogTitle(title);
+        chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        chooser.setAcceptAllFileFilterUsed(false);
+        return chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION
+            ? chooser.getSelectedFile() : null;
     }
 
     private JPanel createCompanyDataPanel() {
@@ -289,7 +305,7 @@ public class SettingsPanel extends JPanel {
 
         gbc.gridx = 1; gbc.weightx = 1.0;
         countryField = new JTextField(25);
-        countryField.setText("Italy");
+        countryField.setText(I18n.tr("Italy"));
         formPanel.add(countryField, gbc);
 
         // Phone
@@ -398,7 +414,7 @@ public class SettingsPanel extends JPanel {
         int fontSize = fontSizeSlider.getValue();
         Font newFont = new Font(Font.SANS_SERIF, Font.PLAIN, fontSize);
         previewLabel.setFont(newFont);
-        previewLabel.setText("Sample text - Size: " + fontSize);
+        previewLabel.setText(I18n.tr("Sample text - Size") + ": " + fontSize);
     }
 
     private void applyAllSettings() {
@@ -406,8 +422,8 @@ public class SettingsPanel extends JPanel {
             updateSettingsFromFields();
             applySettings();
             JOptionPane.showMessageDialog(this,
-                "Settings applied successfully!",
-                "Settings", JOptionPane.INFORMATION_MESSAGE);
+                I18n.tr("Settings applied successfully!"),
+                I18n.tr("Settings"), JOptionPane.INFORMATION_MESSAGE);
         } catch (IllegalArgumentException e) {
             JOptionPane.showMessageDialog(this, e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
@@ -436,8 +452,8 @@ public class SettingsPanel extends JPanel {
         if (success) {
             applySettings();
             JOptionPane.showMessageDialog(this,
-                "Settings saved successfully!",
-                "Settings", JOptionPane.INFORMATION_MESSAGE);
+                I18n.tr("Settings saved successfully!"),
+                I18n.tr("Settings"), JOptionPane.INFORMATION_MESSAGE);
         }
     }
 

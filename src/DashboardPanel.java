@@ -125,7 +125,7 @@ public class DashboardPanel extends JPanel {
         // Create 6 KPI cards with consistent color scheme
         panel.add(createKPICard("Warehouse Value", SettingsPanel.formatCurrency(0), SECONDARY_COLOR, "warehouseValue"));
         panel.add(createKPICard("Low Stock Products", "0", DANGER_COLOR, "lowStock"));
-        panel.add(createKPICard("Pending Orders", "0", WARNING_COLOR, "pendingOrders"));
+        panel.add(createKPICard("Pending Customer Orders", "0", WARNING_COLOR, "pendingOrders"));
         panel.add(createKPICard("Monthly Revenue", SettingsPanel.formatCurrency(0), SUCCESS_COLOR, "monthRevenue"));
         panel.add(createKPICard("Average Margin", "0.0%", ACCENT_COLOR, "avgMargin"));
         panel.add(createKPICard("Zero Stock Products", "0", WARNING_COLOR, "zeroStock"));
@@ -177,7 +177,7 @@ public class DashboardPanel extends JPanel {
             PRIMARY_COLOR
         ));
 
-        panel.add(createQuickActionButton("New Order", ACCENT_COLOR, this::createNewOrder));
+        panel.add(createQuickActionButton("New Customer Order", ACCENT_COLOR, this::createNewOrder));
         panel.add(createQuickActionButton("New Invoice", SUCCESS_COLOR, this::createNewInvoice));
         panel.add(createQuickActionButton("Warehouse Movement", SECONDARY_COLOR, this::createWarehouseMovement));
         panel.add(createQuickActionButton("Manage Customers", ACCENT_COLOR, this::openCustomers));
@@ -196,7 +196,9 @@ public class DashboardPanel extends JPanel {
         button.setContentAreaFilled(true);  // Critical: ensures background color is painted
         button.setOpaque(true);
         button.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        button.setPreferredSize(new Dimension(170, 38));
+        int translatedTextWidth = button.getFontMetrics(button.getFont())
+            .stringWidth(I18n.tr(text));
+        button.setPreferredSize(new Dimension(Math.max(170, translatedTextWidth + 48), 38));
         button.setBorder(BorderFactory.createCompoundBorder(
             BorderFactory.createLineBorder(color.darker(), 1),
             BorderFactory.createEmptyBorder(5, 12, 5, 12)
@@ -243,7 +245,7 @@ public class DashboardPanel extends JPanel {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBorder(BorderFactory.createTitledBorder(
             BorderFactory.createLineBorder(BORDER_COLOR),
-            "Pending Orders",
+            "Pending Customer Orders",
             TitledBorder.LEFT,
             TitledBorder.TOP,
             new Font("Arial", Font.BOLD, 14),
@@ -480,7 +482,7 @@ public class DashboardPanel extends JPanel {
                 }
 
                 if (!hasAlerts) {
-                    JLabel noAlerts = new JLabel("No products below minimum stock");
+                    JLabel noAlerts = new JLabel(I18n.tr("No products below minimum stock"));
                     noAlerts.setFont(new Font("Arial", Font.BOLD, 13));
                     noAlerts.setForeground(SUCCESS_COLOR);
                     alertsPanel.add(noAlerts);
@@ -507,12 +509,13 @@ public class DashboardPanel extends JPanel {
         JLabel productLabel = new JLabel(String.format("%s - %s", code, name));
         productLabel.setFont(new Font("Arial", Font.BOLD, 12));
 
-        JLabel stockLabel = new JLabel(String.format("Stock: %d / Min: %d (Short: %d)",
-            quantity, minQuantity, shortage));
+        JLabel stockLabel = new JLabel(String.format("%s: %d / %s: %d (%s: %d)",
+            I18n.tr("Stock"), quantity, I18n.tr("Min"), minQuantity,
+            I18n.tr("Short"), shortage));
         stockLabel.setFont(new Font("Arial", Font.PLAIN, 11));
         stockLabel.setForeground(new Color(100, 40, 40));
 
-        JButton actionButton = new JButton("View");
+        JButton actionButton = new JButton(I18n.tr("View"));
         actionButton.setFont(new Font("Arial", Font.PLAIN, 11));
         actionButton.setFocusPainted(false);
         actionButton.setBackground(ACCENT_COLOR);
@@ -564,7 +567,7 @@ public class DashboardPanel extends JPanel {
                 }
 
                 if (!hasOrders) {
-                    JLabel noOrders = new JLabel("No pending orders");
+                    JLabel noOrders = new JLabel(I18n.tr("No pending orders"));
                     noOrders.setFont(new Font("Arial", Font.BOLD, 13));
                     noOrders.setForeground(SUCCESS_COLOR);
                     pendingOrdersPanel.add(noOrders);
@@ -596,7 +599,8 @@ public class DashboardPanel extends JPanel {
         infoPanel.setLayout(new BoxLayout(infoPanel, BoxLayout.Y_AXIS));
         infoPanel.setOpaque(false);
 
-        JLabel idLabel = new JLabel(String.format("Order #%d - %s", id, status));
+        JLabel idLabel = new JLabel(String.format("%s #%d - %s",
+            I18n.tr("Customer Order"), id, I18n.tr(status)));
         idLabel.setFont(new Font("Arial", Font.BOLD, 12));
 
         String dateStr = date;
@@ -605,8 +609,8 @@ public class DashboardPanel extends JPanel {
             dateStr = dateFormat.format(d);
         } catch (Exception ignored) {}
 
-        JLabel detailsLabel = new JLabel(String.format("%s - %s - %d days old",
-            customer != null ? customer : "N/A", dateStr, daysOld));
+        JLabel detailsLabel = new JLabel(String.format("%s - %s - %d %s",
+            customer != null ? customer : "N/A", dateStr, daysOld, I18n.tr("days old")));
         detailsLabel.setFont(new Font("Arial", Font.PLAIN, 11));
         detailsLabel.setForeground(new Color(100, 100, 100));
 
@@ -617,7 +621,7 @@ public class DashboardPanel extends JPanel {
         totalLabel.setFont(new Font("Arial", Font.BOLD, 14));
         totalLabel.setForeground(SUCCESS_COLOR);
 
-        JButton viewButton = new JButton("View");
+        JButton viewButton = new JButton(I18n.tr("View"));
         viewButton.setFont(new Font("Arial", Font.PLAIN, 11));
         viewButton.setFocusPainted(false);
         viewButton.setBackground(ACCENT_COLOR);

@@ -175,7 +175,13 @@ public class SupplierOrderDialog extends JDialog {
 
         add(mainPanel);
         pack();
-        setLocationRelativeTo(null);
+        setLocationRelativeTo(getOwner());
+    }
+
+    @Override
+    public void setVisible(boolean visible) {
+        if (visible) setLocationRelativeTo(getOwner());
+        super.setVisible(visible);
     }
 
     private void generateOrderNumber() {
@@ -210,17 +216,19 @@ public class SupplierOrderDialog extends JDialog {
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
-                SELECT p.*, COALESCE(l.price, p.price) as supplier_price,
+                SELECT p.*, COALESCE(l.price, p.acquisition_cost) as supplier_price,
                        l.supplier_product_code
                 FROM products p
                 LEFT JOIN supplier_price_lists l ON p.id = l.product_id
                     AND l.supplier_id = ?
                     AND (l.validity_end_date IS NULL OR DATE(l.validity_end_date) >= DATE('now'))
+                WHERE p.supplier_id = ?
                 ORDER BY p.name
             """;
 
             try (PreparedStatement pstmt = conn.prepareStatement(query)) {
                 pstmt.setInt(1, supplierId);
+                pstmt.setInt(2, supplierId);
                 ResultSet rs = pstmt.executeQuery();
 
                 while (rs.next()) {
