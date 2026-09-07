@@ -115,6 +115,79 @@ public class BackupManager {
         return registerBackup(normalized);
     }
 
+    /** Creates a portable snapshot of the current WareStat database without
+     * adding it to the backup history. */
+    public Path exportDatabase(Path destination) {
+        Path target = destination.toAbsolutePath().normalize();
+        Path source = AppConstants.getDatabasePath().toAbsolutePath().normalize();
+        if (target.equals(source)) {
+            throw new IllegalArgumentException("The current database cannot be overwritten during export");
+        }
+        try {
+            Path parent = target.getParent();
+            if (parent != null) Files.createDirectories(parent);
+            Files.deleteIfExists(target);
+            try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + source)) {
+                try (Statement statement = connection.createStatement()) {
+                    statement.execute("PRAGMA busy_timeout = 10000");
+                }
+                try (PreparedStatement statement = connection.prepareStatement("VACUUM INTO ?")) {
+                    statement.setString(1, target.toString());
+                    statement.execute();
+                }
+            }
+            validateBackup(target);
+            return target;
+        } catch (IOException | SQLException exception) {
+            try { Files.deleteIfExists(target); } catch (IOException ignored) { }
+            throw new RuntimeException("Unable to export database: " + exception.getMessage(), exception);
+        }
+    }
+
+    /** Replaces the active database with a validated WareStat database file. */
+    public void importDatabase(Path sourceFile) {
+        Path source = sourceFile.toAbsolutePath().normalize();
+        Path current = AppConstants.getDatabasePath().toAbsolutePath().normalize();
+        validateBackup(source);
+        if (source.equals(current)) {
+            throw new IllegalArgumentException("The selected database is already in use");
+        }
+
+        Path temporary = current.resolveSibling(current.getFileName() + ".importing");
+        Path safetyCopy = current.resolveSibling(current.getFileName() + ".import-safety");
+        try {
+            Files.copy(source, temporary, StandardCopyOption.REPLACE_EXISTING);
+            validateBackup(temporary);
+            if (Files.exists(current)) exportDatabase(safetyCopy);
+            DatabaseManager.getInstance().closeConnection();
+            Files.deleteIfExists(Path.of(current + "-wal"));
+            Files.deleteIfExists(Path.of(current + "-shm"));
+            try {
+                Files.move(temporary, current, StandardCopyOption.REPLACE_EXISTING,
+                        StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException exception) {
+                Files.move(temporary, current, StandardCopyOption.REPLACE_EXISTING);
+            }
+            DatabaseManager.getInstance().initDatabase();
+            CompanyData.getInstance().reloadFromDatabase();
+            Files.deleteIfExists(safetyCopy);
+        } catch (Exception exception) {
+            try {
+                DatabaseManager.getInstance().closeConnection();
+                if (Files.exists(safetyCopy)) {
+                    Files.copy(safetyCopy, current, StandardCopyOption.REPLACE_EXISTING);
+                    DatabaseManager.getInstance().initDatabase();
+                    CompanyData.getInstance().reloadFromDatabase();
+                }
+            } catch (Exception rollbackException) {
+                exception.addSuppressed(rollbackException);
+            }
+            throw new RuntimeException("Unable to import database: " + exception.getMessage(), exception);
+        } finally {
+            try { Files.deleteIfExists(temporary); } catch (IOException ignored) { }
+        }
+    }
+
     private void validateBackup(Path file) {
         if (!Files.isRegularFile(file) || !Files.isReadable(file)) {
             throw new IllegalArgumentException("Backup file not found or not readable");
@@ -136,6 +209,10 @@ public class BackupManager {
         } catch (SQLException exception) {
             throw new IllegalArgumentException("Unable to validate backup: " + exception.getMessage(), exception);
         }
+    }
+
+    public void validateDatabase(Path file) {
+        validateBackup(file.toAbsolutePath().normalize());
     }
 
     private synchronized BackupRecord registerBackup(Path file) {

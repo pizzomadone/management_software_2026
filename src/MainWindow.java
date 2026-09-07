@@ -13,6 +13,12 @@ import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.KeyEvent;
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import javax.swing.filechooser.FileNameExtensionFilter;
 
 public class MainWindow extends JFrame {
     private CardLayout cardLayout;
@@ -163,6 +169,15 @@ public class MainWindow extends JFrame {
         fileMenu.add(newProductItem);
         fileMenu.add(newOrderItem);
         fileMenu.add(newInvoiceItem);
+        fileMenu.addSeparator();
+
+        JMenuItem importDatabaseItem = new JMenuItem("Import Database...");
+        importDatabaseItem.addActionListener(e -> importDatabase());
+        fileMenu.add(importDatabaseItem);
+
+        JMenuItem exportDatabaseItem = new JMenuItem("Export Database...");
+        exportDatabaseItem.addActionListener(e -> exportDatabase());
+        fileMenu.add(exportDatabaseItem);
         fileMenu.addSeparator();
         
         JMenuItem settingsItem = new JMenuItem("Settings...");
@@ -785,6 +800,90 @@ public class MainWindow extends JFrame {
     
     private void openSettings() {
         showPanel("SETTINGS");
+    }
+
+    private void importDatabase() {
+        Path source = chooseDatabaseFile(false);
+        if (source == null) return;
+        try {
+            BackupManager.getInstance().validateDatabase(source);
+        } catch (RuntimeException exception) {
+            showDatabaseError("The selected file is not a valid WareStat database.", exception);
+            return;
+        }
+
+        String warning = I18n.tr("The current WareStat data will be lost.") + "\n\n"
+                + I18n.tr("It is recommended to export the current database before continuing.");
+        Object[] options = {
+            I18n.tr("Export and Continue"),
+            I18n.tr("Continue Without Exporting"),
+            I18n.tr("Cancel")
+        };
+        int choice = JOptionPane.showOptionDialog(this, warning, I18n.tr("Import Database"),
+                JOptionPane.DEFAULT_OPTION, JOptionPane.WARNING_MESSAGE, null, options, options[0]);
+        if (choice == 0 && !exportDatabase()) return;
+        if (choice != 0 && choice != 1) return;
+
+        try {
+            BackupManager.getInstance().importDatabase(source);
+            JOptionPane.showMessageDialog(this,
+                    I18n.tr("Database imported successfully.") + "\n"
+                    + I18n.tr("WareStat will now close. Reopen it to use the imported database."),
+                    I18n.tr("Import Database"), JOptionPane.INFORMATION_MESSAGE);
+            dispose();
+            System.exit(0);
+        } catch (RuntimeException exception) {
+            showDatabaseError("Unable to import database", exception);
+        }
+    }
+
+    private boolean exportDatabase() {
+        Path destination = chooseDatabaseFile(true);
+        if (destination == null) return false;
+        if (!destination.getFileName().toString().toLowerCase().endsWith(".db")) {
+            destination = destination.resolveSibling(destination.getFileName() + ".db");
+        }
+        if (Files.exists(destination)) {
+            int answer = JOptionPane.showConfirmDialog(this,
+                    I18n.tr("A file with this name already exists. Replace it?"),
+                    I18n.tr("Confirm Replacement"), JOptionPane.YES_NO_OPTION,
+                    JOptionPane.WARNING_MESSAGE);
+            if (answer != JOptionPane.YES_OPTION) return false;
+        }
+        try {
+            Path exported = BackupManager.getInstance().exportDatabase(destination);
+            JOptionPane.showMessageDialog(this,
+                    I18n.tr("Database exported successfully.") + "\n" + exported,
+                    I18n.tr("Export Database"), JOptionPane.INFORMATION_MESSAGE);
+            return true;
+        } catch (RuntimeException exception) {
+            showDatabaseError("Unable to export database", exception);
+            return false;
+        }
+    }
+
+    private Path chooseDatabaseFile(boolean save) {
+        String defaultName = "WareStat_" + new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date()) + ".db";
+        if (System.getProperty("os.name", "").toLowerCase().contains("mac")) {
+            FileDialog dialog = new FileDialog(this,
+                    I18n.tr(save ? "Save WareStat Database" : "Select a WareStat Database"),
+                    save ? FileDialog.SAVE : FileDialog.LOAD);
+            if (save) dialog.setFile(defaultName);
+            dialog.setFilenameFilter((directory, name) -> name.toLowerCase().endsWith(".db"));
+            dialog.setVisible(true);
+            return dialog.getFile() == null ? null : new File(dialog.getDirectory(), dialog.getFile()).toPath();
+        }
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle(I18n.tr(save ? "Save WareStat Database" : "Select a WareStat Database"));
+        chooser.setFileFilter(new FileNameExtensionFilter(I18n.tr("WareStat Database (*.db)"), "db"));
+        if (save) chooser.setSelectedFile(new File(defaultName));
+        int result = save ? chooser.showSaveDialog(this) : chooser.showOpenDialog(this);
+        return result == JFileChooser.APPROVE_OPTION ? chooser.getSelectedFile().toPath() : null;
+    }
+
+    private void showDatabaseError(String message, RuntimeException exception) {
+        JOptionPane.showMessageDialog(this, I18n.tr(message) + ":\n" + exception.getMessage(),
+                I18n.tr("Database Error"), JOptionPane.ERROR_MESSAGE);
     }
 
     /**
