@@ -422,8 +422,8 @@ public class SettingsPanel extends JPanel {
             updateSettingsFromFields();
             applySettings();
             JOptionPane.showMessageDialog(this,
-                "Settings applied successfully!",
-                "Settings", JOptionPane.INFORMATION_MESSAGE);
+                I18n.tr("Settings applied successfully!"),
+                I18n.tr("Settings"), JOptionPane.INFORMATION_MESSAGE);
         } catch (IllegalArgumentException e) {
             JOptionPane.showMessageDialog(this, e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
@@ -452,8 +452,8 @@ public class SettingsPanel extends JPanel {
         if (success) {
             applySettings();
             JOptionPane.showMessageDialog(this,
-                "Settings saved successfully!",
-                "Settings", JOptionPane.INFORMATION_MESSAGE);
+                I18n.tr("Settings saved successfully!"),
+                I18n.tr("Settings"), JOptionPane.INFORMATION_MESSAGE);
         }
     }
 
