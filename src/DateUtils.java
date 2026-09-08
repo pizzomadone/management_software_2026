@@ -1,6 +1,7 @@
 // File: DateUtils.java
 import java.sql.*;
 import java.text.ParseException;
+import java.text.ParsePosition;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 
@@ -47,7 +48,7 @@ public class DateUtils {
                 for (SimpleDateFormat format : DATE_FORMATS) {
                     try {
                         synchronized (format) {
-                            return format.parse(dateStr);
+                            return parseDate(dateStr, format);
                         }
                     } catch (ParseException e) {
                         // Continue with next format
@@ -83,10 +84,23 @@ public class DateUtils {
     public static Date parseDate(String dateStr, SimpleDateFormat format) throws ParseException {
         if (dateStr == null || dateStr.trim().isEmpty()) return null;
         synchronized (format) {
-            return format.parse(dateStr.trim());
+            SimpleDateFormat strict = (SimpleDateFormat) format.clone();
+            strict.setLenient(false);
+            String input = dateStr.trim();
+            ParsePosition position = new ParsePosition(0);
+            Date value = strict.parse(input, position);
+            if (value == null || position.getIndex() != input.length())
+                throw new ParseException("Invalid date: " + input, Math.max(0, position.getErrorIndex()));
+            return value;
         }
     }
     
+    public static String sqlDate(String column) {
+        if (!column.matches("[A-Za-z_][A-Za-z0-9_.]*")) throw new IllegalArgumentException("Invalid date column");
+        return "DATE(CASE WHEN typeof(" + column + ") IN ('integer','real') THEN datetime(" + column +
+            "/1000,'unixepoch','localtime') ELSE " + column + " END)";
+    }
+
     /**
      * Convert Date to SQL Date
      */

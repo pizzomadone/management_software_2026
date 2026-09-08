@@ -753,6 +753,7 @@ public class WarehousePanel extends JPanel {
                     conn.setAutoCommit(false);
 
                     try {
+                        StockManager.requireManualMovement(conn, movementId);
                         // Get movement details to restore stock
                         int productId = 0;
                         String movementType = "";

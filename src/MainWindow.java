@@ -88,8 +88,11 @@ public class MainWindow extends JFrame {
             }
         }
 
+        ApplicationLock.acquire();
+
         // Initialize the database FIRST before any UI setup
         DatabaseManager.getInstance().initDatabase();
+        BackupManager.getInstance().startAutomaticBackups();
 
         // Ensure license file exists
         LicenseText.ensureLicenseFileExists();

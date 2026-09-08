@@ -33,32 +33,53 @@ public class DatabaseManager {
         return instance;
     }
 
-    public void initDatabase() {
+    public synchronized void initDatabase() {
         try {
             // Load the SQLite JDBC driver
             Class.forName("org.sqlite.JDBC");
 
             // Create the connection
-            connection = DriverManager.getConnection(DB_URL);
+            closeConnection();
+            connection = openConnection(DB_URL);
 
             // Enable foreign keys and set SQLite optimizations
             try (Statement stmt = connection.createStatement()) {
                 stmt.execute("PRAGMA foreign_keys = ON");
                 stmt.execute("PRAGMA journal_mode = WAL");
-                stmt.execute("PRAGMA synchronous = NORMAL");
+                stmt.execute("PRAGMA synchronous = FULL");
+                stmt.execute("PRAGMA busy_timeout = 10000");
             }
 
             // Create tables if they do not exist
             createTables();
+            DatabaseIntegrity.validate(connection, false);
 
             System.out.println("Database initialized successfully");
 
         } catch (Exception e) {
-            e.printStackTrace();
-            JOptionPane.showMessageDialog(null,
-                "Error during database initialization: " + e.getMessage(),
-                "Database Error",
-                JOptionPane.ERROR_MESSAGE);
+            closeConnection();
+            throw new IllegalStateException("Error during database initialization: " + e.getMessage(), e);
+        }
+    }
+
+    public static Connection openConnection(String url) throws SQLException {
+        org.sqlite.SQLiteConfig settings = new org.sqlite.SQLiteConfig();
+        settings.enforceForeignKeys(true);
+        settings.setBusyTimeout(10000);
+        settings.setTransactionMode(org.sqlite.SQLiteConfig.TransactionMode.IMMEDIATE);
+        return DriverManager.getConnection(url, settings.toProperties());
+    }
+
+    /** Migrate an isolated staging copy before it is allowed to replace live data. */
+    public static void prepareDatabase(Connection conn) throws SQLException {
+        DatabaseIntegrity.validate(conn, true);
+        DatabaseManager staging = new DatabaseManager();
+        staging.connection = conn;
+        staging.createTables();
+        DatabaseIntegrity.validate(conn, false);
+        try (Statement s = conn.createStatement()) {
+            s.execute("PRAGMA wal_checkpoint(TRUNCATE)");
+            s.execute("PRAGMA journal_mode=DELETE");
         }
     }
 
@@ -394,10 +415,11 @@ public class DatabaseManager {
         try {
             if (connection != null && !connection.isClosed()) {
                 connection.close();
+                connection = null;
                 System.out.println("Database connection closed");
             }
         } catch (SQLException e) {
-            e.printStackTrace();
+            throw new IllegalStateException("Unable to close the database", e);
         }
     }
 

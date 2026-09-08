@@ -114,6 +114,7 @@ public class WarehouseReportPanel extends JPanel {
         startDateField = new DatePickerField(10);
         endDateField = new DatePickerField(10, true);
         typeCombo = new JComboBox<>(new String[]{"All", "INWARD", "OUTWARD"});
+        typeCombo.putClientProperty("i18n.values", true);
 
         // Set default dates (last month)
         java.util.Calendar cal = java.util.Calendar.getInstance();

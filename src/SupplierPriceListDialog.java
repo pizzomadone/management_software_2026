@@ -246,7 +246,7 @@ public class SupplierPriceListDialog extends JDialog {
                         }
 
                         supplierCodeField.setText(rs.getString("supplier_product_code"));
-                        priceField.setText(String.format("%.2f", rs.getDouble("price")));
+                        priceField.setText(String.valueOf(rs.getDouble("price")));
                         minimumQuantitySpinner.setValue(rs.getInt("minimum_quantity"));
 
                         // FIXED: Use DateUtils for proper date parsing
@@ -292,9 +292,9 @@ public class SupplierPriceListDialog extends JDialog {
 
             double price;
             try {
-                price = Double.parseDouble(priceText);
+                price = Numbers.nonNegative(priceText);
                 if (price <= 0) throw new NumberFormatException();
-            } catch (NumberFormatException e) {
+            } catch (IllegalArgumentException e) {
                 JOptionPane.showMessageDialog(this,
                     "Price must be a positive number",
                     "Error", JOptionPane.ERROR_MESSAGE);
@@ -340,32 +340,23 @@ public class SupplierPriceListDialog extends JDialog {
             ProductDisplay selectedProduct = (ProductDisplay)productCombo.getSelectedItem();
             int productId = selectedProduct.getProduct().getId();
 
+            minimumQuantitySpinner.commitEdit();
+            int minimum = Numbers.positiveQuantity(minimumQuantitySpinner.getValue());
             Connection conn = DatabaseManager.getInstance().getConnection();
-
-            if (priceList == null) {
-                // Check if a valid price already exists for this product
-                String checkQuery = """
-                    SELECT id FROM supplier_price_lists
-                    WHERE supplier_id = ? AND product_id = ?
-                    AND (validity_end_date IS NULL OR DATE(validity_end_date) >= DATE(?))
-                    AND DATE(validity_start_date) <= DATE(?)
-                """;
-
-                try (PreparedStatement pstmt = conn.prepareStatement(checkQuery)) {
-                    pstmt.setInt(1, supplierId);
-                    pstmt.setInt(2, productId);
-                    pstmt.setDate(3, DateUtils.toSqlDate(startDate));
-                    pstmt.setDate(4, endDate != null ? DateUtils.toSqlDate(endDate) : DateUtils.toSqlDate(startDate));
-
-                    ResultSet rs = pstmt.executeQuery();
-                    if (rs.next()) {
-                        JOptionPane.showMessageDialog(this,
-                            "A valid price already exists for this product in the specified period",
-                            "Error", JOptionPane.ERROR_MESSAGE);
-                        return;
+            conn.setAutoCommit(false);
+            try {
+                String overlap = "SELECT id FROM supplier_price_lists WHERE supplier_id=? AND product_id=? AND minimum_quantity=? AND id<>? " +
+                    "AND (validity_end_date IS NULL OR " + DateUtils.sqlDate("validity_end_date") + ">=?) " +
+                    "AND (? IS NULL OR " + DateUtils.sqlDate("validity_start_date") + "<=?)";
+                try (PreparedStatement check = conn.prepareStatement(overlap)) {
+                    check.setInt(1,supplierId);check.setInt(2,productId);check.setInt(3,minimum);check.setInt(4,priceList==null?-1:priceList.getId());
+                    SimpleDateFormat iso = new SimpleDateFormat("yyyy-MM-dd");
+                    check.setString(5,iso.format(startDate));check.setString(6,endDate==null?null:iso.format(endDate));check.setString(7,endDate==null?null:iso.format(endDate));
+                    try (ResultSet r = check.executeQuery()) {
+                        if (r.next()) throw new SQLException("Another price for this quantity overlaps the selected validity period");
                     }
                 }
-
+            if (priceList == null) {
                 // Insert new price
                 String insertQuery = """
                     INSERT INTO supplier_price_lists (
@@ -380,7 +371,7 @@ public class SupplierPriceListDialog extends JDialog {
                     pstmt.setInt(2, productId);
                     pstmt.setString(3, supplierCodeField.getText().trim());
                     pstmt.setDouble(4, price);
-                    pstmt.setInt(5, (Integer)minimumQuantitySpinner.getValue());
+                    pstmt.setInt(5, minimum);
                     pstmt.setTimestamp(6, DateUtils.toSqlTimestamp(startDate));
                     pstmt.setTimestamp(7, endDate != null ? DateUtils.toSqlTimestamp(endDate) : null);
                     pstmt.setString(8, notesArea.getText().trim());
@@ -401,7 +392,7 @@ public class SupplierPriceListDialog extends JDialog {
                 try (PreparedStatement pstmt = conn.prepareStatement(updateQuery)) {
                     pstmt.setString(1, supplierCodeField.getText().trim());
                     pstmt.setDouble(2, price);
-                    pstmt.setInt(3, (Integer)minimumQuantitySpinner.getValue());
+                    pstmt.setInt(3, minimum);
                     pstmt.setTimestamp(4, DateUtils.toSqlTimestamp(startDate));
                     pstmt.setTimestamp(5, endDate != null ? DateUtils.toSqlTimestamp(endDate) : null);
                     pstmt.setString(6, notesArea.getText().trim());
@@ -410,10 +401,13 @@ public class SupplierPriceListDialog extends JDialog {
                 }
             }
 
+            conn.commit();
             priceSaved = true;
+            } catch (Exception e) { conn.rollback(); throw e; }
+            finally { conn.setAutoCommit(true); }
             dispose();
 
-        } catch (SQLException e) {
+        } catch (Exception e) {
             e.printStackTrace();
             JOptionPane.showMessageDialog(this,
                 "Error saving price: " + e.getMessage(),

@@ -43,12 +43,12 @@ public class StockManager {
                 if (rs.next()) {
                     int currentStock = rs.getInt("quantity");
                     int reservedStock = rs.getInt("reserved_quantity");
-                    int availableStock = currentStock - reservedStock;
+                    int availableStock = Math.subtractExact(currentStock, reservedStock);
 
                     // If editing existing document, add back the old quantity for this product
                     if (existingDocumentId != null) {
-                        int oldQty = getOldProductQuantity(conn, existingDocumentId, productId, documentType);
-                        availableStock += oldQty;
+                        int oldQty = getStockEffectQuantity(conn, existingDocumentId, productId, documentType);
+                        availableStock = Math.addExact(availableStock, oldQty);
                     }
 
                     if (requestedQty > availableStock) {
@@ -63,6 +63,24 @@ public class StockManager {
         return insufficientProducts;
     }
 
+    private static int getStockEffectQuantity(Connection conn, int documentId, int productId,
+                                              String documentType) throws SQLException {
+        if (!"ORDER".equals(documentType)) return 0;
+        try (PreparedStatement p = conn.prepareStatement("SELECT status FROM orders WHERE id = ?")) {
+            p.setInt(1, documentId);
+            try (ResultSet r = p.executeQuery()) {
+                if (!r.next()) throw new SQLException("Order no longer exists");
+                if ("Completed".equals(r.getString(1)))
+                    return getOldProductQuantity(conn, documentId, productId, documentType);
+            }
+        }
+        try (PreparedStatement p = conn.prepareStatement("SELECT COALESCE(SUM(reserved_quantity),0) " +
+                "FROM stock_reservations WHERE document_type='ORDER' AND document_id=? AND product_id=? AND status='ACTIVE'")) {
+            p.setInt(1, documentId); p.setInt(2, productId);
+            try (ResultSet r = p.executeQuery()) { return r.next() ? Math.toIntExact(r.getLong(1)) : 0; }
+        }
+    }
+
     /**
      * Get the old quantity of a product in an existing document
      */
@@ -71,7 +89,7 @@ public class StockManager {
         String columnName = documentType.equals("ORDER") ? "order_id" : "invoice_id";
 
         String query = String.format(
-            "SELECT quantity FROM %s WHERE %s = ? AND product_id = ?",
+            "SELECT COALESCE(SUM(quantity),0) AS quantity FROM %s WHERE %s = ? AND product_id = ?",
             tableName, columnName
         );
 
@@ -376,7 +394,7 @@ public class StockManager {
             if (rs.next()) {
                 int stock = rs.getInt("quantity");
                 int reserved = rs.getInt("reserved_quantity");
-                return stock - reserved;
+                return Math.subtractExact(stock, reserved);
             }
         }
         return 0;
@@ -387,6 +405,13 @@ public class StockManager {
      * Handles: restoring stock if Completed, cancelling reservations if New or In Progress
      */
     public static void deleteOrder(Connection conn, int orderId, String orderStatus) throws SQLException {
+        try (PreparedStatement p = conn.prepareStatement("SELECT status FROM orders WHERE id=?")) {
+            p.setInt(1, orderId);
+            try (ResultSet r = p.executeQuery()) {
+                if (!r.next()) throw new SQLException("Order no longer exists");
+                orderStatus = r.getString(1);
+            }
+        }
         // If order was Completed, restore stock
         if ("Completed".equals(orderStatus)) {
             restoreStockFromDocument(conn, orderId, "ORDER");
@@ -457,6 +482,17 @@ public class StockManager {
             pstmt.setString(1, documentType);
             pstmt.setString(2, documentNumber);
             pstmt.executeUpdate();
+        }
+    }
+
+    public static void requireManualMovement(Connection c, int movementId) throws SQLException {
+        try (PreparedStatement p = c.prepareStatement("SELECT document_type FROM warehouse_movements WHERE id=?")) {
+            p.setInt(1, movementId);
+            try (ResultSet r = p.executeQuery()) {
+                if (!r.next()) throw new SQLException("Movement no longer exists");
+                if ("ORDER".equals(r.getString(1)) || "SUPPLIER_ORDER".equals(r.getString(1)) || "INVENTORY_ADJUSTMENT".equals(r.getString(1)))
+                    throw new SQLException("Edit the source document to change this automatic movement");
+            }
         }
     }
 

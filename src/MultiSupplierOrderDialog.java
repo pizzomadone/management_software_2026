@@ -115,7 +115,7 @@ public class MultiSupplierOrderDialog extends JDialog {
             int qty = (int) quantity.getValue();
             model.addRow(new Object[]{id, products.getValueAt(row, 1), products.getValueAt(row, 2),
                 products.getValueAt(row, 3), products.getValueAt(row, 4), qty,
-                String.format("%.2f", price), String.format("%.2f", qty * price), ""});
+                price, String.format("%.2f", Numbers.lineTotal(qty,price)), ""});
             updateTotals(); picker.dispose();
         });
         productTable.setAutoCreateRowSorter(true);
@@ -131,10 +131,7 @@ public class MultiSupplierOrderDialog extends JDialog {
         products.setRowCount(0);
         String query = """
             SELECT p.id, p.code, p.name, p.supplier_id, s.company_name, p.quantity,
-                   COALESCE((SELECT spl.price FROM supplier_price_lists spl
-                     WHERE spl.product_id=p.id AND spl.supplier_id=p.supplier_id
-                       AND (spl.validity_end_date IS NULL OR DATE(spl.validity_end_date)>=DATE('now'))
-                     ORDER BY spl.validity_start_date DESC LIMIT 1), p.acquisition_cost, 0) purchase_price
+                   p.acquisition_cost purchase_price
             FROM products p LEFT JOIN suppliers s ON s.id=p.supplier_id
             WHERE p.active=1 AND (?='' OR p.code LIKE ? OR p.name LIKE ? OR s.company_name LIKE ?)
             ORDER BY p.name
@@ -144,7 +141,7 @@ public class MultiSupplierOrderDialog extends JDialog {
             ps.setString(1, term); ps.setString(2, pattern); ps.setString(3, pattern); ps.setString(4, pattern);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) products.addRow(new Object[]{rs.getInt(1), rs.getString(2), rs.getString(3),
-                    rs.getObject(4), rs.getString(5) == null ? "Not assigned" : rs.getString(5), rs.getDouble(7), rs.getInt(6)});
+                    rs.getObject(4), rs.getString(5) == null ? "Not assigned" : rs.getString(5), SupplierPricing.price(DatabaseManager.getInstance().getConnection(),rs.getInt(4),rs.getInt(1),1,new java.util.Date()), rs.getInt(6)});
             }
         } catch (SQLException ex) { showError(this, "Error loading products: " + ex.getMessage()); }
     }
@@ -160,14 +157,21 @@ public class MultiSupplierOrderDialog extends JDialog {
         for (int i = 0; i < model.getRowCount(); i++) {
             int quantity = parseInt(model.getValueAt(i, 5));
             double price = parseDouble(model.getValueAt(i, 6));
-            double line = quantity * price;
-            model.setValueAt(String.format("%.2f", line), i, 7); total += line;
+            double line = Numbers.lineTotal(quantity, price);
+            model.setValueAt(String.format("%.2f", line), i, 7); total = Numbers.add(total,line);
         }
         totalLabel.setText("Total: " + SettingsPanel.formatCurrency(total));
         updating = false;
     }
 
     private void reviewAndSave() {
+        try {
+            Numbers.commitEdits(table);
+            for (int row=0;row<model.getRowCount();row++) {
+                Numbers.positiveQuantity(model.getValueAt(row,5)); Numbers.nonNegative(model.getValueAt(row,6));
+            }
+            updateTotals();
+        } catch (IllegalArgumentException e) { showWarning(this,e.getMessage()); return; }
         if (model.getRowCount() == 0) { showWarning(this, "Add at least one product to the order"); return; }
         java.util.Date date;
         java.util.Date expected = null;
@@ -191,8 +195,8 @@ public class MultiSupplierOrderDialog extends JDialog {
         for (List<Integer> rows : groups.values()) {
             int first = rows.get(0); double subtotal = 0;
             summary.append(model.getValueAt(first, 4)).append(" — ").append(rows.size()).append(" product(s)\n");
-            for (int row : rows) subtotal += parseDouble(model.getValueAt(row, 7));
-            summary.append("Subtotal: ").append(SettingsPanel.formatCurrency(subtotal)).append("\n\n"); grandTotal += subtotal;
+            for (int row : rows) subtotal = Numbers.add(subtotal,parseDouble(model.getValueAt(row, 7)));
+            summary.append("Subtotal: ").append(SettingsPanel.formatCurrency(subtotal)).append("\n\n"); grandTotal = Numbers.add(grandTotal,subtotal);
         }
         summary.append("Grand total: ").append(SettingsPanel.formatCurrency(grandTotal));
         JTextArea area = new JTextArea(summary.toString(), 12, 48); area.setEditable(false); area.setOpaque(false);
@@ -208,8 +212,9 @@ public class MultiSupplierOrderDialog extends JDialog {
             String prefix = "OF" + new java.text.SimpleDateFormat("yyyy").format(date);
             int sequence = nextSequence(conn, prefix);
             for (Map.Entry<Integer, List<Integer>> group : groups.entrySet()) {
-                String number = String.format("%s%04d", prefix, sequence++);
-                double total = group.getValue().stream().mapToDouble(r -> parseDouble(model.getValueAt(r, 7))).sum();
+                String number = DocumentNumbers.nextSupplierNumber(conn,date);
+                double total = 0;
+                for (int row : group.getValue()) total=Numbers.add(total,Numbers.lineTotal(parseInt(model.getValueAt(row,5)),parseDouble(model.getValueAt(row,6))));
                 int orderId;
                 try (PreparedStatement ps = conn.prepareStatement("INSERT INTO supplier_orders (supplier_id,number,order_date,expected_delivery_date,status,total,notes) VALUES (?,?,?,?,?,?,?)", Statement.RETURN_GENERATED_KEYS)) {
                     ps.setInt(1, group.getKey()); ps.setString(2, number); ps.setTimestamp(3, DateUtils.toSqlTimestamp(date));
@@ -222,7 +227,7 @@ public class MultiSupplierOrderDialog extends JDialog {
                     for (int row : group.getValue()) {
                         int productId = (int) model.getValueAt(row, 0); int qty = parseInt(model.getValueAt(row, 5));
                         ps.setInt(1, orderId); ps.setInt(2, productId); ps.setInt(3, qty); ps.setDouble(4, parseDouble(model.getValueAt(row, 6)));
-                        ps.setDouble(5, parseDouble(model.getValueAt(row, 7))); ps.setString(6, String.valueOf(model.getValueAt(row, 8))); ps.addBatch();
+                        ps.setDouble(5, Numbers.lineTotal(qty,parseDouble(model.getValueAt(row,6)))); ps.setString(6, String.valueOf(model.getValueAt(row, 8))); ps.addBatch();
                         stock.add(new StockManager.StockItem(productId, String.valueOf(model.getValueAt(row, 2)), qty));
                     }
                     ps.executeBatch();
@@ -230,21 +235,18 @@ public class MultiSupplierOrderDialog extends JDialog {
                 if ("Completed".equals(status.getSelectedItem())) StockManager.incrementStock(conn, stock, date, number, "SUPPLIER_ORDER");
             }
             conn.commit(); saved = true; dispose();
-        } catch (SQLException ex) {
+        } catch (Exception ex) {
             if (conn != null) try { conn.rollback(); } catch (SQLException ignored) {}
             showError(this, "No orders were created. Error saving supplier orders: " + ex.getMessage());
         } finally { if (conn != null) try { conn.setAutoCommit(true); } catch (SQLException ignored) {} }
     }
 
     private int nextSequence(Connection conn, String prefix) throws SQLException {
-        try (PreparedStatement ps = conn.prepareStatement("SELECT COALESCE(MAX(CAST(SUBSTR(number, ?) AS INTEGER)),0)+1 FROM supplier_orders WHERE number LIKE ?")) {
-            ps.setInt(1, prefix.length() + 1); ps.setString(2, prefix + "%");
-            try (ResultSet rs = ps.executeQuery()) { return rs.next() ? rs.getInt(1) : 1; }
-        }
+        return DocumentNumbers.nextSupplierSequence(conn,prefix);
     }
 
-    private int parseInt(Object value) { try { return Integer.parseInt(String.valueOf(value)); } catch (Exception ex) { return 0; } }
-    private double parseDouble(Object value) { try { return Double.parseDouble(String.valueOf(value).replace(',', '.')); } catch (Exception ex) { return 0; } }
+    private int parseInt(Object value) { return Numbers.positiveQuantity(value); }
+    private double parseDouble(Object value) { return Numbers.nonNegative(value); }
     private void showWarning(Component parent, String message) { JOptionPane.showMessageDialog(parent, message, "Warning", JOptionPane.WARNING_MESSAGE); }
     private void showError(Component parent, String message) { JOptionPane.showMessageDialog(parent, message, "Error", JOptionPane.ERROR_MESSAGE); }
     public boolean isSaved() { return saved; }

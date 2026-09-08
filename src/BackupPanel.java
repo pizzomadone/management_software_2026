@@ -250,8 +250,7 @@ public class BackupPanel extends JPanel {
                 I18n.tr("Confirm Deletion"), JOptionPane.YES_NO_OPTION,
                 JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) return;
         try {
-            if (Files.exists(path)) Files.delete(path);
-            backupManager.removeBackupRecord(id);
+            backupManager.deleteBackup(id);
             loadBackupsList();
             JOptionPane.showMessageDialog(this, I18n.tr("Backup deleted successfully"),
                 I18n.tr("Success"), JOptionPane.INFORMATION_MESSAGE);

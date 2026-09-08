@@ -188,6 +188,7 @@ public class ProductDialog extends JDialog {
 
         gbc.gridx = 1;
         selectSupplierButton = new JButton("Click to select supplier...");
+        selectSupplierButton.putClientProperty("i18n.literal", true);
         selectSupplierButton.setPreferredSize(new Dimension(250, 35));
         selectSupplierButton.setHorizontalAlignment(SwingConstants.LEFT);
         selectSupplierButton.addActionListener(e -> showSupplierSelectionDialog());
@@ -326,24 +327,27 @@ public class ProductDialog extends JDialog {
     
     private void saveProduct() {
         try {
+            quantitySpinner.commitEdit();
+            minimumQuantitySpinner.commitEdit();
             // Validation
             String code = codeField.getText().trim();
             String name = nameField.getText().trim();
             String description = descriptionArea.getText().trim();
-            double price = Double.parseDouble(priceField.getText().trim());
+            double price = Numbers.nonNegative(priceField.getText());
             int quantity = (int)quantitySpinner.getValue();
 
             // New fields
             String category = (String)categoryComboBox.getSelectedItem();
             String alternativeSku = alternativeSkuField.getText().trim();
-            double weight = Double.parseDouble(weightField.getText().trim());
+            double weight = Numbers.nonNegative(weightField.getText());
             String unitOfMeasure = (String)unitOfMeasureComboBox.getSelectedItem();
-            int minimumQuantity = (int)minimumQuantitySpinner.getValue();
-            double acquisitionCost = Double.parseDouble(acquisitionCostField.getText().trim());
+            int minimumQuantity = Numbers.quantity(minimumQuantitySpinner.getValue());
+            if (minimumQuantity < 0) throw new IllegalArgumentException("Minimum stock cannot be negative");
+            double acquisitionCost = Numbers.nonNegative(acquisitionCostField.getText());
             boolean active = activeCheckBox.isSelected();
             Integer supplierId = selectedSupplier != null ? selectedSupplier.getId() : null;
             String warehousePosition = warehousePositionField.getText().trim();
-            double vatRate = Double.parseDouble(vatRateField.getText().trim());
+            double vatRate = Numbers.vat(vatRateField.getText());
 
             if (code.isEmpty() || name.isEmpty()) {
                 JOptionPane.showMessageDialog(this,
@@ -353,6 +357,19 @@ public class ProductDialog extends JDialog {
             }
 
             Connection conn = DatabaseManager.getInstance().getConnection();
+            conn.setAutoCommit(false);
+            try {
+            int productId = product == null ? 0 : product.getId();
+            int oldQuantity = 0;
+            if (product != null) {
+                try (PreparedStatement previous = conn.prepareStatement("SELECT quantity FROM products WHERE id=?")) {
+                    previous.setInt(1,productId);
+                    try (ResultSet r = previous.executeQuery()) {
+                        if (!r.next()) throw new SQLException("Product no longer exists");
+                        oldQuantity = r.getInt(1);
+                    }
+                }
+            }
             if (product == null) { // New product
                 String query = """
                     INSERT INTO products (code, name, description, price, quantity,
@@ -360,7 +377,7 @@ public class ProductDialog extends JDialog {
                         acquisition_cost, active, supplier_id, warehouse_position, vat_rate)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """;
-                try (PreparedStatement pstmt = conn.prepareStatement(query)) {
+                try (PreparedStatement pstmt = conn.prepareStatement(query, Statement.RETURN_GENERATED_KEYS)) {
                     pstmt.setString(1, code);
                     pstmt.setString(2, name);
                     pstmt.setString(3, description);
@@ -381,6 +398,10 @@ public class ProductDialog extends JDialog {
                     pstmt.setString(14, warehousePosition);
                     pstmt.setDouble(15, vatRate);
                     pstmt.executeUpdate();
+                    try (ResultSet keys = pstmt.getGeneratedKeys()) {
+                        if (!keys.next()) throw new SQLException("Missing product identifier");
+                        productId = keys.getInt(1);
+                    }
                 }
             } else { // Edit product
                 String query = """
@@ -416,14 +437,31 @@ public class ProductDialog extends JDialog {
                 }
             }
 
+            long delta = (long)quantity - oldQuantity;
+            if (delta != 0) {
+                int change = Math.toIntExact(Math.abs(delta));
+                try (PreparedStatement movement = conn.prepareStatement("INSERT INTO warehouse_movements " +
+                        "(product_id,type,quantity,reason,document_type,notes) VALUES(?,?,?,?,?,?)")) {
+                    movement.setInt(1,productId); movement.setString(2,delta>0?"INWARD":"OUTWARD");
+                    movement.setInt(3,change); movement.setString(4,"Inventory adjustment");
+                    movement.setString(5,"INVENTORY_ADJUSTMENT");
+                    movement.setString(6,"Stock count: " + oldQuantity + " -> " + quantity); movement.executeUpdate();
+                }
+            }
+            try (PreparedStatement minimum = conn.prepareStatement("UPDATE minimum_stock SET minimum_quantity=? WHERE product_id=?")) {
+                minimum.setInt(1,minimumQuantity);minimum.setInt(2,productId);minimum.executeUpdate();
+            }
+            conn.commit();
             productSaved = true;
+            } catch (Exception e) { conn.rollback(); throw e; }
+            finally { conn.setAutoCommit(true); }
             dispose();
 
-        } catch (NumberFormatException e) {
+        } catch (IllegalArgumentException | java.text.ParseException e) {
             JOptionPane.showMessageDialog(this,
-                "Price, Weight, Acquisition Cost, and VAT Rate must be valid numbers",
+                e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
-        } catch (SQLException e) {
+        } catch (Exception e) {
             JOptionPane.showMessageDialog(this,
                 "Error while saving product: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);

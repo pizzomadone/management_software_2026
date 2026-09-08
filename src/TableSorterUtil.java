@@ -50,6 +50,18 @@ public class TableSorterUtil {
     public static void enableSorting(JTable table, int[] sortableColumns, int[] dateColumns, SimpleDateFormat dateFormat) {
         TableRowSorter<TableModel> sorter = new TableRowSorter<>(table.getModel());
         table.setRowSorter(sorter);
+        for (int column=0; column<table.getModel().getColumnCount(); column++) {
+            String heading=table.getModel().getColumnName(column).toLowerCase(java.util.Locale.ROOT);
+            boolean numeric=heading.matches(".*(quantity|qty|price|cost|total|stock|amount|revenue|margin|weight|percent|value|days|count).*" );
+            sorter.setComparator(column, (Object left, Object right) -> {
+                if (left == null || right == null) return left==right?0:(left==null?-1:1);
+                if ((left instanceof Number && right instanceof Number) || numeric) {
+                    try { return Numbers.decimal(left.toString().replace("%","")).compareTo(Numbers.decimal(right.toString().replace("%",""))); }
+                    catch (IllegalArgumentException ignored) { }
+                }
+                return java.text.Collator.getInstance().compare(left.toString(),right.toString());
+            });
+        }
 
         // Configure sortable columns
         if (sortableColumns != null) {
