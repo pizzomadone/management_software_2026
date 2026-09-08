@@ -61,7 +61,7 @@ public class RegressionTest {
         db=DatabaseManager.openConnection("jdbc:sqlite::memory:");
         sql("PRAGMA foreign_keys=ON");
         put(DatabaseManager.getInstance(),"connection",db);
-        call(DatabaseManager.getInstance(),"createTables");
+        call(DatabaseManager.getInstance(),"createTables");DatabaseCurrency.bind(db);
         sql("INSERT INTO customers(id,first_name,last_name) VALUES(1,'Test','Customer')");
         sql("INSERT INTO suppliers(id,company_name,vat_number) VALUES(1,'Supplier','TEST1'),(2,'Other','TEST2')");
         sql("INSERT INTO products(id,code,name,description,price,quantity,acquisition_cost,supplier_id) VALUES(1,'A','Product A','',10,10,5,1),(2,'B','Product B','',20,10,8,2)");
@@ -196,6 +196,8 @@ public class RegressionTest {
             }
         });
         test("decimal calculations preserve unit precision", () -> {
+            boolean precisionRejected=false;try{Numbers.nonNegative("0.123456789012345678901");}catch(IllegalArgumentException e){precisionRejected=true;}
+            require(precisionRejected,"Unsupported decimal precision was silently lost");
             require(Numbers.lineTotal(1000,0.004)==4.0,"Early price rounding");
             require(Numbers.tax(10000,8.25)==825.0,"VAT precision lost");
             require(Numbers.lineTotal(3,0.335)==1.01,"Half-up rounding differs");
@@ -245,7 +247,7 @@ public class RegressionTest {
         Locale.setDefault(Locale.US);TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
         Files.createDirectories(OUT);
         Field f=sun.misc.Unsafe.class.getDeclaredField("theUnsafe");f.setAccessible(true);unsafe=(sun.misc.Unsafe)f.get(null);
-        SwingUtilities.invokeAndWait(()->{try{runAll();}catch(Exception e){e.printStackTrace();failures++;}});
+        SwingUtilities.invokeAndWait(()->{try{runAll();ExtendedRegressionTest.extended();OperationalRegressionTest.operational();}catch(Exception e){e.printStackTrace();failures++;}});
         System.out.println("Regression checks: " + checks + " passed, " + failures + " failed");
         System.exit(failures==0?0:1);
     }

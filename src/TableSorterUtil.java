@@ -52,11 +52,11 @@ public class TableSorterUtil {
         table.setRowSorter(sorter);
         for (int column=0; column<table.getModel().getColumnCount(); column++) {
             String heading=table.getModel().getColumnName(column).toLowerCase(java.util.Locale.ROOT);
-            boolean numeric=heading.matches(".*(quantity|qty|price|cost|total|stock|amount|revenue|margin|weight|percent|value|days|count).*" );
+            boolean numeric=heading.contains("%") || heading.contains("vat") || heading.matches(".*(quantity|qty|price|cost|total|stock|amount|revenue|margin|weight|percent|value|days|count).*" );
             sorter.setComparator(column, (Object left, Object right) -> {
                 if (left == null || right == null) return left==right?0:(left==null?-1:1);
                 if ((left instanceof Number && right instanceof Number) || numeric) {
-                    try { return Numbers.decimal(left.toString().replace("%","")).compareTo(Numbers.decimal(right.toString().replace("%",""))); }
+                    try { return numericValue(left).compareTo(numericValue(right)); }
                     catch (IllegalArgumentException ignored) { }
                 }
                 return java.text.Collator.getInstance().compare(left.toString(),right.toString());
@@ -120,6 +120,18 @@ public class TableSorterUtil {
 
         sorter.setSortsOnUpdates(true);
         sorter.setMaxSortKeys(1);
+    }
+
+    private static java.math.BigDecimal numericValue(Object value) {
+        if(value instanceof Number)return Numbers.decimal(value);
+        String text=value.toString().trim();
+        java.text.NumberFormat formatter=java.text.NumberFormat.getCurrencyInstance(java.util.Locale.getDefault());
+        formatter.setCurrency(java.util.Currency.getInstance(SettingsPanel.getCurrencyCode()));
+        if(formatter instanceof java.text.DecimalFormat decimal)decimal.setParseBigDecimal(true);
+        java.text.ParsePosition position=new java.text.ParsePosition(0);
+        Number parsed=formatter.parse(text,position);
+        if(parsed!=null && position.getIndex()==text.length())return new java.math.BigDecimal(parsed.toString());
+        return Numbers.decimal(text.replace("%",""));
     }
 
     // Private constructor to prevent instantiation

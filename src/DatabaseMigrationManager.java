@@ -23,7 +23,12 @@ public final class DatabaseMigrationManager {
         new Migration("005", "Link generated invoices to source orders",
             DatabaseMigrationManager::migrateInvoiceOrderRelation),
         new Migration("006", "Repair invoice relationships and guard persisted numeric ranges",
-            DatabaseMigrationManager::migrateReleaseIntegrity)
+            DatabaseMigrationManager::migrateReleaseIntegrity),
+        new Migration("007", "Unify minimum stock and protect supplier document numbers",
+            DatabaseMigrationManager::migrateStockThresholds),
+        new Migration("008", "Store database currency and invoice snapshots",
+            DatabaseMigrationManager::migrateInvoiceSnapshots),
+        new Migration("009", "Validate numeric domains consistently in every module", DatabaseIntegrity::installGuards)
     );
 
     private DatabaseMigrationManager() {}
@@ -31,7 +36,7 @@ public final class DatabaseMigrationManager {
     public static void migrate(Connection connection) throws SQLException {
         if (!connection.getAutoCommit()) throw new SQLException("Migrations require an independent connection");
         try (Statement s = connection.createStatement()) { s.execute("PRAGMA foreign_keys=OFF"); }
-        connection.setAutoCommit(false);
+        DatabaseManager.beginTransaction(connection);
         try {
             createMigrationHistory(connection);
             for (Migration migration : MIGRATIONS) {
@@ -139,6 +144,32 @@ public final class DatabaseMigrationManager {
             s.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_order_id ON invoices(order_id) WHERE order_id IS NOT NULL");
         }
         DatabaseIntegrity.installGuards(c);
+    }
+
+    private static void migrateStockThresholds(Connection c) throws SQLException {
+        try (Statement s=c.createStatement()) {
+            s.execute("UPDATE products SET minimum_quantity=(SELECT minimum_quantity FROM minimum_stock WHERE product_id=products.id) " +
+                "WHERE id IN (SELECT product_id FROM minimum_stock)");
+            s.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_supplier_order_number ON supplier_orders(number)");
+            s.execute("CREATE TRIGGER IF NOT EXISTS minimum_stock_insert AFTER INSERT ON minimum_stock BEGIN " +
+                "UPDATE products SET minimum_quantity=NEW.minimum_quantity WHERE id=NEW.product_id; END");
+            s.execute("CREATE TRIGGER IF NOT EXISTS minimum_stock_update AFTER UPDATE OF minimum_quantity ON minimum_stock BEGIN " +
+                "UPDATE products SET minimum_quantity=NEW.minimum_quantity WHERE id=NEW.product_id; END");
+            s.execute("CREATE TRIGGER IF NOT EXISTS product_minimum_update AFTER UPDATE OF minimum_quantity ON products " +
+                "WHEN OLD.minimum_quantity<>NEW.minimum_quantity BEGIN " +
+                "UPDATE minimum_stock SET minimum_quantity=NEW.minimum_quantity WHERE product_id=NEW.id; END");
+        }
+    }
+
+    private static void migrateInvoiceSnapshots(Connection c) throws SQLException {
+        DatabaseCurrency.initialize(c, DatabaseCurrency.codeFromSetting(SettingsPanel.getGlobalSetting("currency","EUR - Euro (€)")));
+        for(String column:List.of("currency_code","customer_snapshot","company_snapshot"))
+            addColumnIfMissing(c,"invoices",column,"ALTER TABLE invoices ADD COLUMN " + column + " TEXT");
+        addColumnIfMissing(c,"invoices","logo_snapshot","ALTER TABLE invoices ADD COLUMN logo_snapshot BLOB");
+        addColumnIfMissing(c,"invoices","snapshot_version","ALTER TABLE invoices ADD COLUMN snapshot_version INTEGER");
+        for(String column:List.of("product_code","product_name"))
+            addColumnIfMissing(c,"invoice_details",column,"ALTER TABLE invoice_details ADD COLUMN " + column + " TEXT");
+        InvoiceSnapshots.captureLegacy(c);
     }
 
     private static void addColumnIfMissing(Connection connection, String table, String column,

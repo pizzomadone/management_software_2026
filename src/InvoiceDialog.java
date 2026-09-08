@@ -529,8 +529,7 @@ public class InvoiceDialog extends JDialog {
                     }
 
                 } catch (Exception e) {
-                    System.err.println("Error processing row " + i + ": " + e.getMessage());
-                    continue;
+                    throw new IllegalArgumentException("Invalid invoice row " + (i+1),e);
                 }
             }
 
@@ -544,6 +543,8 @@ public class InvoiceDialog extends JDialog {
             vatLabel.setText("VAT: " + SettingsPanel.formatCurrency(totalVat));
             totalLabel.setText("TOTAL: " + SettingsPanel.formatCurrency(total));
 
+        } catch(IllegalArgumentException e) {
+            taxableAmountLabel.setText("Invalid invoice row");vatLabel.setText("");totalLabel.setText("Correct quantity, price and VAT before saving");
         } finally {
             isUpdatingTotals = false;
         }
@@ -612,7 +613,7 @@ public class InvoiceDialog extends JDialog {
             // Invoices do not affect warehouse stock - stock is managed by orders only
 
             Connection conn = DatabaseManager.getInstance().getConnection();
-            conn.setAutoCommit(false);
+            DatabaseManager.beginTransaction(conn);
             try {
                 int invoiceId;
 
@@ -651,6 +652,13 @@ public class InvoiceDialog extends JDialog {
                 } else {
                     // Update existing invoice
                     invoiceId = invoice.getId();
+                    try(PreparedStatement draft=conn.prepareStatement("UPDATE invoices SET customer_snapshot=NULL,company_snapshot=NULL,snapshot_version=NULL WHERE id=? AND status='Draft'")) {
+                        draft.setInt(1,invoiceId);draft.executeUpdate();
+                    }
+                    try (PreparedStatement p=conn.prepareStatement("UPDATE invoices SET customer_snapshot=NULL " +
+                            "WHERE id=? AND customer_id<>?")) {
+                        p.setInt(1,invoiceId);p.setInt(2,selectedCustomer.getId());p.executeUpdate();
+                    }
 
                     String invoiceQuery = """
                         UPDATE invoices
@@ -678,6 +686,7 @@ public class InvoiceDialog extends JDialog {
                     insertInvoiceDetails(conn, invoiceId);
                 }
 
+                InvoiceSnapshots.capture(conn,invoiceId,false);
                 conn.commit();
                 invoiceSaved = true;
                 dispose();
@@ -700,8 +709,8 @@ public class InvoiceDialog extends JDialog {
     private void insertInvoiceDetails(Connection conn, int invoiceId) throws SQLException {
         String detailQuery = """
             INSERT INTO invoice_details
-            (invoice_id, product_id, quantity, unit_price, vat_rate, total)
-            VALUES (?, ?, ?, ?, ?, ?)
+            (invoice_id, product_id, quantity, unit_price, vat_rate, total, product_code, product_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """;
         try (PreparedStatement pstmt = conn.prepareStatement(detailQuery)) {
             for (int i = 0; i < itemsTableModel.getRowCount(); i++) {
@@ -718,6 +727,8 @@ public class InvoiceDialog extends JDialog {
                 pstmt.setDouble(4, unitPrice);
                 pstmt.setDouble(5, vatRate);
                 pstmt.setDouble(6, productTotal);
+                pstmt.setString(7,String.valueOf(itemsTableModel.getValueAt(i,0)));
+                pstmt.setString(8,String.valueOf(itemsTableModel.getValueAt(i,1)));
                 pstmt.executeUpdate();
             }
         }

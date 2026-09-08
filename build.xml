@@ -75,6 +75,7 @@
                destdir="${build.classes.dir}"
                includeantruntime="false"
                debug="true"
+               encoding="UTF-8"
                source="21"
                target="21">
             <classpath refid="compile.classpath"/>
@@ -84,6 +85,7 @@
             <fileset dir="${resources.dir}">
                 <include name="i18n/**"/>
                 <include name="icons/**"/>
+                <include name="fonts/**"/>
             </fileset>
 
             <!-- Legal notices must remain readable in every distribution. -->
@@ -131,6 +133,7 @@
             <fileset dir="${resources.dir}">
                 <include name="i18n/**"/>
                 <include name="icons/**"/>
+                <include name="fonts/**"/>
             </fileset>
 
             <!-- Add unpacked dependencies -->
@@ -717,4 +720,18 @@
         <echo message=""/>
     </target>
 
+    <target name="test" depends="compile" description="Run isolated business and data regression scenarios">
+        <mkdir dir="${build.dir}/test-classes"/>
+        <tempfile property="test.run.dir" destdir="${build.dir}" prefix="regression-" createfile="false"/>
+        <mkdir dir="${test.run.dir}/home"/>
+        <javac srcdir="tests" destdir="${build.dir}/test-classes" includeantruntime="false" release="21" encoding="UTF-8">
+            <classpath><pathelement location="${build.classes.dir}"/><path refid="compile.classpath"/></classpath>
+        </javac>
+        <java classname="RegressionTest" fork="true" failonerror="true">
+            <classpath><pathelement location="${build.dir}/test-classes"/><pathelement location="${build.classes.dir}"/><path refid="compile.classpath"/></classpath>
+            <sysproperty key="java.awt.headless" value="true"/>
+            <sysproperty key="user.home" value="${test.run.dir}/home"/>
+            <sysproperty key="test.output" value="${test.run.dir}/evidence"/>
+        </java>
+    </target>
 </project>

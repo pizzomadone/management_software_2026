@@ -33,7 +33,10 @@ public final class Numbers {
         BigDecimal result = decimal(value);
         if (result.signum() < 0 || result.compareTo(MAX_AMOUNT) > 0)
             throw new IllegalArgumentException("Value must be between 0 and " + MAX_AMOUNT);
-        return result.doubleValue();
+        double stored=result.doubleValue();
+        if(!Double.isFinite(stored) || BigDecimal.valueOf(stored).compareTo(result)!=0)
+            throw new IllegalArgumentException("The value has more precision than the database can preserve");
+        return stored;
     }
 
     public static double vat(Object value) {

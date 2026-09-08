@@ -51,6 +51,9 @@ public class BackupManager {
     }
     /** VACUUM INTO reads a transactionally consistent snapshot, including committed WAL pages. */
     private Path snapshot(Path source, Path directory) throws IOException, SQLException {
+        return snapshot(source, directory, null);
+    }
+    private Path snapshot(Path source, Path directory, String legacyCurrency) throws IOException, SQLException {
         if (!Files.isRegularFile(source) || !Files.isReadable(source))
             throw new IOException("Database file not found or not readable");
         Files.createDirectories(directory);
@@ -62,9 +65,12 @@ public class BackupManager {
             settings.setBusyTimeout(10000);
             try (Connection c = DriverManager.getConnection("jdbc:sqlite:" + source.toAbsolutePath(), settings.toProperties());
                  PreparedStatement p = c.prepareStatement("VACUUM INTO ?")) {
+                if (DatabaseCurrency.read(c) == null && legacyCurrency == null)
+                    throw new SQLException("Original currency is required to import a legacy database");
                 p.setString(1, staging.toAbsolutePath().toString()); p.execute();
             }
             try (Connection c = DatabaseManager.openConnection("jdbc:sqlite:" + staging)) {
+                if (legacyCurrency != null) DatabaseCurrency.initialize(c, legacyCurrency);
                 DatabaseManager.prepareDatabase(c);
             }
             return staging;
@@ -91,12 +97,13 @@ public class BackupManager {
         } catch (IOException | SQLException e) { throw new IllegalStateException("Error during backup: " + e.getMessage(), e); }
         finally { removeTemporary(staging); }
     }
-    public synchronized BackupRecord importBackup(Path file) {
+    public synchronized BackupRecord importBackup(Path file) { return importBackup(file, null); }
+    public synchronized BackupRecord importBackup(Path file, String legacyCurrency) {
         Path staging = null;
         try {
             rejectActive(file);
             Path folder = Path.of(getBackupDirectory()).toAbsolutePath();
-            staging = snapshot(file, folder);
+            staging = snapshot(file, folder, legacyCurrency);
             Path target = folder.resolve("imported_" + UUID.randomUUID() + ".db");
             replaceAtomically(staging, target);
             return registerBackup(target);
@@ -114,14 +121,15 @@ public class BackupManager {
         } catch (IOException | SQLException e) { throw new IllegalStateException("Unable to export database: " + e.getMessage(), e); }
         finally { removeTemporary(staging); }
     }
-    public synchronized void importDatabase(Path sourceFile) {
+    public synchronized void importDatabase(Path sourceFile) { importDatabase(sourceFile, null); }
+    public synchronized void importDatabase(Path sourceFile, String legacyCurrency) {
         Path current = AppConstants.getDatabasePath().toAbsolutePath();
         Path staging = null;
         Path safetyCopy = null;
         boolean replaced = false;
         try {
             rejectActive(sourceFile);
-            staging = snapshot(sourceFile, current.getParent());
+            staging = snapshot(sourceFile, current.getParent(), legacyCurrency);
             if (Files.exists(current)) {
                 safetyCopy = snapshot(current, current.getParent());
                 Path retained = current.resolveSibling("data_before_restore_" + UUID.randomUUID() + ".db");
@@ -152,6 +160,7 @@ public class BackupManager {
         } finally { removeTemporary(staging); }
     }
     public void restoreBackup(String file) { importDatabase(Path.of(file)); }
+    public void restoreBackup(String file, String legacyCurrency) { importDatabase(Path.of(file), legacyCurrency); }
     private void validateBackup(Path file) {
         if (!Files.isRegularFile(file) || !Files.isReadable(file))
             throw new IllegalArgumentException("Backup file not found or not readable");
@@ -238,12 +247,15 @@ public class BackupManager {
     public synchronized File[] listBackups() {
         return listBackupRecords().stream().filter(BackupRecord::exists).map(r -> new File(r.absolutePath())).toArray(File[]::new);
     }
+    synchronized boolean isAutomaticBackupDue(long now) {
+        long last=parseLong(config.getProperty("backup.last_success"),0);
+        return isAutoBackupEnabled() && !automaticRunning && now>=retryAfter && now-last>=getBackupIntervalHours()*3600000L;
+    }
     public void startAutomaticBackups() {
         if (automaticTimer != null) return;
         automaticTimer = new javax.swing.Timer(60000, event -> {
             long now = System.currentTimeMillis();
-            long last = parseLong(config.getProperty("backup.last_success"), 0);
-            if (!isAutoBackupEnabled() || automaticRunning || now < retryAfter || now - last < getBackupIntervalHours() * 3600000L) return;
+            if (!isAutomaticBackupDue(now)) return;
             automaticRunning = true;
             new SwingWorker<Path, Void>() {
                 protected Path doInBackground() { return performBackup(); }

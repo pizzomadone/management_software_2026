@@ -159,7 +159,9 @@ public class SettingsPanel extends JPanel {
                                "SGD - Singapore Dollar ($)", "HKD - Hong Kong Dollar ($)",
                                "NZD - New Zealand Dollar ($)", "THB - Thai Baht (฿)"};
         currencyCombo = new JComboBox<>(currencies);
-        currencyCombo.setSelectedItem(getSetting("currency", "EUR - Euro (€)"));
+        for(String choice:currencies) {
+            if(choice.startsWith(getCurrencyCode()+" - "))currencyCombo.setSelectedItem(choice);
+        }
         panel.add(currencyCombo, gbc);
 
         // Default VAT
@@ -455,7 +457,7 @@ public class SettingsPanel extends JPanel {
     private void updateSettingsFromFields() {
         double vatRate;
         try {
-            vatRate = Double.parseDouble(defaultVatField.getText().trim().replace(',', '.'));
+            vatRate = Numbers.vat(defaultVatField.getText());
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException("Default VAT rate must be a number between 0 and 100");
         }
@@ -466,6 +468,8 @@ public class SettingsPanel extends JPanel {
         settings.setProperty("font_size", String.valueOf(fontSizeSlider.getValue()));
         settings.setProperty("theme", (String)themeCombo.getSelectedItem());
         settings.setProperty("pdf_default_directory", pdfDirectoryField.getText().trim());
+        try { DatabaseCurrency.change(DatabaseCurrency.codeFromSetting((String)currencyCombo.getSelectedItem())); }
+        catch (java.sql.SQLException e) {throw new IllegalArgumentException(e.getMessage(),e);}
         settings.setProperty("currency", (String)currencyCombo.getSelectedItem());
         settings.setProperty("default_vat", String.valueOf(vatRate));
         settings.setProperty("language", I18n.codeForName((String) languageCombo.getSelectedItem()));
@@ -606,17 +610,11 @@ public class SettingsPanel extends JPanel {
     }
 
     public static String getCurrencySymbol() {
-        String currency = getCurrency();
-        // Extract the symbol from the currency string (e.g., "EUR - Euro (€)" -> "€")
-        int startIdx = currency.indexOf('(');
-        int endIdx = currency.indexOf(')');
-        if (startIdx != -1 && endIdx != -1) {
-            return currency.substring(startIdx + 1, endIdx);
-        }
-        return "€"; // Default
+        return Currency.getInstance(getCurrencyCode()).getSymbol(Locale.getDefault());
     }
 
     public static String getCurrencyCode() {
+        if (DatabaseCurrency.boundCode()!=null) return DatabaseCurrency.boundCode();
         String currency = getCurrency();
         int separatorIndex = currency.indexOf(" - ");
         return separatorIndex > 0 ? currency.substring(0, separatorIndex) : "EUR";
@@ -627,7 +625,7 @@ public class SettingsPanel extends JPanel {
             NumberFormat formatter = NumberFormat.getCurrencyInstance(Locale.getDefault());
             Currency currency = Currency.getInstance(getCurrencyCode());
             formatter.setCurrency(currency);
-            int fractionDigits = currency.getDefaultFractionDigits();
+            int fractionDigits = 2;
             if (fractionDigits >= 0) {
                 formatter.setMinimumFractionDigits(fractionDigits);
                 formatter.setMaximumFractionDigits(fractionDigits);
@@ -640,8 +638,8 @@ public class SettingsPanel extends JPanel {
 
     public static double getDefaultVatRate() {
         try {
-            return Double.parseDouble(getGlobalSetting("default_vat", "22.0"));
-        } catch (NumberFormatException e) {
+            return Numbers.vat(getGlobalSetting("default_vat", "22.0"));
+        } catch (IllegalArgumentException e) {
             return 22.0;
         }
     }

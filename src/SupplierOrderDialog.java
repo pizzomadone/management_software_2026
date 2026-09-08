@@ -123,16 +123,17 @@ public class SupplierOrderDialog extends JDialog {
         itemsTableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
-                return column == 2 || column == 5; // Only quantity and notes are editable
+                return column == 2 || column == 3 || column == 5; // Quantity, agreed price and notes.
             }
         };
         itemsTable = new JTable(itemsTableModel);
+        itemsTable.setToolTipText("Unit prices are quoted when added. After changing quantities or dates, use Apply Price List to refresh them; negotiated prices can be edited manually.");
         itemsTable.removeColumn(itemsTable.getColumnModel().getColumn(6));
 
         // FIXED: Improved listener to prevent infinite recursion
         itemsTableModel.addTableModelListener(e -> {
             if (e.getType() == javax.swing.event.TableModelEvent.UPDATE &&
-                e.getColumn() == 2 && !updatingTotals) {
+                (e.getColumn() == 2 || e.getColumn() == 3) && !updatingTotals) {
                 SwingUtilities.invokeLater(this::updateTotals);
             }
         });
@@ -147,6 +148,9 @@ public class SupplierOrderDialog extends JDialog {
 
         tableButtonPanel.add(addItemButton);
         tableButtonPanel.add(removeItemButton);
+        JButton reprice = new JButton("Apply Price List");
+        reprice.addActionListener(e -> applyPriceList());
+        tableButtonPanel.add(reprice);
 
         // Total panel
         JPanel totalPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
@@ -305,7 +309,13 @@ public class SupplierOrderDialog extends JDialog {
                 return;
             }
 
-            int quantity = (int)quantitySpinner.getValue();
+            int quantity; double quotedPrice;
+            try {
+                quantitySpinner.commitEdit();
+                quantity = Numbers.positiveQuantity(quantitySpinner.getValue());
+                quotedPrice = SupplierPricing.price(DatabaseManager.getInstance().getConnection(), supplierId,
+                    selectedProduct.getProduct().getId(), quantity, DateUtils.parseDate(dateField.getText(), dateFormat));
+            } catch (Exception ex) { JOptionPane.showMessageDialog(dialog, ex.getMessage(), "Invalid product", JOptionPane.ERROR_MESSAGE); return; }
             String note = noteField.getText().trim();
 
             // Check if product is already present
@@ -324,8 +334,8 @@ public class SupplierOrderDialog extends JDialog {
             row.add(selectedProduct.getProduct().getCode());
             row.add(selectedProduct.getProduct().getName());
             row.add(quantity);
-            row.add(selectedProduct.getProduct().getPrice());
-            row.add(String.format("%.2f", quantity * selectedProduct.getProduct().getPrice()));
+            row.add(quotedPrice);
+            row.add(String.format("%.2f", Numbers.lineTotal(quantity, quotedPrice)));
             row.add(note);
             row.add(selectedProduct.getProduct().getId());
             itemsTableModel.addRow(row);
@@ -337,6 +347,7 @@ public class SupplierOrderDialog extends JDialog {
         cancelButton.addActionListener(e -> dialog.dispose());
 
         buttonPanel.add(addButton);
+
         buttonPanel.add(cancelButton);
 
         dialog.add(panel, BorderLayout.CENTER);
@@ -370,57 +381,32 @@ public class SupplierOrderDialog extends JDialog {
         }
     }
 
-    // FIXED: Improved method to prevent infinite recursion
-    private void updateTotals() {
-        if (updatingTotals) return;
-
-        updatingTotals = true;
+    private void applyPriceList() {
         try {
-            double total = 0;
+            Numbers.commitEdits(itemsTable);
+            if(JOptionPane.showConfirmDialog(this,"Replace all entered unit prices with the current price list for this date and these quantities?","Apply Price List",JOptionPane.YES_NO_OPTION)!=JOptionPane.YES_OPTION)return;
+            Date date=DateUtils.parseDate(dateField.getText(),dateFormat);
+            Connection c=DatabaseManager.getInstance().getConnection();
+            double[] prices=new double[itemsTableModel.getRowCount()];
+            for(int i=0;i<prices.length;i++)prices[i]=SupplierPricing.price(c,supplierId,productIdForRow(c,i),parseInteger(itemsTableModel.getValueAt(i,2)),date);
+            for(int i=0;i<prices.length;i++)itemsTableModel.setValueAt(prices[i],i,3);
+            updateTotals();
+        } catch(Exception e) {JOptionPane.showMessageDialog(this,e.getMessage(),"Unable to apply prices",JOptionPane.ERROR_MESSAGE);}
+    }
 
-            // Calculate total without modifying the table
-            for (int i = 0; i < itemsTableModel.getRowCount(); i++) {
-                Object quantityObj = itemsTableModel.getValueAt(i, 2);
-                Object priceObj = itemsTableModel.getValueAt(i, 3);
-
-                int quantity = parseInteger(quantityObj);
-                double price = parseDouble(priceObj);
-
-                double itemTotal = Numbers.lineTotal(quantity, price);
-                total += itemTotal;
+    private void updateTotals() {
+        if(updatingTotals)return;
+        updatingTotals=true;
+        try {
+            double total=0;
+            for(int i=0;i<itemsTableModel.getRowCount();i++) {
+                double line=Numbers.lineTotal(parseInteger(itemsTableModel.getValueAt(i,2)),parseDouble(itemsTableModel.getValueAt(i,3)));
+                total=Numbers.add(total,line);
+                itemsTableModel.setValueAt(String.format("%.2f",line),i,4);
             }
-
-            // Update the total label
-            totalLabel.setText("Total: " + SettingsPanel.formatCurrency(total));
-
-            // Update row totals in a separate EDT event
-            SwingUtilities.invokeLater(() -> {
-                try {
-                    updatingTotals = true;
-                    for (int i = 0; i < itemsTableModel.getRowCount(); i++) {
-                        Object quantityObj = itemsTableModel.getValueAt(i, 2);
-                        Object priceObj = itemsTableModel.getValueAt(i, 3);
-
-                        int quantity = parseInteger(quantityObj);
-                        double price = parseDouble(priceObj);
-
-                        double itemTotal = Numbers.lineTotal(quantity, price);
-
-                        // Only update if the value has changed
-                        String currentTotal = (String) itemsTableModel.getValueAt(i, 4);
-                        String newTotal = String.format("%.2f", itemTotal);
-                        if (!newTotal.equals(currentTotal)) {
-                            itemsTableModel.setValueAt(newTotal, i, 4);
-                        }
-                    }
-                } finally {
-                    updatingTotals = false;
-                }
-            });
-
-        } finally {
-            updatingTotals = false;
-        }
+            totalLabel.setText("Total: "+SettingsPanel.formatCurrency(total));
+        } catch(IllegalArgumentException e) {totalLabel.setText("Invalid quantity or price");}
+        finally {updatingTotals=false;}
     }
 
     // Helper methods for safe parsing
@@ -494,7 +480,7 @@ public class SupplierOrderDialog extends JDialog {
             }
 
             Connection conn = DatabaseManager.getInstance().getConnection();
-            conn.setAutoCommit(false);
+            DatabaseManager.beginTransaction(conn);
 
             try {
                 int orderId;

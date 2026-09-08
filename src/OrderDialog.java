@@ -543,7 +543,7 @@ public class OrderDialog extends JDialog {
             }
 
             Connection conn = DatabaseManager.getInstance().getConnection();
-            conn.setAutoCommit(false);
+            DatabaseManager.beginTransaction(conn);
             try {
             // Check stock availability for New, In Progress and Completed states
             if ("New".equals(newStatus) || "In Progress".equals(newStatus) || "Completed".equals(newStatus)) {

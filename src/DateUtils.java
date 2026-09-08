@@ -7,6 +7,9 @@ import java.util.Date;
 
 public class DateUtils {
     private static final SimpleDateFormat[] DATE_FORMATS = {
+        new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS"),
+        new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SS"),
+        new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.S"),
         new SimpleDateFormat("yyyy-MM-dd HH:mm:ss"),
         new SimpleDateFormat("yyyy-MM-dd"),
         new SimpleDateFormat("dd/MM/yyyy HH:mm:ss"),
@@ -21,46 +24,28 @@ public class DateUtils {
      * Parse a date from ResultSet handling various formats
      */
     public static Date parseDate(ResultSet rs, String columnName) throws SQLException {
-        try {
-            // First try as Timestamp
-            Timestamp timestamp = rs.getTimestamp(columnName);
-            if (timestamp != null) {
-                return new Date(timestamp.getTime());
-            }
-        } catch (SQLException e) {
-            // Ignore and try as string
+        return parseStored(rs.getObject(columnName));
+    }
+    static Date parseStored(Object raw) {
+        if(raw==null)return null;
+        String text=raw.toString().trim();
+        if(raw instanceof Number || text.matches("-?\\d+")) {
+            try {
+                long millis=Long.parseLong(text);
+                int year=java.time.Instant.ofEpochMilli(millis).atZone(java.time.ZoneId.systemDefault()).getYear();
+                return year>=1 && year<=9999?new Date(millis):null;
+            } catch(IllegalArgumentException e) {return null;}
         }
-        
-        try {
-            String dateStr = rs.getString(columnName);
-            if (dateStr != null && !dateStr.isEmpty()) {
-                // If it's a number (timestamp millis), convert it
-                if (dateStr.matches("\\d+")) {
-                    try {
-                        long timestampMillis = Long.parseLong(dateStr);
-                        return new Date(timestampMillis);
-                    } catch (NumberFormatException e) {
-                        // Continue with string parsing
-                    }
-                }
-                
-                // Try all formats
-                for (SimpleDateFormat format : DATE_FORMATS) {
-                    try {
-                        synchronized (format) {
-                            return parseDate(dateStr, format);
-                        }
-                    } catch (ParseException e) {
-                        // Continue with next format
-                    }
-                }
-            }
-        } catch (SQLException e) {
-            // Log the error if needed
+        for(SimpleDateFormat format:DATE_FORMATS) {
+            try {
+                SimpleDateFormat current=(SimpleDateFormat)format.clone();
+                current.setTimeZone(current.toPattern().startsWith("yyyy-MM-dd HH:")?java.util.TimeZone.getTimeZone("UTC"):java.util.TimeZone.getDefault());
+                return parseDate(text,current);
+            }catch(ParseException e) { /* Try the next persisted format. */ }
         }
         return null;
     }
-    
+
     /**
      * Format a date safely
      */
@@ -89,7 +74,7 @@ public class DateUtils {
             String input = dateStr.trim();
             ParsePosition position = new ParsePosition(0);
             Date value = strict.parse(input, position);
-            if (value == null || position.getIndex() != input.length())
+            if (value == null || position.getIndex() != input.length() || !strict.format(value).equals(input))
                 throw new ParseException("Invalid date: " + input, Math.max(0, position.getErrorIndex()));
             return value;
         }
@@ -97,8 +82,18 @@ public class DateUtils {
     
     public static String sqlDate(String column) {
         if (!column.matches("[A-Za-z_][A-Za-z0-9_.]*")) throw new IllegalArgumentException("Invalid date column");
-        return "DATE(CASE WHEN typeof(" + column + ") IN ('integer','real') THEN datetime(" + column +
-            "/1000,'unixepoch','localtime') ELSE " + column + " END)";
+        return "warestat_date(" + column + ")";
+    }
+
+    /** Convert dates using the same Java zone as the UI, independent of SQLite/libc localtime. */
+    static void installSqlFunctions(Connection c) throws SQLException {
+        org.sqlite.Function.create(c,"warestat_date",new org.sqlite.Function() {
+            @Override protected void xFunc() throws SQLException {
+                Date date=parseStored(value_text(0));
+                if(date==null){result();return;}
+                result(new SimpleDateFormat("yyyy-MM-dd",java.util.Locale.ROOT).format(date));
+            }
+        },1);
     }
 
     /**

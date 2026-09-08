@@ -246,10 +246,16 @@ public class SuppliersPanel extends JPanel {
                 boolean hasPriceList = hasSupplierPriceList(conn, id);
                 boolean hasMinStockReferences = hasMinStockReferences(conn, id);
 
-                if (hasOrders || hasPriceList || hasMinStockReferences) {
+                boolean hasProducts;
+                try (PreparedStatement products = conn.prepareStatement("SELECT 1 FROM products WHERE supplier_id=? LIMIT 1")) {
+                    products.setInt(1,id);
+                    try (ResultSet rows=products.executeQuery()) {hasProducts=rows.next();}
+                }
+                if (hasOrders || hasPriceList || hasMinStockReferences || hasProducts) {
                     StringBuilder message = new StringBuilder();
                     message.append("Supplier '").append(name).append("' has related business records:\n");
 
+                    if (hasProducts) message.append("- Assigned products will be disassociated\n");
                     if (hasOrders) message.append("- Existing orders\n");
                     if (hasPriceList) message.append("- Price list entries\n");
                     if (hasMinStockReferences) message.append("- Minimum stock references\n");
@@ -321,7 +327,7 @@ public class SuppliersPanel extends JPanel {
         }
 
         try {
-            conn.setAutoCommit(false);
+            DatabaseManager.beginTransaction(conn);
 
             try {
                 StockManager.reverseCompletedSupplierOrders(conn, id);
@@ -485,4 +491,5 @@ public class SuppliersPanel extends JPanel {
             priceListWindow.setVisible(true);
         }
     }
+    public void refreshData() { loadSuppliers(); }
 }

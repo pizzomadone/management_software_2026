@@ -343,7 +343,7 @@ public class SupplierPriceListDialog extends JDialog {
             minimumQuantitySpinner.commitEdit();
             int minimum = Numbers.positiveQuantity(minimumQuantitySpinner.getValue());
             Connection conn = DatabaseManager.getInstance().getConnection();
-            conn.setAutoCommit(false);
+            DatabaseManager.beginTransaction(conn);
             try {
                 String overlap = "SELECT id FROM supplier_price_lists WHERE supplier_id=? AND product_id=? AND minimum_quantity=? AND id<>? " +
                     "AND (validity_end_date IS NULL OR " + DateUtils.sqlDate("validity_end_date") + ">=?) " +

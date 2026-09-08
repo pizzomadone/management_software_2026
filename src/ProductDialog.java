@@ -357,7 +357,7 @@ public class ProductDialog extends JDialog {
             }
 
             Connection conn = DatabaseManager.getInstance().getConnection();
-            conn.setAutoCommit(false);
+            DatabaseManager.beginTransaction(conn);
             try {
             int productId = product == null ? 0 : product.getId();
             int oldQuantity = 0;

@@ -39,45 +39,7 @@ public class InvoicePDFGenerator {
         this.customer = customer;
         this.companyData = CompanyData.getInstance();
         this.invoiceItems = new ArrayList<>();
-        loadInvoiceItems();
-    }
 
-    private void loadInvoiceItems() {
-        try {
-            Connection conn = DatabaseManager.getInstance().getConnection();
-            String query = """
-                SELECT id.*, COALESCE(p.code, 'N/A') as product_code,
-                       COALESCE(p.name, 'Product N/A') as product_name,
-                       COALESCE(p.description, '') as product_description
-                FROM invoice_details id
-                LEFT JOIN products p ON id.product_id = p.id
-                WHERE id.invoice_id = ?
-                ORDER BY id.id
-            """;
-
-            try (PreparedStatement pstmt = conn.prepareStatement(query)) {
-                pstmt.setInt(1, invoice.getId());
-                ResultSet rs = pstmt.executeQuery();
-
-                while (rs.next()) {
-                    InvoiceItem item = new InvoiceItem(
-                        rs.getInt("id"),
-                        rs.getInt("invoice_id"),
-                        rs.getInt("product_id"),
-                        rs.getString("product_name"),
-                        rs.getString("product_code"),
-                        rs.getInt("quantity"),
-                        rs.getDouble("unit_price"),
-                        rs.getDouble("vat_rate"),
-                        rs.getDouble("total")
-                    );
-                    invoiceItems.add(item);
-                }
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-            System.err.println("Error loading invoice items: " + e.getMessage());
-        }
     }
 
     public void generateAndSave(Component parent) {
@@ -188,429 +150,64 @@ public class InvoicePDFGenerator {
     }
 
     private void generatePDF(File outputFile) throws IOException {
-        try (PDDocument document = new PDDocument()) {
-            PDPage page = new PDPage(PDRectangle.A4);
-            document.addPage(page);
-
-            try (PDPageContentStream contentStream = new PDPageContentStream(document, page)) {
-                float yPosition = page.getMediaBox().getHeight() - MARGIN;
-
-                // Header with INVOICE title
-                yPosition = drawHeader(document, contentStream, yPosition, page);
-                yPosition -= 25f;
-
-                // Company and customer information
-                yPosition = drawCompanyAndCustomerInfo(contentStream, yPosition, page);
-                yPosition -= 25f;
-
-                // Invoice details
-                yPosition = drawInvoiceDetails(contentStream, yPosition, page);
-                yPosition -= 25f;
-
-                // Improved products table
-                yPosition = drawItemsTable(contentStream, yPosition, page);
-                yPosition -= 20f;
-
-                // Totals
-                yPosition = drawTotals(contentStream, yPosition, page);
-
-                // Footer with software branding
-                drawFooter(contentStream, page);
-            }
-
-            // Never write directly over a PDF that may still be open in a viewer.
-            File parent = outputFile.getAbsoluteFile().getParentFile();
-            File temporary = File.createTempFile("warestat-invoice-", ".pdf", parent);
-            try {
-                document.save(temporary);
-                try {
-                    Files.move(temporary.toPath(), outputFile.toPath(),
-                        StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-                } catch (AtomicMoveNotSupportedException unsupported) {
-                    Files.move(temporary.toPath(), outputFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                }
-            } finally {
-                Files.deleteIfExists(temporary.toPath());
-            }
-        }
-    }
-
-    private float drawHeader(PDDocument document, PDPageContentStream contentStream, float yPosition, PDPage page) throws IOException {
-        float logoWidth = drawCompanyLogo(document, contentStream, yPosition);
-        // Invoice title centered and prominent
-        contentStream.beginText();
-        contentStream.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 28f);
-        String title = "INVOICE";
-        // Approximate width estimation for title
-        float titleWidth = title.length() * 28f * 0.7f;
-        float titleX = (page.getMediaBox().getWidth() - titleWidth) / 2;
-        contentStream.newLineAtOffset(titleX, yPosition);
-        contentStream.showText(title);
-        contentStream.endText();
-
-        // Line under title
-        float lineY = yPosition - 8f;
-        // Leave a deliberate gap for the logo instead of drawing through it.
-        float lineStartX = logoWidth > 0f ? MARGIN + logoWidth + 12f : MARGIN;
-        contentStream.moveTo(lineStartX, lineY);
-        contentStream.lineTo(page.getMediaBox().getWidth() - MARGIN, lineY);
-        contentStream.setLineWidth(1.5f);
-        contentStream.stroke();
-
-        return lineY - 15f;
-    }
-
-    private float drawCompanyLogo(PDDocument document, PDPageContentStream contentStream,
-                                  float yPosition) throws IOException {
-        String logoPath = companyData.getLogoPath();
-        BufferedImage image = readCompanyLogo(logoPath);
-        if (image == null) image = readBundledApplicationLogo();
-        if (image == null) {
-            System.err.println("No usable invoice logo was found");
-            return 0f;
-        }
-
-        PDImageXObject pdfImage = LosslessFactory.createFromImage(document, image);
-        float maxWidth = 110f;
-        float maxHeight = 55f;
-        float scale = Math.min(maxWidth / image.getWidth(), maxHeight / image.getHeight());
-        float width = image.getWidth() * scale;
-        float height = image.getHeight() * scale;
-        contentStream.drawImage(pdfImage, MARGIN, yPosition - height + 8f, width, height);
-        return width;
-    }
-
-    private BufferedImage readCompanyLogo(String logoPath) {
-        if (logoPath == null || logoPath.isBlank()) return null;
-        File logoFile = new File(logoPath);
-        if (!logoFile.isFile()) {
-            System.err.println("Company logo not found: " + logoPath + "; using the WareStat logo");
-            return null;
-        }
         try {
-            BufferedImage image = ImageIO.read(logoFile);
-            if (image == null) {
-                System.err.println("Unsupported company logo image: " + logoPath +
-                    "; using the WareStat logo");
-            }
-            return image;
-        } catch (IOException e) {
-            System.err.println("Unable to read company logo: " + e.getMessage() +
-                "; using the WareStat logo");
-            return null;
-        }
-    }
-
-    private BufferedImage readBundledApplicationLogo() throws IOException {
-        try (InputStream stream = InvoicePDFGenerator.class.getResourceAsStream("/icons/logo.png")) {
-            return stream == null ? null : ImageIO.read(stream);
-        }
-    }
-
-    private float drawCompanyAndCustomerInfo(PDPageContentStream contentStream, float yPosition, PDPage page) throws IOException {
-        float leftColumn = MARGIN;
-        float rightColumn = page.getMediaBox().getWidth() / 2f + 10f;
-        float startY = yPosition;
-
-        // Box for company
-        drawInfoBox(contentStream, leftColumn, yPosition - 130f, 250f, 130f, "FROM");
-
-        // Company information
-        yPosition -= 35f;
-        contentStream.beginText();
-        contentStream.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 11f);
-        contentStream.newLineAtOffset(leftColumn + 5f, yPosition);
-        contentStream.showText(safeTruncate(companyData.getCompanyName(), 35));
-        contentStream.endText();
-
-        yPosition -= 15f;
-        String[] companyInfo = {
-            companyData.getAddress(),
-            companyData.getCity() + (companyData.getPostalCode().isEmpty() ? "" : " " + companyData.getPostalCode()),
-            companyData.getCountry(),
-            "VAT: " + companyData.getVatNumber(),
-            "Tax Code: " + companyData.getTaxCode(),
-            "Phone: " + companyData.getPhone(),
-            "Email: " + companyData.getEmail()
-        };
-
-        contentStream.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 9f);
-        for (String line : companyInfo) {
-            if (line != null && !line.trim().isEmpty() &&
-                !line.equals("VAT: ") && !line.equals("Tax Code: ") &&
-                !line.equals("Phone: ") && !line.equals("Email: ")) {
-                contentStream.beginText();
-                contentStream.newLineAtOffset(leftColumn + 5f, yPosition);
-                contentStream.showText(safeTruncate(line, 40));
-                contentStream.endText();
-                yPosition -= 12f;
-            }
-        }
-
-        // Reset position for customer
-        yPosition = startY;
-
-        // Box for customer
-        drawInfoBox(contentStream, rightColumn, yPosition - 130f, 250f, 130f, "BILL TO");
-
-        // Customer information
-        yPosition -= 35f;
-        contentStream.beginText();
-        contentStream.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 11f);
-        contentStream.newLineAtOffset(rightColumn + 5f, yPosition);
-        String customerFullName = customer.getFirstName() + " " + customer.getLastName();
-        contentStream.showText(safeTruncate(customerFullName, 35));
-        contentStream.endText();
-
-        yPosition -= 15f;
-        String[] customerInfo = {
-            customer.getEmail(),
-            customer.getPhone(),
-            customer.getAddress()
-        };
-
-        contentStream.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 9f);
-        for (String line : customerInfo) {
-            if (line != null && !line.trim().isEmpty()) {
-                contentStream.beginText();
-                contentStream.newLineAtOffset(rightColumn + 5f, yPosition);
-                contentStream.showText(safeTruncate(line, 40));
-                contentStream.endText();
-                yPosition -= 12f;
-            }
-        }
-
-        return startY - 140f;
-    }
-
-    private void drawInfoBox(PDPageContentStream contentStream, float x, float y, float width, float height, String title) throws IOException {
-        // Main box
-        contentStream.addRect(x, y, width, height);
-        contentStream.setLineWidth(1f);
-        contentStream.stroke();
-
-        // Box header
-        contentStream.addRect(x, y + height - 20f, width, 20f);
-        contentStream.setNonStrokingColor(240f/255f, 240f/255f, 240f/255f);
-        contentStream.fill();
-        contentStream.setNonStrokingColor(0f, 0f, 0f); // Reset color
-
-        // Header border
-        contentStream.addRect(x, y + height - 20f, width, 20f);
-        contentStream.stroke();
-
-        // Title
-        contentStream.beginText();
-        contentStream.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 10f);
-        contentStream.newLineAtOffset(x + 5f, y + height - 15f);
-        contentStream.showText(title);
-        contentStream.endText();
-    }
-
-    private float drawInvoiceDetails(PDPageContentStream contentStream, float yPosition, PDPage page) throws IOException {
-        float rightColumn = page.getMediaBox().getWidth() - MARGIN - 150f;
-
-        // Box for invoice details
-        drawInfoBox(contentStream, rightColumn, yPosition - 90f, 150f, 90f, "INVOICE DETAILS");
-
-        yPosition -= 35f;
-        String[][] details = {
-            {"Number:", invoice.getNumber()},
-            {"Date:", DATE_FORMAT.format(invoice.getDate())},
-            {"Status:", invoice.getStatus()}
-        };
-
-        contentStream.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 9f);
-        for (String[] detail : details) {
-            contentStream.beginText();
-            contentStream.newLineAtOffset(rightColumn + 5f, yPosition);
-            contentStream.showText(detail[0]);
-            contentStream.endText();
-
-            contentStream.beginText();
-            contentStream.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 9f);
-            contentStream.newLineAtOffset(rightColumn + 50f, yPosition);
-            contentStream.showText(safeTruncate(detail[1], 15));
-            contentStream.endText();
-
-            contentStream.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 9f);
-            yPosition -= 15f;
-        }
-
-        return yPosition - 20f;
-    }
-
-    private float drawItemsTable(PDPageContentStream contentStream, float yPosition, PDPage page) throws IOException {
-        float tableWidth = page.getMediaBox().getWidth() - 2 * MARGIN;
-        float[] columnWidths = {60f, 180f, 40f, 70f, 50f, 70f}; // Code, Description, Qty, Price, VAT%, Total
-        float rowHeight = 18f;
-        float headerHeight = 20f;
-
-        // Table header with background
-        contentStream.addRect(MARGIN, yPosition - headerHeight, tableWidth, headerHeight);
-        contentStream.setNonStrokingColor(220f/255f, 220f/255f, 220f/255f);
-        contentStream.fill();
-        contentStream.setNonStrokingColor(0f, 0f, 0f); // Reset color
-
-        // Header border
-        contentStream.addRect(MARGIN, yPosition - headerHeight, tableWidth, headerHeight);
-        contentStream.setLineWidth(1f);
-        contentStream.stroke();
-
-        // Header texts
-        String currencyCode = SettingsPanel.getCurrencyCode();
-        String[] headers = {"Code", "Description", "Qty", "Price " + currencyCode, "VAT%", "Total " + currencyCode};
-        drawTableRow(contentStream, MARGIN, yPosition, columnWidths, headerHeight, headers, true);
-        yPosition -= headerHeight;
-
-        // Product rows
-        for (InvoiceItem item : invoiceItems) {
-            String code = item.getProductCode();
-            String name = item.getProductName();
-
-            String[] rowData = {
-                code != null ? safeTruncate(code, 10) : "N/A",
-                name != null ? safeTruncate(name, 28) : "Product N/A",
-                String.valueOf(item.getQuantity()),
-                String.format("%.2f", item.getUnitPrice()),
-                String.format("%.1f", item.getVatRate()),
-                String.format("%.2f", item.getTotal())
-            };
-
-            // Alternate rows with color
-            if ((invoiceItems.indexOf(item) % 2) == 1) {
-                contentStream.addRect(MARGIN, yPosition - rowHeight, tableWidth, rowHeight);
-                contentStream.setNonStrokingColor(248f/255f, 248f/255f, 248f/255f);
-                contentStream.fill();
-                contentStream.setNonStrokingColor(0f, 0f, 0f); // Reset color
-            }
-
-            drawTableRow(contentStream, MARGIN, yPosition, columnWidths, rowHeight, rowData, false);
-
-            // Row border
-            contentStream.addRect(MARGIN, yPosition - rowHeight, tableWidth, rowHeight);
-            contentStream.setLineWidth(0.5f);
-            contentStream.stroke();
-
-            yPosition -= rowHeight;
-        }
-
-        return yPosition;
-    }
-
-    private void drawTableRow(PDPageContentStream contentStream, float x, float y, float[] columnWidths,
-                             float rowHeight, String[] data, boolean isHeader) throws IOException {
-
-        if (isHeader) {
-            contentStream.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD), 9f);
-        } else {
-            contentStream.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 8f);
-        }
-
-        float currentX = x;
-        for (int i = 0; i < data.length && i < columnWidths.length; i++) {
-            String text = data[i] != null ? data[i] : "";
-
-            if (!text.trim().isEmpty()) {
-                contentStream.beginText();
-
-                // Different alignment for numeric columns
-                float textX = currentX + 3f;
-                if (i >= 2) { // Numeric columns (Qty, Price, VAT%, Total)
-                    // Approximate text width estimation for right alignment
-                    float fontSize = isHeader ? 9f : 8f;
-                    float estimatedTextWidth = text.length() * fontSize * 0.6f;
-                    textX = currentX + columnWidths[i] - estimatedTextWidth - 3f;
+            Connection conn=DatabaseManager.getInstance().getConnection();
+            java.util.Properties company;
+            byte[] logo; String currency; boolean legacy;
+            try(PreparedStatement p=conn.prepareStatement("SELECT * FROM invoices WHERE id=?")) {
+                p.setInt(1,invoice.getId());try(ResultSet r=p.executeQuery()) {
+                    if(!r.next())throw new SQLException("Invoice no longer exists");
+                    invoice=new Invoice(r.getInt("id"),r.getString("number"),DateUtils.parseDate(r,"date"),
+                        r.getInt("customer_id"),"",r.getDouble("taxable_amount"),r.getDouble("vat"),r.getDouble("total"),r.getString("status"));
+                    company=InvoiceSnapshots.decode(r.getString("company_snapshot"));
+                    currency=r.getString("currency_code");DatabaseCurrency.codeFromSetting(currency);
+                    logo=r.getBytes("logo_snapshot");legacy=r.getInt("snapshot_version")==0;
                 }
-
-                contentStream.newLineAtOffset(textX, y - rowHeight + 5f);
-                contentStream.showText(text);
-                contentStream.endText();
             }
-
-            currentX += columnWidths[i];
-        }
-    }
-
-    private float drawTotals(PDPageContentStream contentStream, float yPosition, PDPage page) throws IOException {
-        float boxWidth = 155f;
-        float rightColumn = page.getMediaBox().getWidth() - MARGIN - boxWidth;
-
-        // Totals box
-        drawInfoBox(contentStream, rightColumn, yPosition - 80f, boxWidth, 80f, "TOTALS");
-
-        yPosition -= 35f;
-        String[][] totals = {
-            {"Subtotal:", formatPdfCurrency(invoice.getTaxableAmount())},
-            {"VAT:", formatPdfCurrency(invoice.getVat())},
-            {"TOTAL:", formatPdfCurrency(invoice.getTotal())}
-        };
-
-        for (int i = 0; i < totals.length; i++) {
-            boolean isTotal = i == totals.length - 1;
-
-            if (isTotal) {
-                // Line above total - moved higher to avoid cutting text
-                contentStream.moveTo(rightColumn + 5f, yPosition + 12f);
-                contentStream.lineTo(rightColumn + boxWidth - 5f, yPosition + 12f);
-                contentStream.setLineWidth(1f);
-                contentStream.stroke();
+            if(invoice.getDate()==null)throw new SQLException("Invalid invoice date");
+            customer=InvoiceSnapshots.customer(conn,invoice);
+            invoiceItems.clear(); double taxable=0,vat=0;
+            try(PreparedStatement p=conn.prepareStatement("SELECT * FROM invoice_details WHERE invoice_id=? ORDER BY id")) {
+                p.setInt(1,invoice.getId());try(ResultSet r=p.executeQuery()) {
+                    while(r.next()) {
+                        int quantity=Numbers.positiveQuantity(r.getObject("quantity"));
+                        double price=Numbers.nonNegative(r.getObject("unit_price")),rate=Numbers.vat(r.getObject("vat_rate"));
+                        double total=Numbers.lineTotal(quantity,price);
+                        if(Math.abs(total-r.getDouble("total"))>0.004)throw new SQLException("Invoice line totals require reconciliation");
+                        taxable=Numbers.add(taxable,total);vat=Numbers.add(vat,Numbers.tax(total,rate));
+                        String code=r.getString("product_code"),name=r.getString("product_name");
+                        if(code==null || name==null)throw new SQLException("Invoice product snapshot is missing");
+                        invoiceItems.add(new InvoiceItem(r.getInt("id"),invoice.getId(),r.getInt("product_id"),name,code,quantity,price,rate,total));
+                    }
+                }
             }
-
-            contentStream.beginText();
-            contentStream.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD),
-                isTotal ? 11f : 9f);
-            contentStream.newLineAtOffset(rightColumn + 5f, yPosition);
-            contentStream.showText(totals[i][0]);
-            contentStream.endText();
-
-            PDType1Font amountFont = new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD);
-            float amountSize = isTotal ? 11f : 9f;
-            String amount = totals[i][1];
-            float amountWidth = amountFont.getStringWidth(amount) / 1000f * amountSize;
-            contentStream.beginText();
-            contentStream.setFont(amountFont, amountSize);
-            contentStream.newLineAtOffset(rightColumn + boxWidth - amountWidth - 6f, yPosition);
-            contentStream.showText(amount);
-            contentStream.endText();
-
-            yPosition -= isTotal ? 20f : 15f;
-        }
-
-        return yPosition;
+            if(invoiceItems.isEmpty() || Math.abs(taxable-invoice.getTaxableAmount())>0.004 || Math.abs(vat-invoice.getVat())>0.004 ||
+                    Math.abs(Numbers.add(taxable,vat)-invoice.getTotal())>0.004)
+                throw new SQLException("Saved invoice totals do not match its lines. Reconcile the invoice before exporting.");
+            try(PdfWriter pdf=new PdfWriter("INVOICE "+invoice.getNumber(),false)) {
+                pdf.logo(logo);
+                pdf.paragraph("Date: "+DATE_FORMAT.format(invoice.getDate())+" | Status: "+invoice.getStatus()+" | Currency: "+currency,false);
+                if(legacy)pdf.paragraph("Legacy invoice: party and product descriptions were captured during upgrade and may differ from the original document.",true);
+                pdf.paragraph("FROM",true);
+                for(String key:java.util.List.of("company_name","address","city","postal_code","country","vat_number","tax_code","phone","email","website")) {
+                    String value=company.getProperty(key,"");
+                    if(!value.isBlank())pdf.paragraph((key.equals("vat_number")?"VAT: ":key.equals("tax_code")?"Tax code: ":"")+value,false);
+                }
+                pdf.paragraph("BILL TO",true);
+                pdf.paragraph(customer.getFirstName()+" "+customer.getLastName(),true);
+                for(String value:java.util.List.of(customer.getAddress(),customer.getEmail(),customer.getPhone()))if(!value.isBlank())pdf.paragraph(value,false);
+                pdf.startTable(new String[]{"Code","Description","Qty","Unit price "+currency,"VAT %","Total "+currency},new float[]{1.6f,3.1f,.7f,1.6f,.9f,1.6f});
+                for(InvoiceItem item:invoiceItems)pdf.row(item.getProductCode(),item.getProductName(),Integer.toString(item.getQuantity()),
+                    decimal(item.getUnitPrice()),decimal(item.getVatRate()),money(item.getTotal()));
+                pdf.paragraph("Taxable amount: "+currency+" "+money(invoice.getTaxableAmount()),true);
+                pdf.paragraph("VAT: "+currency+" "+money(invoice.getVat()),true);
+                pdf.paragraph("TOTAL: "+currency+" "+money(invoice.getTotal()),true);
+                pdf.save(outputFile);
+            }
+        } catch(SQLException | IllegalArgumentException e) {throw new IOException("Unable to generate a consistent invoice: "+e.getMessage(),e);}
     }
-
-    private void drawFooter(PDPageContentStream contentStream, PDPage page) throws IOException {
-        // Discrete footer with software branding
-        float footerY = 30f;
-
-        contentStream.beginText();
-        contentStream.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 7f);
-        contentStream.setNonStrokingColor(0.6f, 0.6f, 0.6f);
-
-        String footerText = "Document generated with " + AppConstants.SOFTWARE_NAME + " - Business Management System";
-        // Approximate width estimation for text
-        float textWidth = footerText.length() * 7f * 0.5f;
-        float footerX = (page.getMediaBox().getWidth() - textWidth) / 2;
-
-        contentStream.newLineAtOffset(footerX, footerY);
-        contentStream.showText(footerText);
-        contentStream.endText();
-
-        contentStream.setNonStrokingColor(0f, 0f, 0f); // Reset color
-    }
-
-    private String safeTruncate(String text, int maxLength) {
-        if (text == null || text.trim().isEmpty()) {
-            return "";
-        }
-        text = text.trim();
-        return text.length() > maxLength ? text.substring(0, maxLength - 3) + "..." : text;
-    }
-
-    private String formatPdfCurrency(double amount) {
-        return String.format("%s %.2f", SettingsPanel.getCurrencyCode(), amount);
-    }
+    private static String money(double value) {return java.math.BigDecimal.valueOf(value).setScale(2,java.math.RoundingMode.HALF_UP).toPlainString();}
+    private static String decimal(double value) {return java.math.BigDecimal.valueOf(value).stripTrailingZeros().toPlainString();}
 
     // Static method for easy use
     public static void generateInvoicePDF(Invoice invoice, Customer customer, Component parent) {

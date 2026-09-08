@@ -162,7 +162,7 @@ public class WarehouseMovementDialog extends JDialog {
         gbc.gridx = 1;
         gbc.weightx = 1.0;
         documentTypeCombo = new JComboBox<>(new String[]{
-            "", "DDT", "INVOICE", "ORDER", "INVENTORY"
+            "", "DDT", "INVOICE", "OTHER", "INVENTORY"
         });
         documentTypeCombo.setPreferredSize(new Dimension(300, 28));
         formPanel.add(documentTypeCombo, gbc);
@@ -385,7 +385,7 @@ public class WarehouseMovementDialog extends JDialog {
             String reason = (String)reasonCombo.getSelectedItem();
 
             Connection conn = DatabaseManager.getInstance().getConnection();
-            conn.setAutoCommit(false);
+            DatabaseManager.beginTransaction(conn);
             try {
                 if (movement != null) StockManager.requireManualMovement(conn, movement.getId());
             // Check availability for outward movements

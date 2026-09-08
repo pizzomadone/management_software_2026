@@ -48,9 +48,10 @@ public class MultiSupplierOrderDialog extends JDialog {
             @Override public boolean isCellEditable(int row, int column) { return column == 5 || column == 6 || column == 8; }
         };
         table = new JTable(model);
+        table.setToolTipText("Unit prices are quoted when added. Use Apply Price List after changing quantities or dates; negotiated prices can be edited manually.");
         hideColumn(0); hideColumn(3);
         model.addTableModelListener(e -> {
-            if (!updating && (e.getColumn() == 5 || e.getColumn() == 6)) SwingUtilities.invokeLater(this::updateTotals);
+            if (!updating && (e.getColumn() == 5 || e.getColumn() == 6)) SwingUtilities.invokeLater(this::previewTotals);
         });
 
         JPanel itemButtons = new JPanel(new FlowLayout(FlowLayout.LEFT));
@@ -59,6 +60,8 @@ public class MultiSupplierOrderDialog extends JDialog {
         add.addActionListener(e -> selectProduct());
         remove.addActionListener(e -> removeProduct());
         itemButtons.add(add); itemButtons.add(remove);
+        JButton reprice=new JButton("Apply Price List");
+        reprice.addActionListener(e -> applyPriceList());itemButtons.add(reprice);
         totalLabel = new JLabel("Total: " + SettingsPanel.formatCurrency(0));
         totalLabel.setFont(totalLabel.getFont().deriveFont(Font.BOLD, 14f));
         JPanel total = new JPanel(new FlowLayout(FlowLayout.RIGHT)); total.add(totalLabel);
@@ -111,8 +114,13 @@ public class MultiSupplierOrderDialog extends JDialog {
             for (int i = 0; i < model.getRowCount(); i++) {
                 if ((int) model.getValueAt(i, 0) == id) { showWarning(picker, "This product is already in the order"); return; }
             }
-            double price = ((Number) products.getValueAt(row, 5)).doubleValue();
-            int qty = (int) quantity.getValue();
+            double price; int qty;
+            try {
+                quantity.commitEdit(); qty = Numbers.positiveQuantity(quantity.getValue());
+                Object supplier = products.getValueAt(row, 3);
+                if (!(supplier instanceof Number)) throw new IllegalArgumentException("Assign a supplier before ordering this product");
+                price = SupplierPricing.price(DatabaseManager.getInstance().getConnection(), ((Number)supplier).intValue(), id, qty, DateUtils.parseDate(orderDate.getText(), dateFormat));
+            } catch (Exception ex) { showWarning(picker,ex.getMessage()); return; }
             model.addRow(new Object[]{id, products.getValueAt(row, 1), products.getValueAt(row, 2),
                 products.getValueAt(row, 3), products.getValueAt(row, 4), qty,
                 price, String.format("%.2f", Numbers.lineTotal(qty,price)), ""});
@@ -151,8 +159,25 @@ public class MultiSupplierOrderDialog extends JDialog {
         if (row >= 0) { model.removeRow(table.convertRowIndexToModel(row)); updateTotals(); }
     }
 
+    private void applyPriceList() {
+        try {
+            Numbers.commitEdits(table);
+            if(JOptionPane.showConfirmDialog(this,"Replace all entered unit prices with the current price list for this date and these quantities?","Apply Price List",JOptionPane.YES_NO_OPTION)!=JOptionPane.YES_OPTION)return;
+            java.util.Date date=DateUtils.parseDate(orderDate.getText(),dateFormat);
+            Connection c=DatabaseManager.getInstance().getConnection();double[] prices=new double[model.getRowCount()];
+            for(int i=0;i<prices.length;i++)prices[i]=SupplierPricing.price(c,((Number)model.getValueAt(i,3)).intValue(),((Number)model.getValueAt(i,0)).intValue(),Numbers.positiveQuantity(model.getValueAt(i,5)),date);
+            for(int i=0;i<prices.length;i++)model.setValueAt(prices[i],i,6);
+            updateTotals();
+        } catch(Exception e) {showWarning(this,e.getMessage());}
+    }
+
+    private void previewTotals() {
+        try { updateTotals(); } catch(IllegalArgumentException ex) {totalLabel.setText("Invalid quantity or price");}
+    }
+
     private void updateTotals() {
         updating = true;
+        try {
         double total = 0;
         for (int i = 0; i < model.getRowCount(); i++) {
             int quantity = parseInt(model.getValueAt(i, 5));
@@ -161,7 +186,7 @@ public class MultiSupplierOrderDialog extends JDialog {
             model.setValueAt(String.format("%.2f", line), i, 7); total = Numbers.add(total,line);
         }
         totalLabel.setText("Total: " + SettingsPanel.formatCurrency(total));
-        updating = false;
+        } finally { updating = false; }
     }
 
     private void reviewAndSave() {
@@ -184,8 +209,8 @@ public class MultiSupplierOrderDialog extends JDialog {
         Map<Integer, List<Integer>> groups = new LinkedHashMap<>();
         for (int i = 0; i < model.getRowCount(); i++) {
             Object supplier = model.getValueAt(i, 3);
-            if (!(supplier instanceof Number) || parseInt(model.getValueAt(i, 5)) <= 0 || parseDouble(model.getValueAt(i, 6)) <= 0) {
-                showWarning(this, "Every product must have a supplier, a positive quantity and a positive purchase price.\nCheck: " + model.getValueAt(i, 2));
+            if (!(supplier instanceof Number) || parseInt(model.getValueAt(i, 5)) <= 0 || parseDouble(model.getValueAt(i, 6)) < 0) {
+                showWarning(this, "Every product must have a supplier, a positive quantity and a non-negative purchase price.\nCheck: " + model.getValueAt(i, 2));
                 return;
             }
             groups.computeIfAbsent(((Number) supplier).intValue(), key -> new ArrayList<>()).add(i);
@@ -208,7 +233,7 @@ public class MultiSupplierOrderDialog extends JDialog {
     private void saveGroups(Map<Integer, List<Integer>> groups, java.util.Date date, java.util.Date expected) {
         Connection conn = null;
         try {
-            conn = DatabaseManager.getInstance().getConnection(); conn.setAutoCommit(false);
+            conn = DatabaseManager.getInstance().getConnection(); DatabaseManager.beginTransaction(conn);
             String prefix = "OF" + new java.text.SimpleDateFormat("yyyy").format(date);
             int sequence = nextSequence(conn, prefix);
             for (Map.Entry<Integer, List<Integer>> group : groups.entrySet()) {

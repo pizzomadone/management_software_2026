@@ -183,6 +183,7 @@ public class MinimumStockDialog extends JDialog {
 
     private void saveStock() {
         try {
+            minQuantitySpinner.commitEdit();reorderQuantitySpinner.commitEdit();leadTimeSpinner.commitEdit();
             if (minStock == null) {
                 JOptionPane.showMessageDialog(this,
                     "No product selected",
@@ -193,9 +194,9 @@ public class MinimumStockDialog extends JDialog {
             int minQuantity = (Integer) minQuantitySpinner.getValue();
             int reorderQuantity = (Integer) reorderQuantitySpinner.getValue();
 
-            if (minQuantity <= 0 || reorderQuantity <= 0) {
+            if (minQuantity < 0 || reorderQuantity < 0) {
                 JOptionPane.showMessageDialog(this,
-                    "Minimum quantity and reorder quantity must be greater than 0",
+                    "Minimum quantity and reorder quantity cannot be negative",
                     "Error", JOptionPane.ERROR_MESSAGE);
                 return;
             }
@@ -208,6 +209,8 @@ public class MinimumStockDialog extends JDialog {
 
             Connection conn = DatabaseManager.getInstance().getConnection();
 
+            DatabaseManager.beginTransaction(conn);
+            try {
             // Check if record exists
             String checkQuery = "SELECT COUNT(*) FROM minimum_stock WHERE product_id = ?";
             boolean exists = false;
@@ -266,10 +269,16 @@ public class MinimumStockDialog extends JDialog {
                 }
             }
 
+            try (PreparedStatement productMinimum = conn.prepareStatement("UPDATE products SET minimum_quantity=? WHERE id=?")) {
+                productMinimum.setInt(1,minQuantity);productMinimum.setInt(2,minStock.getProductId());productMinimum.executeUpdate();
+            }
+            conn.commit();
             stockSaved = true;
+            } catch(Exception e) {conn.rollback();throw e;}
+            finally {conn.setAutoCommit(true);}
             dispose();
 
-        } catch (SQLException e) {
+        } catch (Exception e) {
             e.printStackTrace();
             JOptionPane.showMessageDialog(this,
                 "Error saving minimum stock: " + e.getMessage(),

@@ -31,7 +31,7 @@ public class StockManager {
 
             // Get current stock and reserved quantity from database
             String query = """
-                SELECT quantity, reserved_quantity
+                SELECT code, quantity, reserved_quantity
                 FROM products
                 WHERE id = ?
             """;
@@ -52,7 +52,7 @@ public class StockManager {
                     }
 
                     if (requestedQty > availableStock) {
-                        insufficientProducts.put(productName, new StockAvailability(
+                        insufficientProducts.put(productName + " [" + rs.getString("code") + "]", new StockAvailability(
                             currentStock, reservedStock, availableStock, requestedQty
                         ));
                     }
@@ -98,7 +98,7 @@ public class StockManager {
             pstmt.setInt(2, productId);
             ResultSet rs = pstmt.executeQuery();
             if (rs.next()) {
-                return rs.getInt("quantity");
+                return Math.toIntExact(rs.getLong("quantity"));
             }
         }
         return 0;

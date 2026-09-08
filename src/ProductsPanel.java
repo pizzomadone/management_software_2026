@@ -400,7 +400,7 @@ public class ProductsPanel extends JPanel {
     }
 
     private void deleteProductAndNonCriticalData(Connection conn, int productId) throws SQLException {
-        conn.setAutoCommit(false);
+        DatabaseManager.beginTransaction(conn);
         try {
             String[] statements = {
                 "DELETE FROM supplier_price_lists WHERE product_id = ?",

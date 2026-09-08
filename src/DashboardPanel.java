@@ -123,7 +123,7 @@ public class DashboardPanel extends JPanel {
         ));
 
         // Create 6 KPI cards with consistent color scheme
-        panel.add(createKPICard("Warehouse Value", SettingsPanel.formatCurrency(0), SECONDARY_COLOR, "warehouseValue"));
+        panel.add(createKPICard("Warehouse Value (catalog cost, active products)", SettingsPanel.formatCurrency(0), SECONDARY_COLOR, "warehouseValue"));
         panel.add(createKPICard("Low Stock Products", "0", DANGER_COLOR, "lowStock"));
         panel.add(createKPICard("Pending Customer Orders", "0", WARNING_COLOR, "pendingOrders"));
         panel.add(createKPICard("Monthly Revenue", SettingsPanel.formatCurrency(0), SUCCESS_COLOR, "monthRevenue"));
@@ -356,8 +356,8 @@ public class DashboardPanel extends JPanel {
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
 
-            // 1. Warehouse Value
-            String warehouseQuery = "SELECT SUM(quantity * acquisition_cost) as total FROM products WHERE active = 1";
+            // 1. Warehouse Value (catalog cost, active products)
+            String warehouseQuery = "SELECT SUM(ROUND(quantity * acquisition_cost,2)) as total FROM products WHERE active = 1";
             try (Statement stmt = conn.createStatement();
                  ResultSet rs = stmt.executeQuery(warehouseQuery)) {
                 if (rs.next()) {
@@ -385,29 +385,22 @@ public class DashboardPanel extends JPanel {
                 }
             }
 
-            // 4. Month Revenue
+            // 4. Monthly invoiced total (including VAT)
             Calendar cal = Calendar.getInstance();
             cal.set(Calendar.DAY_OF_MONTH, 1);
             cal.set(Calendar.HOUR_OF_DAY, 0);
             cal.set(Calendar.MINUTE, 0);
             cal.set(Calendar.SECOND, 0);
+            cal.set(Calendar.MILLISECOND, 0);
             long monthStart = cal.getTimeInMillis();
             cal.add(Calendar.MONTH, 1);
             long nextMonthStart = cal.getTimeInMillis();
 
-            String revenueQuery = """
-                SELECT COALESCE(SUM(total), 0) AS revenue
-                FROM invoices
-                WHERE ((typeof(date) IN ('integer', 'real')
-                        AND CAST(date AS INTEGER) >= ? AND CAST(date AS INTEGER) < ?)
-                    OR (typeof(date) = 'text'
-                        AND datetime(date) >= datetime(?) AND datetime(date) < datetime(?)))
-            """;
+            String revenueQuery = "SELECT COALESCE(SUM(total),0) AS revenue FROM invoices " +
+                "WHERE status IN ('Issued','Paid') AND " + DateUtils.sqlDate("date") + ">=? AND " + DateUtils.sqlDate("date") + "<?";
             try (PreparedStatement pstmt = conn.prepareStatement(revenueQuery)) {
-                pstmt.setLong(1, monthStart);
-                pstmt.setLong(2, nextMonthStart);
-                pstmt.setString(3, new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date(monthStart)));
-                pstmt.setString(4, new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date(nextMonthStart)));
+                pstmt.setString(1,new SimpleDateFormat("yyyy-MM-dd").format(new java.util.Date(monthStart)));
+                pstmt.setString(2,new SimpleDateFormat("yyyy-MM-dd").format(new java.util.Date(nextMonthStart)));
                 ResultSet rs = pstmt.executeQuery();
                 if (rs.next()) {
                     double revenue = rs.getDouble("revenue");
@@ -418,7 +411,7 @@ public class DashboardPanel extends JPanel {
             // 5. Average Margin
             String marginQuery = """
                 SELECT AVG(CASE
-                    WHEN p.price > 0 AND p.acquisition_cost > 0
+                    WHEN p.price > 0 AND p.acquisition_cost >= 0
                     THEN ((p.price - p.acquisition_cost) / p.price) * 100
                     ELSE 0
                 END) as avg_margin
@@ -651,7 +644,7 @@ public class DashboardPanel extends JPanel {
             String query = """
                 SELECT p.name,
                        SUM(od.quantity) as total_qty,
-                       SUM(od.quantity * od.unit_price) as total_revenue
+                       SUM(ROUND(od.quantity * od.unit_price,2)) as total_revenue
                 FROM order_details od
                 JOIN products p ON od.product_id = p.id
                 JOIN orders o ON od.order_id = o.id
@@ -667,7 +660,7 @@ public class DashboardPanel extends JPanel {
                 int rank = 1;
                 while (rs.next()) {
                     String name = rs.getString("name");
-                    int qty = rs.getInt("total_qty");
+                    long qty = rs.getLong("total_qty");
                     double revenue = rs.getDouble("total_revenue");
 
                     model.addRow(new Object[]{
@@ -694,7 +687,7 @@ public class DashboardPanel extends JPanel {
             // Get all products with their revenue, sorted by revenue
             String query = """
                 SELECT p.id, p.name,
-                       COALESCE(SUM(od.quantity * od.unit_price), 0) as revenue
+                       COALESCE(SUM(CASE WHEN o.status='Completed' THEN ROUND(od.quantity * od.unit_price,2) ELSE 0 END), 0) as revenue
                 FROM products p
                 LEFT JOIN order_details od ON p.id = od.product_id
                 LEFT JOIN orders o ON od.order_id = o.id AND o.status = 'Completed'
@@ -727,13 +720,13 @@ public class DashboardPanel extends JPanel {
             double classARevenue = 0, classBRevenue = 0, classCRevenue = 0;
 
             for (ProductRevenue pr : products) {
+                double percentRevenue = cumulativeRevenue / totalRevenue;
                 cumulativeRevenue += pr.revenue;
-                double percentRevenue = (cumulativeRevenue / totalRevenue);
 
-                if (percentRevenue <= 0.80) {
+                if (pr.revenue > 0 && percentRevenue < 0.80) {
                     classACount++;
                     classARevenue += pr.revenue;
-                } else if (percentRevenue <= 0.95) {
+                } else if (pr.revenue > 0 && percentRevenue < 0.95) {
                     classBCount++;
                     classBRevenue += pr.revenue;
                 } else {

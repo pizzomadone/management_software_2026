@@ -207,7 +207,9 @@ public class BackupPanel extends JPanel {
         File selected = chooseBackupFile();
         if (selected == null) return;
         try {
-            backupManager.importBackup(selected.toPath());
+            String currency = DatabaseCurrency.confirmLegacyCurrency(this, selected.toPath());
+            if (currency == null) return;
+            backupManager.importBackup(selected.toPath(), currency);
             loadBackupsList();
             JOptionPane.showMessageDialog(this, I18n.tr("Backup imported successfully"),
                 I18n.tr("Import Backup"), JOptionPane.INFORMATION_MESSAGE);
@@ -231,9 +233,11 @@ public class BackupPanel extends JPanel {
                 I18n.tr("Confirm Restore"), JOptionPane.YES_NO_OPTION,
                 JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) return;
         try {
-            backupManager.restoreBackup(path.toString());
+            String currency = DatabaseCurrency.confirmLegacyCurrency(this, path);
+            if (currency == null) return;
+            backupManager.restoreBackup(path.toString(), currency);
             JOptionPane.showMessageDialog(this,
-                I18n.tr("Backup restored successfully.") + "\n" + I18n.tr("The program will now restart."),
+                I18n.tr("Backup restored successfully.") + "\n" + I18n.tr("WareStat will now close. Reopen it to use the restored database."),
                 I18n.tr("Restore Completed"), JOptionPane.INFORMATION_MESSAGE);
             System.exit(0);
         } catch (Exception exception) {
