@@ -767,7 +767,7 @@ public class DashboardPanel extends JPanel {
             String query = """
                 SELECT p.name,
                        SUM(od.quantity) as total_qty,
-                       SUM(ROUND(od.quantity * od.unit_price,2)) as total_revenue
+                       SUM(warestat_line_total(od.quantity,od.unit_price)) as total_revenue
                 FROM order_details od
                 JOIN products p ON od.product_id = p.id
                 JOIN orders o ON od.order_id = o.id
@@ -784,7 +784,7 @@ public class DashboardPanel extends JPanel {
                 while (rs.next()) {
                     String name = rs.getString("name");
                     long qty = rs.getLong("total_qty");
-                    double revenue = rs.getDouble("total_revenue");
+                    double revenue = Numbers.money(java.math.BigDecimal.valueOf(rs.getDouble("total_revenue")));
 
                     model.addRow(new Object[]{
                         rank++,
@@ -810,7 +810,7 @@ public class DashboardPanel extends JPanel {
             // Get all products with their revenue, sorted by revenue
             String query = """
                 SELECT p.id, p.name,
-                       COALESCE(SUM(CASE WHEN o.status='Completed' THEN ROUND(od.quantity * od.unit_price,2) ELSE 0 END), 0) as revenue
+                       COALESCE(SUM(CASE WHEN o.status='Completed' THEN warestat_line_total(od.quantity,od.unit_price) ELSE 0 END), 0) as revenue
                 FROM products p
                 LEFT JOIN order_details od ON p.id = od.product_id
                 LEFT JOIN orders o ON od.order_id = o.id AND o.status = 'Completed'
@@ -825,9 +825,9 @@ public class DashboardPanel extends JPanel {
             try (Statement stmt = conn.createStatement();
                  ResultSet rs = stmt.executeQuery(query)) {
                 while (rs.next()) {
-                    double revenue = rs.getDouble("revenue");
+                    double revenue = Numbers.money(java.math.BigDecimal.valueOf(rs.getDouble("revenue")));
                     products.add(new ProductRevenue(rs.getString("name"), revenue));
-                    totalRevenue += revenue;
+                    totalRevenue = Numbers.add(totalRevenue,revenue);
                 }
             }
 
@@ -844,17 +844,17 @@ public class DashboardPanel extends JPanel {
 
             for (ProductRevenue pr : products) {
                 double percentRevenue = cumulativeRevenue / totalRevenue;
-                cumulativeRevenue += pr.revenue;
+                cumulativeRevenue = Numbers.add(cumulativeRevenue,pr.revenue);
 
                 if (pr.revenue > 0 && percentRevenue < 0.80) {
                     classACount++;
-                    classARevenue += pr.revenue;
+                    classARevenue = Numbers.add(classARevenue,pr.revenue);
                 } else if (pr.revenue > 0 && percentRevenue < 0.95) {
                     classBCount++;
-                    classBRevenue += pr.revenue;
+                    classBRevenue = Numbers.add(classBRevenue,pr.revenue);
                 } else {
                     classCCount++;
-                    classCRevenue += pr.revenue;
+                    classCRevenue = Numbers.add(classCRevenue,pr.revenue);
                 }
             }
 
