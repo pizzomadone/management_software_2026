@@ -74,11 +74,13 @@ public final class PdfWriter implements AutoCloseable {
         stream=new PDPageContentStream(document,page);
         text("WareStat | "+pageLabel()+" "+document.getNumberOfPages(),MARGIN,28,regular,8);
         y=paper.getHeight()-MARGIN;
-        for(String line:wrap(title,paper.getWidth()-2*MARGIN,bold,14)) {
-            if(y<BOTTOM+60) throw new IOException("Report title is too long");
-            text(line,MARGIN,y,bold,14);y-=19;
+        if(!title.isBlank()) {
+            for(String line:wrap(title,paper.getWidth()-2*MARGIN,bold,14)) {
+                if(y<BOTTOM+60) throw new IOException("Report title is too long");
+                text(line,MARGIN,y,bold,14);y-=19;
+            }
+            y-=12;
         }
-        y-=12;
         if(headers!=null)header();
     }
     private java.util.List<String> wrap(String value,float width,PDFont font,float size) throws IOException {
@@ -121,6 +123,106 @@ public final class PdfWriter implements AutoCloseable {
         if(y-h<BOTTOM)newPage();
         stream.drawImage(logo,MARGIN,y-h,logo.getWidth()*scale,h);y-=h+12;
     }
+    private void rightText(String value,float right,float baseline,PDFont font,float size) throws IOException {
+        text(value,right-measure(value,font,size),baseline,font,size);
+    }
+    private java.util.List<String> wrappedLines(java.util.List<String> values,float width,PDFont font,float size) throws IOException {
+        java.util.List<String> result=new ArrayList<>();
+        for(String value:values) {
+            if(value==null || value.isBlank())continue;
+            result.addAll(wrap(value,width,font,size));
+        }
+        return result;
+    }
+    public void invoiceHeader(byte[] logoBytes,String documentTitle,String number,
+            String dateLabel,String date,String statusLabel,String status,String currencyLabel,String currency,
+            String fromLabel,String fromName,java.util.List<String> fromLines,
+            String billToLabel,String billToName,java.util.List<String> billToLines) throws IOException {
+        headers=null;widths=null;
+        float top=y;
+        if(logoBytes!=null && logoBytes.length>0) {
+            PDImageXObject logo=PDImageXObject.createFromByteArray(document,logoBytes,"Company logo");
+            float scale=Math.min(112f/logo.getWidth(),50f/logo.getHeight());
+            float h=logo.getHeight()*scale;
+            stream.drawImage(logo,MARGIN,top-h,logo.getWidth()*scale,h);
+        }
+        float right=paper.getWidth()-MARGIN;
+        rightText(documentTitle,right,top-2,bold,22);
+        if(number!=null && !number.isBlank()) rightText(number,right,top-24,bold,11);
+        String dateText=dateLabel+": "+date;
+        String currencyText=currencyLabel+": "+currency;
+        rightText(dateText,right,top-41,regular,8.5f);
+        rightText(currencyText,right,top-54,regular,8.5f);
+        String statusText=statusLabel+": "+status;
+        float statusWidth=measure(statusText,bold,8.5f)+12;
+        stream.setNonStrokingColor(java.awt.Color.LIGHT_GRAY);
+        stream.addRect(right-statusWidth,top-72,statusWidth,13);stream.fill();
+        stream.setNonStrokingColor(java.awt.Color.BLACK);
+        rightText(statusText,right-6,top-68,bold,8.5f);
+
+        y=top-88;
+        stream.setStrokingColor(java.awt.Color.LIGHT_GRAY);
+        stream.moveTo(MARGIN,y);stream.lineTo(right,y);stream.stroke();
+        y-=18;
+
+        float gap=24, col=(paper.getWidth()-2*MARGIN-gap)/2, rightX=MARGIN+col+gap;
+        text(fromLabel,MARGIN,y,bold,9);text(billToLabel,rightX,y,bold,9);y-=16;
+
+        java.util.List<String> leftName=wrap((fromName==null||fromName.isBlank())?"—":fromName,col,bold,10);
+        java.util.List<String> rightName=wrap((billToName==null||billToName.isBlank())?"—":billToName,col,bold,10);
+        int nameRows=Math.max(leftName.size(),rightName.size());
+        for(int row=0;row<nameRows;row++) {
+            if(y-LINE<BOTTOM+70)newPage();
+            if(row<leftName.size())text(leftName.get(row),MARGIN,y,bold,10);
+            if(row<rightName.size())text(rightName.get(row),rightX,y,bold,10);
+            y-=LINE;
+        }
+        y-=2;
+
+        java.util.List<String> left=wrappedLines(fromLines,col,regular,SIZE);
+        java.util.List<String> rightLines=wrappedLines(billToLines,col,regular,SIZE);
+        int rows=Math.max(left.size(),rightLines.size());
+        for(int row=0;row<rows;row++) {
+            if(y-LINE<BOTTOM+70)newPage();
+            if(row<left.size())text(left.get(row),MARGIN,y,regular,SIZE);
+            if(row<rightLines.size())text(rightLines.get(row),rightX,y,regular,SIZE);
+            y-=LINE;
+        }
+        y-=10;
+        stream.setStrokingColor(java.awt.Color.LIGHT_GRAY);
+        stream.moveTo(MARGIN,y);stream.lineTo(right,y);stream.stroke();
+        y-=16;
+    }
+    public void totals(String[] labels,String[] values) throws IOException {
+        if(labels.length==0 || labels.length!=values.length)throw new IOException("Invalid invoice totals");
+        headers=null;widths=null;
+        float boxWidth=230, right=paper.getWidth()-MARGIN, left=right-boxWidth;
+        float needed=labels.length*18+16;
+        if(y-needed<BOTTOM)newPage();
+        stream.setStrokingColor(java.awt.Color.LIGHT_GRAY);
+        stream.moveTo(left,y);stream.lineTo(right,y);stream.stroke();y-=15;
+        for(int i=0;i<labels.length;i++) {
+            boolean finalRow=i==labels.length-1;
+            PDFont font=finalRow?bold:regular;float size=finalRow?11:9;
+            text(labels[i],left+6,y,font,size);
+            rightText(values[i],right-6,y,font,size);
+            y-=finalRow?19:17;
+        }
+        stream.moveTo(left,y+7);stream.lineTo(right,y+7);stream.stroke();y-=8;
+    }
+    public void note(String value) throws IOException {
+        if(value==null || value.isBlank())return;
+        headers=null;widths=null;
+        y-=8;
+        stream.setStrokingColor(java.awt.Color.LIGHT_GRAY);
+        stream.moveTo(MARGIN,y);stream.lineTo(paper.getWidth()-MARGIN,y);stream.stroke();y-=12;
+        for(String line:wrap(value,paper.getWidth()-2*MARGIN,regular,7.5f)) {
+            if(y-11<BOTTOM)newPage();
+            text(line,MARGIN,y,regular,7.5f);y-=11;
+        }
+        y-=4;
+    }
+
     public void startTable(String[] labels,float[] weights) throws IOException {
         if(labels.length==0 || labels.length!=weights.length)throw new IOException("Invalid report columns");
         headers=labels.clone();widths=new float[weights.length];float sum=0;
