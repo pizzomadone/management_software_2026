@@ -745,6 +745,7 @@ public class SettingsPanel extends JPanel {
             NumberFormat formatter = NumberFormat.getCurrencyInstance(Locale.getDefault());
             Currency currency = Currency.getInstance(currencyCode);
             formatter.setCurrency(currency);
+            formatter.setRoundingMode(java.math.RoundingMode.HALF_UP);
             formatter.setMinimumFractionDigits(2);
             formatter.setMaximumFractionDigits(2);
             return formatter.format(amount);
