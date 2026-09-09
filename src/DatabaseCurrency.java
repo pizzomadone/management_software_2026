@@ -162,7 +162,7 @@ public final class DatabaseCurrency {
         }
 
         try(PreparedStatement orders=c.prepareStatement(
-                "SELECT id,payment_status,paid_amount FROM orders ORDER BY id");
+                "SELECT id,total,payment_status,paid_amount FROM orders ORDER BY id");
             PreparedStatement lines=c.prepareStatement(
                 "SELECT quantity,unit_price FROM order_details WHERE order_id=? ORDER BY id");
             PreparedStatement update=c.prepareStatement(
@@ -170,13 +170,17 @@ public final class DatabaseCurrency {
             ResultSet r=orders.executeQuery()) {
             while(r.next()) {
                 int id=r.getInt("id");
-                double total=0;
+                double total=0;int lineCount=0;
                 lines.setInt(1,id);
                 try(ResultSet d=lines.executeQuery()) {
-                    while(d.next()) total=Numbers.add(total,
-                        Numbers.lineTotal(Numbers.positiveQuantity(d.getObject("quantity")),
-                            Numbers.nonNegative(d.getObject("unit_price"))));
+                    while(d.next()) {
+                        lineCount++;
+                        total=Numbers.add(total,
+                            Numbers.lineTotal(Numbers.positiveQuantity(d.getObject("quantity")),
+                                Numbers.nonNegative(d.getObject("unit_price"))));
+                    }
                 }
+                if(lineCount==0) total=convertMoney(r.getObject("total"),rate);
                 String payment=r.getString("payment_status");
                 double paid;
                 if("PAID".equals(payment)) paid=total;
@@ -203,17 +207,18 @@ public final class DatabaseCurrency {
             write.executeBatch();
         }
 
-        try(PreparedStatement orders=c.prepareStatement("SELECT id FROM supplier_orders ORDER BY id");
+        try(PreparedStatement orders=c.prepareStatement("SELECT id,total FROM supplier_orders ORDER BY id");
             PreparedStatement sum=c.prepareStatement(
                 "SELECT total FROM supplier_order_details WHERE order_id=? ORDER BY id");
             PreparedStatement update=c.prepareStatement("UPDATE supplier_orders SET total=? WHERE id=?");
             ResultSet r=orders.executeQuery()) {
             while(r.next()) {
-                int id=r.getInt("id");double total=0;
+                int id=r.getInt("id");double total=0;int lineCount=0;
                 sum.setInt(1,id);
                 try(ResultSet d=sum.executeQuery()) {
-                    while(d.next()) total=Numbers.add(total,Numbers.nonNegative(d.getObject("total")));
+                    while(d.next()) {lineCount++;total=Numbers.add(total,Numbers.nonNegative(d.getObject("total")));}
                 }
+                if(lineCount==0) total=convertMoney(r.getObject("total"),rate);
                 update.setDouble(1,total);update.setInt(2,id);update.addBatch();
             }
             update.executeBatch();
@@ -237,17 +242,18 @@ public final class DatabaseCurrency {
         }
 
         try(PreparedStatement drafts=c.prepareStatement(
-                "SELECT id FROM invoices WHERE status='Draft' ORDER BY id");
+                "SELECT id,taxable_amount,vat,total FROM invoices WHERE status='Draft' ORDER BY id");
             PreparedStatement lines=c.prepareStatement(
                 "SELECT quantity,unit_price,vat_rate FROM invoice_details WHERE invoice_id=? ORDER BY id");
             PreparedStatement update=c.prepareStatement(
                 "UPDATE invoices SET taxable_amount=?,vat=?,total=?,currency_code=? WHERE id=?");
             ResultSet r=drafts.executeQuery()) {
             while(r.next()) {
-                int id=r.getInt("id");double taxable=0,vat=0;
+                int id=r.getInt("id");double taxable=0,vat=0;int lineCount=0;
                 lines.setInt(1,id);
                 try(ResultSet d=lines.executeQuery()) {
                     while(d.next()) {
+                        lineCount++;
                         double line=Numbers.lineTotal(
                             Numbers.positiveQuantity(d.getObject("quantity")),
                             Numbers.nonNegative(d.getObject("unit_price")));
@@ -255,8 +261,14 @@ public final class DatabaseCurrency {
                         vat=Numbers.add(vat,Numbers.tax(line,Numbers.vat(d.getObject("vat_rate"))));
                     }
                 }
+                double total;
+                if(lineCount==0) {
+                    taxable=convertMoney(r.getObject("taxable_amount"),rate);
+                    vat=convertMoney(r.getObject("vat"),rate);
+                    total=convertMoney(r.getObject("total"),rate);
+                } else total=Numbers.add(taxable,vat);
                 update.setDouble(1,taxable);update.setDouble(2,vat);
-                update.setDouble(3,Numbers.add(taxable,vat));update.setString(4,newCode);
+                update.setDouble(3,total);update.setString(4,newCode);
                 update.setInt(5,id);update.addBatch();
             }
             update.executeBatch();
