@@ -212,7 +212,7 @@ public class InvoicePDFGenerator {
 
                 pdf.startTable(new String[]{I18n.tr("Code"),I18n.tr("Description"),I18n.tr("Qty"),I18n.tr("Unit price")+" "+currency,I18n.tr("VAT %"),I18n.tr("Total")+" "+currency},new float[]{1.6f,3.1f,.7f,1.6f,.9f,1.6f});
                 for(InvoiceItem item:invoiceItems)pdf.row(item.getProductCode(),item.getProductName(),Integer.toString(item.getQuantity()),
-                    money(item.getUnitPrice()),decimal(item.getVatRate()),money(item.getTotal()));
+                    Numbers.unitText(item.getUnitPrice()),decimal(item.getVatRate()),money(item.getTotal()));
 
                 pdf.totals(
                     new String[]{I18n.tr("Taxable amount")+":",I18n.tr("VAT")+":",I18n.tr("TOTAL")+":"},
