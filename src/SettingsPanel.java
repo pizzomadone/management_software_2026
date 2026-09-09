@@ -483,9 +483,15 @@ public class SettingsPanel extends JPanel {
     }
 
     private String performCurrencyChange(String oldCode,String newCode,String selectedCurrency) {
-        String warning=I18n.tr("Changing the operating currency affects products, costs, supplier price lists, customer orders, supplier orders and Draft invoices.")+
-            "\n\n"+I18n.tr("Issued, Paid and Canceled invoices keep their original currency and amounts.")+
-            "\n\n"+I18n.tr("Choose how existing operational values should be handled:");
+        String warning=I18n.tr("Currency change: {OLD} → {NEW}")
+                .replace("{OLD}",oldCode).replace("{NEW}",newCode)+
+            "\n\n"+I18n.tr("Choose how existing operational values should be handled:")+
+            "\n• "+I18n.tr("Change currency only: numbers stay the same.")+
+            "\n  "+I18n.tr("For example, 100 {OLD} will become 100 {NEW}.")
+                .replace("{OLD}",oldCode).replace("{NEW}",newCode)+
+            "\n• "+I18n.tr("Convert values: monetary values are recalculated using a rate you enter.")+
+            "\n\n"+I18n.tr("Issued, Paid and Canceled invoices keep their original currency and amounts.");
+
         Object[] options={
             I18n.tr("Change currency only"),
             I18n.tr("Convert values"),
@@ -503,7 +509,8 @@ public class SettingsPanel extends JPanel {
             if(choice==0) {
                 String relabel=I18n.tr("No amounts will be converted.")+"\n"+
                     I18n.tr("For example, 100 {OLD} will become 100 {NEW}.")
-                        .replace("{OLD}",oldCode).replace("{NEW}",newCode);
+                        .replace("{OLD}",oldCode).replace("{NEW}",newCode)+"\n\n"+
+                    I18n.tr("Issued, Paid and Canceled invoices will not be changed.");
                 int confirm=JOptionPane.showConfirmDialog(this,relabel,I18n.tr("Confirm Currency Change"),
                     JOptionPane.OK_CANCEL_OPTION,JOptionPane.WARNING_MESSAGE);
                 if(confirm!=JOptionPane.OK_OPTION) {
@@ -512,6 +519,11 @@ public class SettingsPanel extends JPanel {
                 }
                 DatabaseCurrency.change(newCode,DatabaseCurrency.ChangeMode.RELABEL,null);
                 currencyChangedDuringUpdate = true;
+                JOptionPane.showMessageDialog(this,
+                    I18n.tr("Currency changed successfully.")+"\n"+
+                    I18n.tr("No amounts were converted.")+"\n"+
+                    I18n.tr("Issued, Paid and Canceled invoices keep their original currency and amounts."),
+                    I18n.tr("Change Currency"),JOptionPane.INFORMATION_MESSAGE);
             } else {
                 String input=JOptionPane.showInputDialog(this,
                     I18n.tr("Enter the exchange rate: 1 {OLD} = ? {NEW}")
@@ -531,7 +543,8 @@ public class SettingsPanel extends JPanel {
 
                 String confirmation=I18n.tr("Existing operational monetary values will be converted using:")+"\n"+
                     "1 "+oldCode+" = "+rate.stripTrailingZeros().toPlainString()+" "+newCode+"\n\n"+
-                    I18n.tr("Issued, Paid and Canceled invoices will not be changed.");
+                    I18n.tr("Changing the operating currency affects products, costs, supplier price lists, customer orders, supplier orders and Draft invoices.")+
+                    "\n\n"+I18n.tr("Issued, Paid and Canceled invoices will not be changed.");
                 int confirm=JOptionPane.showConfirmDialog(this,confirmation,I18n.tr("Confirm Currency Conversion"),
                     JOptionPane.OK_CANCEL_OPTION,JOptionPane.WARNING_MESSAGE);
                 if(confirm!=JOptionPane.OK_OPTION) {
@@ -540,6 +553,11 @@ public class SettingsPanel extends JPanel {
                 }
                 DatabaseCurrency.change(newCode,DatabaseCurrency.ChangeMode.CONVERT,rate);
                 currencyChangedDuringUpdate = true;
+                JOptionPane.showMessageDialog(this,
+                    I18n.tr("Currency changed successfully.")+"\n"+
+                    I18n.tr("Operational values were converted using the selected exchange rate.")+"\n"+
+                    I18n.tr("Issued, Paid and Canceled invoices keep their original currency and amounts."),
+                    I18n.tr("Change Currency"),JOptionPane.INFORMATION_MESSAGE);
             }
             Window owner=SwingUtilities.getWindowAncestor(this);
             if(owner instanceof MainWindow mainWindow) mainWindow.refreshAfterCurrencyChange();
