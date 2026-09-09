@@ -191,7 +191,34 @@ public class DashboardPanel extends JPanel {
         card.add(titleLabel, BorderLayout.NORTH);
         card.add(valueLabel, BorderLayout.CENTER);
 
-        JLabel help = new JLabel("?", SwingConstants.CENTER);
+        JLabel help = new JLabel("?", SwingConstants.CENTER) {
+            private Integer previousDismissDelay;
+
+            {
+                addHierarchyListener(event -> {
+                    if (!isShowing()) restoreDismissDelay();
+                });
+            }
+
+            @Override
+            protected void processMouseEvent(java.awt.event.MouseEvent event) {
+                if (event.getID() == java.awt.event.MouseEvent.MOUSE_ENTERED && previousDismissDelay == null) {
+                    ToolTipManager manager = ToolTipManager.sharedInstance();
+                    previousDismissDelay = manager.getDismissDelay();
+                    manager.setDismissDelay(Integer.MAX_VALUE);
+                }
+                // Set the delay before Swing handles entry, including immediately reshown tooltips.
+                super.processMouseEvent(event);
+                if (event.getID() == java.awt.event.MouseEvent.MOUSE_EXITED) restoreDismissDelay();
+            }
+
+            private void restoreDismissDelay() {
+                if (previousDismissDelay != null) {
+                    ToolTipManager.sharedInstance().setDismissDelay(previousDismissDelay);
+                    previousDismissDelay = null;
+                }
+            }
+        };
         help.setFont(new Font("Arial", Font.BOLD, 11));
         help.setForeground(new Color(100, 100, 100));
         help.setPreferredSize(new Dimension(18, 18));
