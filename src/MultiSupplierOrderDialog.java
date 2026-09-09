@@ -123,7 +123,7 @@ public class MultiSupplierOrderDialog extends JDialog {
             } catch (Exception ex) { showWarning(picker,ex.getMessage()); return; }
             model.addRow(new Object[]{id, products.getValueAt(row, 1), products.getValueAt(row, 2),
                 products.getValueAt(row, 3), products.getValueAt(row, 4), qty,
-                price, String.format("%.2f", Numbers.lineTotal(qty,price)), ""});
+                price, Numbers.moneyText(Numbers.lineTotal(qty,price)), ""});
             updateTotals(); picker.dispose();
         });
         productTable.setAutoCreateRowSorter(true);
@@ -183,7 +183,7 @@ public class MultiSupplierOrderDialog extends JDialog {
             int quantity = parseInt(model.getValueAt(i, 5));
             double price = parseDouble(model.getValueAt(i, 6));
             double line = Numbers.lineTotal(quantity, price);
-            model.setValueAt(String.format("%.2f", line), i, 7); total = Numbers.add(total,line);
+            model.setValueAt(Numbers.moneyText(line), i, 7); total = Numbers.add(total,line);
         }
         totalLabel.setText("Total: " + SettingsPanel.formatCurrency(total));
         } finally { updating = false; }
