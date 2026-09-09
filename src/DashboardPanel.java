@@ -481,9 +481,7 @@ public class DashboardPanel extends JPanel {
             double monthlySales = sumMonthlyDocuments(conn,
                 "SELECT total FROM orders WHERE status='Completed' AND " +
                     DateUtils.sqlDate("order_date") + ">=? AND " + DateUtils.sqlDate("order_date") + "<?", start, end);
-            double monthlyInvoiced = sumMonthlyDocuments(conn,
-                "SELECT taxable_amount AS total FROM invoices WHERE status IN ('Issued','Paid') AND " +
-                    DateUtils.sqlDate("date") + ">=? AND " + DateUtils.sqlDate("date") + "<?", start, end);
+            String monthlyInvoiced = monthlyInvoiceSummary(conn,start,end);
 
             // Potential gross margin uses the same stock totals, weighted by their sale value.
             // It is undefined without a positive denominator; it is not historical sales profit.
@@ -513,7 +511,7 @@ public class DashboardPanel extends JPanel {
             lowStockCountLabel.setText(String.valueOf(lowStockCount));
             pendingOrdersLabel.setText(String.valueOf(pendingOrders));
             monthRevenueLabel.setText(SettingsPanel.formatCurrency(monthlySales));
-            monthInvoicedLabel.setText(SettingsPanel.formatCurrency(monthlyInvoiced));
+            monthInvoicedLabel.setText(monthlyInvoiced);
             avgMarginLabel.setText(margin);
             zeroStockLabel.setText(String.valueOf(zeroStockCount));
 
@@ -529,6 +527,30 @@ public class DashboardPanel extends JPanel {
                 "Error",
                 JOptionPane.ERROR_MESSAGE);
         }
+    }
+
+    private String monthlyInvoiceSummary(Connection conn,String start,String end) throws SQLException {
+        java.util.LinkedHashMap<String,Double> totals=new java.util.LinkedHashMap<>();
+        String query="SELECT currency_code,taxable_amount FROM invoices WHERE status IN ('Issued','Paid') AND " +
+            DateUtils.sqlDate("date") + ">=? AND " + DateUtils.sqlDate("date") + "<? ORDER BY currency_code,id";
+        try(PreparedStatement stmt=conn.prepareStatement(query)) {
+            stmt.setString(1,start);stmt.setString(2,end);
+            try(ResultSet rs=stmt.executeQuery()) {
+                while(rs.next()) {
+                    String code=rs.getString("currency_code");
+                    if(code==null || code.isBlank()) throw new SQLException("Invoice currency is missing");
+                    double amount=Numbers.nonNegative(rs.getObject("taxable_amount"));
+                    totals.put(code,Numbers.add(totals.getOrDefault(code,0.0),amount));
+                }
+            }
+        }
+        if(totals.isEmpty()) return SettingsPanel.formatCurrency(0);
+        StringBuilder result=new StringBuilder();
+        for(var entry:totals.entrySet()) {
+            if(result.length()>0)result.append(" + ");
+            result.append(SettingsPanel.formatCurrency(entry.getValue(),entry.getKey()));
+        }
+        return result.toString();
     }
 
     private double sumMonthlyDocuments(Connection conn, String query, String start, String end) throws SQLException {
