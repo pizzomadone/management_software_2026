@@ -73,6 +73,8 @@ public class ExtendedRegressionTest extends RegressionTest {
             fresh();
             require(Numbers.moneyText(2.675).equals("2.68"),"HALF_UP decimal boundary is wrong");
             require(Numbers.lineTotal(1,2.675)==2.68,"Line total does not use HALF_UP");
+            require(new OrderItem(1,1,1,"Boundary",1,2.675).getTotal()==2.68,"OrderItem bypasses accounting rounding");
+            require(SettingsPanel.formatCurrency(2.675,"USD").contains("2.68"),"Visible currency formatting disagrees with HALF_UP");
             require("2.68".equals(value("SELECT warestat_line_total(1,2.675)")),"SQL report rounding differs from document rounding");
             require("0.335".equals(Numbers.unitText(0.335)),"Unit precision was hidden");
             require(Numbers.moneyText(Numbers.lineTotal(3,0.335)).equals("1.01"),"Precise unit price does not reconcile with line total");
