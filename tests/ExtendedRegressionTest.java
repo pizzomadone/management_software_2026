@@ -324,7 +324,10 @@ public class ExtendedRegressionTest extends RegressionTest {
                 "Convert values: monetary values are recalculated using a rate you enter.",
                 "Currency changed successfully.",
                 "No amounts were converted.",
-                "Operational values were converted using the selected exchange rate."
+                "Operational values were converted using the selected exchange rate.",
+                "Finalized invoice: only the status can be changed.",
+                "Issued, Paid and Canceled invoices are historical documents. Only their status can be changed.",
+                "A finalized invoice cannot be returned to Draft."
             };
             try {
                 for(String language:List.of("it","es","pt_BR","fr","de","pl","en")) {
@@ -390,6 +393,82 @@ public class ExtendedRegressionTest extends RegressionTest {
             DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
             String mixed=((JLabel)get(dash,"monthInvoicedLabel")).getText();
             require(mixed.contains(SettingsPanel.formatCurrency(10,"EUR")) && mixed.contains(SettingsPanel.formatCurrency(12,"USD")) && mixed.contains(" + "),"Mixed invoice currencies were incorrectly summed");
+        });
+        test("currency conversion preserves sub-cent unit precision and recalculates cents consistently",()->{
+            fresh();
+            sql("UPDATE products SET price=0.000001,acquisition_cost=0.000001 WHERE id=1");
+            sql("INSERT INTO supplier_price_lists(supplier_id,product_id,price,minimum_quantity,validity_start_date) VALUES(1,1,0.000001,1,0)");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) VALUES(20,1,0,'Completed',1.00,'PARTIALLY_PAID',0.33)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(20,1,1000000,0.000001)");
+            sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,status,total) VALUES(20,1,'FX-PRECISION',0,'Completed',1.00)");
+            sql("INSERT INTO supplier_order_details(order_id,product_id,quantity,unit_price,total) VALUES(20,1,1000000,0.000001,1.00)");
+            sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(20,'FX-PRECISION',0,1,1.00,0.22,1.22,'Draft')");
+            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total) VALUES(20,1,1000000,0.000001,22,1.00)");
+            InvoiceSnapshots.capture(db,20,false);
+
+            DatabaseCurrency.change("USD",DatabaseCurrency.ChangeMode.CONVERT,new java.math.BigDecimal("1.5"));
+
+            try(Statement s=db.createStatement()) {
+                try(ResultSet r=s.executeQuery("SELECT price,acquisition_cost FROM products WHERE id=1")) {
+                    require(r.next() && Math.abs(r.getDouble(1)-0.0000015)<1e-15 && Math.abs(r.getDouble(2)-0.0000015)<1e-15,
+                        "Unit precision was lost during product conversion");
+                }
+                try(ResultSet r=s.executeQuery("SELECT total,paid_amount,(SELECT unit_price FROM order_details WHERE order_id=20) FROM orders WHERE id=20")) {
+                    require(r.next() && r.getDouble(1)==1.50 && r.getDouble(2)==0.50 && Math.abs(r.getDouble(3)-0.0000015)<1e-15,
+                        "Customer order conversion lost precision or rounded payment incorrectly");
+                }
+                try(ResultSet r=s.executeQuery("SELECT total,(SELECT unit_price FROM supplier_order_details WHERE order_id=20),(SELECT total FROM supplier_order_details WHERE order_id=20) FROM supplier_orders WHERE id=20")) {
+                    require(r.next() && r.getDouble(1)==1.50 && Math.abs(r.getDouble(2)-0.0000015)<1e-15 && r.getDouble(3)==1.50,
+                        "Supplier order conversion lost precision");
+                }
+                try(ResultSet r=s.executeQuery("SELECT currency_code,taxable_amount,vat,total,(SELECT unit_price FROM invoice_details WHERE invoice_id=20),(SELECT total FROM invoice_details WHERE invoice_id=20) FROM invoices WHERE id=20")) {
+                    require(r.next() && "USD".equals(r.getString(1)) && r.getDouble(2)==1.50 && r.getDouble(3)==0.33 && r.getDouble(4)==1.83 &&
+                        Math.abs(r.getDouble(5)-0.0000015)<1e-15 && r.getDouble(6)==1.50,
+                        "Draft invoice conversion or VAT recalculation is inconsistent");
+                }
+            }
+            require("0.0000015".equals(Numbers.unitText(0.0000015)),"Precise converted unit value is hidden");
+        });
+        test("all report line totals use the same HALF_UP accounting rule",()->{
+            fresh();
+            require(Numbers.lineTotal(1,2.675)==2.68 && new OrderItem(1,1,1,"Tie",1,2.675).getTotal()==2.68,
+                "Java order totals do not use HALF_UP");
+            try(Statement s=db.createStatement();ResultSet r=s.executeQuery(
+                    "SELECT warestat_line_total(1,2.675),warestat_line_total(3,1.005)")) {
+                require(r.next() && r.getDouble(1)==2.68 && r.getDouble(2)==3.02,
+                    "SQL reports disagree with WareStat HALF_UP line totals");
+            }
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total) VALUES(20,1,"+System.currentTimeMillis()+",'Completed',2.68)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(20,1,1,2.675)");
+            DashboardPanel dash=new DashboardPanel(null);call(dash,"loadTopProducts");call(dash,"loadABCAnalysis");
+            JTable top=(JTable)get(dash,"topProductsTable");
+            require(top.getRowCount()>0 && SettingsPanel.formatCurrency(2.68).equals(top.getValueAt(0,3)),
+                "Dashboard top-product revenue uses different rounding");
+            JTable abc=(JTable)get(dash,"abcAnalysisTable");
+            require(SettingsPanel.formatCurrency(2.68).equals(abc.getValueAt(0,3)),
+                "ABC revenue uses different rounding");
+            AdvancedStatsPanel stats=new AdvancedStatsPanel();call(stats,"loadProductsData");
+            JTable productStats=(JTable)get(stats,"topProductsTable");
+            require(productStats.getRowCount()>0 && SettingsPanel.formatCurrency(2.68).equals(productStats.getValueAt(0,2)),
+                "Advanced statistics revenue uses different rounding");
+        });
+        test("currency conversion refuses to silently repair inconsistent documents",()->{
+            fresh();
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) VALUES(20,1,0,'Completed',10,'NOT_PAID',0)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(20,1,1,9.99)");
+            boolean blocked=false;
+            try {DatabaseCurrency.change("USD",DatabaseCurrency.ChangeMode.CONVERT,new java.math.BigDecimal("1.2"));}
+            catch(SQLException e){blocked=true;}
+            require(blocked,"Inconsistent source order was silently reconciled during conversion");
+            require("EUR".equals(DatabaseCurrency.read(db)) && "9.99".equals(value("SELECT unit_price FROM order_details WHERE order_id=20")),
+                "Rejected conversion left partial changes");
+        });
+        test("every non-Draft invoice is treated as finalized regardless of currency",()->{
+            java.lang.reflect.Method method=InvoiceDialog.class.getDeclaredMethod("isFinalizedStatus",String.class);
+            method.setAccessible(true);
+            require(!(Boolean)method.invoke(null,"Draft"),"Draft invoice was locked");
+            for(String status:List.of("Issued","Paid","Canceled"))
+                require((Boolean)method.invoke(null,status),"Finalized invoice remained economically editable: "+status);
         });
         test("currency conversion is atomic and historical foreign invoice only changes status",()->{
             fresh();
