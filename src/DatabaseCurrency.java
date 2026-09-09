@@ -190,11 +190,12 @@ public final class DatabaseCurrency {
 
     private static double convertUnit(Object value, BigDecimal rate) {
         double source=Numbers.nonNegative(value);
-        // Twelve decimals keep the line-total error below one cent even at the
-        // maximum supported integer quantity, while remaining safely representable in SQLite REAL.
-        BigDecimal converted=BigDecimal.valueOf(source).multiply(rate)
-            .setScale(12,RoundingMode.HALF_UP).stripTrailingZeros();
-        return Numbers.nonNegative(converted.toPlainString());
+        // Calculate from decimal values first, then use the exact value that SQLite REAL
+        // can actually preserve. Avoid a fixed decimal scale: it can either lose useful
+        // precision or reject otherwise valid large prices.
+        BigDecimal converted=BigDecimal.valueOf(source).multiply(rate);
+        double stored=converted.doubleValue();
+        return Numbers.nonNegative(stored);
     }
 
     private static double convertMoney(Object value, BigDecimal rate) {
