@@ -314,7 +314,7 @@ public class OrderDialog extends JDialog {
             row.add(item.getProductName());
             row.add(item.getQuantity());
             row.add(item.getUnitPrice());
-            row.add(String.format("%.2f", item.getTotal()));
+            row.add(Numbers.moneyText(item.getTotal()));
             itemsTableModel.addRow(row);
         }
 
@@ -375,7 +375,7 @@ public class OrderDialog extends JDialog {
             row.add(product.getName());
             row.add(quantity);
             row.add(product.getPrice());
-            row.add(String.format("%.2f", quantity * product.getPrice()));
+            row.add(Numbers.moneyText(Numbers.lineTotal(quantity, product.getPrice())));
             itemsTableModel.addRow(row);
             
             updateTotals();
@@ -434,7 +434,7 @@ public class OrderDialog extends JDialog {
                 total = Numbers.add(total, itemTotal);
 
                 // Update row total
-                String newTotal = String.format("%.2f", itemTotal);
+                String newTotal = Numbers.moneyText(itemTotal);
                 String currentTotalStr = (String) itemsTableModel.getValueAt(i, 4);
                 if (!newTotal.equals(currentTotalStr)) {
                     itemsTableModel.setValueAt(newTotal, i, 4);
@@ -446,7 +446,7 @@ public class OrderDialog extends JDialog {
 
             // Update paid amount if payment status is "Paid"
             if ("Paid".equals(paymentStatusCombo.getSelectedItem())) {
-                paidAmountField.setText(String.format("%.2f", total));
+                paidAmountField.setText(Numbers.moneyText(total));
             }
 
         } catch (IllegalArgumentException e) {
