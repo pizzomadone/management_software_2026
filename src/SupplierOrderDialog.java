@@ -248,7 +248,7 @@ public class SupplierOrderDialog extends JDialog {
             row.add(item.getProductName());
             row.add(item.getQuantity());
             row.add(item.getUnitPrice());
-            row.add(String.format("%.2f", item.getTotal()));
+            row.add(Numbers.moneyText(item.getTotal()));
             row.add(item.getNotes());
             row.add(item.getProductId());
             itemsTableModel.addRow(row);
@@ -335,7 +335,7 @@ public class SupplierOrderDialog extends JDialog {
             row.add(selectedProduct.getProduct().getName());
             row.add(quantity);
             row.add(quotedPrice);
-            row.add(String.format("%.2f", Numbers.lineTotal(quantity, quotedPrice)));
+            row.add(Numbers.moneyText(Numbers.lineTotal(quantity, quotedPrice)));
             row.add(note);
             row.add(selectedProduct.getProduct().getId());
             itemsTableModel.addRow(row);
