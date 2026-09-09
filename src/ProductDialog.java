@@ -373,9 +373,9 @@ public class ProductDialog extends JDialog {
             if (product == null) { // New product
                 String query = """
                     INSERT INTO products (code, name, description, price, quantity,
-                        category, alternative_sku, weight, unit_of_measure, minimum_quantity,
+                        category, alternative_sku, weight, unit_of_measure,
                         acquisition_cost, active, supplier_id, warehouse_position, vat_rate)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """;
                 try (PreparedStatement pstmt = conn.prepareStatement(query, Statement.RETURN_GENERATED_KEYS)) {
                     pstmt.setString(1, code);
@@ -387,16 +387,15 @@ public class ProductDialog extends JDialog {
                     pstmt.setString(7, alternativeSku);
                     pstmt.setDouble(8, weight);
                     pstmt.setString(9, unitOfMeasure);
-                    pstmt.setInt(10, minimumQuantity);
-                    pstmt.setDouble(11, acquisitionCost);
-                    pstmt.setInt(12, active ? 1 : 0);
+                    pstmt.setDouble(10, acquisitionCost);
+                    pstmt.setInt(11, active ? 1 : 0);
                     if (supplierId != null) {
-                        pstmt.setInt(13, supplierId);
+                        pstmt.setInt(12, supplierId);
                     } else {
-                        pstmt.setNull(13, java.sql.Types.INTEGER);
+                        pstmt.setNull(12, java.sql.Types.INTEGER);
                     }
-                    pstmt.setString(14, warehousePosition);
-                    pstmt.setDouble(15, vatRate);
+                    pstmt.setString(13, warehousePosition);
+                    pstmt.setDouble(14, vatRate);
                     pstmt.executeUpdate();
                     try (ResultSet keys = pstmt.getGeneratedKeys()) {
                         if (!keys.next()) throw new SQLException("Missing product identifier");
@@ -408,7 +407,7 @@ public class ProductDialog extends JDialog {
                     UPDATE products
                     SET code = ?, name = ?, description = ?, price = ?, quantity = ?,
                         category = ?, alternative_sku = ?, weight = ?, unit_of_measure = ?,
-                        minimum_quantity = ?, acquisition_cost = ?, active = ?, supplier_id = ?,
+                        acquisition_cost = ?, active = ?, supplier_id = ?,
                         warehouse_position = ?, vat_rate = ?
                     WHERE id = ?
                 """;
@@ -422,17 +421,16 @@ public class ProductDialog extends JDialog {
                     pstmt.setString(7, alternativeSku);
                     pstmt.setDouble(8, weight);
                     pstmt.setString(9, unitOfMeasure);
-                    pstmt.setInt(10, minimumQuantity);
-                    pstmt.setDouble(11, acquisitionCost);
-                    pstmt.setInt(12, active ? 1 : 0);
+                    pstmt.setDouble(10, acquisitionCost);
+                    pstmt.setInt(11, active ? 1 : 0);
                     if (supplierId != null) {
-                        pstmt.setInt(13, supplierId);
+                        pstmt.setInt(12, supplierId);
                     } else {
-                        pstmt.setNull(13, java.sql.Types.INTEGER);
+                        pstmt.setNull(12, java.sql.Types.INTEGER);
                     }
-                    pstmt.setString(14, warehousePosition);
-                    pstmt.setDouble(15, vatRate);
-                    pstmt.setInt(16, product.getId());
+                    pstmt.setString(13, warehousePosition);
+                    pstmt.setDouble(14, vatRate);
+                    pstmt.setInt(15, product.getId());
                     pstmt.executeUpdate();
                 }
             }
@@ -448,8 +446,11 @@ public class ProductDialog extends JDialog {
                     movement.setString(6,"Stock count: " + oldQuantity + " -> " + quantity); movement.executeUpdate();
                 }
             }
-            try (PreparedStatement minimum = conn.prepareStatement("UPDATE minimum_stock SET minimum_quantity=? WHERE product_id=?")) {
-                minimum.setInt(1,minimumQuantity);minimum.setInt(2,productId);minimum.executeUpdate();
+            try (PreparedStatement minimum = conn.prepareStatement("""
+                    INSERT INTO minimum_stock(product_id, minimum_quantity, reorder_quantity) VALUES(?,?,0)
+                    ON CONFLICT(product_id) DO UPDATE SET minimum_quantity=excluded.minimum_quantity
+                    """)) {
+                minimum.setInt(1,productId);minimum.setInt(2,minimumQuantity);minimum.executeUpdate();
             }
             conn.commit();
             productSaved = true;

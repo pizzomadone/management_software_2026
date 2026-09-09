@@ -23,6 +23,26 @@ public class ExtendedRegressionTest extends RegressionTest {
         put(dialog,"supplierCombo",new JComboBox<>());put(dialog,"notesArea",new JTextArea(""));
         return dialog;
     }
+    static void legacyThresholdSchema(String firstPending) throws Exception {
+        sql("ALTER TABLE products ADD COLUMN minimum_quantity INTEGER DEFAULT 0");
+        sql("DELETE FROM schema_migrations WHERE version>='"+firstPending+"'");
+        if(firstPending.equals("010")) {
+            java.lang.reflect.Method method=DatabaseMigrationManager.class.getDeclaredMethod("migrateStockThresholds",Connection.class);
+            method.setAccessible(true);method.invoke(null,db);
+        }
+        for(String action:List.of("INSERT","UPDATE")) {
+            sql("DROP TRIGGER numeric_guard_products_"+action);
+            sql("CREATE TRIGGER numeric_guard_products_"+action+" BEFORE "+action+" ON products " +
+                "WHEN typeof(NEW.minimum_quantity)<>'integer' OR NEW.minimum_quantity NOT BETWEEN 0 AND 2147483647 " +
+                "BEGIN SELECT RAISE(ABORT,'Invalid legacy minimum'); END");
+        }
+    }
+    static void requireNormalizedThresholdSchema() throws Exception {
+        require("0".equals(value("SELECT COUNT(*) FROM pragma_table_info('products') WHERE name='minimum_quantity'")),"Duplicate product column remains");
+        require("0".equals(value("SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN ('minimum_stock_insert','minimum_stock_update','product_minimum_update')")),"Synchronization triggers remain");
+        require("1".equals(value("SELECT COUNT(*) FROM schema_migrations WHERE version='010'")),"Migration was not recorded exactly once");
+        DatabaseIntegrity.validate(db,false);
+    }
     static String pdfText(Path file) throws Exception {
         try(PDDocument doc=Loader.loadPDF(file.toFile())) {
             PDFTextStripper stripper=new PDFTextStripper() {
@@ -71,37 +91,125 @@ public class ExtendedRegressionTest extends RegressionTest {
             JTable t=(JTable)get(p,"topProductsTable");require(t.getRowCount()==10 && "5.0%".equals(t.getValueAt(0,3)),"Wrong market share");
             require((double)get(p,"productsTotalRevenue")==200,"Chart denominator differs from table");
         });
-        test("minimum stock stays synchronized in both editors",()->{
+        test("both editors use the warehouse threshold without overwriting reorder settings",()->{
             fresh();sql("INSERT INTO minimum_stock(product_id,minimum_quantity,reorder_quantity) VALUES(1,5,10)");
-            require("5".equals(value("SELECT minimum_quantity FROM products WHERE id=1")),"Warehouse threshold did not reach product");
-            sql("UPDATE products SET minimum_quantity=7 WHERE id=1");require("7".equals(value("SELECT minimum_quantity FROM minimum_stock WHERE product_id=1")),"Product threshold did not reach warehouse");
+            sql("UPDATE minimum_stock SET reorder_quantity=30,lead_time_days=6,preferred_supplier_id=2,notes='Keep these settings' WHERE product_id=1");
+            PD product=OperationalRegressionTest.productEditor(10);((JSpinner)get(product,"minimumQuantitySpinner")).setValue(14);call(product,"saveProduct");
+            require(Boolean.TRUE.equals(get(product,"productSaved")),"Product editor did not save");
+            require("14|30|6|2|Keep these settings".equals(value("SELECT minimum_quantity||'|'||reorder_quantity||'|'||lead_time_days||'|'||preferred_supplier_id||'|'||notes FROM minimum_stock WHERE product_id=1")),"Product edit changed other reorder settings");
+            WarehousePanel warehouse=new WarehousePanel();
+            MinimumStock settings=(MinimumStock)call(warehouse,"loadMinimumStock",new Class<?>[]{String.class},"A");
+            require(settings.getMinimumQuantity()==14 && settings.getReorderQuantity()==30,"Warehouse editor reads another threshold");
+            MS edit=minimumEditor(settings,18);call(edit,"saveStock");
+            require(Boolean.TRUE.equals(get(edit,"stockSaved")) && "18".equals(value("SELECT minimum_quantity FROM minimum_stock WHERE product_id=1")),"Warehouse editor did not save");
+            ProductsPanel catalog=new ProductsPanel();DefaultTableModel products=(DefaultTableModel)get(catalog,"tableModel");
+            require(products.getValueAt(0,11).equals(18),"Product table reads another threshold");
+            ((JTextField)get(catalog,"searchField")).setText("Product A");call(catalog,"searchProducts");
+            require(products.getRowCount()==1 && products.getValueAt(0,11).equals(18),"Product search lost the threshold");
+            call(warehouse,"loadStockData");require(((DefaultTableModel)get(warehouse,"stockModel")).getValueAt(0,5).equals(18),"Warehouse table differs");
+            DashboardPanel dashboard=new DashboardPanel(null);call(dashboard,"loadKPIData");
+            require(((JLabel)get(dashboard,"lowStockCountLabel")).getText().equals("1"),"Dashboard differs");
+            WarehouseReportPanel report=new WarehouseReportPanel();
+            require(((DefaultTableModel)get(report,"productsModel")).getValueAt(0,5).equals("LOW STOCK"),"Warehouse report differs");
             db.setAutoCommit(false);
             try {
                 sql("UPDATE minimum_stock SET minimum_quantity=21 WHERE product_id=1");
-                require("21".equals(value("SELECT minimum_quantity FROM products WHERE id=1")),"Minimum edit did not synchronize within the transaction");
                 db.rollback();
             } finally {db.setAutoCommit(true);}
-            require("7".equals(value("SELECT minimum_quantity FROM products WHERE id=1")) && "7".equals(value("SELECT minimum_quantity FROM minimum_stock WHERE product_id=1")),"Rollback left inconsistent thresholds");
+            require("18".equals(value("SELECT minimum_quantity FROM minimum_stock WHERE product_id=1")),"Rollback lost the threshold");
+            requireNormalizedThresholdSchema();
         });
-        test("minimum stock setup preserves product thresholds without advanced settings",()->{
-            fresh();sql("UPDATE products SET minimum_quantity=7 WHERE id=1");
-            require("0".equals(value("SELECT COUNT(*) FROM minimum_stock")),"Fixture already has advanced settings");
+        test("missing and zero thresholds remain disabled and product saves create warehouse settings",()->{
+            fresh();requireNormalizedThresholdSchema();
+            require("0".equals(value("SELECT COUNT(*) FROM minimum_stock")),"Fixture already has warehouse settings");
             WarehousePanel warehouse=new WarehousePanel();
             MinimumStock settings=(MinimumStock)call(warehouse,"loadMinimumStock",new Class<?>[]{String.class},"A");
-            require(settings.getMinimumQuantity()==7,"Opening warehouse settings reset the product threshold to zero");
-            MS first=minimumEditor(settings,settings.getMinimumQuantity());call(first,"saveStock");
-            require(Boolean.TRUE.equals(get(first,"stockSaved")) && "7".equals(value("SELECT minimum_quantity FROM products WHERE id=1")),"Saving unchanged settings lost the threshold");
-            MS edit=minimumEditor(settings,11);call(edit,"saveStock");
-            require("11".equals(value("SELECT minimum_quantity FROM products WHERE id=1")) && "11".equals(value("SELECT minimum_quantity FROM minimum_stock WHERE product_id=1")),"Warehouse editor did not save both representations");
+            require(settings.getMinimumQuantity()==0,"Missing settings did not disable the threshold");
             PD product=OperationalRegressionTest.productEditor(10);((JSpinner)get(product,"minimumQuantitySpinner")).setValue(14);call(product,"saveProduct");
-            require("14".equals(value("SELECT minimum_quantity FROM products WHERE id=1")) && "14".equals(value("SELECT minimum_quantity FROM minimum_stock WHERE product_id=1")),"Product editor did not synchronize the threshold");
-            call(warehouse,"loadStockData");DefaultTableModel stock=(DefaultTableModel)get(warehouse,"stockModel");
-            require(stock.getValueAt(0,5).equals(14),"Warehouse table differs from the product threshold");
-            DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
-            require(((JLabel)get(dash,"lowStockCountLabel")).getText().equals("1"),"Dashboard uses a different threshold");
+            require("14".equals(value("SELECT minimum_quantity FROM minimum_stock WHERE product_id=1")),"Product threshold was lost without prior settings");
+            call(product,"saveProduct");require("1".equals(value("SELECT COUNT(*) FROM minimum_stock")),"Repeated save created duplicate settings");
+            MS clear=minimumEditor(settings,0);call(clear,"saveStock");
+            DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");require(((JLabel)get(dash,"lowStockCountLabel")).getText().equals("0"),"Zero threshold was not disabled");
             sql("DELETE FROM minimum_stock WHERE product_id=1");
             settings=(MinimumStock)call(warehouse,"loadMinimumStock",new Class<?>[]{String.class},"A");
-            require(settings.getMinimumQuantity()==14,"Removing optional reorder settings erased the product threshold");
+            require(settings.getMinimumQuantity()==0,"Deleted settings retained a second threshold");
+            MS first=minimumEditor(settings,7);call(first,"saveStock");
+            require(Boolean.TRUE.equals(get(first,"stockSaved")) && "7".equals(value("SELECT minimum_quantity FROM minimum_stock WHERE product_id=1")),"First warehouse settings save failed");
+            PD added=OperationalRegressionTest.productEditor(0);put(added,"product",null);
+            ((JTextField)get(added,"codeField")).setText("NEW");((JTextField)get(added,"nameField")).setText("New product");
+            ((JSpinner)get(added,"minimumQuantitySpinner")).setValue(9);call(added,"saveProduct");
+            require(Boolean.TRUE.equals(get(added,"productSaved")) && "9".equals(value("SELECT sm.minimum_quantity FROM minimum_stock sm JOIN products p ON p.id=sm.product_id WHERE p.code='NEW'")),"New product threshold did not reach warehouse settings");
+            ProductsPanel catalog=new ProductsPanel();
+            int newId=Integer.parseInt(value("SELECT id FROM products WHERE code='NEW'"));
+            call(catalog,"deleteProductAndNonCriticalData",new Class<?>[]{Connection.class,int.class},db,newId);
+            require("0".equals(value("SELECT COUNT(*) FROM minimum_stock WHERE product_id="+newId)),"Product deletion left orphaned settings");
+            requireNormalizedThresholdSchema();
+        });
+        test("failed threshold saves roll back product changes and inventory movements",()->{
+            for(boolean newProduct:List.of(false,true)) {
+                fresh();sql("INSERT INTO minimum_stock(product_id,minimum_quantity,reorder_quantity) VALUES(1,7,20)");
+                sql("CREATE TRIGGER reject_minimum_write BEFORE INSERT ON minimum_stock BEGIN SELECT RAISE(ABORT,'Simulated settings write failure'); END");
+                PD editor=OperationalRegressionTest.productEditor(15);
+                ((JSpinner)get(editor,"minimumQuantitySpinner")).setValue(14);
+                if(newProduct) {put(editor,"product",null);((JTextField)get(editor,"codeField")).setText("NEW");}
+                try {call(editor,"saveProduct");}catch(RuntimeException expected) {
+                    // The unconstructed headless dialog cannot display the save-error message.
+                    require(Arrays.stream(expected.getStackTrace()).anyMatch(frame ->
+                        frame.getClassName().equals("javax.swing.JOptionPane") && frame.getMethodName().equals("showMessageDialog")),
+                        "Unexpected failure before save-error reporting: "+expected);
+                }
+                require(!Boolean.TRUE.equals(get(editor,"productSaved")),"Failed save reported success");
+                require(qty()==10 && "2".equals(value("SELECT COUNT(*) FROM products")) && "1".equals(value("SELECT supplier_id FROM products WHERE id=1")),"Failed threshold write left product changes");
+                require("0".equals(value("SELECT COUNT(*) FROM warehouse_movements")),"Failed threshold write left a stock adjustment");
+                require("7|20".equals(value("SELECT minimum_quantity||'|'||reorder_quantity FROM minimum_stock WHERE product_id=1")) && "1".equals(value("SELECT COUNT(*) FROM minimum_stock")),"Failed save changed settings");
+                require(db.getAutoCommit(),"Product save did not restore autocommit");requireNormalizedThresholdSchema();
+            }
+        });
+        test("stock threshold migration preserves settings stock history and repeated upgrades",()->{
+            fresh();completed();legacyThresholdSchema("010");
+            sql("UPDATE products SET minimum_quantity=8 WHERE id=1");
+            sql("INSERT INTO minimum_stock(product_id,minimum_quantity,reorder_quantity,lead_time_days,preferred_supplier_id,notes) VALUES(2,4,25,5,1,'Original reorder settings')");
+            DatabaseMigrationManager.migrate(db);requireNormalizedThresholdSchema();
+            require("8|0".equals(value("SELECT minimum_quantity||'|'||reorder_quantity FROM minimum_stock WHERE product_id=1")),"Product-only threshold lost");
+            require("4|25|5|1|Original reorder settings".equals(value("SELECT minimum_quantity||'|'||reorder_quantity||'|'||lead_time_days||'|'||preferred_supplier_id||'|'||notes FROM minimum_stock WHERE product_id=2")),"Existing reorder settings changed");
+            require(qty()==7 && "1|3|10.0".equals(value("SELECT product_id||'|'||quantity||'|'||unit_price FROM order_details WHERE order_id=1")),"Migration altered stock or order history");
+            DatabaseMigrationManager.migrate(db);requireNormalizedThresholdSchema();
+            require("2".equals(value("SELECT COUNT(*) FROM minimum_stock")),"Repeated upgrade duplicated settings");
+            sql("UPDATE products SET price=12 WHERE id=1");sql("UPDATE minimum_stock SET minimum_quantity=12 WHERE product_id=1");
+            require("12".equals(value("SELECT minimum_quantity FROM minimum_stock WHERE product_id=1")),"Old triggers broke post-upgrade writes");
+        });
+        test("legacy warehouse thresholds including zero win conflicts without losing other settings",()->{
+            fresh();legacyThresholdSchema("007");
+            sql("UPDATE products SET minimum_quantity=19");
+            sql("INSERT INTO minimum_stock(product_id,minimum_quantity,reorder_quantity,lead_time_days,notes) VALUES(1,0,30,7,'Disabled'),(2,11,40,9,'Enabled')");
+            DatabaseMigrationManager.migrate(db);requireNormalizedThresholdSchema();
+            require("0|30|7|Disabled".equals(value("SELECT minimum_quantity||'|'||reorder_quantity||'|'||lead_time_days||'|'||notes FROM minimum_stock WHERE product_id=1")),"Disabled warehouse threshold was replaced by product minimum");
+            require("11|40|9|Enabled".equals(value("SELECT minimum_quantity||'|'||reorder_quantity||'|'||lead_time_days||'|'||notes FROM minimum_stock WHERE product_id=2")),"Warehouse threshold lost the conflict");
+        });
+        test("failed stock migration restores the old schema values and triggers atomically",()->{
+            fresh();legacyThresholdSchema("010");sql("UPDATE products SET minimum_quantity=8 WHERE id=1");
+            sql("CREATE TRIGGER reject_stock_migration BEFORE INSERT ON schema_migrations WHEN NEW.version='010' BEGIN SELECT RAISE(ABORT,'Simulated migration history failure'); END");
+            boolean blocked=false;try{DatabaseMigrationManager.migrate(db);}catch(SQLException e){blocked=true;}
+            require(blocked,"Injected migration failure was ignored");
+            require("8".equals(value("SELECT minimum_quantity FROM products WHERE id=1")) && "0".equals(value("SELECT COUNT(*) FROM minimum_stock")),"Failed upgrade partially moved the threshold");
+            require("3".equals(value("SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN ('minimum_stock_insert','minimum_stock_update','product_minimum_update')")),"Failed upgrade did not restore old triggers");
+            require(db.getAutoCommit() && "1".equals(value("PRAGMA foreign_keys")) && "0".equals(value("SELECT COUNT(*) FROM schema_migrations WHERE version='010'")),"Failed migration left an invalid connection or history");
+            sql("DROP TRIGGER reject_stock_migration");DatabaseMigrationManager.migrate(db);requireNormalizedThresholdSchema();
+        });
+        test("stock thresholds reject invalid legacy and new values and accept the integer limit",()->{
+            for(String invalid:List.of("NULL","-1","2.5","2147483648")) {
+                fresh();legacyThresholdSchema("010");sql("DROP TRIGGER numeric_guard_products_UPDATE");
+                sql("UPDATE products SET minimum_quantity="+invalid+" WHERE id=1");
+                boolean blocked=false;try{DatabaseMigrationManager.migrate(db);}catch(SQLException e){blocked=true;}
+                require(blocked && "0".equals(value("SELECT COUNT(*) FROM minimum_stock")) && "0".equals(value("SELECT COUNT(*) FROM schema_migrations WHERE version='010'")),"Invalid legacy threshold was coerced or partly migrated: "+invalid);
+            }
+            fresh();legacyThresholdSchema("010");sql("UPDATE products SET minimum_quantity=2147483647 WHERE id=1");
+            DatabaseMigrationManager.migrate(db);requireNormalizedThresholdSchema();
+            require("2147483647".equals(value("SELECT minimum_quantity FROM minimum_stock WHERE product_id=1")),"Migration overflowed the threshold");
+            for(String invalid:List.of("NULL","-1","2.5","2147483648")) {
+                boolean blocked=false;try{sql("UPDATE minimum_stock SET minimum_quantity="+invalid+" WHERE product_id=1");}catch(SQLException e){blocked=true;}
+                require(blocked,"New schema accepted an invalid threshold: "+invalid);
+            }
         });
         test("advanced statistics exclude unfinished cancelled and out-of-period orders",()->{
             fresh();completed();

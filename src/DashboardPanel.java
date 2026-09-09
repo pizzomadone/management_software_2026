@@ -444,8 +444,9 @@ public class DashboardPanel extends JPanel {
 
             // 2. Low Stock Count
             int lowStockCount = 0;
-            String lowStockQuery = "SELECT COUNT(*) as count FROM products WHERE active = 1 AND " +
-                "(quantity < 0 OR (quantity < minimum_quantity AND minimum_quantity > 0))";
+            String lowStockQuery = "SELECT COUNT(*) as count FROM products p " +
+                "LEFT JOIN minimum_stock sm ON sm.product_id = p.id WHERE p.active = 1 AND " +
+                "(p.quantity < 0 OR (p.quantity < sm.minimum_quantity AND sm.minimum_quantity > 0))";
             try (Statement stmt = conn.createStatement();
                  ResultSet rs = stmt.executeQuery(lowStockQuery)) {
                 if (rs.next()) {
@@ -548,10 +549,12 @@ public class DashboardPanel extends JPanel {
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
-                SELECT code, name, quantity, minimum_quantity, (minimum_quantity - quantity) as shortage
-                FROM products
-                WHERE active = 1 AND (quantity < 0 OR (quantity < minimum_quantity AND minimum_quantity > 0))
-                ORDER BY (quantity < 0) DESC, shortage DESC, code
+                SELECT p.code, p.name, p.quantity, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity,
+                       (COALESCE(sm.minimum_quantity, 0) - p.quantity) AS shortage
+                FROM products p
+                LEFT JOIN minimum_stock sm ON sm.product_id = p.id
+                WHERE p.active = 1 AND (p.quantity < 0 OR (p.quantity < sm.minimum_quantity AND sm.minimum_quantity > 0))
+                ORDER BY (p.quantity < 0) DESC, shortage DESC, p.code
                 LIMIT 10
             """;
 

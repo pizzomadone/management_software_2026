@@ -269,9 +269,6 @@ public class MinimumStockDialog extends JDialog {
                 }
             }
 
-            try (PreparedStatement productMinimum = conn.prepareStatement("UPDATE products SET minimum_quantity=? WHERE id=?")) {
-                productMinimum.setInt(1,minQuantity);productMinimum.setInt(2,minStock.getProductId());productMinimum.executeUpdate();
-            }
             conn.commit();
             stockSaved = true;
             } catch(Exception e) {conn.rollback();throw e;}

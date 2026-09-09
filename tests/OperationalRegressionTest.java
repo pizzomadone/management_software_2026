@@ -68,7 +68,7 @@ public class OperationalRegressionTest extends RegressionTest {
         });
         test("negative stock cannot cancel positive assets and stays visible after restocking",()->{
             fresh();sql("UPDATE products SET quantity=3,acquisition_cost=0.335,price=2.335 WHERE id=1");
-            sql("UPDATE products SET quantity=-100,acquisition_cost=80,minimum_quantity=0 WHERE id=2");
+            sql("UPDATE products SET quantity=-100,acquisition_cost=80 WHERE id=2");
             DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");call(dash,"loadAlerts");
             require(kpi(dash,"warehouseValueLabel").equals(SettingsPanel.formatCurrency(1.01)),"Deficit cancelled another product's cost value");
             require(kpi(dash,"warehouseSaleValueLabel").equals(SettingsPanel.formatCurrency(7.01)),"Deficit cancelled another product's sale value");
@@ -80,7 +80,8 @@ public class OperationalRegressionTest extends RegressionTest {
             sql("UPDATE products SET quantity=2 WHERE id=2");call(dash,"loadKPIData");call(report,"loadProductsData");
             require(kpi(dash,"warehouseValueLabel").equals(SettingsPanel.formatCurrency(161.01)) && kpi(dash,"negativeStockCountLabel").equals("0"),"Restock did not restore asset value");
             require(rows.getValueAt(1,4).equals("160.00"),"Report did not refresh after restock");
-            sql("UPDATE products SET quantity=-2147483648,minimum_quantity=2147483647 WHERE id=2");call(dash,"loadKPIData");call(dash,"loadAlerts");
+            sql("UPDATE products SET quantity=-2147483648 WHERE id=2");
+            sql("INSERT INTO minimum_stock(product_id,minimum_quantity,reorder_quantity) VALUES(2,2147483647,0)");call(dash,"loadKPIData");call(dash,"loadAlerts");
             require(labels((JPanel)get(dash,"alertsPanel")).stream().anyMatch(l->l.getText().contains("4294967295")),"Deficit alert overflowed");
             sql("UPDATE products SET quantity=0 WHERE id=1");call(dash,"loadKPIData");
             require(kpi(dash,"warehouseValueLabel").equals(SettingsPanel.formatCurrency(0)) && kpi(dash,"warehouseSaleValueLabel").equals(SettingsPanel.formatCurrency(0)),"All depleted stock produced a negative value");
@@ -150,9 +151,10 @@ public class OperationalRegressionTest extends RegressionTest {
             require(kpi(dash,"avgMarginLabel").equals("—"),"An empty warehouse showed a profit percentage");
         });
         test("stock and pending order counts match the documented physical stock rules",()->{
-            fresh();call(order(false,9,"New"),"saveOrder");sql("UPDATE products SET minimum_quantity=3 WHERE id=1");
-            sql("UPDATE products SET quantity=-2,minimum_quantity=0 WHERE id=2");
-            sql("INSERT INTO products(code,name,quantity,price,minimum_quantity,active) VALUES('ZERO','Empty',0,10,0,1),('LOW','Low',5,10,10,1),('HIDDEN','Hidden',0,10,10,0)");
+            fresh();call(order(false,9,"New"),"saveOrder");
+            sql("UPDATE products SET quantity=-2 WHERE id=2");
+            sql("INSERT INTO products(code,name,quantity,price,active) VALUES('ZERO','Empty',0,10,1),('LOW','Low',5,10,1),('HIDDEN','Hidden',0,10,0)");
+            sql("INSERT INTO minimum_stock(product_id,minimum_quantity,reorder_quantity) VALUES(1,3,0),(4,10,0),(5,10,0)");
             sql("INSERT INTO orders(customer_id,order_date,status,total) VALUES(1,'2000-01-01','In Progress',0),(1,'2000-01-01','Completed',0),(1,'2000-01-01','Cancelled',0)");
             DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
             require(kpi(dash,"lowStockCountLabel").equals("2"),"Low stock counted units reservations inactive products or a disabled threshold");

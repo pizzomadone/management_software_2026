@@ -11,7 +11,7 @@ public final class DatabaseIntegrity {
         "orders", "id customer_id order_date status total",
         "order_details", "id order_id product_id quantity unit_price");
     private static final Map<String, String> CURRENT = Map.ofEntries(
-        Map.entry("products", "description reserved_quantity category alternative_sku weight unit_of_measure minimum_quantity acquisition_cost active supplier_id warehouse_position vat_rate"),
+        Map.entry("products", "description reserved_quantity category alternative_sku weight unit_of_measure acquisition_cost active supplier_id warehouse_position vat_rate"),
         Map.entry("suppliers", "id company_name vat_number tax_code address phone email certified_email website notes"),
         Map.entry("orders", "payment_status paid_amount"),
         Map.entry("invoices", "id number date customer_id taxable_amount vat total status order_id currency_code customer_snapshot company_snapshot logo_snapshot snapshot_version"),
@@ -66,7 +66,7 @@ public final class DatabaseIntegrity {
     }
     private static Map<String,String> rules() {
         Map<String,String> rules=new LinkedHashMap<>();
-        rules.put("products",integer("quantity",Integer.MIN_VALUE)+" OR "+integer("reserved_quantity",0)+" OR "+integer("minimum_quantity",0)+" OR "+amount("price")+" OR "+amount("acquisition_cost")+" OR "+amount("vat_rate")+" OR NEW.vat_rate>100 OR "+amount("weight"));
+        rules.put("products",integer("quantity",Integer.MIN_VALUE)+" OR "+integer("reserved_quantity",0)+" OR "+amount("price")+" OR "+amount("acquisition_cost")+" OR "+amount("vat_rate")+" OR NEW.vat_rate>100 OR "+amount("weight"));
         String line=integer("quantity",1)+" OR "+amount("unit_price");
         rules.put("order_details",line);
         rules.put("invoice_details",line+" OR "+amount("vat_rate")+" OR NEW.vat_rate>100 OR "+amount("total"));

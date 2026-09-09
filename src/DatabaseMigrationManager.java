@@ -28,7 +28,9 @@ public final class DatabaseMigrationManager {
             DatabaseMigrationManager::migrateStockThresholds),
         new Migration("008", "Store database currency and invoice snapshots",
             DatabaseMigrationManager::migrateInvoiceSnapshots),
-        new Migration("009", "Validate numeric domains consistently in every module", DatabaseIntegrity::installGuards)
+        new Migration("009", "Validate numeric domains consistently in every module", DatabaseIntegrity::installGuards),
+        new Migration("010", "Store minimum quantity only with warehouse reorder settings",
+            DatabaseMigrationManager::normalizeStockThresholds)
     );
 
     private DatabaseMigrationManager() {}
@@ -148,9 +150,11 @@ public final class DatabaseMigrationManager {
 
     private static void migrateStockThresholds(Connection c) throws SQLException {
         try (Statement s=c.createStatement()) {
+            s.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_supplier_order_number ON supplier_orders(number)");
+            // Newly created archives already omit the legacy product threshold.
+            if (!hasColumn(c, "products", "minimum_quantity")) return;
             s.execute("UPDATE products SET minimum_quantity=(SELECT minimum_quantity FROM minimum_stock WHERE product_id=products.id) " +
                 "WHERE id IN (SELECT product_id FROM minimum_stock)");
-            s.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_supplier_order_number ON supplier_orders(number)");
             s.execute("CREATE TRIGGER IF NOT EXISTS minimum_stock_insert AFTER INSERT ON minimum_stock BEGIN " +
                 "UPDATE products SET minimum_quantity=NEW.minimum_quantity WHERE id=NEW.product_id; END");
             s.execute("CREATE TRIGGER IF NOT EXISTS minimum_stock_update AFTER UPDATE OF minimum_quantity ON minimum_stock BEGIN " +
@@ -158,6 +162,26 @@ public final class DatabaseMigrationManager {
             s.execute("CREATE TRIGGER IF NOT EXISTS product_minimum_update AFTER UPDATE OF minimum_quantity ON products " +
                 "WHEN OLD.minimum_quantity<>NEW.minimum_quantity BEGIN " +
                 "UPDATE minimum_stock SET minimum_quantity=NEW.minimum_quantity WHERE product_id=NEW.id; END");
+        }
+    }
+
+    private static void normalizeStockThresholds(Connection c) throws SQLException {
+        try (Statement s=c.createStatement()) {
+            for (String trigger : List.of("minimum_stock_insert", "minimum_stock_update", "product_minimum_update"))
+                s.execute("DROP TRIGGER IF EXISTS " + trigger);
+        }
+        // Replace old product guards before removing the column they referenced.
+        DatabaseIntegrity.installGuards(c);
+        if (!hasColumn(c, "products", "minimum_quantity")) return;
+        try (Statement s=c.createStatement()) {
+            // Existing warehouse settings, including an explicit zero, take precedence.
+            // Only products without settings need their legacy threshold transferred.
+            s.execute("""
+                INSERT INTO minimum_stock(product_id, minimum_quantity, reorder_quantity)
+                SELECT p.id, p.minimum_quantity, 0 FROM products p
+                WHERE NOT EXISTS (SELECT 1 FROM minimum_stock sm WHERE sm.product_id=p.id)
+                """);
+            s.execute("ALTER TABLE products DROP COLUMN minimum_quantity");
         }
     }
 

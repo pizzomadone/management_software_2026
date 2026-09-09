@@ -124,7 +124,6 @@ public class DatabaseManager {
                 alternative_sku TEXT DEFAULT '',
                 weight REAL DEFAULT 0.0,
                 unit_of_measure TEXT DEFAULT 'pcs',
-                minimum_quantity INTEGER DEFAULT 0,
                 acquisition_cost REAL DEFAULT 0.0,
                 active INTEGER DEFAULT 1,
                 supplier_id INTEGER,

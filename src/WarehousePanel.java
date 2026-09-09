@@ -226,7 +226,7 @@ public class WarehousePanel extends JPanel {
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
-                SELECT p.*, sm.reorder_quantity,
+                SELECT p.*, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity, sm.reorder_quantity,
                         s.company_name as supplier_name
                 FROM products p
                 LEFT JOIN minimum_stock sm ON p.id = sm.product_id
@@ -373,10 +373,10 @@ public class WarehousePanel extends JPanel {
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
-                SELECT p.id, p.name, p.quantity, p.minimum_quantity, sm.reorder_quantity
+                SELECT p.id, p.name, p.quantity, sm.minimum_quantity, sm.reorder_quantity
                 FROM products p
                 LEFT JOIN minimum_stock sm ON p.id = sm.product_id
-                WHERE p.active=1 AND p.minimum_quantity>0 AND p.quantity < p.minimum_quantity
+                WHERE p.active=1 AND sm.minimum_quantity>0 AND p.quantity < sm.minimum_quantity
                 AND NOT EXISTS (
                     SELECT 1 FROM warehouse_notifications n
                     WHERE n.product_id = p.id
@@ -591,7 +591,7 @@ public class WarehousePanel extends JPanel {
     private MinimumStock loadMinimumStock(String code) throws SQLException {
         Connection conn = DatabaseManager.getInstance().getConnection();
         String query = """
-            SELECT p.id, p.name, p.minimum_quantity, sm.reorder_quantity,
+            SELECT p.id, p.name, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity, sm.reorder_quantity,
                     sm.lead_time_days, sm.preferred_supplier_id,
                     s.company_name as supplier_name, sm.notes
             FROM products p
