@@ -127,7 +127,7 @@ public class SupplierOrdersWindow extends JDialog {
                     }
 
                     row.add(rs.getString("status"));
-                    row.add(String.format("%.2f", rs.getDouble("total")));
+                    row.add(Numbers.moneyText(rs.getDouble("total")));
                     row.add(rs.getString("notes"));
                     tableModel.addRow(row);
                 }
