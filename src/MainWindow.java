@@ -910,6 +910,21 @@ public class MainWindow extends JFrame {
                 I18n.tr("Database Error"), JOptionPane.ERROR_MESSAGE);
     }
 
+    /** Rebuild monetary views after the operating currency changes. */
+    public void refreshAfterCurrencyChange() {
+        if (dashboardPanel != null) { mainPanel.remove(dashboardPanel); dashboardPanel = null; }
+        if (productsPanel != null) { mainPanel.remove(productsPanel); productsPanel = null; }
+        if (ordersPanel != null) { mainPanel.remove(ordersPanel); ordersPanel = null; }
+        if (supplierOrdersPanel != null) { mainPanel.remove(supplierOrdersPanel); supplierOrdersPanel = null; }
+        if (invoicesPanel != null) { mainPanel.remove(invoicesPanel); invoicesPanel = null; }
+        if (warehousePanel != null) { mainPanel.remove(warehousePanel); warehousePanel = null; }
+        if (salesReportPanel != null) { mainPanel.remove(salesReportPanel); salesReportPanel = null; }
+        if (advancedStatsPanel != null) { mainPanel.remove(advancedStatsPanel); advancedStatsPanel = null; }
+        if (warehouseReportPanel != null) { mainPanel.remove(warehouseReportPanel); warehouseReportPanel = null; }
+        mainPanel.revalidate();
+        mainPanel.repaint();
+    }
+
     /**
      * Refresh ProductsPanel to update stock levels after order changes
      */
