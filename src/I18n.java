@@ -99,6 +99,11 @@ public final class I18n {
             String translated = translations.get(base);
             if (translated != null) return translated + ":";
         }
+        if (source.endsWith("...")) {
+            String base = source.substring(0, source.length() - 3).trim();
+            String translated = translations.get(base);
+            if (translated != null) return translated + "...";
+        }
 
         // Translate only a registered prefix and preserve the dynamic business value verbatim.
         int separator = source.indexOf(": ");
