@@ -111,7 +111,7 @@ public class SupplierPriceListWindow extends JDialog {
                     Vector<Object> row = new Vector<>();
                     row.add(rs.getString("product_name"));
                     row.add(rs.getString("supplier_product_code"));
-                    row.add(String.format("%.2f", rs.getDouble("price")));
+                    row.add(Numbers.unitText(rs.getDouble("price")));
                     row.add(rs.getInt("minimum_quantity"));
                     row.add(DateUtils.formatDate(DateUtils.parseDate(rs,"validity_start_date"),dateFormat));
                     Date endDate = DateUtils.parseDate(rs,"validity_end_date");
