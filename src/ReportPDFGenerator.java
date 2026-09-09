@@ -141,7 +141,7 @@ public class ReportPDFGenerator {
     }
 
     private void generatePDF(File outputFile) throws IOException {
-        try(PdfWriter pdf=new PdfWriter(I18n.tr(reportTitle),tableModel.getColumnCount()>6)) {
+        try(PdfWriter pdf=new PdfWriter(I18n.tr(reportTitle),tableModel.getColumnCount()>6,I18n.tr("Page"))) {
             if(subtitle!=null && !subtitle.isBlank())pdf.paragraph(I18n.tr(subtitle),false);
             int columns=tableModel.getColumnCount();
             if(columns>0) {
