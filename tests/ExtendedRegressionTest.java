@@ -69,6 +69,24 @@ public class ExtendedRegressionTest extends RegressionTest {
             require("1.01".equals(value("SELECT taxable_amount FROM invoices")),"Taxable rounding differs");
             require("1.23".equals(value("SELECT total FROM invoices")),"VAT rounding differs");
         });
+        test("accounting rounding agrees in Java SQL reports and visible unit values",()->{
+            fresh();
+            require(Numbers.moneyText(2.675).equals("2.68"),"HALF_UP decimal boundary is wrong");
+            require(Numbers.lineTotal(1,2.675)==2.68,"Line total does not use HALF_UP");
+            require("2.68".equals(value("SELECT warestat_line_total(1,2.675)")),"SQL report rounding differs from document rounding");
+            require("0.335".equals(Numbers.unitText(0.335)),"Unit precision was hidden");
+            require(Numbers.moneyText(Numbers.lineTotal(3,0.335)).equals("1.01"),"Precise unit price does not reconcile with line total");
+
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total) VALUES(20,1,"+System.currentTimeMillis()+",'Completed',2.68)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(20,1,1,2.675)");
+            SalesReportPanel report=new SalesReportPanel();call(report,"loadReportData");
+            DefaultTableModel rows=(DefaultTableModel)get(report,"tableModel");
+            boolean found=false;
+            for(int i=0;i<rows.getRowCount();i++) if(((Number)rows.getValueAt(i,1)).intValue()==20) {
+                found=true;require("2.68".equals(String.valueOf(rows.getValueAt(i,4))),"Sales report header total rounded differently");
+            }
+            require(found,"Boundary order missing from sales report");
+        });
         test("completed sales exclude cancelled documents and have no 1000 row cap",()->{
             fresh();db.setAutoCommit(false);
             for(int i=0;i<1005;i++)sql("INSERT INTO orders(customer_id,order_date,status,total) VALUES(1,"+System.currentTimeMillis()+",'Completed',1)");
@@ -469,6 +487,49 @@ public class ExtendedRegressionTest extends RegressionTest {
             require(!(Boolean)method.invoke(null,"Draft"),"Draft invoice was locked");
             for(String status:List.of("Issued","Paid","Canceled"))
                 require((Boolean)method.invoke(null,status),"Finalized invoice remained economically editable: "+status);
+        });
+        test("currency conversion keeps cents consistent with high quantities VAT and partial payments",()->{
+            fresh();
+            sql("UPDATE products SET price=0.0000004,acquisition_cost=2.675 WHERE id=1");
+            sql("INSERT INTO supplier_price_lists(supplier_id,product_id,price,minimum_quantity,validity_start_date) VALUES(1,1,0.0000004,1,0)");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) VALUES(20,1,"+System.currentTimeMillis()+",'Completed',0.40,'PARTIALLY_PAID',0.335)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(20,1,1000000,0.0000004)");
+            sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(20,'FX-PRECISION',"+System.currentTimeMillis()+",1,8.03,1.77,9.80,'Draft')");
+            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total) VALUES(20,1,3,2.675,22,8.03)");
+            InvoiceSnapshots.capture(db,20,false);
+
+            java.math.BigDecimal rate=new java.math.BigDecimal("1.234567");
+            DatabaseCurrency.change("USD",DatabaseCurrency.ChangeMode.CONVERT,rate);
+
+            double convertedTiny=Double.parseDouble(value("SELECT unit_price FROM order_details WHERE order_id=20"));
+            double orderTotal=Double.parseDouble(value("SELECT total FROM orders WHERE id=20"));
+            require(Numbers.moneyText(orderTotal).equals(Numbers.moneyText(Numbers.lineTotal(1000000,convertedTiny))),
+                "High-quantity order no longer reconciles after conversion");
+            require("0.41".equals(Numbers.moneyText(Double.parseDouble(value("SELECT paid_amount FROM orders WHERE id=20")))),
+                "Partial payment conversion did not round to cents");
+
+            double invoicePrice=Double.parseDouble(value("SELECT unit_price FROM invoice_details WHERE invoice_id=20"));
+            double line=Numbers.lineTotal(3,invoicePrice);
+            double vat=Numbers.tax(line,22);
+            require(Numbers.moneyText(Double.parseDouble(value("SELECT taxable_amount FROM invoices WHERE id=20"))).equals(Numbers.moneyText(line)),
+                "Converted draft taxable amount differs from its lines");
+            require(Numbers.moneyText(Double.parseDouble(value("SELECT vat FROM invoices WHERE id=20"))).equals(Numbers.moneyText(vat)),
+                "Converted draft VAT differs from its lines");
+            require(Numbers.moneyText(Double.parseDouble(value("SELECT total FROM invoices WHERE id=20"))).equals(Numbers.moneyText(Numbers.add(line,vat))),
+                "Converted draft total differs from taxable plus VAT");
+            require("USD".equals(value("SELECT currency_code FROM invoices WHERE id=20")),"Converted draft kept the old currency");
+        });
+        test("currency conversion refuses to repair inconsistent documents silently",()->{
+            fresh();
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) VALUES(30,1,0,'Completed',99,'NOT_PAID',0)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(30,1,1,10)");
+            boolean blocked=false;
+            try {DatabaseCurrency.change("USD",DatabaseCurrency.ChangeMode.CONVERT,new java.math.BigDecimal("1.2"));}
+            catch(SQLException e){blocked=true;}
+            require(blocked,"Inconsistent order was silently rewritten by currency conversion");
+            require("EUR".equals(DatabaseCurrency.read(db)),"Rejected conversion changed database currency");
+            require("99.0|10.0".equals(value("SELECT total||'|'||(SELECT unit_price FROM order_details WHERE order_id=30) FROM orders WHERE id=30")),
+                "Rejected conversion changed inconsistent order values");
         });
         test("currency conversion is atomic and historical foreign invoice only changes status",()->{
             fresh();
