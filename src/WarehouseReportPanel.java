@@ -54,7 +54,7 @@ public class WarehouseReportPanel extends JPanel {
         statsPanel.setBorder(BorderFactory.createTitledBorder("General Statistics"));
 
         JLabel totalProductsLabel = new JLabel("Total Products: 0");
-        JLabel totalValueLabel = new JLabel("Stock at purchase cost: " + SettingsPanel.formatCurrency(0));
+        JLabel totalValueLabel = new JLabel("Stock at standard cost: " + SettingsPanel.formatCurrency(0));
         totalValueLabel.setToolTipText("Only active products with positive stock are valued at current catalog prices.");
         JLabel lowStockLabel = new JLabel("Low Stock Products: 0");
         JLabel outOfStockLabel = new JLabel("Out of Stock Products: 0");
@@ -65,7 +65,7 @@ public class WarehouseReportPanel extends JPanel {
         statsPanel.add(outOfStockLabel);
 
         // Products Table
-        String[] columns = {"Code", "Product", "Quantity", "Acquisition Cost", "Stock at purchase cost", "Status"};
+        String[] columns = {"Code", "Product", "Quantity", "Acquisition Cost", "Stock at standard cost", "Status"};
         productsModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -253,7 +253,7 @@ public class WarehouseReportPanel extends JPanel {
 
             if (statsPanel.getComponentCount() >= 4) {
                 updateLocalizedStatistic((JLabel) statsPanel.getComponent(0), "Total Products", totalProducts);
-                updateLocalizedStatistic((JLabel) statsPanel.getComponent(1), "Stock at purchase cost",
+                updateLocalizedStatistic((JLabel) statsPanel.getComponent(1), "Stock at standard cost",
                     SettingsPanel.formatCurrency(totalValue));
                 updateLocalizedStatistic((JLabel) statsPanel.getComponent(2), "Low Stock Products", lowStock);
                 updateLocalizedStatistic((JLabel) statsPanel.getComponent(3), "Out of Stock Products", outOfStock);

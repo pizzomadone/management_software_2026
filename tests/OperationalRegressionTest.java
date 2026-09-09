@@ -120,20 +120,58 @@ public class OperationalRegressionTest extends RegressionTest {
                 }
             } finally {TimeZone.setDefault(previous);}
         });
-        test("invoicing a sale keeps net orders and gross invoices separate",()->{
+        test("invoicing a sale keeps net orders and net invoiced revenue separate",()->{
             fresh();completed();ID invoice=invoice();call(invoice,"saveInvoice");sql("UPDATE invoices SET order_id=1");
             DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
             require(kpi(dash,"monthRevenueLabel").equals(SettingsPanel.formatCurrency(30)),"Invoice double-counted a sale or included VAT in orders");
-            require(kpi(dash,"monthInvoicedLabel").equals(SettingsPanel.formatCurrency(36.60)),"Invoice VAT missing");
+            require(kpi(dash,"monthInvoicedLabel").equals(SettingsPanel.formatCurrency(30)),"VAT was included in net invoiced revenue");
             sql("UPDATE invoices SET status='Paid'");call(dash,"loadKPIData");
-            require(kpi(dash,"monthRevenueLabel").equals(SettingsPanel.formatCurrency(30)) && kpi(dash,"monthInvoicedLabel").equals(SettingsPanel.formatCurrency(36.60)),"Payment counted a second sale");
+            require(kpi(dash,"monthRevenueLabel").equals(SettingsPanel.formatCurrency(30)) && kpi(dash,"monthInvoicedLabel").equals(SettingsPanel.formatCurrency(30)),"Payment counted a second sale");
             sql("UPDATE invoices SET status='Canceled'");call(dash,"loadKPIData");
             require(kpi(dash,"monthRevenueLabel").equals(SettingsPanel.formatCurrency(30)) && kpi(dash,"monthInvoicedLabel").equals(SettingsPanel.formatCurrency(0)),"Invoice cancellation incorrectly cancelled the independent order");
         });
+        test("potential stock margin is value weighted and handles loss free cost and no denominator",()->{
+            fresh();sql("UPDATE products SET quantity=1,price=100,acquisition_cost=90 WHERE id=1");
+            sql("UPDATE products SET quantity=9,price=10,acquisition_cost=1 WHERE id=2");
+            DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
+            require(kpi(dash,"warehouseValueLabel").equals(SettingsPanel.formatCurrency(99)) && kpi(dash,"warehouseSaleValueLabel").equals(SettingsPanel.formatCurrency(190)),"Wrong basis for margin");
+            require(kpi(dash,"avgMarginLabel").equals("47.9%"),"Used an unweighted product margin average");
+            sql("UPDATE products SET quantity=-9 WHERE id=2");call(dash,"loadKPIData");
+            require(kpi(dash,"avgMarginLabel").equals("10.0%"),"Negative stock changed potential margin");
+            sql("UPDATE products SET quantity=9,active=0 WHERE id=2");call(dash,"loadKPIData");
+            require(kpi(dash,"avgMarginLabel").equals("10.0%"),"Inactive stock changed potential margin");
+            sql("UPDATE products SET acquisition_cost=0 WHERE id=1");call(dash,"loadKPIData");
+            require(kpi(dash,"avgMarginLabel").equals("100.0%"),"Free purchase has the wrong margin");
+            sql("UPDATE products SET acquisition_cost=150 WHERE id=1");call(dash,"loadKPIData");
+            require(kpi(dash,"avgMarginLabel").equals("-50.0%"),"Loss was hidden or confused with markup");
+            sql("UPDATE products SET price=0 WHERE id=1");call(dash,"loadKPIData");
+            require(kpi(dash,"avgMarginLabel").equals("—"),"Zero denominator produced a fictitious margin");
+            sql("UPDATE products SET quantity=0");call(dash,"loadKPIData");
+            require(kpi(dash,"avgMarginLabel").equals("—"),"An empty warehouse showed a profit percentage");
+        });
+        test("stock and pending order counts match the documented physical stock rules",()->{
+            fresh();call(order(false,9,"New"),"saveOrder");sql("UPDATE products SET minimum_quantity=3 WHERE id=1");
+            sql("UPDATE products SET quantity=-2,minimum_quantity=0 WHERE id=2");
+            sql("INSERT INTO products(code,name,quantity,price,minimum_quantity,active) VALUES('ZERO','Empty',0,10,0,1),('LOW','Low',5,10,10,1),('HIDDEN','Hidden',0,10,10,0)");
+            sql("INSERT INTO orders(customer_id,order_date,status,total) VALUES(1,'2000-01-01','In Progress',0),(1,'2000-01-01','Completed',0),(1,'2000-01-01','Cancelled',0)");
+            DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
+            require(kpi(dash,"lowStockCountLabel").equals("2"),"Low stock counted units reservations inactive products or a disabled threshold");
+            require(kpi(dash,"zeroStockLabel").equals("2"),"Out of stock omitted a negative balance or included inactive products");
+            require(kpi(dash,"pendingOrdersLabel").equals("2"),"Pending orders used the monthly filter or included closed documents");
+            require(kpi(dash,"warehouseValueLabel").equals(SettingsPanel.formatCurrency(50)) && kpi(dash,"warehouseSaleValueLabel").equals(SettingsPanel.formatCurrency(150)),"Reservations reduced physical stock value");
+            WarehouseReportPanel report=new WarehouseReportPanel();DefaultTableModel rows=(DefaultTableModel)get(report,"productsModel");
+            int outOfStock=0;for(int row=0;row<rows.getRowCount();row++)if(rows.getValueAt(row,5).equals("OUT OF STOCK"))outOfStock++;
+            require(outOfStock==2,"Warehouse report and dashboard disagree on out of stock");
+        });
         test("KPI titles notes and explanations translate in every supported language",()->{
             fresh();DashboardPanel dash=new DashboardPanel(null);JPanel panel=(JPanel)call(dash,"createKPIPanel");
-            String[] titles={"Stock at purchase cost","Stock at sale price","Monthly sales (excl. VAT)","Monthly invoices (incl. VAT)",
+            String[] titles={"Stock at standard cost","Stock at sale price","Monthly order sales (excl. VAT)","Monthly invoiced (excl. VAT)","Potential stock margin",
                 "In-stock products with zero purchase cost","Negative-stock products (excluded from valuation)"};
+            Map<String,String> fields=Map.of("warehouseValue","warehouseValueLabel","warehouseSaleValue","warehouseSaleValueLabel",
+                "lowStock","lowStockCountLabel","zeroStock","zeroStockLabel","monthRevenue","monthRevenueLabel",
+                "monthInvoiced","monthInvoicedLabel","pendingOrders","pendingOrdersLabel","avgMargin","avgMarginLabel");
+            I18n.setLanguage("en");Map<String,String> englishHelp=new HashMap<>();
+            for(String key:fields.keySet())englishHelp.put(key,I18n.tr("tooltip.kpi."+key));
             try {
                 for(String language:List.of("it","es","pt_BR","fr","de","pl","en")) {
                     I18n.setLanguage(language);I18n.localize(panel);call(dash,"loadKPIData");
@@ -143,12 +181,28 @@ public class OperationalRegressionTest extends RegressionTest {
                         require(language.equals("en") || !translated.equals(title),"Missing "+language+" translation: "+title);
                         require(labels.stream().anyMatch(l->translated.equals(l.getText())),"Visible title not localized after switching to "+language);
                     }
-                    for(String field:List.of("warehouseValueLabel","warehouseSaleValueLabel","monthRevenueLabel","monthInvoicedLabel")) {
-                        String tooltip=((JLabel)get(dash,field)).getToolTipText();
-                        require(tooltip!=null && (language.equals("en") || !tooltip.equals("Only active products with positive stock are valued at current catalog prices.") && !tooltip.startsWith("Completed customer orders") && !tooltip.startsWith("Issued or paid invoices")),"Untranslated KPI explanation");
-                    }
                     panel.setSize(1200,panel.getPreferredSize().height);layoutTree(panel);
                     for(JLabel label:labels) require(label.getWidth()>=label.getPreferredSize().width,"Clipped KPI text in "+language+": "+label.getText());
+                    require(labels.stream().filter(l->"?".equals(l.getText())).count()==8,"Not every KPI has a visible question mark");
+                    for(var entry:fields.entrySet()) {
+                        JLabel value=(JLabel)get(dash,entry.getValue());JPanel card=(JPanel)value.getParent();
+                        JPanel footer=(JPanel)((java.awt.BorderLayout)card.getLayout()).getLayoutComponent(java.awt.BorderLayout.SOUTH);
+                        require(footer!=null && footer.getY()>=value.getY()+value.getHeight(),"KPI help is not below its value");
+                        List<JLabel> helpLabels=labels(footer);require(helpLabels.size()==1 && helpLabels.get(0).getText().equals("?"),"Missing help in the KPI footer");
+                        JLabel help=helpLabels.get(0);String tooltip=help.getToolTipText();
+                        require(tooltip.equals(I18n.tr("tooltip.kpi."+entry.getKey())) && tooltip.equals(value.getToolTipText()),"KPI help and value explanations disagree");
+                        require(tooltip.startsWith("<html>") && (language.equals("en") || !tooltip.equals(englishHelp.get(entry.getKey()))),"Untranslated KPI formula in "+language);
+                        require(Arrays.stream(help.getMouseListeners()).anyMatch(listener->listener instanceof ToolTipManager),"Question mark is not registered for hover tooltips");
+                        JToolTip tip=help.createToolTip();tip.setTipText(tooltip);tip.setSize(tip.getPreferredSize());
+                        require(tip.getWidth()<=380 && tip.getHeight()>40 && tip.getHeight()<380,
+                            "KPI tooltip does not wrap to a readable size: "+language+" "+entry.getKey()+" "+tip.getSize());
+                        require(tip.getClientProperty(javax.swing.plaf.basic.BasicHTML.propertyKey)!=null,"Tooltip HTML was not rendered");
+                        if(language.equals("it") && entry.getKey().equals("monthInvoiced") || language.equals("de") && entry.getKey().equals("avgMargin")) {
+                            var image=new java.awt.image.BufferedImage(tip.getWidth(),tip.getHeight(),java.awt.image.BufferedImage.TYPE_INT_RGB);
+                            var graphics=image.createGraphics();try{tip.printAll(graphics);}finally{graphics.dispose();}
+                            javax.imageio.ImageIO.write(image,"png",OUT.resolve("kpi-help-"+language+".png").toFile());
+                        }
+                    }
                     if(language.equals("it") || language.equals("de")) {
                         var image=new java.awt.image.BufferedImage(panel.getWidth(),panel.getHeight(),java.awt.image.BufferedImage.TYPE_INT_RGB);
                         var graphics=image.createGraphics();try{panel.printAll(graphics);}finally{graphics.dispose();}
@@ -162,7 +216,7 @@ public class OperationalRegressionTest extends RegressionTest {
             WarehouseReportPanel report=new WarehouseReportPanel();
             sql("SAVEPOINT broken_kpi_read");
             try {
-                sql("UPDATE products SET quantity=100 WHERE id=1");sql("ALTER TABLE invoices RENAME COLUMN total TO unavailable_total");
+                sql("UPDATE products SET quantity=100 WHERE id=1");sql("ALTER TABLE invoices RENAME COLUMN taxable_amount TO unavailable_taxable_amount");
                 try{call(dash,"loadKPIData");}catch(java.awt.HeadlessException expectedErrorDialog){}
                 for(String field:List.of("warehouseValueLabel","warehouseSaleValueLabel","monthRevenueLabel","monthInvoicedLabel","negativeStockCountLabel"))
                     require(kpi(dash,field).equals("—"),"Stale or partial figure after read failure: "+field);

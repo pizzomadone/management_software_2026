@@ -127,14 +127,14 @@ public class DashboardPanel extends JPanel {
         ));
 
         JPanel cards = new JPanel(new GridLayout(2, 4, 10, 10));
-        cards.add(createKPICard("Stock at purchase cost", "—", SECONDARY_COLOR, "warehouseValue"));
+        cards.add(createKPICard("Stock at standard cost", "—", SECONDARY_COLOR, "warehouseValue"));
         cards.add(createKPICard("Stock at sale price", "—", SECONDARY_COLOR, "warehouseSaleValue"));
         cards.add(createKPICard("Low Stock Products", "—", DANGER_COLOR, "lowStock"));
-        cards.add(createKPICard("Zero Stock Products", "—", WARNING_COLOR, "zeroStock"));
-        cards.add(createKPICard("Monthly sales (excl. VAT)", "—", SUCCESS_COLOR, "monthRevenue"));
-        cards.add(createKPICard("Monthly invoices (incl. VAT)", "—", SUCCESS_COLOR, "monthInvoiced"));
+        cards.add(createKPICard("Out of Stock Products", "—", WARNING_COLOR, "zeroStock"));
+        cards.add(createKPICard("Monthly order sales (excl. VAT)", "—", SUCCESS_COLOR, "monthRevenue"));
+        cards.add(createKPICard("Monthly invoiced (excl. VAT)", "—", SUCCESS_COLOR, "monthInvoiced"));
         cards.add(createKPICard("Pending Customer Orders", "—", WARNING_COLOR, "pendingOrders"));
-        cards.add(createKPICard("Average Margin", "—", ACCENT_COLOR, "avgMargin"));
+        cards.add(createKPICard("Potential stock margin", "—", ACCENT_COLOR, "avgMargin"));
         panel.add(cards, BorderLayout.CENTER);
 
         JPanel notes = new JPanel(new GridLayout(0, 1, 0, 4));
@@ -183,21 +183,25 @@ public class DashboardPanel extends JPanel {
             case "zeroStock" -> zeroStockLabel = valueLabel;
         }
 
-        String explanation = switch (type) {
-            case "warehouseValue", "warehouseSaleValue" ->
-                "Only active products with positive stock are valued at current catalog prices.";
-            case "monthRevenue" ->
-                "Completed customer orders dated in the current month, excluding VAT; independent of invoices and payments.";
-            case "monthInvoiced" ->
-                "Issued or paid invoices dated in the current month, including VAT; shown separately from sales.";
-            default -> null;
-        };
+        String explanation = "tooltip.kpi." + type;
         card.setToolTipText(explanation);
         titleLabel.setToolTipText(explanation);
         valueLabel.setToolTipText(explanation);
 
         card.add(titleLabel, BorderLayout.NORTH);
         card.add(valueLabel, BorderLayout.CENTER);
+
+        JLabel help = new JLabel("?", SwingConstants.CENTER);
+        help.setFont(new Font("Arial", Font.BOLD, 11));
+        help.setForeground(new Color(100, 100, 100));
+        help.setPreferredSize(new Dimension(18, 18));
+        help.setBorder(BorderFactory.createLineBorder(BORDER_COLOR, 1, true));
+        help.setToolTipText(explanation);
+        JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+        footer.setOpaque(false);
+        footer.add(help);
+        card.add(footer, BorderLayout.SOUTH);
+        I18n.localize(card);
 
         return card;
     }
@@ -424,7 +428,7 @@ public class DashboardPanel extends JPanel {
 
             // 3. Pending Orders
             int pendingOrders = 0;
-            String pendingQuery = "SELECT COUNT(*) as count FROM orders WHERE status != 'Completed' AND status != 'Cancelled'";
+            String pendingQuery = "SELECT COUNT(*) as count FROM orders WHERE status IN ('New','In Progress')";
             try (Statement stmt = conn.createStatement();
                  ResultSet rs = stmt.executeQuery(pendingQuery)) {
                 if (rs.next()) {
@@ -450,30 +454,21 @@ public class DashboardPanel extends JPanel {
                 "SELECT total FROM orders WHERE status='Completed' AND " +
                     DateUtils.sqlDate("order_date") + ">=? AND " + DateUtils.sqlDate("order_date") + "<?", start, end);
             double monthlyInvoiced = sumMonthlyDocuments(conn,
-                "SELECT total FROM invoices WHERE status IN ('Issued','Paid') AND " +
+                "SELECT taxable_amount AS total FROM invoices WHERE status IN ('Issued','Paid') AND " +
                     DateUtils.sqlDate("date") + ">=? AND " + DateUtils.sqlDate("date") + "<?", start, end);
 
-            // 5. Average Margin
-            double margin = 0;
-            String marginQuery = """
-                SELECT AVG(CASE
-                    WHEN p.price > 0 AND p.acquisition_cost >= 0
-                    THEN ((p.price - p.acquisition_cost) / p.price) * 100
-                    ELSE 0
-                END) as avg_margin
-                FROM products p
-                WHERE p.active = 1 AND p.price > 0
-            """;
-            try (Statement stmt = conn.createStatement();
-                 ResultSet rs = stmt.executeQuery(marginQuery)) {
-                if (rs.next()) {
-                    margin = rs.getDouble("avg_margin");
-                }
-            }
+            // Potential gross margin uses the same stock totals, weighted by their sale value.
+            // It is undefined without a positive denominator; it is not historical sales profit.
+            String margin = warehouseSaleValue > 0
+                ? String.format("%.1f%%", java.math.BigDecimal.valueOf(warehouseSaleValue)
+                    .subtract(java.math.BigDecimal.valueOf(warehouseValue))
+                    .multiply(java.math.BigDecimal.valueOf(100))
+                    .divide(java.math.BigDecimal.valueOf(warehouseSaleValue), 1, java.math.RoundingMode.HALF_UP))
+                : "—";
 
-            // 6. Zero Stock Count
+            // Out of stock includes deficits, matching the warehouse report.
             int zeroStockCount = 0;
-            String zeroStockQuery = "SELECT COUNT(*) as count FROM products WHERE active = 1 AND quantity = 0";
+            String zeroStockQuery = "SELECT COUNT(*) as count FROM products WHERE active = 1 AND quantity <= 0";
             try (Statement stmt = conn.createStatement();
                  ResultSet rs = stmt.executeQuery(zeroStockQuery)) {
                 if (rs.next()) {
@@ -491,7 +486,7 @@ public class DashboardPanel extends JPanel {
             pendingOrdersLabel.setText(String.valueOf(pendingOrders));
             monthRevenueLabel.setText(SettingsPanel.formatCurrency(monthlySales));
             monthInvoicedLabel.setText(SettingsPanel.formatCurrency(monthlyInvoiced));
-            avgMarginLabel.setText(String.format("%.1f%%", margin));
+            avgMarginLabel.setText(margin);
             zeroStockLabel.setText(String.valueOf(zeroStockCount));
 
         } catch (SQLException | IllegalArgumentException e) {
