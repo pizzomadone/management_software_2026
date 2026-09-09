@@ -40,9 +40,16 @@ PASS inventory correction records only the physical delta
 PASS notification actions target selected database IDs
 PASS warehouse valuation agrees with dashboard and zero cost margin
 PASS monthly invoiced total includes the exact first millisecond
+PASS stock at zero cost is distinct from sale value and an empty warehouse
+PASS negative stock cannot cancel positive assets and stays visible after restocking
+PASS monthly sales follow completed order edits resaves and cancellations without an invoice
+PASS monthly orders and invoices respect statuses date formats and local month boundaries
+PASS invoicing a sale keeps net orders and gross invoices separate
+PASS KPI titles notes and explanations translate in every supported language
+PASS failed dashboard and warehouse refreshes clear stale or partial figures
 PASS automatic backup schedule honors interval retry and running state
 PASS IMMEDIATE transactions serialize stock availability checks
 PASS legacy import requires and preserves the declared original currency
 PASS SQL and UI use the same calendar day across time zones
 PASS startup refuses an empty existing database without replacing it
-Regression checks: 45 passed, 0 failed
+Regression checks: 52 passed, 0 failed

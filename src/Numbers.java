@@ -56,6 +56,11 @@ public final class Numbers {
         return money(BigDecimal.valueOf(quantity).multiply(BigDecimal.valueOf(price)));
     }
 
+    /** Value physical stock on hand; shortages are reported separately, not netted against other stock. */
+    public static double stockValue(int quantity, double unitValue) {
+        return lineTotal(Math.max(0, quantity), nonNegative(unitValue));
+    }
+
     public static double tax(double taxable, double rate) {
         return money(BigDecimal.valueOf(taxable).multiply(BigDecimal.valueOf(rate)).movePointLeft(2));
     }

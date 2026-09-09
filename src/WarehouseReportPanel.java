@@ -54,7 +54,8 @@ public class WarehouseReportPanel extends JPanel {
         statsPanel.setBorder(BorderFactory.createTitledBorder("General Statistics"));
 
         JLabel totalProductsLabel = new JLabel("Total Products: 0");
-        JLabel totalValueLabel = new JLabel("Total Value: " + SettingsPanel.formatCurrency(0));
+        JLabel totalValueLabel = new JLabel("Stock at purchase cost: " + SettingsPanel.formatCurrency(0));
+        totalValueLabel.setToolTipText("Only active products with positive stock are valued at current catalog prices.");
         JLabel lowStockLabel = new JLabel("Low Stock Products: 0");
         JLabel outOfStockLabel = new JLabel("Out of Stock Products: 0");
 
@@ -64,7 +65,7 @@ public class WarehouseReportPanel extends JPanel {
         statsPanel.add(outOfStockLabel);
 
         // Products Table
-        String[] columns = {"Code", "Product", "Quantity", "Unit Value", "Total Value", "Status"};
+        String[] columns = {"Code", "Product", "Quantity", "Acquisition Cost", "Stock at purchase cost", "Status"};
         productsModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -179,6 +180,9 @@ public class WarehouseReportPanel extends JPanel {
     private void loadProductsData() {
         productsValid=false;
         productsModel.setRowCount(0);
+        JPanel statsPanel = (JPanel)((JPanel)tabbedPane.getComponentAt(0)).getComponent(0);
+        for (Component component : statsPanel.getComponents())
+            if (component instanceof JLabel label) label.setText("—");
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
@@ -200,9 +204,9 @@ public class WarehouseReportPanel extends JPanel {
                     row.add(rs.getString("code"));
                     row.add(rs.getString("name"));
 
-                    int quantity = rs.getInt("quantity");
-                    double price = rs.getDouble("acquisition_cost");
-                    double totalValueProduct = Numbers.lineTotal(quantity,price);
+                    int quantity = Numbers.quantity(rs.getObject("quantity"));
+                    double price = Numbers.nonNegative(rs.getObject("acquisition_cost"));
+                    double totalValueProduct = Numbers.stockValue(quantity,price);
                     int minQuantity = rs.getInt("minimum_quantity");
 
                     row.add(quantity);
@@ -233,6 +237,7 @@ public class WarehouseReportPanel extends JPanel {
             productsValid=true;
 
         } catch (Exception e) {
+            productsModel.setRowCount(0);
             e.printStackTrace();
             JOptionPane.showMessageDialog(this,
                 "Error loading data: " + e.getMessage(),
@@ -248,7 +253,7 @@ public class WarehouseReportPanel extends JPanel {
 
             if (statsPanel.getComponentCount() >= 4) {
                 updateLocalizedStatistic((JLabel) statsPanel.getComponent(0), "Total Products", totalProducts);
-                updateLocalizedStatistic((JLabel) statsPanel.getComponent(1), "Total Value",
+                updateLocalizedStatistic((JLabel) statsPanel.getComponent(1), "Stock at purchase cost",
                     SettingsPanel.formatCurrency(totalValue));
                 updateLocalizedStatistic((JLabel) statsPanel.getComponent(2), "Low Stock Products", lowStock);
                 updateLocalizedStatistic((JLabel) statsPanel.getComponent(3), "Out of Stock Products", outOfStock);
