@@ -748,7 +748,7 @@ public class SettingsPanel extends JPanel {
             formatter.setRoundingMode(java.math.RoundingMode.HALF_UP);
             formatter.setMinimumFractionDigits(2);
             formatter.setMaximumFractionDigits(2);
-            return formatter.format(amount);
+            return formatter.format(java.math.BigDecimal.valueOf(amount));
         } catch (IllegalArgumentException e) {
             return String.format("%s %.2f", getCurrencySymbol(currencyCode), amount);
         }
