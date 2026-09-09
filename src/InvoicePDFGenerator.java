@@ -44,8 +44,8 @@ public class InvoicePDFGenerator {
 
     public void generateAndSave(Component parent) {
         JFileChooser fileChooser = new JFileChooser();
-        fileChooser.setDialogTitle("Save Invoice PDF");
-        fileChooser.setFileFilter(new FileNameExtensionFilter("PDF Files", "pdf"));
+        fileChooser.setDialogTitle(I18n.tr("Save Invoice PDF"));
+        fileChooser.setFileFilter(new FileNameExtensionFilter(I18n.tr("PDF Files"), "pdf"));
 
         // Use settings system for last directory
         String lastDirectory = getLastDirectory();
@@ -102,13 +102,13 @@ public class InvoicePDFGenerator {
             try {
                 generatePDF(file);
                 JOptionPane.showMessageDialog(parent,
-                    "Invoice PDF generated successfully!\nSaved to: " + file.getAbsolutePath(),
-                    "PDF Generated",
+                    I18n.tr("Invoice PDF generated successfully!") + "\n" + I18n.tr("Saved to") + ": " + file.getAbsolutePath(),
+                    I18n.tr("PDF Generated"),
                     JOptionPane.INFORMATION_MESSAGE);
 
                 int choice = JOptionPane.showConfirmDialog(parent,
-                    "Would you like to open the PDF file?",
-                    "Open PDF",
+                    I18n.tr("Would you like to open the PDF file?"),
+                    I18n.tr("Open PDF"),
                     JOptionPane.YES_NO_OPTION);
 
                 if (choice == JOptionPane.YES_OPTION) {
@@ -116,8 +116,8 @@ public class InvoicePDFGenerator {
                         Desktop.getDesktop().open(file);
                     } catch (Exception e) {
                         JOptionPane.showMessageDialog(parent,
-                            "Cannot open PDF automatically. File saved to:\n" + file.getAbsolutePath(),
-                            "Information",
+                            I18n.tr("Cannot open PDF automatically. File saved to") + ":\n" + file.getAbsolutePath(),
+                            I18n.tr("Information"),
                             JOptionPane.INFORMATION_MESSAGE);
                     }
                 }
@@ -125,8 +125,8 @@ public class InvoicePDFGenerator {
             } catch (IOException e) {
                 e.printStackTrace();
                 JOptionPane.showMessageDialog(parent,
-                    "Error generating PDF: " + e.getMessage(),
-                    "Error",
+                    I18n.tr("Error generating PDF") + ": " + e.getMessage(),
+                    I18n.tr("Error"),
                     JOptionPane.ERROR_MESSAGE);
             }
         }
@@ -184,27 +184,27 @@ public class InvoicePDFGenerator {
             if(invoiceItems.isEmpty() || Math.abs(taxable-invoice.getTaxableAmount())>0.004 || Math.abs(vat-invoice.getVat())>0.004 ||
                     Math.abs(Numbers.add(taxable,vat)-invoice.getTotal())>0.004)
                 throw new SQLException("Saved invoice totals do not match its lines. Reconcile the invoice before exporting.");
-            try(PdfWriter pdf=new PdfWriter("INVOICE "+invoice.getNumber(),false)) {
+            try(PdfWriter pdf=new PdfWriter(I18n.tr("INVOICE")+" "+invoice.getNumber(),false)) {
                 pdf.logo(logo);
-                pdf.paragraph("Date: "+DATE_FORMAT.format(invoice.getDate())+" | Status: "+invoice.getStatus()+" | Currency: "+currency,false);
-                if(legacy)pdf.paragraph("Legacy invoice: party and product descriptions were captured during upgrade and may differ from the original document.",true);
-                pdf.paragraph("FROM",true);
+                pdf.paragraph(I18n.tr("Date")+": "+DATE_FORMAT.format(invoice.getDate())+" | "+I18n.tr("Status")+": "+I18n.tr(invoice.getStatus())+" | "+I18n.tr("Currency")+": "+currency,false);
+                if(legacy)pdf.paragraph(I18n.tr("Legacy invoice: party and product descriptions were captured during upgrade and may differ from the original document."),true);
+                pdf.paragraph(I18n.tr("FROM"),true);
                 for(String key:java.util.List.of("company_name","address","city","postal_code","country","vat_number","tax_code","phone","email","website")) {
                     String value=company.getProperty(key,"");
-                    if(!value.isBlank())pdf.paragraph((key.equals("vat_number")?"VAT: ":key.equals("tax_code")?"Tax code: ":"")+value,false);
+                    if(!value.isBlank())pdf.paragraph((key.equals("vat_number")?I18n.tr("VAT")+": ":key.equals("tax_code")?I18n.tr("Tax code")+": ":"")+value,false);
                 }
-                pdf.paragraph("BILL TO",true);
+                pdf.paragraph(I18n.tr("BILL TO"),true);
                 pdf.paragraph(customer.getFirstName()+" "+customer.getLastName(),true);
                 for(String value:java.util.List.of(customer.getAddress(),customer.getEmail(),customer.getPhone()))if(!value.isBlank())pdf.paragraph(value,false);
-                pdf.startTable(new String[]{"Code","Description","Qty","Unit price "+currency,"VAT %","Total "+currency},new float[]{1.6f,3.1f,.7f,1.6f,.9f,1.6f});
+                pdf.startTable(new String[]{I18n.tr("Code"),I18n.tr("Description"),I18n.tr("Qty"),I18n.tr("Unit price")+" "+currency,I18n.tr("VAT %"),I18n.tr("Total")+" "+currency},new float[]{1.6f,3.1f,.7f,1.6f,.9f,1.6f});
                 for(InvoiceItem item:invoiceItems)pdf.row(item.getProductCode(),item.getProductName(),Integer.toString(item.getQuantity()),
                     decimal(item.getUnitPrice()),decimal(item.getVatRate()),money(item.getTotal()));
-                pdf.paragraph("Taxable amount: "+currency+" "+money(invoice.getTaxableAmount()),true);
-                pdf.paragraph("VAT: "+currency+" "+money(invoice.getVat()),true);
-                pdf.paragraph("TOTAL: "+currency+" "+money(invoice.getTotal()),true);
+                pdf.paragraph(I18n.tr("Taxable amount")+": "+currency+" "+money(invoice.getTaxableAmount()),true);
+                pdf.paragraph(I18n.tr("VAT")+": "+currency+" "+money(invoice.getVat()),true);
+                pdf.paragraph(I18n.tr("TOTAL")+": "+currency+" "+money(invoice.getTotal()),true);
                 pdf.save(outputFile);
             }
-        } catch(SQLException | IllegalArgumentException e) {throw new IOException("Unable to generate a consistent invoice: "+e.getMessage(),e);}
+        } catch(SQLException | IllegalArgumentException e) {throw new IOException(I18n.tr("Unable to generate a consistent invoice")+": "+e.getMessage(),e);}
     }
     private static String money(double value) {return java.math.BigDecimal.valueOf(value).setScale(2,java.math.RoundingMode.HALF_UP).toPlainString();}
     private static String decimal(double value) {return java.math.BigDecimal.valueOf(value).stripTrailingZeros().toPlainString();}
