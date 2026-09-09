@@ -41,8 +41,7 @@ public class InvoiceDialog extends JDialog {
         this.dateFormat = new SimpleDateFormat("dd/MM/yyyy");
         this.productsCache = new HashMap<>();
         this.documentCurrency = resolveDocumentCurrency(invoice);
-        this.historicalForeignCurrencyLocked = invoice != null && !"Draft".equals(invoice.getStatus())
-            && !currencyCode().equals(SettingsPanel.getCurrencyCode());
+        this.historicalForeignCurrencyLocked = invoice != null && !"Draft".equals(invoice.getStatus());
 
         setupWindow();
         initComponents();
@@ -538,7 +537,9 @@ public class InvoiceDialog extends JDialog {
             statusCombo.setModel(new DefaultComboBoxModel<>(new String[]{"Issued","Paid","Canceled"}));
             statusCombo.putClientProperty("i18n.values", true);
             statusCombo.setSelectedItem(invoice.getStatus());
-            String notice=I18n.tr("Historical invoice in a different currency: only the status can be changed.");
+            String notice=!currencyCode().equals(SettingsPanel.getCurrencyCode())
+                ? I18n.tr("Historical invoice in a different currency: only the status can be changed.")
+                : I18n.tr("Finalized invoice: only the status can be changed.");
             itemsTable.setToolTipText(notice);
             dateField.setToolTipText(notice);
             selectCustomerButton.setToolTipText(notice);
@@ -547,9 +548,11 @@ public class InvoiceDialog extends JDialog {
 
     private boolean blockHistoricalCurrencyEdit() {
         if(!historicalForeignCurrencyLocked) return false;
-        JOptionPane.showMessageDialog(this,
-            I18n.tr("This historical invoice uses {OLD}. The current operating currency is {NEW}. Only its status can be changed.")
-                .replace("{OLD}",currencyCode()).replace("{NEW}",SettingsPanel.getCurrencyCode()),
+        String message=!currencyCode().equals(SettingsPanel.getCurrencyCode())
+            ? I18n.tr("This historical invoice uses {OLD}. The current operating currency is {NEW}. Only its status can be changed.")
+                .replace("{OLD}",currencyCode()).replace("{NEW}",SettingsPanel.getCurrencyCode())
+            : I18n.tr("Issued, Paid and Canceled invoices are historical documents. Only their status can be changed.");
+        JOptionPane.showMessageDialog(this,message,
             I18n.tr("Historical Invoice"),JOptionPane.INFORMATION_MESSAGE);
         return true;
     }
@@ -558,7 +561,7 @@ public class InvoiceDialog extends JDialog {
         String newStatus=(String)statusCombo.getSelectedItem();
         if("Draft".equals(newStatus)) {
             JOptionPane.showMessageDialog(this,
-                I18n.tr("A historical invoice in another currency cannot be returned to Draft."),
+                I18n.tr("A finalized invoice cannot be returned to Draft."),
                 I18n.tr("Historical Invoice"),JOptionPane.WARNING_MESSAGE);
             return;
         }
