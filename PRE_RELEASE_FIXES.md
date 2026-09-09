@@ -2,7 +2,7 @@
 
 Il ramo `codex/pre-release-corrections-20260908` contiene gli interventi sui 49 rilievi dell’audit della revisione `8fe23b2d67769fb3c3ed5ae046588c563fd897cb`.
 
-La verifica automatica finale ha superato **54 gruppi di regressione**, comprendenti tutte le 16 transizioni degli ordini cliente e le 25 degli ordini fornitore. I test eseguono i metodi applicativi su database sintetici, verificano i dati salvati e controllano testo e coordinate dei PDF. La fattura di 50 righe e i PDF con Unicode sono stati anche renderizzati e ispezionati. L’esito completo dei gruppi è in [tests/verification.txt](tests/verification.txt).
+La verifica automatica finale ha superato **57 gruppi di regressione**, comprendenti tutte le 16 transizioni degli ordini cliente e le 25 degli ordini fornitore. I test eseguono i metodi applicativi su database sintetici, verificano i dati salvati e controllano testo e coordinate dei PDF. La fattura di 50 righe e i PDF con Unicode sono stati anche renderizzati e ispezionati. L’esito completo dei gruppi è in [tests/verification.txt](tests/verification.txt).
 
 ## Prima della pubblicazione
 
@@ -36,6 +36,14 @@ I nove gruppi aggiunti per le KPI verificano costi zero e modifica del costo, ma
 
 Il confronto con la documentazione non identifica un unico metodo di costo usato da tutti i gestionali. La scelta per WareStat è il costo standard, definito nella scheda prodotto e indicato come predefinito nella [documentazione Odoo 18](https://www.odoo.com/documentation/18.0/applications/inventory_and_mrp/inventory/product_management/inventory_valuation/inventory_valuation_config.html). [Zoho Inventory](https://www.zoho.com/en-ng/inventory/help/reports/inventory-valuation-reports.html) offre invece FIFO e costo medio mobile. Questi metodi richiedono una gestione dei costi dei movimenti e non sono stati simulati usando gli ordini storici di WareStat. Il fatturato netto segue la distinzione tra vendite al netto delle imposte e totali con imposte descritta nei [report vendite di Zoho Inventory](https://www.zoho.com/us/inventory/help/reports/sales-reports.html). Le quantità negative escluse dal valore e segnalate a parte sono una regola operativa esplicita di WareStat.
 
+## Scorte minime, statistiche e font PDF
+
+La soglia letta dalle schermate è `products.minimum_quantity`. La tabella `minimum_stock` conserva anche quantità di riordino, tempi, fornitore preferito e note; la sua copia della soglia resta sincronizzata dai trigger della migrazione 007 e dalle transazioni dei due editor. Non è stata eliminata una tabella contenente altre impostazioni. È stato corretto un caso residuo in `WarehousePanel.loadMinimumStock`: senza una riga di impostazioni avanzate, il dialogo mostrava zero anziché la soglia di catalogo, rischiando di azzerarla al salvataggio. Ora legge sempre la soglia del prodotto. I test coprono apertura e salvataggio invariato, modifica da entrambi gli editor, dashboard, tabella magazzino, rollback e rimozione delle sole impostazioni opzionali.
+
+Nel ramo corretto `AdvancedStatsPanel.loadSalesData` e `loadProductsData` filtravano già gli ordini `Completed`. Un nuovo scenario verifica tutti e tre i periodi selezionabili, esclude righe di ordini nuovi, in corso, annullati e fuori periodo, confronta ricavi e quantità e controlla che una vendita successivamente annullata sparisca dai grafici dopo l’aggiornamento.
+
+L’errore «Missing PDF font: DejaVuSans.ttf» indica un avvio senza il font nel classpath. `PdfWriter` cerca prima le risorse incorporate, poi la cartella `resources/fonts` del progetto e infine Liberation Sans, già inclusa nella libreria PDFBox. Il font alternativo è incorporato nel PDF e usa il peso normale anche per i titoli; caratteri non rappresentabili continuano a causare un errore esplicito, senza alterare il PDF precedente. Ant verifica la presenza dei due font DejaVu e della licenza prima della compilazione e nei JAR normale e offuscato; è stata rimossa la duplicazione delle risorse nel JAR. Tre processi Java separati verificano l’esportazione da JAR con font, da JAR senza font con cartella risorse disponibile e da JAR senza font fuori dal progetto. I controlli leggono nuovamente accenti, nomi polacchi, quantità e importi e verificano il font effettivamente incorporato.
+
 ## Collegamento ai rilievi dell’audit
 
 La gravità riportata è quella del problema originario. “Intervento” descrive il comportamento introdotto, comprese le mitigazioni e i limiti sopra indicati.
@@ -63,13 +71,13 @@ La gravità riportata è quella del problema originario. “Intervento” descri
 | R19 | ALTO | SalesReportPanel; AdvancedStatsPanel; DashboardPanel | Vendite degli ordini limitate a Completed; fatturato mensile calcolato sugli imponibili, IVA esclusa, delle fatture Issued/Paid. |
 | R20 | ALTO | DashboardPanel.loadABCAnalysis | La classificazione considera la quota cumulata prima di aggiungere il prodotto: il prodotto dominante rimane A. |
 | R21 | ALTO | AdvancedStatsPanel.loadProductsData, drawProductsChart | Denominatore esteso a tutti i prodotti; quota residua esplicita nel grafico. L’ordinamento viene ricollegato al modello dopo il ricaricamento. |
-| R22 | ALTO | DatabaseMigrationManager.migrateStockThresholds; ProductDialog; MinimumStockDialog | Soglia unica sincronizzata tra anagrafica e magazzino, con query senza colonne omonime ambigue. Zero disattiva la soglia. |
+| R22 | ALTO | DatabaseMigrationManager.migrateStockThresholds; ProductDialog; MinimumStockDialog; WarehousePanel.loadMinimumStock | Lettura della soglia da products, anche senza impostazioni avanzate, e copia sincronizzata tramite trigger e transazioni. Zero disattiva la soglia. |
 | R23 | ALTO | DateUtils.sqlDate, installSqlFunctions; WarehouseReportPanel | Date dei report convertite nello stesso fuso Java usato dall’interfaccia, per timestamp numerici e testo SQLite. |
 | R24 | ALTO | DatabaseMigrationManager.migrateSupplierData | Aggiunta del riferimento fornitore senza eliminare la tabella prodotti; mapping ambiguo rifiutato, riferimenti ai prodotti preservati. |
 | R25 | ALTO | InvoiceSnapshots; InvoiceDialog; InvoicesPanel; InvoicePDFGenerator | Copia dei dati di cliente, azienda, logo, prodotti e valuta per la fattura. Le bozze aggiornano i dati al salvataggio; le fatture pregresse migrate sono identificate come legacy. |
 | R26 | ALTO | ApplicationLock; DatabaseManager.beginTransaction; OrderDialog | Una sola istanza sull’archivio; transazioni IMMEDIATE prima del controllo delle scorte. Connessione chiusa se BEGIN fallisce e lascia lo stato JDBC non riutilizzabile. |
 | R27 | ALTO | PdfWriter; InvoicePDFGenerator.generatePDF | Interruzioni di pagina, intestazioni ripetute, descrizioni complete e totali leggibili. Verificata una fattura di 50 righe. |
-| R28 | ALTO | PdfWriter; resources/fonts; build.xml | Font Unicode incorporati con licenza inclusa; verificati nomi polacchi e accenti. Caratteri non supportati producono errore senza sostituire il PDF precedente. |
+| R28 | ALTO | PdfWriter; resources/fonts; build.xml | Font Unicode incorporati con licenza inclusa e controlli di packaging; recupero dalla cartella risorse o da PDFBox se manca il font nel classpath. Verificati nomi polacchi e accenti anche nel caso alternativo. Caratteri non supportati producono errore senza sostituire il PDF precedente. |
 | R29 | MEDIO | Numbers.quantity; StockManager; DatabaseIntegrity | Interi verificati, somme lette senza cambio silenzioso di segno e rollback degli incrementi oltre il limite. |
 | R30 | MEDIO | SalesReportPanel.loadReportData | Rimosso il limite implicito di 1.000 ordini; verificato un report con 1.005 ordini completati. |
 | R31 | ALTO | I18n.localize, tr | Traduzione dei testi dell’interfaccia e degli enum dichiarati; codici, nomi e altri valori aziendali restano letterali. |
@@ -104,4 +112,4 @@ Lo script usa `JAVA_HOME` se impostato, altrimenti `java` e `javac` nel PATH. Cr
 
 È disponibile anche il target `ant test`, con gli stessi test e risorse. Il target è stato aggiunto a `build.xml`; in questo ambiente è stata eseguita la versione Bash, mentre Ant non era installato. Il packaging include i font e la loro licenza.
 
-I file `tests/RegressionTest.java`, `tests/ExtendedRegressionTest.java` e `tests/OperationalRegressionTest.java` contengono gli scenari. L’uso di `Unsafe` è limitato alla suite per costruire i dialoghi senza finestre native; JDK 21 emette tre avvisi in compilazione.
+I file `tests/RegressionTest.java`, `tests/ExtendedRegressionTest.java` e `tests/OperationalRegressionTest.java` contengono gli scenari; `tests/PdfPackagingProbe.java` verifica l’esportazione PDF nei processi Java isolati. L’uso di `Unsafe` è limitato alla suite per costruire i dialoghi senza finestre native; JDK 21 emette tre avvisi in compilazione.

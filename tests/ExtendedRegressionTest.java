@@ -11,6 +11,18 @@ import org.apache.pdfbox.text.TextPosition;
 
 /** Financial, reporting, upgrade and document regression scenarios. */
 public class ExtendedRegressionTest extends RegressionTest {
+    public static class MS extends MinimumStockDialog {
+        public MS() { super((JFrame)null, null); }
+        public void dispose() {}
+    }
+    static MS minimumEditor(MinimumStock settings, int minimum) throws Exception {
+        MS dialog=empty(MS.class);put(dialog,"minStock",settings);
+        put(dialog,"minQuantitySpinner",new JSpinner(new SpinnerNumberModel(minimum,0,Integer.MAX_VALUE,1)));
+        put(dialog,"reorderQuantitySpinner",new JSpinner(new SpinnerNumberModel(Math.max(minimum,settings.getReorderQuantity()),0,Integer.MAX_VALUE,1)));
+        put(dialog,"leadTimeSpinner",new JSpinner(new SpinnerNumberModel(0,0,365,1)));
+        put(dialog,"supplierCombo",new JComboBox<>());put(dialog,"notesArea",new JTextArea(""));
+        return dialog;
+    }
     static String pdfText(Path file) throws Exception {
         try(PDDocument doc=Loader.loadPDF(file.toFile())) {
             PDFTextStripper stripper=new PDFTextStripper() {
@@ -63,6 +75,85 @@ public class ExtendedRegressionTest extends RegressionTest {
             fresh();sql("INSERT INTO minimum_stock(product_id,minimum_quantity,reorder_quantity) VALUES(1,5,10)");
             require("5".equals(value("SELECT minimum_quantity FROM products WHERE id=1")),"Warehouse threshold did not reach product");
             sql("UPDATE products SET minimum_quantity=7 WHERE id=1");require("7".equals(value("SELECT minimum_quantity FROM minimum_stock WHERE product_id=1")),"Product threshold did not reach warehouse");
+            db.setAutoCommit(false);
+            try {
+                sql("UPDATE minimum_stock SET minimum_quantity=21 WHERE product_id=1");
+                require("21".equals(value("SELECT minimum_quantity FROM products WHERE id=1")),"Minimum edit did not synchronize within the transaction");
+                db.rollback();
+            } finally {db.setAutoCommit(true);}
+            require("7".equals(value("SELECT minimum_quantity FROM products WHERE id=1")) && "7".equals(value("SELECT minimum_quantity FROM minimum_stock WHERE product_id=1")),"Rollback left inconsistent thresholds");
+        });
+        test("minimum stock setup preserves product thresholds without advanced settings",()->{
+            fresh();sql("UPDATE products SET minimum_quantity=7 WHERE id=1");
+            require("0".equals(value("SELECT COUNT(*) FROM minimum_stock")),"Fixture already has advanced settings");
+            WarehousePanel warehouse=new WarehousePanel();
+            MinimumStock settings=(MinimumStock)call(warehouse,"loadMinimumStock",new Class<?>[]{String.class},"A");
+            require(settings.getMinimumQuantity()==7,"Opening warehouse settings reset the product threshold to zero");
+            MS first=minimumEditor(settings,settings.getMinimumQuantity());call(first,"saveStock");
+            require(Boolean.TRUE.equals(get(first,"stockSaved")) && "7".equals(value("SELECT minimum_quantity FROM products WHERE id=1")),"Saving unchanged settings lost the threshold");
+            MS edit=minimumEditor(settings,11);call(edit,"saveStock");
+            require("11".equals(value("SELECT minimum_quantity FROM products WHERE id=1")) && "11".equals(value("SELECT minimum_quantity FROM minimum_stock WHERE product_id=1")),"Warehouse editor did not save both representations");
+            PD product=OperationalRegressionTest.productEditor(10);((JSpinner)get(product,"minimumQuantitySpinner")).setValue(14);call(product,"saveProduct");
+            require("14".equals(value("SELECT minimum_quantity FROM products WHERE id=1")) && "14".equals(value("SELECT minimum_quantity FROM minimum_stock WHERE product_id=1")),"Product editor did not synchronize the threshold");
+            call(warehouse,"loadStockData");DefaultTableModel stock=(DefaultTableModel)get(warehouse,"stockModel");
+            require(stock.getValueAt(0,5).equals(14),"Warehouse table differs from the product threshold");
+            DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
+            require(((JLabel)get(dash,"lowStockCountLabel")).getText().equals("1"),"Dashboard uses a different threshold");
+            sql("DELETE FROM minimum_stock WHERE product_id=1");
+            settings=(MinimumStock)call(warehouse,"loadMinimumStock",new Class<?>[]{String.class},"A");
+            require(settings.getMinimumQuantity()==14,"Removing optional reorder settings erased the product threshold");
+        });
+        test("advanced statistics exclude unfinished cancelled and out-of-period orders",()->{
+            fresh();completed();
+            for(String status:List.of("New","In Progress","Cancelled")) {
+                sql("INSERT INTO orders(customer_id,order_date,status,total) VALUES(1,"+System.currentTimeMillis()+",'"+status+"',2000)");
+                sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES((SELECT MAX(id) FROM orders),2,100,20)");
+            }
+            for(String date:List.of("2000-01-01",java.time.LocalDate.now().plusDays(1).toString())) {
+                sql("INSERT INTO orders(customer_id,order_date,status,total) VALUES(1,'"+date+"','Completed',2000)");
+                sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES((SELECT MAX(id) FROM orders),2,100,20)");
+            }
+            AdvancedStatsPanel panel=new AdvancedStatsPanel();
+            for(int period=0;period<3;period++) {
+                ((JComboBox<?>)get(panel,"periodCombo")).setSelectedIndex(period);call(panel,"loadData");
+                @SuppressWarnings("unchecked") Map<String,double[]> sales=(Map<String,double[]>)get(panel,"monthlySales");
+                require(sales.size()==1 && sales.values().iterator().next()[0]==30 && sales.values().iterator().next()[1]==1,"Monthly statistics include non-completed or out-of-period documents");
+                JTable products=(JTable)get(panel,"topProductsTable");
+                require(products.getRowCount()==1 && products.getValueAt(0,0).equals("Product A") && ((Number)products.getValueAt(0,1)).longValue()==3,"Product statistics include invalid order details");
+                require((double)get(panel,"productsTotalRevenue")==30,"Product chart total differs from completed sales");
+            }
+            sql("UPDATE orders SET status='Cancelled' WHERE id=1");call(panel,"loadData");
+            require(((Map<?,?>)get(panel,"monthlySales")).isEmpty() && ((JTable)get(panel,"topProductsTable")).getRowCount()==0 && (double)get(panel,"productsTotalRevenue")==0,"Cancelled sale remained in the charts");
+        });
+        test("PDF export finds embedded source-folder and bundled fallback fonts",()->{
+            Path isolated=Files.createDirectories(OUT.resolve("pdf-packaging"));
+            Path withFonts=isolated.resolve("with-fonts.jar"), withoutFonts=isolated.resolve("without-fonts.jar");
+            for(Path jar:List.of(withFonts,withoutFonts)) {
+                try(var out=new java.util.jar.JarOutputStream(Files.newOutputStream(jar))) {
+                    List<String> resources=new ArrayList<>(List.of("PdfWriter.class","PdfPackagingProbe.class"));
+                    if(jar.equals(withFonts))resources.addAll(List.of("fonts/DejaVuSans.ttf","fonts/DejaVuSans-Bold.ttf","fonts/LICENSE-DejaVu.txt"));
+                    for(String name:resources) {
+                        out.putNextEntry(new java.util.jar.JarEntry(name));
+                        try(var in=PdfWriter.class.getResourceAsStream("/"+name)) {
+                            require(in!=null,"Missing packaging test input: "+name);in.transferTo(out);
+                        }
+                        out.closeEntry();
+                    }
+                }
+            }
+            String javaExecutable=Path.of(System.getProperty("java.home"),"bin","java").toString();
+            String pdfbox=Path.of(PDDocument.class.getProtectionDomain().getCodeSource().getLocation().toURI()).toString();
+            for(int mode=0;mode<3;mode++) {
+                Path jar=mode==0?withFonts:withoutFonts;
+                Path cwd=mode==1?Path.of("").toAbsolutePath():isolated;
+                String expected=mode==2?"LiberationSans":"DejaVuSans";
+                Path log=isolated.resolve("export-"+mode+".log");
+                Process process=new ProcessBuilder(javaExecutable,"-Djava.awt.headless=true","-cp",jar.toAbsolutePath()+java.io.File.pathSeparator+pdfbox,
+                    "PdfPackagingProbe",isolated.resolve("export-"+mode+".pdf").toAbsolutePath().toString(),expected)
+                    .directory(cwd.toFile()).redirectErrorStream(true).redirectOutput(log.toFile()).start();
+                if(!process.waitFor(30,java.util.concurrent.TimeUnit.SECONDS)) {process.destroyForcibly();throw new AssertionError("PDF packaging probe timed out");}
+                require(process.exitValue()==0,"PDF packaging probe failed: "+Files.readString(log));
+            }
         });
         test("movement reports include timestamp and SQL text dates",()->{
             fresh();completed();sql("INSERT INTO warehouse_movements(product_id,type,quantity,reason) VALUES(1,'INWARD',1,'Manual test')");

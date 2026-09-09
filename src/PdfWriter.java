@@ -27,10 +27,26 @@ public final class PdfWriter implements AutoCloseable {
         } catch (IOException | RuntimeException e) { document.close(); throw e; }
     }
     private PDFont font(String name) throws IOException {
-        try(InputStream in=PdfWriter.class.getResourceAsStream("/fonts/"+name)) {
-            if(in==null) throw new IOException("Missing PDF font: "+name);
+        try(InputStream in=openFont(name)) {
             return PDType0Font.load(document,in);
         }
+    }
+
+    private InputStream openFont(String name) throws IOException {
+        InputStream packaged = PdfWriter.class.getResourceAsStream("/fonts/" + name);
+        if (packaged != null) return packaged;
+
+        // Eclipse/manual launches may omit the resource folder from the classpath.
+        Path sourceFont = Path.of("resources", "fonts", name);
+        if (Files.isRegularFile(sourceFont) && Files.isReadable(sourceFont))
+            return Files.newInputStream(sourceFont);
+
+        // PDFBox bundles an embeddable Unicode font, also available in an incomplete app package.
+        // This fallback uses a regular face for both weights; it never replaces unsupported characters.
+        InputStream fallback = PDDocument.class.getResourceAsStream(
+            "/org/apache/pdfbox/resources/ttf/LiberationSans-Regular.ttf");
+        if (fallback != null) return fallback;
+        throw new IOException("PDF fonts are unavailable. Restore resources/fonts and the PDFBox library.");
     }
     private float measure(String text,PDFont font,float size) throws IOException {
         try {return font.getStringWidth(text)*size/1000;}

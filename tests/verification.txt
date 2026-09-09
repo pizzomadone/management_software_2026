@@ -24,6 +24,9 @@ PASS completed sales exclude cancelled documents and have no 1000 row cap
 PASS dominant product belongs to ABC class A
 PASS top ten percentages include all products in the denominator
 PASS minimum stock stays synchronized in both editors
+PASS minimum stock setup preserves product thresholds without advanced settings
+PASS advanced statistics exclude unfinished cancelled and out-of-period orders
+PASS PDF export finds embedded source-folder and bundled fallback fonts
 PASS movement reports include timestamp and SQL text dates
 PASS business text is never translated
 PASS numeric and formatted currency sorting is numeric
@@ -54,4 +57,4 @@ PASS IMMEDIATE transactions serialize stock availability checks
 PASS legacy import requires and preserves the declared original currency
 PASS SQL and UI use the same calendar day across time zones
 PASS startup refuses an empty existing database without replacing it
-Regression checks: 54 passed, 0 failed
+Regression checks: 57 passed, 0 failed

@@ -591,7 +591,7 @@ public class WarehousePanel extends JPanel {
     private MinimumStock loadMinimumStock(String code) throws SQLException {
         Connection conn = DatabaseManager.getInstance().getConnection();
         String query = """
-            SELECT p.id, p.name, sm.minimum_quantity, sm.reorder_quantity,
+            SELECT p.id, p.name, p.minimum_quantity, sm.reorder_quantity,
                     sm.lead_time_days, sm.preferred_supplier_id,
                     s.company_name as supplier_name, sm.notes
             FROM products p
