@@ -23,6 +23,7 @@ public class SettingsPanel extends JPanel {
     private JComboBox<String> currencyCombo;
     private JTextField defaultVatField;
     private JComboBox<String> languageCombo;
+    private boolean currencyChangedDuringUpdate;
 
     // Company Data fields
     private JTextField companyNameField;
@@ -456,6 +457,7 @@ public class SettingsPanel extends JPanel {
 
     /** Copies every editable application option into the live settings. */
     private void updateSettingsFromFields() {
+        currencyChangedDuringUpdate = false;
         double vatRate;
         try {
             vatRate = Numbers.vat(defaultVatField.getText());
@@ -509,6 +511,7 @@ public class SettingsPanel extends JPanel {
                     return (String)currencyCombo.getSelectedItem();
                 }
                 DatabaseCurrency.change(newCode,DatabaseCurrency.ChangeMode.RELABEL,null);
+                currencyChangedDuringUpdate = true;
             } else {
                 String input=JOptionPane.showInputDialog(this,
                     I18n.tr("Enter the exchange rate: 1 {OLD} = ? {NEW}")
@@ -536,6 +539,7 @@ public class SettingsPanel extends JPanel {
                     return (String)currencyCombo.getSelectedItem();
                 }
                 DatabaseCurrency.change(newCode,DatabaseCurrency.ChangeMode.CONVERT,rate);
+                currencyChangedDuringUpdate = true;
             }
             return selectedCurrency;
         } catch(java.sql.SQLException e) {
@@ -585,7 +589,11 @@ public class SettingsPanel extends JPanel {
         updateLookAndFeel(theme);
         I18n.setLanguage(getSetting("language", "it"));
         Window owner = SwingUtilities.getWindowAncestor(this);
-        if (owner instanceof MainWindow mainWindow) mainWindow.refreshLocalizedTitle();
+        if (owner instanceof MainWindow mainWindow) {
+            mainWindow.refreshLocalizedTitle();
+            if(currencyChangedDuringUpdate) mainWindow.refreshAfterCurrencyChange();
+        }
+        currencyChangedDuringUpdate = false;
     }
 
     private void updateGlobalFont(int size) {
@@ -709,6 +717,7 @@ public class SettingsPanel extends JPanel {
     }
 
     public static String formatCurrency(double amount,String currencyCode) {
+        if(currencyCode==null || currencyCode.isBlank()) currencyCode=getCurrencyCode();
         try {
             NumberFormat formatter = NumberFormat.getCurrencyInstance(Locale.getDefault());
             Currency currency = Currency.getInstance(currencyCode);
