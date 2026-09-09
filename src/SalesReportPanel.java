@@ -284,7 +284,7 @@ public class SalesReportPanel extends JPanel {
 
     private void exportToPDF() {
         loadReportData();if(!reportValid)return;
-        String subtitle = String.format("From: %s to: %s", startDateField.getText(), endDateField.getText());
+        String subtitle = I18n.tr("From") + ": " + startDateField.getText() + " " + I18n.tr("to") + ": " + endDateField.getText();
         String fileName = String.format("sales_report_%s.pdf", new SimpleDateFormat("yyyyMMdd").format(new Date()));
 
         ReportPDFGenerator pdfGenerator = new ReportPDFGenerator(
