@@ -373,7 +373,7 @@ public class WarehouseReportPanel extends JPanel {
         ReportPDFGenerator pdfGenerator = new ReportPDFGenerator(
             productsModel,
             "Warehouse Report - Product Status",
-            "Generated: " + new SimpleDateFormat("dd/MM/yyyy").format(new Date()),
+            I18n.tr("Generated") + ": " + new SimpleDateFormat("dd/MM/yyyy").format(new Date()),
             fileName
         );
 
@@ -382,9 +382,10 @@ public class WarehouseReportPanel extends JPanel {
 
     private void exportMovementsToPDF() {
         loadMovementsData();if(!movementsValid)return;
-        String subtitle = String.format("From: %s to: %s",
-            startDateField != null ? startDateField.getText() : "N/A",
-            endDateField != null ? endDateField.getText() : "N/A");
+        String subtitle = I18n.tr("From") + ": " +
+            (startDateField != null ? startDateField.getText() : I18n.tr("N/A")) + " " +
+            I18n.tr("to") + ": " +
+            (endDateField != null ? endDateField.getText() : I18n.tr("N/A"));
         String fileName = String.format("warehouse_movements_%s.pdf", new SimpleDateFormat("yyyyMMdd").format(new Date()));
 
         ReportPDFGenerator pdfGenerator = new ReportPDFGenerator(
