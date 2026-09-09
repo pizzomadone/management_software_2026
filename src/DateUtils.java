@@ -94,6 +94,19 @@ public class DateUtils {
                 result(new SimpleDateFormat("yyyy-MM-dd",java.util.Locale.ROOT).format(date));
             }
         },1);
+        // SQLite ROUND works on binary floating point and disagrees with WareStat's
+        // accounting HALF_UP rule on values such as 2.675. Reports must use the same
+        // line calculation as order/invoice persistence.
+        org.sqlite.Function.create(c,"warestat_line_total",new org.sqlite.Function() {
+            @Override protected void xFunc() throws SQLException {
+                try {
+                    result(Numbers.lineTotal(Numbers.positiveQuantity(value_long(0)),
+                        Numbers.nonNegative(value_double(1))));
+                } catch(IllegalArgumentException e) {
+                    throw new SQLException("Invalid monetary line in report",e);
+                }
+            }
+        },2);
     }
 
     /**
