@@ -57,11 +57,22 @@ public final class PdfWriter implements AutoCloseable {
         measure(value,font,size);
         stream.beginText();stream.setFont(font,size);stream.newLineAtOffset(x,baseline);stream.showText(value);stream.endText();
     }
+    private static String pageLabel() {
+        return switch (I18n.getLanguage()) {
+            case "it" -> "Pagina";
+            case "es" -> "Página";
+            case "pt_BR" -> "Página";
+            case "fr" -> "Page";
+            case "de" -> "Seite";
+            case "pl" -> "Strona";
+            default -> "Page";
+        };
+    }
     private void newPage() throws IOException {
         if(stream!=null)stream.close();
         PDPage page=new PDPage(paper);document.addPage(page);
         stream=new PDPageContentStream(document,page);
-        text("WareStat | Page "+document.getNumberOfPages(),MARGIN,28,regular,8);
+        text("WareStat | "+pageLabel()+" "+document.getNumberOfPages(),MARGIN,28,regular,8);
         y=paper.getHeight()-MARGIN;
         for(String line:wrap(title,paper.getWidth()-2*MARGIN,bold,14)) {
             if(y<BOTTOM+60) throw new IOException("Report title is too long");
