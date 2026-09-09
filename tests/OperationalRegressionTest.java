@@ -51,7 +51,7 @@ public class OperationalRegressionTest extends RegressionTest {
         });
         test("monthly invoiced total includes the exact first millisecond",()->{
             fresh();Calendar month=Calendar.getInstance();month.set(Calendar.DAY_OF_MONTH,1);month.set(Calendar.HOUR_OF_DAY,0);month.set(Calendar.MINUTE,0);month.set(Calendar.SECOND,0);month.set(Calendar.MILLISECOND,0);
-            sql("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status) VALUES('START',"+month.getTimeInMillis()+",1,10,0,10,'Issued'),('CANCELLED',"+month.getTimeInMillis()+",1,900,0,900,'Cancelled')");
+            sql("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status,currency_code) VALUES('START',"+month.getTimeInMillis()+",1,10,0,10,'Issued','EUR'),('CANCELLED',"+month.getTimeInMillis()+",1,900,0,900,'Cancelled','EUR')");
             DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");require(kpi(dash,"monthInvoicedLabel").equals(SettingsPanel.formatCurrency(10)),"Wrong monthly invoice boundary/status");
         });
         test("stock at zero cost is distinct from sale value and an empty warehouse",()->{
@@ -107,14 +107,14 @@ public class OperationalRegressionTest extends RegressionTest {
                     String day=new java.text.SimpleDateFormat("yyyy-MM-dd").format(new java.util.Date(start));
                     Object[] dates={start-1,start,end-1,end,day+" 12:00:00",day};
                     try(PreparedStatement order=db.prepareStatement("INSERT INTO orders(customer_id,order_date,status,total) VALUES(1,?,'Completed',10)");
-                        PreparedStatement invoice=db.prepareStatement("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status) VALUES(?,?,1,10,0,10,'Issued')")) {
+                        PreparedStatement invoice=db.prepareStatement("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status,currency_code) VALUES(?,?,1,10,0,10,'Issued','EUR')")) {
                         for(int i=0;i<dates.length;i++) {order.setObject(1,dates[i]);order.executeUpdate();invoice.setString(1,"BOUNDARY-"+i);invoice.setObject(2,dates[i]);invoice.executeUpdate();}
                     }
                     for(String status:List.of("New","In Progress","Cancelled"))
                         sql("INSERT INTO orders(customer_id,order_date,status,total) VALUES(1,"+start+",'"+status+"',900)");
                     for(String status:List.of("Draft","Canceled"))
-                        sql("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status) VALUES('"+status+"',"+start+",1,900,0,900,'"+status+"')");
-                    sql("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status) VALUES('PAID',"+start+",1,20,0,20,'Paid')");
+                        sql("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status,currency_code) VALUES('"+status+"',"+start+",1,900,0,900,'"+status+"','EUR')");
+                    sql("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status,currency_code) VALUES('PAID',"+start+",1,20,0,20,'Paid','EUR')");
                     DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
                     require(kpi(dash,"monthRevenueLabel").equals(SettingsPanel.formatCurrency(40)),"Wrong monthly orders in "+zone);
                     require(kpi(dash,"monthInvoicedLabel").equals(SettingsPanel.formatCurrency(60)),"Wrong monthly invoices in "+zone);
