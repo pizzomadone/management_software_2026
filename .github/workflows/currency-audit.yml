@@ -1,0 +1,21 @@
+name: Currency and regression audit
+
+on:
+  push:
+    branches:
+      - fix/macos-filechooser-i18n
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install Ant
+        run: sudo apt-get update && sudo apt-get install -y ant
+      - name: Run regression suite
+        run: ant test
