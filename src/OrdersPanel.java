@@ -152,7 +152,7 @@ public class OrdersPanel extends JPanel {
                     }
 
                     row.add(rs.getString("status"));
-                    row.add(String.format("%.2f", rs.getDouble("total")));
+                    row.add(Numbers.moneyText(rs.getDouble("total")));
 
                     // Add payment status
                     String paymentStatus = rs.getString("payment_status");
@@ -209,7 +209,7 @@ public class OrdersPanel extends JPanel {
                         }
 
                         row.add(rs.getString("status"));
-                        row.add(String.format("%.2f", rs.getDouble("total")));
+                        row.add(Numbers.moneyText(rs.getDouble("total")));
 
                         // Add payment status
                         String paymentStatus = rs.getString("payment_status");
