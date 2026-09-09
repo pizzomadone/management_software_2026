@@ -193,7 +193,7 @@ public class InvoicesPanel extends JPanel {
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
-                SELECT i.id, i.number, i.date, i.customer_id, i.status,
+                SELECT i.id, i.number, i.date, i.customer_id, i.status, i.currency_code,
                        c.first_name || ' ' || c.last_name as customer_name
                 FROM invoices i
                 LEFT JOIN customers c ON i.customer_id = c.id
