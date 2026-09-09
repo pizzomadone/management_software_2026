@@ -697,6 +697,12 @@ public class MainWindow extends JFrame {
         JPanel panel = null;
         
         switch (panelName) {
+            case "HOME":
+                if (dashboardPanel == null) {
+                    dashboardPanel = new DashboardPanel(this);
+                }
+                panel = dashboardPanel;
+                break;
             case "WEB":
                 if (webPanel == null) {
                     webPanel = new WebPanel();
