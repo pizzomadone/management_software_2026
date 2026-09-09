@@ -64,12 +64,12 @@ public class InvoicePDFGenerator {
         invoiceNumber = invoiceNumber.replaceAll("[^a-zA-Z0-9._-]", "_");
 
         String customerName = "";
-        if (customer.getLastName() != null && !customer.getLastName().trim().isEmpty()) {
+        if (customer != null && customer.getLastName() != null && !customer.getLastName().trim().isEmpty()) {
             customerName = customer.getLastName().trim();
-        } else if (customer.getFirstName() != null && !customer.getFirstName().trim().isEmpty()) {
+        } else if (customer != null && customer.getFirstName() != null && !customer.getFirstName().trim().isEmpty()) {
             customerName = customer.getFirstName().trim();
         } else {
-            customerName = "Customer_" + customer.getId();
+            customerName = "Customer_" + invoice.getCustomerId();
         }
         customerName = customerName.replaceAll("[^a-zA-Z0-9._-]", "_");
 
@@ -184,27 +184,57 @@ public class InvoicePDFGenerator {
             if(invoiceItems.isEmpty() || Math.abs(taxable-invoice.getTaxableAmount())>0.004 || Math.abs(vat-invoice.getVat())>0.004 ||
                     Math.abs(Numbers.add(taxable,vat)-invoice.getTotal())>0.004)
                 throw new SQLException("Saved invoice totals do not match its lines. Reconcile the invoice before exporting.");
-            try(PdfWriter pdf=new PdfWriter(I18n.tr("INVOICE")+" "+invoice.getNumber(),false)) {
-                pdf.logo(logo);
-                pdf.paragraph(I18n.tr("Date")+": "+DATE_FORMAT.format(invoice.getDate())+" | "+I18n.tr("Status")+": "+I18n.tr(invoice.getStatus())+" | "+I18n.tr("Currency")+": "+currency,false);
-                if(legacy)pdf.paragraph(I18n.tr("Legacy invoice: party and product descriptions were captured during upgrade and may differ from the original document."),true);
-                pdf.paragraph(I18n.tr("FROM"),true);
-                for(String key:java.util.List.of("company_name","address","city","postal_code","country","vat_number","tax_code","phone","email","website")) {
-                    String value=company.getProperty(key,"");
-                    if(!value.isBlank())pdf.paragraph((key.equals("vat_number")?I18n.tr("VAT")+": ":key.equals("tax_code")?I18n.tr("Tax code")+": ":"")+value,false);
-                }
-                pdf.paragraph(I18n.tr("BILL TO"),true);
-                pdf.paragraph(customer.getFirstName()+" "+customer.getLastName(),true);
-                for(String value:java.util.List.of(customer.getAddress(),customer.getEmail(),customer.getPhone()))if(!value.isBlank())pdf.paragraph(value,false);
+            try(PdfWriter pdf=new PdfWriter("",false)) {
+                String companyName=company.getProperty("company_name","").trim();
+                java.util.List<String> companyLines=new ArrayList<>();
+                addLine(companyLines,company.getProperty("address",""));
+                addLine(companyLines,joinParts(" ",company.getProperty("postal_code",""),company.getProperty("city","")));
+                addLine(companyLines,company.getProperty("country",""));
+                addLabeledLine(companyLines,I18n.tr("VAT"),company.getProperty("vat_number",""));
+                addLabeledLine(companyLines,I18n.tr("Tax code"),company.getProperty("tax_code",""));
+                addLine(companyLines,company.getProperty("phone",""));
+                addLine(companyLines,company.getProperty("email",""));
+                addLine(companyLines,company.getProperty("website",""));
+
+                String customerName=joinParts(" ",customer.getFirstName(),customer.getLastName());
+                java.util.List<String> customerLines=new ArrayList<>();
+                addLine(customerLines,customer.getAddress());
+                addLine(customerLines,customer.getEmail());
+                addLine(customerLines,customer.getPhone());
+
+                pdf.invoiceHeader(logo,I18n.tr("INVOICE"),invoice.getNumber(),
+                    I18n.tr("Date"),DATE_FORMAT.format(invoice.getDate()),
+                    I18n.tr("Status"),I18n.tr(invoice.getStatus()),
+                    I18n.tr("Currency"),currency,
+                    I18n.tr("FROM"),companyName,companyLines,
+                    I18n.tr("BILL TO"),customerName,customerLines);
+
                 pdf.startTable(new String[]{I18n.tr("Code"),I18n.tr("Description"),I18n.tr("Qty"),I18n.tr("Unit price")+" "+currency,I18n.tr("VAT %"),I18n.tr("Total")+" "+currency},new float[]{1.6f,3.1f,.7f,1.6f,.9f,1.6f});
                 for(InvoiceItem item:invoiceItems)pdf.row(item.getProductCode(),item.getProductName(),Integer.toString(item.getQuantity()),
-                    decimal(item.getUnitPrice()),decimal(item.getVatRate()),money(item.getTotal()));
-                pdf.paragraph(I18n.tr("Taxable amount")+": "+currency+" "+money(invoice.getTaxableAmount()),true);
-                pdf.paragraph(I18n.tr("VAT")+": "+currency+" "+money(invoice.getVat()),true);
-                pdf.paragraph(I18n.tr("TOTAL")+": "+currency+" "+money(invoice.getTotal()),true);
+                    money(item.getUnitPrice()),decimal(item.getVatRate()),money(item.getTotal()));
+
+                pdf.totals(
+                    new String[]{I18n.tr("Taxable amount")+":",I18n.tr("VAT")+":",I18n.tr("TOTAL")+":"},
+                    new String[]{currency+" "+money(invoice.getTaxableAmount()),currency+" "+money(invoice.getVat()),currency+" "+money(invoice.getTotal())});
+                if(legacy)pdf.note(I18n.tr("Legacy invoice: party and product descriptions were captured during upgrade and may differ from the original document."));
                 pdf.save(outputFile);
             }
         } catch(SQLException | IllegalArgumentException e) {throw new IOException(I18n.tr("Unable to generate a consistent invoice")+": "+e.getMessage(),e);}
+    }
+    private static void addLine(java.util.List<String> lines,String value) {
+        if(value!=null && !value.trim().isEmpty())lines.add(value.trim());
+    }
+    private static void addLabeledLine(java.util.List<String> lines,String label,String value) {
+        if(value!=null && !value.trim().isEmpty())lines.add(label+": "+value.trim());
+    }
+    private static String joinParts(String separator,String... values) {
+        StringBuilder result=new StringBuilder();
+        for(String value:values) {
+            if(value==null || value.trim().isEmpty())continue;
+            if(result.length()>0)result.append(separator);
+            result.append(value.trim());
+        }
+        return result.toString();
     }
     private static String money(double value) {return java.math.BigDecimal.valueOf(value).setScale(2,java.math.RoundingMode.HALF_UP).toPlainString();}
     private static String decimal(double value) {return java.math.BigDecimal.valueOf(value).stripTrailingZeros().toPlainString();}
