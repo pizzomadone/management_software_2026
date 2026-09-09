@@ -67,6 +67,7 @@ public final class DatabaseCurrency {
         DatabaseManager.beginTransaction(c);
         try {
             if(mode==ChangeMode.CONVERT) {
+                verifyConvertibleDocuments(c);
                 convertProducts(c,rate);
                 convertSupplierPriceLists(c,rate);
                 convertCustomerOrders(c,rate);
@@ -108,6 +109,83 @@ public final class DatabaseCurrency {
                 throw new SQLException("Choose whether to relabel or convert existing monetary values.");
         }
         change(code,ChangeMode.RELABEL,null);
+    }
+
+    private static boolean sameMoney(double left,double right) {
+        return BigDecimal.valueOf(left).setScale(2,RoundingMode.HALF_UP)
+            .compareTo(BigDecimal.valueOf(right).setScale(2,RoundingMode.HALF_UP))==0;
+    }
+
+    /**
+     * A currency change must never double as a silent reconciliation. If a document is
+     * already inconsistent with its own lines, stop before changing any monetary value.
+     */
+    private static void verifyConvertibleDocuments(Connection c) throws SQLException {
+        try(PreparedStatement orders=c.prepareStatement("SELECT id,total FROM orders ORDER BY id");
+            PreparedStatement lines=c.prepareStatement("SELECT quantity,unit_price FROM order_details WHERE order_id=? ORDER BY id");
+            ResultSet r=orders.executeQuery()) {
+            while(r.next()) {
+                int id=r.getInt("id"),count=0;double total=0;
+                lines.setInt(1,id);
+                try(ResultSet d=lines.executeQuery()) {
+                    while(d.next()) {
+                        count++;
+                        total=Numbers.add(total,Numbers.lineTotal(
+                            Numbers.positiveQuantity(d.getObject("quantity")),
+                            Numbers.nonNegative(d.getObject("unit_price"))));
+                    }
+                }
+                if(count>0 && !sameMoney(total,Numbers.nonNegative(r.getObject("total"))))
+                    throw new SQLException("Customer order "+id+" total does not match its lines; reconcile it before currency conversion.");
+            }
+        }
+
+        try(PreparedStatement orders=c.prepareStatement("SELECT id,total FROM supplier_orders ORDER BY id");
+            PreparedStatement lines=c.prepareStatement("SELECT quantity,unit_price,total FROM supplier_order_details WHERE order_id=? ORDER BY id");
+            ResultSet r=orders.executeQuery()) {
+            while(r.next()) {
+                int id=r.getInt("id"),count=0;double total=0;
+                lines.setInt(1,id);
+                try(ResultSet d=lines.executeQuery()) {
+                    while(d.next()) {
+                        count++;
+                        double line=Numbers.lineTotal(Numbers.positiveQuantity(d.getObject("quantity")),
+                            Numbers.nonNegative(d.getObject("unit_price")));
+                        if(!sameMoney(line,Numbers.nonNegative(d.getObject("total"))))
+                            throw new SQLException("Supplier order "+id+" contains an inconsistent line; reconcile it before currency conversion.");
+                        total=Numbers.add(total,line);
+                    }
+                }
+                if(count>0 && !sameMoney(total,Numbers.nonNegative(r.getObject("total"))))
+                    throw new SQLException("Supplier order "+id+" total does not match its lines; reconcile it before currency conversion.");
+            }
+        }
+
+        try(PreparedStatement invoices=c.prepareStatement(
+                "SELECT id,taxable_amount,vat,total FROM invoices WHERE status='Draft' ORDER BY id");
+            PreparedStatement lines=c.prepareStatement(
+                "SELECT quantity,unit_price,vat_rate,total FROM invoice_details WHERE invoice_id=? ORDER BY id");
+            ResultSet r=invoices.executeQuery()) {
+            while(r.next()) {
+                int id=r.getInt("id"),count=0;double taxable=0,vat=0;
+                lines.setInt(1,id);
+                try(ResultSet d=lines.executeQuery()) {
+                    while(d.next()) {
+                        count++;
+                        double line=Numbers.lineTotal(Numbers.positiveQuantity(d.getObject("quantity")),
+                            Numbers.nonNegative(d.getObject("unit_price")));
+                        if(!sameMoney(line,Numbers.nonNegative(d.getObject("total"))))
+                            throw new SQLException("Draft invoice "+id+" contains an inconsistent line; reconcile it before currency conversion.");
+                        taxable=Numbers.add(taxable,line);
+                        vat=Numbers.add(vat,Numbers.tax(line,Numbers.vat(d.getObject("vat_rate"))));
+                    }
+                }
+                if(count>0 && (!sameMoney(taxable,Numbers.nonNegative(r.getObject("taxable_amount"))) ||
+                        !sameMoney(vat,Numbers.nonNegative(r.getObject("vat"))) ||
+                        !sameMoney(Numbers.add(taxable,vat),Numbers.nonNegative(r.getObject("total")))))
+                    throw new SQLException("Draft invoice "+id+" totals do not match its lines; reconcile it before currency conversion.");
+            }
+        }
     }
 
     private static double convertUnit(Object value, BigDecimal rate) {
