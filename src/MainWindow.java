@@ -112,7 +112,7 @@ public class MainWindow extends JFrame {
     }
     
     private void setupWindow() {
-        setTitle(AppConstants.SOFTWARE_NAME + " - Management System");
+        setTitle(AppConstants.SOFTWARE_NAME + " - " + I18n.tr("Management System"));
         Image applicationIcon = loadApplicationIcon();
         if (applicationIcon != null) setIconImage(applicationIcon);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
