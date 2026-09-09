@@ -541,6 +541,8 @@ public class SettingsPanel extends JPanel {
                 DatabaseCurrency.change(newCode,DatabaseCurrency.ChangeMode.CONVERT,rate);
                 currencyChangedDuringUpdate = true;
             }
+            Window owner=SwingUtilities.getWindowAncestor(this);
+            if(owner instanceof MainWindow mainWindow) mainWindow.refreshAfterCurrencyChange();
             return selectedCurrency;
         } catch(java.sql.SQLException e) {
             restoreCurrencySelection(oldCode);
