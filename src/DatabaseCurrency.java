@@ -112,8 +112,10 @@ public final class DatabaseCurrency {
 
     private static double convertUnit(Object value, BigDecimal rate) {
         double source=Numbers.nonNegative(value);
+        // Twelve decimals keep the line-total error below one cent even at the
+        // maximum supported integer quantity, while remaining safely representable in SQLite REAL.
         BigDecimal converted=BigDecimal.valueOf(source).multiply(rate)
-            .setScale(6,RoundingMode.HALF_UP).stripTrailingZeros();
+            .setScale(12,RoundingMode.HALF_UP).stripTrailingZeros();
         return Numbers.nonNegative(converted.toPlainString());
     }
 
