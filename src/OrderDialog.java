@@ -305,7 +305,7 @@ public class OrderDialog extends JDialog {
         } else {
             paymentStatusCombo.setSelectedItem("Not Paid");
         }
-        paidAmountField.setText(String.format("%.2f", order.getPaidAmount()));
+        paidAmountField.setText(Numbers.moneyText(order.getPaidAmount()));
         updatePaymentAmountField();
 
         for (OrderItem item : order.getItems()) {
@@ -409,7 +409,7 @@ public class OrderDialog extends JDialog {
         } else {
             paidAmountField.setEnabled(false);
             if ("Paid".equals(selectedPayment)) {
-                paidAmountField.setText(String.format("%.2f", currentTotal));
+                paidAmountField.setText(Numbers.moneyText(currentTotal));
             } else {
                 paidAmountField.setText("0.00");
             }
