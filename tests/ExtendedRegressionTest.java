@@ -316,10 +316,82 @@ public class ExtendedRegressionTest extends RegressionTest {
             }
             DatabaseIntegrity.validate(db,false);
         });
-        test("changing currency cannot relabel an existing database",()->{
-            fresh();String original=DatabaseCurrency.read(db);boolean blocked=false;try{DatabaseCurrency.change("USD");}catch(SQLException e){blocked=true;}
-            require(blocked && original.equals(DatabaseCurrency.read(db)),"Existing prices relabelled");
-            sql("DELETE FROM products");DatabaseCurrency.change("USD");require("USD".equals(SettingsPanel.getCurrencyCode()),"Empty database currency did not change");DatabaseCurrency.change(original);
+        test("currency relabel changes operational currency without touching finalized invoices",()->{
+            fresh();
+            sql("UPDATE products SET price=10,acquisition_cost=5 WHERE id=1");
+            sql("INSERT INTO supplier_price_lists(supplier_id,product_id,price,minimum_quantity,validity_start_date) VALUES(1,1,9,1,0)");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) VALUES(10,1,0,'Completed',30,'PARTIALLY_PAID',10)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(10,1,3,10)");
+            sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,status,total) VALUES(10,1,'CUR-SUP',0,'Completed',10)");
+            sql("INSERT INTO supplier_order_details(order_id,product_id,quantity,unit_price,total) VALUES(10,1,2,5,10)");
+            sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(10,'CUR-ISSUED',0,1,10,2.2,12.2,'Issued')");
+            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total) VALUES(10,1,1,10,22,10)");
+            InvoiceSnapshots.capture(db,10,false);
+            sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(11,'CUR-DRAFT',0,1,20,4.4,24.4,'Draft')");
+            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total) VALUES(11,1,2,10,22,20)");
+            InvoiceSnapshots.capture(db,11,false);
+
+            DatabaseCurrency.change("USD",DatabaseCurrency.ChangeMode.RELABEL,null);
+
+            require("USD".equals(DatabaseCurrency.read(db)) && "USD".equals(SettingsPanel.getCurrencyCode()),"Operating currency did not change");
+            require("10.0|5.0".equals(value("SELECT price||'|'||acquisition_cost FROM products WHERE id=1")),"Relabel converted product values");
+            require("9.0".equals(value("SELECT price FROM supplier_price_lists WHERE product_id=1")),"Relabel converted supplier price");
+            require("30.0|10.0|10.0".equals(value("SELECT total||'|'||paid_amount||'|'||(SELECT unit_price FROM order_details WHERE order_id=10) FROM orders WHERE id=10")),"Relabel changed customer order values");
+            require("10.0|5.0".equals(value("SELECT total||'|'||(SELECT unit_price FROM supplier_order_details WHERE order_id=10) FROM supplier_orders WHERE id=10")),"Relabel changed supplier order values");
+            require("EUR|10.0|2.2|12.2".equals(value("SELECT currency_code||'|'||taxable_amount||'|'||vat||'|'||total FROM invoices WHERE id=10")),"Finalized invoice was relabelled");
+            require("USD|20.0|4.4|24.4".equals(value("SELECT currency_code||'|'||taxable_amount||'|'||vat||'|'||total FROM invoices WHERE id=11")),"Draft did not adopt the new currency");
+        });
+        test("currency conversion updates all operational values and preserves finalized invoices",()->{
+            fresh();
+            sql("UPDATE products SET price=10,acquisition_cost=5 WHERE id=1");
+            sql("INSERT INTO supplier_price_lists(supplier_id,product_id,price,minimum_quantity,validity_start_date) VALUES(1,1,9,1,0)");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) VALUES(10,1,0,'Completed',30,'PARTIALLY_PAID',10)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(10,1,3,10)");
+            sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,status,total) VALUES(10,1,'FX-SUP',0,'Completed',10)");
+            sql("INSERT INTO supplier_order_details(order_id,product_id,quantity,unit_price,total) VALUES(10,1,2,5,10)");
+            sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(10,'FX-ISSUED',"+System.currentTimeMillis()+",1,10,2.2,12.2,'Issued')");
+            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total) VALUES(10,1,1,10,22,10)");
+            InvoiceSnapshots.capture(db,10,false);
+            sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(11,'FX-DRAFT',"+System.currentTimeMillis()+",1,20,4.4,24.4,'Draft')");
+            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total) VALUES(11,1,2,10,22,20)");
+            InvoiceSnapshots.capture(db,11,false);
+
+            DatabaseCurrency.change("USD",DatabaseCurrency.ChangeMode.CONVERT,new java.math.BigDecimal("1.2"));
+
+            require("12.0|6.0".equals(value("SELECT price||'|'||acquisition_cost FROM products WHERE id=1")),"Product price or acquisition cost not converted");
+            require("10.8".equals(value("SELECT price FROM supplier_price_lists WHERE product_id=1")),"Supplier price list not converted");
+            require("36.0|12.0|12.0".equals(value("SELECT total||'|'||paid_amount||'|'||(SELECT unit_price FROM order_details WHERE order_id=10) FROM orders WHERE id=10")),"Customer order conversion is inconsistent");
+            require("12.0|6.0|12.0".equals(value("SELECT total||'|'||(SELECT unit_price FROM supplier_order_details WHERE order_id=10)||'|'||(SELECT total FROM supplier_order_details WHERE order_id=10) FROM supplier_orders WHERE id=10")),"Supplier order conversion is inconsistent");
+            require("USD|24.0|5.28|29.28|12.0|24.0".equals(value("SELECT currency_code||'|'||taxable_amount||'|'||vat||'|'||total||'|'||(SELECT unit_price FROM invoice_details WHERE invoice_id=11)||'|'||(SELECT total FROM invoice_details WHERE invoice_id=11) FROM invoices WHERE id=11")),"Draft invoice conversion is inconsistent");
+            require("EUR|10.0|2.2|12.2|10.0".equals(value("SELECT currency_code||'|'||taxable_amount||'|'||vat||'|'||total||'|'||(SELECT unit_price FROM invoice_details WHERE invoice_id=10) FROM invoices WHERE id=10")),"Finalized invoice changed during conversion");
+
+            sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status,currency_code,customer_snapshot,company_snapshot,snapshot_version) VALUES(12,'FX-USD',"+System.currentTimeMillis()+",1,12,2.64,14.64,'Issued','USD','','',1)");
+            DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
+            String mixed=((JLabel)get(dash,"monthInvoicedLabel")).getText();
+            require(mixed.contains(SettingsPanel.formatCurrency(10,"EUR")) && mixed.contains(SettingsPanel.formatCurrency(12,"USD")) && mixed.contains(" + "),"Mixed invoice currencies were incorrectly summed");
+        });
+        test("currency conversion is atomic and historical foreign invoice only changes status",()->{
+            fresh();
+            sql("UPDATE products SET price=10,acquisition_cost=5 WHERE id=1");
+            sql("INSERT INTO supplier_price_lists(supplier_id,product_id,price,minimum_quantity,validity_start_date) VALUES(1,1,9,1,0)");
+            sql("CREATE TRIGGER reject_currency_test BEFORE UPDATE ON supplier_price_lists BEGIN SELECT RAISE(ABORT,'currency rollback test'); END");
+            boolean blocked=false;
+            try{DatabaseCurrency.change("USD",DatabaseCurrency.ChangeMode.CONVERT,new java.math.BigDecimal("1.2"));}catch(SQLException e){blocked=true;}
+            require(blocked,"Injected conversion failure was ignored");
+            require("EUR".equals(DatabaseCurrency.read(db)) && "EUR".equals(SettingsPanel.getCurrencyCode()),"Failed conversion changed database currency");
+            require("10.0|5.0|9.0".equals(value("SELECT p.price||'|'||p.acquisition_cost||'|'||s.price FROM products p JOIN supplier_price_lists s ON s.product_id=p.id WHERE p.id=1")),"Failed conversion left partial monetary changes");
+            sql("DROP TRIGGER reject_currency_test");
+
+            sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(10,'HIST-EUR',0,1,10,2.2,12.2,'Issued')");
+            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total) VALUES(10,1,1,10,22,10)");
+            InvoiceSnapshots.capture(db,10,false);
+            DatabaseCurrency.change("USD",DatabaseCurrency.ChangeMode.RELABEL,null);
+            Invoice model=new Invoice(10,"HIST-EUR",new java.util.Date(),1,"Test Customer",10,2.2,12.2,"Issued");
+            ID dialog=empty(ID.class);put(dialog,"invoice",model);put(dialog,"documentCurrency","EUR");put(dialog,"historicalForeignCurrencyLocked",true);
+            put(dialog,"statusCombo",new JComboBox<>(new String[]{"Paid"}));
+            call(dialog,"saveInvoice");
+            require(Boolean.TRUE.equals(get(dialog,"invoiceSaved")),"Historical status-only save failed");
+            require("Paid|EUR|10.0|2.2|12.2|10.0".equals(value("SELECT status||'|'||currency_code||'|'||taxable_amount||'|'||vat||'|'||total||'|'||(SELECT unit_price FROM invoice_details WHERE invoice_id=10) FROM invoices WHERE id=10")),"Historical invoice monetary data changed while updating status");
         });
         test("invoice snapshots survive later party and catalog changes",()->{
             fresh();sql("UPDATE customers SET first_name='Łódź',last_name='Original' WHERE id=1");
