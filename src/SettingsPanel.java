@@ -547,6 +547,9 @@ public class SettingsPanel extends JPanel {
         } catch(java.sql.SQLException e) {
             restoreCurrencySelection(oldCode);
             throw new IllegalArgumentException(e.getMessage(),e);
+        } catch(IllegalArgumentException e) {
+            restoreCurrencySelection(oldCode);
+            throw e;
         }
     }
 
