@@ -211,8 +211,8 @@ public class WarehouseReportPanel extends JPanel {
                     int minQuantity = rs.getInt("minimum_quantity");
 
                     row.add(quantity);
-                    row.add(String.format("%.2f", price));
-                    row.add(String.format("%.2f", totalValueProduct));
+                    row.add(Numbers.unitText(price));
+                    row.add(Numbers.moneyText(totalValueProduct));
 
                     // Determine status
                     String status;
