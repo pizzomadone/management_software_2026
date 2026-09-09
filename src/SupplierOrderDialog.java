@@ -402,7 +402,7 @@ public class SupplierOrderDialog extends JDialog {
             for(int i=0;i<itemsTableModel.getRowCount();i++) {
                 double line=Numbers.lineTotal(parseInteger(itemsTableModel.getValueAt(i,2)),parseDouble(itemsTableModel.getValueAt(i,3)));
                 total=Numbers.add(total,line);
-                itemsTableModel.setValueAt(String.format("%.2f",line),i,4);
+                itemsTableModel.setValueAt(Numbers.moneyText(line),i,4);
             }
             totalLabel.setText("Total: "+SettingsPanel.formatCurrency(total));
         } catch(IllegalArgumentException e) {totalLabel.setText("Invalid quantity or price");}
