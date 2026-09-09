@@ -179,7 +179,7 @@ public class SalesReportPanel extends JPanel {
                     row.add(rs.getString("customer_name"));
                     row.add(rs.getString("status"));
                     double total = rs.getDouble("total");
-                    row.add(String.format("%.2f", total));
+                    row.add(Numbers.moneyText(total));
 
                     tableModel.addRow(row);
 
