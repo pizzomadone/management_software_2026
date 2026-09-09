@@ -20,6 +20,12 @@ public final class I18n {
     private static Map<String, String> translations = Map.of();
     private static String language = "it";
     private static boolean installed;
+    private static final Set<Object> TEXT_WATCHED =
+        Collections.newSetFromMap(new WeakHashMap<>());
+    private static final Set<JComponent> TOOLTIP_WATCHED =
+        Collections.newSetFromMap(new WeakHashMap<>());
+    private static final ThreadLocal<Boolean> APPLYING_LOCALIZATION =
+        ThreadLocal.withInitial(() -> false);
 
     static {
         LANGUAGE_NAMES.put("en", "English");
@@ -80,10 +86,28 @@ public final class I18n {
 
     public static String tr(String source) {
         if (source == null) return null;
-        if (translations.containsKey(source)) return translations.get(source);
+        String exact = translations.get(source);
+        if (exact != null) return exact;
 
-        // Unregistered dynamic text may contain customer names, SKUs or other business data.
-        // Only complete registered messages are translated; parameters must stay literal.
+        // Preserve UI punctuation while allowing catalogs to store reusable label keys.
+        if (source.startsWith("* ")) {
+            String translated = tr(source.substring(2));
+            return translated.equals(source.substring(2)) ? source : "* " + translated;
+        }
+        if (source.endsWith(":")) {
+            String base = source.substring(0, source.length() - 1).trim();
+            String translated = translations.get(base);
+            if (translated != null) return translated + ":";
+        }
+
+        // Translate only a registered prefix and preserve the dynamic business value verbatim.
+        int separator = source.indexOf(": ");
+        if (separator > 0 && separator < 80) {
+            String prefix = source.substring(0, separator);
+            String translated = translations.get(prefix);
+            if (translated != null) return translated + ": " + source.substring(separator + 2);
+        }
+
         return source;
     }
 
@@ -130,6 +154,7 @@ public final class I18n {
         if (component instanceof AbstractButton button) {
             String originalButtonText = ORIGINAL_TEXT.getOrDefault(button, button.getText());
             button.setText(localized(button, button.getText()));
+            watchText(button);
             if (button.getToolTipText() == null && originalButtonText != null &&
                     !originalButtonText.isBlank()) {
                 String tooltipKey = "tooltip." + originalButtonText;
@@ -139,7 +164,10 @@ public final class I18n {
                 button.setToolTipText(translatedTooltip);
             }
         }
-        if (component instanceof JLabel label) label.setText(localized(label, label.getText()));
+        if (component instanceof JLabel label) {
+            label.setText(localized(label, label.getText()));
+            watchText(label);
+        }
         if (component instanceof JTabbedPane tabs) {
             for (int i = 0; i < tabs.getTabCount(); i++) {
                 String key = "i18n.tab." + i;
@@ -160,7 +188,7 @@ public final class I18n {
                 table.setDefaultRenderer(Object.class, new LocalizedTableRenderer(delegate));
             }
         }
-        if (component instanceof JComboBox<?> comboBox && Boolean.TRUE.equals(comboBox.getClientProperty("i18n.values")) &&
+        if (component instanceof JComboBox<?> comboBox &&
                 !(comboBox.getRenderer() instanceof LocalizedListRenderer)) {
             installLocalizedListRenderer(comboBox);
         }
@@ -187,6 +215,7 @@ public final class I18n {
     }
 
     private static void localizeTooltip(JComponent component) {
+        watchTooltip(component);
         String current = component.getToolTipText();
         if (current == null || current.isBlank()) return;
         String last = LAST_TOOLTIPS.get(component);
@@ -199,6 +228,52 @@ public final class I18n {
             : tr(source);
         LAST_TOOLTIPS.put(component, translated);
         component.setToolTipText(translated);
+    }
+
+    private static void watchText(Object component) {
+        if (TEXT_WATCHED.contains(component)) return;
+        TEXT_WATCHED.add(component);
+        if (component instanceof AbstractButton button) {
+            button.addPropertyChangeListener("text", event ->
+                localizeChangedText(button, (String) event.getNewValue(), button::setText));
+        } else if (component instanceof JLabel label) {
+            label.addPropertyChangeListener("text", event ->
+                localizeChangedText(label, (String) event.getNewValue(), label::setText));
+        }
+    }
+
+    private static void localizeChangedText(Object owner, String source,
+            java.util.function.Consumer<String> setter) {
+        if (source == null || APPLYING_LOCALIZATION.get()) return;
+        String previous = LAST_TRANSLATION.get(owner);
+        if (previous != null && previous.equals(source)) return;
+        ORIGINAL_TEXT.put(owner, source);
+        String translated = tr(source);
+        LAST_TRANSLATION.put(owner, translated);
+        if (!translated.equals(source)) {
+            APPLYING_LOCALIZATION.set(true);
+            try { setter.accept(translated); }
+            finally { APPLYING_LOCALIZATION.set(false); }
+        }
+    }
+
+    private static void watchTooltip(JComponent component) {
+        if (TOOLTIP_WATCHED.contains(component)) return;
+        TOOLTIP_WATCHED.add(component);
+        component.addPropertyChangeListener("toolTipText", event -> {
+            String source = (String) event.getNewValue();
+            if (source == null || APPLYING_LOCALIZATION.get()) return;
+            String previous = LAST_TOOLTIPS.get(component);
+            if (previous != null && previous.equals(source)) return;
+            ORIGINAL_TOOLTIPS.put(component, source);
+            String translated = tr(source);
+            LAST_TOOLTIPS.put(component, translated);
+            if (!translated.equals(source)) {
+                APPLYING_LOCALIZATION.set(true);
+                try { component.setToolTipText(translated); }
+                finally { APPLYING_LOCALIZATION.set(false); }
+            }
+        });
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
