@@ -336,6 +336,22 @@ public class ExtendedRegressionTest extends RegressionTest {
             }
             DatabaseIntegrity.validate(db,false);
         });
+        test("dashboard can be recreated after currency refresh",()->{
+            fresh();
+            MainWindow window=empty(MainWindow.class);
+            javax.swing.JPanel container=new javax.swing.JPanel(new java.awt.CardLayout());
+            put(window,"mainPanel",container);
+            call(window,"createPanel",new Class<?>[]{String.class},"HOME");
+            Object first=get(window,"dashboardPanel");
+            require(first instanceof DashboardPanel && container.getComponentCount()==1,
+                "Dashboard was not created");
+            call(window,"refreshAfterCurrencyChange");
+            require(get(window,"dashboardPanel")==null && container.getComponentCount()==0,
+                "Currency refresh did not invalidate the old dashboard");
+            call(window,"createPanel",new Class<?>[]{String.class},"HOME");
+            require(get(window,"dashboardPanel") instanceof DashboardPanel && container.getComponentCount()==1,
+                "Dashboard cannot be recreated after currency change");
+        });
         test("currency change explanations translate in every supported language",()->{
             String previous=I18n.getLanguage();
             String[] keys={
