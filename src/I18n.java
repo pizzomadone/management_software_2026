@@ -194,6 +194,7 @@ public final class I18n {
             }
         }
         if (component instanceof JComboBox<?> comboBox &&
+                !isInsideFileChooser(comboBox) &&
                 !(comboBox.getRenderer() instanceof LocalizedListRenderer)) {
             installLocalizedListRenderer(comboBox);
         }
@@ -279,6 +280,10 @@ public final class I18n {
                 finally { APPLYING_LOCALIZATION.set(false); }
             }
         });
+    }
+
+    private static boolean isInsideFileChooser(Component component) {
+        return SwingUtilities.getAncestorOfClass(JFileChooser.class, component) != null;
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
