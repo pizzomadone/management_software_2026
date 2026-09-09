@@ -330,6 +330,61 @@ public class ExtendedRegressionTest extends RegressionTest {
             Path file=OUT.resolve("invoice-unicode-barcode.pdf");call(new InvoicePDFGenerator(i,customer()),"generatePDF",new Class<?>[]{java.io.File.class},file.toFile());
             String text=pdfText(file);require(text.contains("Łódź Original") && text.contains("5901234123457") && text.contains("Crème Łódź original") && !text.contains("Changed"),"Historical invoice text changed or was truncated");
         });
+        test("invoice PDF covers statuses languages sparse parties and VAT variants",()->{
+            String previousLanguage=I18n.getLanguage();
+            try {
+                for(String status:List.of("Draft","Issued","Paid","Canceled")) {
+                    fresh();
+                    ID d=invoice();put(d,"statusCombo",new JComboBox<>(new String[]{status}));call(d,"saveInvoice");
+                    Invoice i=new Invoice(1,"PDF",new java.util.Date(),1,"",30,6.6,36.6,status);
+                    Path file=OUT.resolve("invoice-status-"+status+".pdf");
+                    call(new InvoicePDFGenerator(i,customer()),"generatePDF",new Class<?>[]{java.io.File.class},file.toFile());
+                    String text=pdfText(file);
+                    require(text.contains(status) && text.contains("FROM") && text.contains("BILL TO"),"Missing invoice state or party section: "+status);
+                    require(text.contains("10.00") && text.contains("TOTAL: EUR 36.60"),"Currency formatting changed: "+status);
+                    require(!text.contains("null"),"Sparse party data leaked null text: "+status);
+                }
+
+                fresh();
+                sql("UPDATE customers SET first_name='Very Long Customer Name With Unicode Łódź',last_name='Crème Société',address='123 Long Address Street, Building 45, Floor 6, Suite 789, International Business District' WHERE id=1");
+                sql("INSERT INTO company_data(company_name,vat_number,tax_code,address,city,postal_code,country,phone,email,website) VALUES('WareStat Example Company With A Long Legal Name','IT12345678901','ABCDEF12G34H567I','456 Very Long Corporate Avenue, Industrial Park','Palermo','90100','Italia','+39 091 000000','billing@example.com','https://example.com')");
+                ID longInvoice=invoice();call(longInvoice,"saveInvoice");
+                Invoice longModel=new Invoice(1,"PDF",new java.util.Date(),1,"",30,6.6,36.6,"Issued");
+                for(String language:List.of("en","it","es","pt_BR","fr","de","pl")) {
+                    I18n.setLanguage(language);
+                    Path file=OUT.resolve("invoice-language-"+language+".pdf");
+                    call(new InvoicePDFGenerator(longModel,customer()),"generatePDF",new Class<?>[]{java.io.File.class},file.toFile());
+                    String text=pdfText(file);
+                    require(text.contains(I18n.tr("INVOICE")) && text.contains(I18n.tr("FROM")) &&
+                        text.contains(I18n.tr("BILL TO")) && text.contains(I18n.tr("TOTAL")),
+                        "Invoice labels not localized in "+language);
+                    require(text.contains("Łódź") && text.contains("Crème Société"),"Unicode party data missing in "+language);
+                }
+
+                I18n.setLanguage("en");fresh();
+                sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(1,'VAT-MIX',"+System.currentTimeMillis()+",1,30,4.4,34.4,'Issued')");
+                sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total,product_code,product_name) VALUES(1,1,1,10,0,10,'A','Zero VAT'),(1,2,1,20,22,20,'B','Standard VAT')");
+                InvoiceSnapshots.capture(db,1,false);
+                Invoice mixed=new Invoice(1,"VAT-MIX",new java.util.Date(),1,"",30,4.4,34.4,"Issued");
+                Path mixedFile=OUT.resolve("invoice-mixed-vat.pdf");
+                call(new InvoicePDFGenerator(mixed,customer()),"generatePDF",new Class<?>[]{java.io.File.class},mixedFile.toFile());
+                String mixedText=pdfText(mixedFile);
+                require(mixedText.contains("Zero VAT") && mixedText.contains("Standard VAT") &&
+                    mixedText.contains("EUR 4.40") && mixedText.contains("EUR 34.40"),"Mixed VAT invoice rendered incorrectly");
+
+                fresh();
+                sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(1,'LEGACY',"+System.currentTimeMillis()+",1,10,2.2,12.2,'Issued')");
+                sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total) VALUES(1,1,1,10,22,10)");
+                InvoiceSnapshots.capture(db,1,true);
+                Invoice legacy=new Invoice(1,"LEGACY",new java.util.Date(),1,"",10,2.2,12.2,"Issued");
+                Path legacyFile=OUT.resolve("invoice-legacy.pdf");
+                call(new InvoicePDFGenerator(legacy,customer()),"generatePDF",new Class<?>[]{java.io.File.class},legacyFile.toFile());
+                String legacyText=pdfText(legacyFile);
+                String legacyNote=I18n.tr("Legacy invoice: party and product descriptions were captured during upgrade and may differ from the original document.");
+                require(legacyText.contains(legacyNote),"Legacy warning missing");
+                require(legacyText.indexOf("Product A")<legacyText.indexOf(legacyNote),"Legacy warning still dominates the invoice header");
+            } finally {I18n.setLanguage(previousLanguage);}
+        });
         test("fifty line invoice prints every row and totals within page bounds",()->{
             fresh();sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(1,'TEST-50',"+System.currentTimeMillis()+",1,500,110,610,'Issued')");
             for(int i=0;i<50;i++)sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total,product_code,product_name) VALUES(1,1,1,10,22,10,'5901234123457','ROW-"+String.format("%03d",i)+"')");
