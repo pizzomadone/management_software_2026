@@ -459,8 +459,9 @@ public class ExtendedRegressionTest extends RegressionTest {
                 call(new InvoicePDFGenerator(legacy,customer()),"generatePDF",new Class<?>[]{java.io.File.class},legacyFile.toFile());
                 String legacyText=pdfText(legacyFile);
                 String legacyNote=I18n.tr("Legacy invoice: party and product descriptions were captured during upgrade and may differ from the original document.");
-                require(legacyText.contains(legacyNote),"Legacy warning missing");
-                require(legacyText.indexOf("Product A")<legacyText.indexOf(legacyNote),"Legacy warning still dominates the invoice header");
+                String normalizedLegacy=legacyText.replaceAll("\\s+"," ").trim();
+                require(normalizedLegacy.contains(legacyNote),"Legacy warning missing");
+                require(normalizedLegacy.indexOf("Product A")<normalizedLegacy.indexOf(legacyNote),"Legacy warning still dominates the invoice header");
             } finally {I18n.setLanguage(previousLanguage);}
         });
         test("fifty line invoice prints every row and totals within page bounds",()->{
