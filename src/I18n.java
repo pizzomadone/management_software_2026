@@ -154,8 +154,8 @@ public final class I18n {
 
     public static void localize(Component component) {
         if (component instanceof JComponent jc && Boolean.TRUE.equals(jc.getClientProperty("i18n.literal"))) return;
-        if (component instanceof JFrame frame) frame.setTitle(localized(frame, frame.getTitle()));
-        if (component instanceof JDialog dialog) dialog.setTitle(localized(dialog, dialog.getTitle()));
+        if (component instanceof Frame frame) frame.setTitle(localized(frame, frame.getTitle()));
+        if (component instanceof Dialog dialog) dialog.setTitle(localized(dialog, dialog.getTitle()));
         if (component instanceof AbstractButton button) {
             String originalButtonText = ORIGINAL_TEXT.getOrDefault(button, button.getText());
             button.setText(localized(button, button.getText()));
