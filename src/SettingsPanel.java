@@ -6,6 +6,7 @@ import java.io.*;
 import java.text.NumberFormat;
 import java.util.Currency;
 import java.util.Locale;
+import java.math.BigDecimal;
 
 public class SettingsPanel extends JPanel {
     private static Properties settings = new Properties();
@@ -468,11 +469,89 @@ public class SettingsPanel extends JPanel {
         settings.setProperty("font_size", String.valueOf(fontSizeSlider.getValue()));
         settings.setProperty("theme", (String)themeCombo.getSelectedItem());
         settings.setProperty("pdf_default_directory", pdfDirectoryField.getText().trim());
-        try { DatabaseCurrency.change(DatabaseCurrency.codeFromSetting((String)currencyCombo.getSelectedItem())); }
-        catch (java.sql.SQLException e) {throw new IllegalArgumentException(e.getMessage(),e);}
-        settings.setProperty("currency", (String)currencyCombo.getSelectedItem());
+        String selectedCurrency=(String)currencyCombo.getSelectedItem();
+        String requestedCode=DatabaseCurrency.codeFromSetting(selectedCurrency);
+        String currentCode=getCurrencyCode();
+        if(!requestedCode.equals(currentCode)) {
+            selectedCurrency=performCurrencyChange(currentCode,requestedCode,selectedCurrency);
+        }
+        settings.setProperty("currency", selectedCurrency);
         settings.setProperty("default_vat", String.valueOf(vatRate));
         settings.setProperty("language", I18n.codeForName((String) languageCombo.getSelectedItem()));
+    }
+
+    private String performCurrencyChange(String oldCode,String newCode,String selectedCurrency) {
+        String warning=I18n.tr("Changing the operating currency affects products, costs, supplier price lists, customer orders, supplier orders and Draft invoices.")+
+            "\n\n"+I18n.tr("Issued, Paid and Canceled invoices keep their original currency and amounts.")+
+            "\n\n"+I18n.tr("Choose how existing operational values should be handled:");
+        Object[] options={
+            I18n.tr("Change currency only"),
+            I18n.tr("Convert values"),
+            I18n.tr("Cancel")
+        };
+        int choice=JOptionPane.showOptionDialog(this,warning,I18n.tr("Change Currency"),
+            JOptionPane.DEFAULT_OPTION,JOptionPane.WARNING_MESSAGE,null,options,options[0]);
+
+        if(choice<0 || choice==2) {
+            restoreCurrencySelection(oldCode);
+            return (String)currencyCombo.getSelectedItem();
+        }
+
+        try {
+            if(choice==0) {
+                String relabel=I18n.tr("No amounts will be converted.")+"\n"+
+                    I18n.tr("For example, 100 {OLD} will become 100 {NEW}.")
+                        .replace("{OLD}",oldCode).replace("{NEW}",newCode);
+                int confirm=JOptionPane.showConfirmDialog(this,relabel,I18n.tr("Confirm Currency Change"),
+                    JOptionPane.OK_CANCEL_OPTION,JOptionPane.WARNING_MESSAGE);
+                if(confirm!=JOptionPane.OK_OPTION) {
+                    restoreCurrencySelection(oldCode);
+                    return (String)currencyCombo.getSelectedItem();
+                }
+                DatabaseCurrency.change(newCode,DatabaseCurrency.ChangeMode.RELABEL,null);
+            } else {
+                String input=JOptionPane.showInputDialog(this,
+                    I18n.tr("Enter the exchange rate: 1 {OLD} = ? {NEW}")
+                        .replace("{OLD}",oldCode).replace("{NEW}",newCode),
+                    "1.0");
+                if(input==null) {
+                    restoreCurrencySelection(oldCode);
+                    return (String)currencyCombo.getSelectedItem();
+                }
+                BigDecimal rate;
+                try {
+                    rate=new BigDecimal(input.trim().replace(',','.'));
+                } catch(NumberFormatException e) {
+                    throw new IllegalArgumentException(I18n.tr("Exchange rate must be a valid positive number."));
+                }
+                if(rate.signum()<=0) throw new IllegalArgumentException(I18n.tr("Exchange rate must be a valid positive number."));
+
+                String confirmation=I18n.tr("Existing operational monetary values will be converted using:")+"\n"+
+                    "1 "+oldCode+" = "+rate.stripTrailingZeros().toPlainString()+" "+newCode+"\n\n"+
+                    I18n.tr("Issued, Paid and Canceled invoices will not be changed.");
+                int confirm=JOptionPane.showConfirmDialog(this,confirmation,I18n.tr("Confirm Currency Conversion"),
+                    JOptionPane.OK_CANCEL_OPTION,JOptionPane.WARNING_MESSAGE);
+                if(confirm!=JOptionPane.OK_OPTION) {
+                    restoreCurrencySelection(oldCode);
+                    return (String)currencyCombo.getSelectedItem();
+                }
+                DatabaseCurrency.change(newCode,DatabaseCurrency.ChangeMode.CONVERT,rate);
+            }
+            return selectedCurrency;
+        } catch(java.sql.SQLException e) {
+            restoreCurrencySelection(oldCode);
+            throw new IllegalArgumentException(e.getMessage(),e);
+        }
+    }
+
+    private void restoreCurrencySelection(String code) {
+        for(int i=0;i<currencyCombo.getItemCount();i++) {
+            String item=currencyCombo.getItemAt(i);
+            if(item!=null && item.startsWith(code+" - ")) {
+                currencyCombo.setSelectedIndex(i);
+                return;
+            }
+        }
     }
 
     private void loadSettings() {
@@ -610,7 +689,12 @@ public class SettingsPanel extends JPanel {
     }
 
     public static String getCurrencySymbol() {
-        return Currency.getInstance(getCurrencyCode()).getSymbol(Locale.getDefault());
+        return getCurrencySymbol(getCurrencyCode());
+    }
+
+    public static String getCurrencySymbol(String currencyCode) {
+        try { return Currency.getInstance(currencyCode).getSymbol(Locale.getDefault()); }
+        catch(IllegalArgumentException e) { return currencyCode; }
     }
 
     public static String getCurrencyCode() {
@@ -621,18 +705,19 @@ public class SettingsPanel extends JPanel {
     }
 
     public static String formatCurrency(double amount) {
+        return formatCurrency(amount,getCurrencyCode());
+    }
+
+    public static String formatCurrency(double amount,String currencyCode) {
         try {
             NumberFormat formatter = NumberFormat.getCurrencyInstance(Locale.getDefault());
-            Currency currency = Currency.getInstance(getCurrencyCode());
+            Currency currency = Currency.getInstance(currencyCode);
             formatter.setCurrency(currency);
-            int fractionDigits = 2;
-            if (fractionDigits >= 0) {
-                formatter.setMinimumFractionDigits(fractionDigits);
-                formatter.setMaximumFractionDigits(fractionDigits);
-            }
+            formatter.setMinimumFractionDigits(2);
+            formatter.setMaximumFractionDigits(2);
             return formatter.format(amount);
         } catch (IllegalArgumentException e) {
-            return String.format("%s %.2f", getCurrencySymbol(), amount);
+            return String.format("%s %.2f", getCurrencySymbol(currencyCode), amount);
         }
     }
 
