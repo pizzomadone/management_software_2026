@@ -316,6 +316,27 @@ public class ExtendedRegressionTest extends RegressionTest {
             }
             DatabaseIntegrity.validate(db,false);
         });
+        test("currency change explanations translate in every supported language",()->{
+            String previous=I18n.getLanguage();
+            String[] keys={
+                "Currency change: {OLD} → {NEW}",
+                "Change currency only: numbers stay the same.",
+                "Convert values: monetary values are recalculated using a rate you enter.",
+                "Currency changed successfully.",
+                "No amounts were converted.",
+                "Operational values were converted using the selected exchange rate."
+            };
+            try {
+                for(String language:List.of("it","es","pt_BR","fr","de","pl","en")) {
+                    I18n.setLanguage(language);
+                    for(String key:keys) {
+                        String translated=I18n.tr(key);
+                        require(language.equals("en") || !translated.equals(key),
+                            "Missing currency explanation in "+language+": "+key);
+                    }
+                }
+            } finally {I18n.setLanguage(previous);}
+        });
         test("currency relabel changes operational currency without touching finalized invoices",()->{
             fresh();
             sql("UPDATE products SET price=10,acquisition_cost=5 WHERE id=1");
