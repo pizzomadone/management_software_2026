@@ -660,6 +660,12 @@ public class MainWindow extends JFrame {
                 default: break;
             }
 
+            // Refresh localization after data reloads, which may replace dynamic labels/table values.
+            Component activePanel = java.util.Arrays.stream(mainPanel.getComponents())
+                .filter(component -> panelName.equals(component.getName()))
+                .findFirst().orElse(null);
+            if (activePanel != null) I18n.localize(activePanel);
+
             // Update window title
             updateWindowTitle(panelName);
 
