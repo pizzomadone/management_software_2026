@@ -185,6 +185,7 @@ public class InvoicePDFGenerator {
                     Math.abs(Numbers.add(taxable,vat)-invoice.getTotal())>0.004)
                 throw new SQLException("Saved invoice totals do not match its lines. Reconcile the invoice before exporting.");
             try(PdfWriter pdf=new PdfWriter("",false)) {
+                pdf.setContinuationTitle(I18n.tr("INVOICE")+" "+invoice.getNumber());
                 String companyName=company.getProperty("company_name","").trim();
                 java.util.List<String> companyLines=new ArrayList<>();
                 addLine(companyLines,company.getProperty("address",""));
