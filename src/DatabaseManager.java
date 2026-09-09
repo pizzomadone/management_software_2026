@@ -33,32 +33,67 @@ public class DatabaseManager {
         return instance;
     }
 
-    public void initDatabase() {
+    public synchronized void initDatabase() {
         try {
             // Load the SQLite JDBC driver
             Class.forName("org.sqlite.JDBC");
 
-            // Create the connection
-            connection = DriverManager.getConnection(DB_URL);
+            // Validate an existing archive before creating any missing application tables.
+            boolean existing = java.nio.file.Files.exists(AppConstants.getDatabasePath());
+            closeConnection();
+            connection = openConnection(DB_URL);
+            if (existing) DatabaseIntegrity.validate(connection, true);
 
             // Enable foreign keys and set SQLite optimizations
             try (Statement stmt = connection.createStatement()) {
                 stmt.execute("PRAGMA foreign_keys = ON");
                 stmt.execute("PRAGMA journal_mode = WAL");
-                stmt.execute("PRAGMA synchronous = NORMAL");
+                stmt.execute("PRAGMA synchronous = FULL");
+                stmt.execute("PRAGMA busy_timeout = 10000");
             }
 
             // Create tables if they do not exist
             createTables();
+            DatabaseIntegrity.validate(connection, false);
+            DatabaseCurrency.bind(connection);
 
             System.out.println("Database initialized successfully");
 
         } catch (Exception e) {
-            e.printStackTrace();
-            JOptionPane.showMessageDialog(null,
-                "Error during database initialization: " + e.getMessage(),
-                "Database Error",
-                JOptionPane.ERROR_MESSAGE);
+            closeConnection();
+            throw new IllegalStateException("Error during database initialization: " + e.getMessage(), e);
+        }
+    }
+
+    public static void beginTransaction(Connection c) throws SQLException {
+        if(!c.getAutoCommit())throw new SQLException("An operation is already in progress on this connection");
+        try {c.setAutoCommit(false);}
+        catch(SQLException e) {
+            // sqlite-jdbc may retain autocommit=false after a failed BEGIN. Never reuse that state.
+            try {c.close();}catch(SQLException close){e.addSuppressed(close);}
+            throw e;
+        }
+    }
+
+    public static Connection openConnection(String url) throws SQLException {
+        org.sqlite.SQLiteConfig settings = new org.sqlite.SQLiteConfig();
+        settings.enforceForeignKeys(true);
+        settings.setBusyTimeout(10000);
+        settings.setTransactionMode(org.sqlite.SQLiteConfig.TransactionMode.IMMEDIATE);
+        Connection c=DriverManager.getConnection(url, settings.toProperties());
+        try {DateUtils.installSqlFunctions(c);return c;}catch(SQLException e){c.close();throw e;}
+    }
+
+    /** Migrate an isolated staging copy before it is allowed to replace live data. */
+    public static void prepareDatabase(Connection conn) throws SQLException {
+        DatabaseIntegrity.validate(conn, true);
+        DatabaseManager staging = new DatabaseManager();
+        staging.connection = conn;
+        staging.createTables();
+        DatabaseIntegrity.validate(conn, false);
+        try (Statement s = conn.createStatement()) {
+            s.execute("PRAGMA wal_checkpoint(TRUNCATE)");
+            s.execute("PRAGMA journal_mode=DELETE");
         }
     }
 
@@ -89,7 +124,6 @@ public class DatabaseManager {
                 alternative_sku TEXT DEFAULT '',
                 weight REAL DEFAULT 0.0,
                 unit_of_measure TEXT DEFAULT 'pcs',
-                minimum_quantity INTEGER DEFAULT 0,
                 acquisition_cost REAL DEFAULT 0.0,
                 active INTEGER DEFAULT 1,
                 supplier_id INTEGER,
@@ -394,17 +428,18 @@ public class DatabaseManager {
         try {
             if (connection != null && !connection.isClosed()) {
                 connection.close();
+                connection = null;
                 System.out.println("Database connection closed");
             }
         } catch (SQLException e) {
-            e.printStackTrace();
+            throw new IllegalStateException("Unable to close the database", e);
         }
     }
 
     public String getNextInvoiceNumber(int year) throws SQLException {
         String number;
         Connection conn = getConnection(); // Use the safe getConnection method
-        conn.setAutoCommit(false);
+        DatabaseManager.beginTransaction(conn);
         try {
             // Check if a record for the current year already exists
             String checkQuery = "SELECT last_number FROM invoice_numbering WHERE year = ?";

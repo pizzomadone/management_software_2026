@@ -74,6 +74,22 @@ Discover uses `ca.weblite.webview.swing.WebViewComponent`. Confirm that
 `lib/webview-1.0.10.jar` appears under **Referenced Libraries**, then open
 **Run → Run Configurations… → Java Application → WareStat** and click **Run**.
 
+### PDF fonts in Eclipse and exported applications
+
+Update the complete project, including `resources/fonts/DejaVuSans.ttf`,
+`DejaVuSans-Bold.ttf`, and `LICENSE-DejaVu.txt`. In Eclipse, `resources` must be a
+source folder on the Java build path, as configured in the committed `.classpath`.
+After updating, refresh the project and use **Project → Clean** before launching.
+Copying only the changed Java files can leave the runtime resources unavailable.
+
+Ant checks these files before building and verifies their presence in both the
+normal and obfuscated JAR. The resources are packaged once from `build/classes`.
+PDF exports first load the packaged DejaVu fonts. For incomplete IDE launches,
+they also look in `resources/fonts` relative to the working directory. If those
+files are absent, the exporter uses the embeddable Liberation Sans font bundled
+with PDFBox. That fallback uses regular weight for headings as well as body text.
+Unsupported characters still stop the export before an existing PDF is replaced.
+
 ### Step 1: Configure Ant Builder
 
 1. **Open Project Properties**

@@ -101,7 +101,7 @@ FROM (
 );
 
 -- 3. PRODUCTS (500 records)
-INSERT INTO products (code, name, description, price, quantity, reserved_quantity, category, alternative_sku, weight, unit_of_measure, minimum_quantity, acquisition_cost, active, supplier_id, warehouse_position, vat_rate)
+INSERT INTO products (code, name, description, price, quantity, reserved_quantity, category, alternative_sku, weight, unit_of_measure, acquisition_cost, active, supplier_id, warehouse_position, vat_rate)
 SELECT
     'PROD' || printf('%06d', x),
     CASE (ABS(RANDOM()) % 25)
@@ -127,7 +127,6 @@ SELECT
     'ALT-' || printf('%06d', x),  -- alternative_sku
     ROUND(0.1 + (ABS(RANDOM() % 100) / 10.0), 2),  -- weight in kg
     CASE (ABS(RANDOM()) % 3) WHEN 0 THEN 'pcs' WHEN 1 THEN 'box' ELSE 'pack' END,
-    5 + ABS(RANDOM() % 20),  -- minimum_quantity
     ROUND(5 + (ABS(RANDOM() % 500)), 2),  -- acquisition_cost (lower than price)
     1,  -- active
     1 + ABS(RANDOM() % 50),  -- supplier_id
@@ -309,7 +308,7 @@ FROM (
     SELECT x FROM numbers
 );
 
--- 11. MINIMUM STOCK (250 records) - Link to products table
+-- 11. MINIMUM STOCK (500 records) - Thresholds and reorder settings for products
 INSERT INTO minimum_stock (product_id, minimum_quantity, reorder_quantity, notes)
 SELECT
     x,
@@ -320,7 +319,7 @@ FROM (
     WITH RECURSIVE numbers(x) AS (
         SELECT 1
         UNION ALL
-        SELECT x+1 FROM numbers WHERE x < 250
+        SELECT x+1 FROM numbers WHERE x < 500
     )
     SELECT x FROM numbers
 );

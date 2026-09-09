@@ -20,9 +20,13 @@ public class DashboardPanel extends JPanel {
     private static final Color BORDER_COLOR = new Color(189, 195, 199);    // Gray
 
     private JLabel warehouseValueLabel;
+    private JLabel warehouseSaleValueLabel;
+    private JLabel zeroCostCountLabel;
+    private JLabel negativeStockCountLabel;
     private JLabel lowStockCountLabel;
     private JLabel pendingOrdersLabel;
     private JLabel monthRevenueLabel;
+    private JLabel monthInvoicedLabel;
     private JLabel avgMarginLabel;
     private JLabel zeroStockLabel;
 
@@ -112,7 +116,7 @@ public class DashboardPanel extends JPanel {
     }
 
     private JPanel createKPIPanel() {
-        JPanel panel = new JPanel(new GridLayout(2, 3, 10, 10));
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
         panel.setBorder(BorderFactory.createTitledBorder(
             BorderFactory.createLineBorder(BORDER_COLOR),
             "Key Performance Indicators",
@@ -122,15 +126,32 @@ public class DashboardPanel extends JPanel {
             PRIMARY_COLOR
         ));
 
-        // Create 6 KPI cards with consistent color scheme
-        panel.add(createKPICard("Warehouse Value", SettingsPanel.formatCurrency(0), SECONDARY_COLOR, "warehouseValue"));
-        panel.add(createKPICard("Low Stock Products", "0", DANGER_COLOR, "lowStock"));
-        panel.add(createKPICard("Pending Customer Orders", "0", WARNING_COLOR, "pendingOrders"));
-        panel.add(createKPICard("Monthly Revenue", SettingsPanel.formatCurrency(0), SUCCESS_COLOR, "monthRevenue"));
-        panel.add(createKPICard("Average Margin", "0.0%", ACCENT_COLOR, "avgMargin"));
-        panel.add(createKPICard("Zero Stock Products", "0", WARNING_COLOR, "zeroStock"));
+        JPanel cards = new JPanel(new GridLayout(2, 4, 10, 10));
+        cards.add(createKPICard("Stock at standard cost", "—", SECONDARY_COLOR, "warehouseValue"));
+        cards.add(createKPICard("Stock at sale price", "—", SECONDARY_COLOR, "warehouseSaleValue"));
+        cards.add(createKPICard("Low Stock Products", "—", DANGER_COLOR, "lowStock"));
+        cards.add(createKPICard("Out of Stock Products", "—", WARNING_COLOR, "zeroStock"));
+        cards.add(createKPICard("Monthly order sales (excl. VAT)", "—", SUCCESS_COLOR, "monthRevenue"));
+        cards.add(createKPICard("Monthly invoiced (excl. VAT)", "—", SUCCESS_COLOR, "monthInvoiced"));
+        cards.add(createKPICard("Pending Customer Orders", "—", WARNING_COLOR, "pendingOrders"));
+        cards.add(createKPICard("Potential stock margin", "—", ACCENT_COLOR, "avgMargin"));
+        panel.add(cards, BorderLayout.CENTER);
+
+        JPanel notes = new JPanel(new GridLayout(0, 1, 0, 4));
+        zeroCostCountLabel = new JLabel("—");
+        negativeStockCountLabel = new JLabel("—");
+        notes.add(createKPINote("In-stock products with zero purchase cost", zeroCostCountLabel));
+        notes.add(createKPINote("Negative-stock products (excluded from valuation)", negativeStockCountLabel));
+        panel.add(notes, BorderLayout.SOUTH);
 
         return panel;
+    }
+
+    private JPanel createKPINote(String title, JLabel value) {
+        JPanel note = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+        note.add(new JLabel(title));
+        note.add(value);
+        return note;
     }
 
     private JPanel createKPICard(String title, String defaultValue, Color color, String type) {
@@ -153,15 +174,61 @@ public class DashboardPanel extends JPanel {
         // Store reference based on type
         switch (type) {
             case "warehouseValue" -> warehouseValueLabel = valueLabel;
+            case "warehouseSaleValue" -> warehouseSaleValueLabel = valueLabel;
             case "lowStock" -> lowStockCountLabel = valueLabel;
             case "pendingOrders" -> pendingOrdersLabel = valueLabel;
             case "monthRevenue" -> monthRevenueLabel = valueLabel;
+            case "monthInvoiced" -> monthInvoicedLabel = valueLabel;
             case "avgMargin" -> avgMarginLabel = valueLabel;
             case "zeroStock" -> zeroStockLabel = valueLabel;
         }
 
+        String explanation = "tooltip.kpi." + type;
+        card.setToolTipText(explanation);
+        titleLabel.setToolTipText(explanation);
+        valueLabel.setToolTipText(explanation);
+
         card.add(titleLabel, BorderLayout.NORTH);
         card.add(valueLabel, BorderLayout.CENTER);
+
+        JLabel help = new JLabel("?", SwingConstants.CENTER) {
+            private Integer previousDismissDelay;
+
+            {
+                addHierarchyListener(event -> {
+                    if (!isShowing()) restoreDismissDelay();
+                });
+            }
+
+            @Override
+            protected void processMouseEvent(java.awt.event.MouseEvent event) {
+                if (event.getID() == java.awt.event.MouseEvent.MOUSE_ENTERED && previousDismissDelay == null) {
+                    ToolTipManager manager = ToolTipManager.sharedInstance();
+                    previousDismissDelay = manager.getDismissDelay();
+                    manager.setDismissDelay(Integer.MAX_VALUE);
+                }
+                // Set the delay before Swing handles entry, including immediately reshown tooltips.
+                super.processMouseEvent(event);
+                if (event.getID() == java.awt.event.MouseEvent.MOUSE_EXITED) restoreDismissDelay();
+            }
+
+            private void restoreDismissDelay() {
+                if (previousDismissDelay != null) {
+                    ToolTipManager.sharedInstance().setDismissDelay(previousDismissDelay);
+                    previousDismissDelay = null;
+                }
+            }
+        };
+        help.setFont(new Font("Arial", Font.BOLD, 11));
+        help.setForeground(new Color(100, 100, 100));
+        help.setPreferredSize(new Dimension(18, 18));
+        help.setBorder(BorderFactory.createLineBorder(BORDER_COLOR, 1, true));
+        help.setToolTipText(explanation);
+        JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+        footer.setOpaque(false);
+        footer.add(help);
+        card.add(footer, BorderLayout.SOUTH);
+        I18n.localize(card);
 
         return card;
     }
@@ -356,93 +423,106 @@ public class DashboardPanel extends JPanel {
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
 
-            // 1. Warehouse Value
-            String warehouseQuery = "SELECT SUM(quantity * acquisition_cost) as total FROM products WHERE active = 1";
+            // Cost and potential sale value are distinct. A stock deficit is not an asset.
+            double warehouseValue = 0;
+            double warehouseSaleValue = 0;
+            int zeroCostCount = 0;
+            int negativeStockCount = 0;
+            String warehouseQuery = "SELECT quantity, acquisition_cost, price FROM products WHERE active = 1";
             try (Statement stmt = conn.createStatement();
                  ResultSet rs = stmt.executeQuery(warehouseQuery)) {
-                if (rs.next()) {
-                    double value = rs.getDouble("total");
-                    warehouseValueLabel.setText(SettingsPanel.formatCurrency(value));
+                while (rs.next()) {
+                    int quantity = Numbers.quantity(rs.getObject("quantity"));
+                    double cost = Numbers.nonNegative(rs.getObject("acquisition_cost"));
+                    double price = Numbers.nonNegative(rs.getObject("price"));
+                    warehouseValue = Numbers.add(warehouseValue, Numbers.stockValue(quantity, cost));
+                    warehouseSaleValue = Numbers.add(warehouseSaleValue, Numbers.stockValue(quantity, price));
+                    if (quantity > 0 && cost == 0) zeroCostCount++;
+                    if (quantity < 0) negativeStockCount++;
                 }
             }
 
             // 2. Low Stock Count
-            String lowStockQuery = "SELECT COUNT(*) as count FROM products WHERE active = 1 AND quantity < minimum_quantity AND minimum_quantity > 0";
+            int lowStockCount = 0;
+            String lowStockQuery = "SELECT COUNT(*) as count FROM products p " +
+                "LEFT JOIN minimum_stock sm ON sm.product_id = p.id WHERE p.active = 1 AND " +
+                "(p.quantity < 0 OR (p.quantity < sm.minimum_quantity AND sm.minimum_quantity > 0))";
             try (Statement stmt = conn.createStatement();
                  ResultSet rs = stmt.executeQuery(lowStockQuery)) {
                 if (rs.next()) {
-                    int count = rs.getInt("count");
-                    lowStockCountLabel.setText(String.valueOf(count));
+                    lowStockCount = rs.getInt("count");
                 }
             }
 
             // 3. Pending Orders
-            String pendingQuery = "SELECT COUNT(*) as count FROM orders WHERE status != 'Completed' AND status != 'Cancelled'";
+            int pendingOrders = 0;
+            String pendingQuery = "SELECT COUNT(*) as count FROM orders WHERE status IN ('New','In Progress')";
             try (Statement stmt = conn.createStatement();
                  ResultSet rs = stmt.executeQuery(pendingQuery)) {
                 if (rs.next()) {
-                    pendingOrdersLabel.setText(String.valueOf(rs.getInt("count")));
+                    pendingOrders = rs.getInt("count");
                 }
             }
 
-            // 4. Month Revenue
+            // Orders and invoices measure different events; never add them together.
             Calendar cal = Calendar.getInstance();
             cal.set(Calendar.DAY_OF_MONTH, 1);
             cal.set(Calendar.HOUR_OF_DAY, 0);
             cal.set(Calendar.MINUTE, 0);
             cal.set(Calendar.SECOND, 0);
+            cal.set(Calendar.MILLISECOND, 0);
             long monthStart = cal.getTimeInMillis();
             cal.add(Calendar.MONTH, 1);
             long nextMonthStart = cal.getTimeInMillis();
 
-            String revenueQuery = """
-                SELECT COALESCE(SUM(total), 0) AS revenue
-                FROM invoices
-                WHERE ((typeof(date) IN ('integer', 'real')
-                        AND CAST(date AS INTEGER) >= ? AND CAST(date AS INTEGER) < ?)
-                    OR (typeof(date) = 'text'
-                        AND datetime(date) >= datetime(?) AND datetime(date) < datetime(?)))
-            """;
-            try (PreparedStatement pstmt = conn.prepareStatement(revenueQuery)) {
-                pstmt.setLong(1, monthStart);
-                pstmt.setLong(2, nextMonthStart);
-                pstmt.setString(3, new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date(monthStart)));
-                pstmt.setString(4, new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date(nextMonthStart)));
-                ResultSet rs = pstmt.executeQuery();
-                if (rs.next()) {
-                    double revenue = rs.getDouble("revenue");
-                    monthRevenueLabel.setText(SettingsPanel.formatCurrency(revenue));
-                }
-            }
+            SimpleDateFormat monthFormat = new SimpleDateFormat("yyyy-MM-dd");
+            String start = monthFormat.format(new java.util.Date(monthStart));
+            String end = monthFormat.format(new java.util.Date(nextMonthStart));
+            double monthlySales = sumMonthlyDocuments(conn,
+                "SELECT total FROM orders WHERE status='Completed' AND " +
+                    DateUtils.sqlDate("order_date") + ">=? AND " + DateUtils.sqlDate("order_date") + "<?", start, end);
+            double monthlyInvoiced = sumMonthlyDocuments(conn,
+                "SELECT taxable_amount AS total FROM invoices WHERE status IN ('Issued','Paid') AND " +
+                    DateUtils.sqlDate("date") + ">=? AND " + DateUtils.sqlDate("date") + "<?", start, end);
 
-            // 5. Average Margin
-            String marginQuery = """
-                SELECT AVG(CASE
-                    WHEN p.price > 0 AND p.acquisition_cost > 0
-                    THEN ((p.price - p.acquisition_cost) / p.price) * 100
-                    ELSE 0
-                END) as avg_margin
-                FROM products p
-                WHERE p.active = 1 AND p.price > 0
-            """;
-            try (Statement stmt = conn.createStatement();
-                 ResultSet rs = stmt.executeQuery(marginQuery)) {
-                if (rs.next()) {
-                    double margin = rs.getDouble("avg_margin");
-                    avgMarginLabel.setText(String.format("%.1f%%", margin));
-                }
-            }
+            // Potential gross margin uses the same stock totals, weighted by their sale value.
+            // It is undefined without a positive denominator; it is not historical sales profit.
+            String margin = warehouseSaleValue > 0
+                ? String.format("%.1f%%", java.math.BigDecimal.valueOf(warehouseSaleValue)
+                    .subtract(java.math.BigDecimal.valueOf(warehouseValue))
+                    .multiply(java.math.BigDecimal.valueOf(100))
+                    .divide(java.math.BigDecimal.valueOf(warehouseSaleValue), 1, java.math.RoundingMode.HALF_UP))
+                : "—";
 
-            // 6. Zero Stock Count
-            String zeroStockQuery = "SELECT COUNT(*) as count FROM products WHERE active = 1 AND quantity = 0";
+            // Out of stock includes deficits, matching the warehouse report.
+            int zeroStockCount = 0;
+            String zeroStockQuery = "SELECT COUNT(*) as count FROM products WHERE active = 1 AND quantity <= 0";
             try (Statement stmt = conn.createStatement();
                  ResultSet rs = stmt.executeQuery(zeroStockQuery)) {
                 if (rs.next()) {
-                    zeroStockLabel.setText(String.valueOf(rs.getInt("count")));
+                    zeroStockCount = rs.getInt("count");
                 }
             }
 
-        } catch (SQLException e) {
+            // Publish only after every query succeeds, so a failed refresh cannot mix old and new KPIs.
+            warehouseValueLabel.setText(SettingsPanel.formatCurrency(warehouseValue));
+            warehouseSaleValueLabel.setText(SettingsPanel.formatCurrency(warehouseSaleValue));
+            zeroCostCountLabel.setText(String.valueOf(zeroCostCount));
+            negativeStockCountLabel.setText(String.valueOf(negativeStockCount));
+            negativeStockCountLabel.setForeground(negativeStockCount > 0 ? DANGER_COLOR : PRIMARY_COLOR);
+            lowStockCountLabel.setText(String.valueOf(lowStockCount));
+            pendingOrdersLabel.setText(String.valueOf(pendingOrders));
+            monthRevenueLabel.setText(SettingsPanel.formatCurrency(monthlySales));
+            monthInvoicedLabel.setText(SettingsPanel.formatCurrency(monthlyInvoiced));
+            avgMarginLabel.setText(margin);
+            zeroStockLabel.setText(String.valueOf(zeroStockCount));
+
+        } catch (SQLException | IllegalArgumentException e) {
+            for (JLabel label : new JLabel[]{warehouseValueLabel, warehouseSaleValueLabel, zeroCostCountLabel,
+                    negativeStockCountLabel, lowStockCountLabel, pendingOrdersLabel, monthRevenueLabel,
+                    monthInvoicedLabel, avgMarginLabel, zeroStockLabel}) {
+                label.setText("—");
+            }
             e.printStackTrace();
             JOptionPane.showMessageDialog(this,
                 "Error loading KPI data: " + e.getMessage(),
@@ -451,16 +531,30 @@ public class DashboardPanel extends JPanel {
         }
     }
 
+    private double sumMonthlyDocuments(Connection conn, String query, String start, String end) throws SQLException {
+        double total = 0;
+        try (PreparedStatement stmt = conn.prepareStatement(query)) {
+            stmt.setString(1, start);
+            stmt.setString(2, end);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) total = Numbers.add(total, Numbers.nonNegative(rs.getObject("total")));
+            }
+        }
+        return total;
+    }
+
     private void loadAlerts() {
         alertsPanel.removeAll();
 
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
-                SELECT code, name, quantity, minimum_quantity, (minimum_quantity - quantity) as shortage
-                FROM products
-                WHERE active = 1 AND quantity < minimum_quantity AND minimum_quantity > 0
-                ORDER BY shortage DESC
+                SELECT p.code, p.name, p.quantity, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity,
+                       (COALESCE(sm.minimum_quantity, 0) - p.quantity) AS shortage
+                FROM products p
+                LEFT JOIN minimum_stock sm ON sm.product_id = p.id
+                WHERE p.active = 1 AND (p.quantity < 0 OR (p.quantity < sm.minimum_quantity AND sm.minimum_quantity > 0))
+                ORDER BY (p.quantity < 0) DESC, shortage DESC, p.code
                 LIMIT 10
             """;
 
@@ -474,7 +568,7 @@ public class DashboardPanel extends JPanel {
                     String name = rs.getString("name");
                     int quantity = rs.getInt("quantity");
                     int minQuantity = rs.getInt("minimum_quantity");
-                    int shortage = rs.getInt("shortage");
+                    long shortage = rs.getLong("shortage");
 
                     JPanel alertItem = createAlertItem(code, name, quantity, minQuantity, shortage);
                     alertsPanel.add(alertItem);
@@ -497,7 +591,7 @@ public class DashboardPanel extends JPanel {
         alertsPanel.repaint();
     }
 
-    private JPanel createAlertItem(String code, String name, int quantity, int minQuantity, int shortage) {
+    private JPanel createAlertItem(String code, String name, int quantity, int minQuantity, long shortage) {
         JPanel panel = new JPanel(new BorderLayout(10, 5));
         panel.setBorder(BorderFactory.createCompoundBorder(
             BorderFactory.createLineBorder(DANGER_COLOR),
@@ -651,7 +745,7 @@ public class DashboardPanel extends JPanel {
             String query = """
                 SELECT p.name,
                        SUM(od.quantity) as total_qty,
-                       SUM(od.quantity * od.unit_price) as total_revenue
+                       SUM(ROUND(od.quantity * od.unit_price,2)) as total_revenue
                 FROM order_details od
                 JOIN products p ON od.product_id = p.id
                 JOIN orders o ON od.order_id = o.id
@@ -667,7 +761,7 @@ public class DashboardPanel extends JPanel {
                 int rank = 1;
                 while (rs.next()) {
                     String name = rs.getString("name");
-                    int qty = rs.getInt("total_qty");
+                    long qty = rs.getLong("total_qty");
                     double revenue = rs.getDouble("total_revenue");
 
                     model.addRow(new Object[]{
@@ -694,7 +788,7 @@ public class DashboardPanel extends JPanel {
             // Get all products with their revenue, sorted by revenue
             String query = """
                 SELECT p.id, p.name,
-                       COALESCE(SUM(od.quantity * od.unit_price), 0) as revenue
+                       COALESCE(SUM(CASE WHEN o.status='Completed' THEN ROUND(od.quantity * od.unit_price,2) ELSE 0 END), 0) as revenue
                 FROM products p
                 LEFT JOIN order_details od ON p.id = od.product_id
                 LEFT JOIN orders o ON od.order_id = o.id AND o.status = 'Completed'
@@ -727,13 +821,13 @@ public class DashboardPanel extends JPanel {
             double classARevenue = 0, classBRevenue = 0, classCRevenue = 0;
 
             for (ProductRevenue pr : products) {
+                double percentRevenue = cumulativeRevenue / totalRevenue;
                 cumulativeRevenue += pr.revenue;
-                double percentRevenue = (cumulativeRevenue / totalRevenue);
 
-                if (percentRevenue <= 0.80) {
+                if (pr.revenue > 0 && percentRevenue < 0.80) {
                     classACount++;
                     classARevenue += pr.revenue;
-                } else if (percentRevenue <= 0.95) {
+                } else if (pr.revenue > 0 && percentRevenue < 0.95) {
                     classBCount++;
                     classBRevenue += pr.revenue;
                 } else {

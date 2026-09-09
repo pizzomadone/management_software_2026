@@ -105,6 +105,7 @@ public class SupplierOrderDialog extends JDialog {
 
         gbc.gridx = 1;
         statusCombo = new JComboBox<>(new String[]{"Draft", "Confirmed", "In Transit", "Completed", "Cancelled"});
+        statusCombo.putClientProperty("i18n.values", true);
         orderPanel.add(statusCombo, gbc);
 
         // Notes
@@ -118,19 +119,21 @@ public class SupplierOrderDialog extends JDialog {
         orderPanel.add(new JScrollPane(notesArea), gbc);
 
         // Products table
-        String[] columns = {"Code", "Product", "Quantity", "Unit Price", "Total", "Notes"};
+        String[] columns = {"Code", "Product", "Quantity", "Unit Price", "Total", "Notes", "Product ID"};
         itemsTableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
-                return column == 2 || column == 5; // Only quantity and notes are editable
+                return column == 2 || column == 3 || column == 5; // Quantity, agreed price and notes.
             }
         };
         itemsTable = new JTable(itemsTableModel);
+        itemsTable.setToolTipText("Unit prices are quoted when added. After changing quantities or dates, use Apply Price List to refresh them; negotiated prices can be edited manually.");
+        itemsTable.removeColumn(itemsTable.getColumnModel().getColumn(6));
 
         // FIXED: Improved listener to prevent infinite recursion
         itemsTableModel.addTableModelListener(e -> {
             if (e.getType() == javax.swing.event.TableModelEvent.UPDATE &&
-                e.getColumn() == 2 && !updatingTotals) {
+                (e.getColumn() == 2 || e.getColumn() == 3) && !updatingTotals) {
                 SwingUtilities.invokeLater(this::updateTotals);
             }
         });
@@ -145,6 +148,9 @@ public class SupplierOrderDialog extends JDialog {
 
         tableButtonPanel.add(addItemButton);
         tableButtonPanel.add(removeItemButton);
+        JButton reprice = new JButton("Apply Price List");
+        reprice.addActionListener(e -> applyPriceList());
+        tableButtonPanel.add(reprice);
 
         // Total panel
         JPanel totalPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
@@ -187,23 +193,7 @@ public class SupplierOrderDialog extends JDialog {
     private void generateOrderNumber() {
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
-            String query = """
-                SELECT COALESCE(MAX(CAST(SUBSTR(number, 5) AS INTEGER)), 0) + 1 as next_num
-                FROM supplier_orders
-                WHERE number LIKE ?
-            """;
-
-            Calendar cal = Calendar.getInstance();
-            String yearPrefix = String.format("OF%d", cal.get(Calendar.YEAR));
-
-            try (PreparedStatement pstmt = conn.prepareStatement(query)) {
-                pstmt.setString(1, yearPrefix + "%");
-                ResultSet rs = pstmt.executeQuery();
-                if (rs.next()) {
-                    int nextNum = rs.getInt("next_num");
-                    numberField.setText(String.format("%s%04d", yearPrefix, nextNum));
-                }
-            }
+            numberField.setText(DocumentNumbers.nextSupplierNumber(conn, new Date()));
         } catch (SQLException e) {
             e.printStackTrace();
             JOptionPane.showMessageDialog(this,
@@ -215,20 +205,10 @@ public class SupplierOrderDialog extends JDialog {
     private void loadProducts() {
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
-            String query = """
-                SELECT p.*, COALESCE(l.price, p.acquisition_cost) as supplier_price,
-                       l.supplier_product_code
-                FROM products p
-                LEFT JOIN supplier_price_lists l ON p.id = l.product_id
-                    AND l.supplier_id = ?
-                    AND (l.validity_end_date IS NULL OR DATE(l.validity_end_date) >= DATE('now'))
-                WHERE p.supplier_id = ?
-                ORDER BY p.name
-            """;
-
+            productsCache.clear();
+            String query = "SELECT * FROM products WHERE supplier_id=? ORDER BY name";
             try (PreparedStatement pstmt = conn.prepareStatement(query)) {
                 pstmt.setInt(1, supplierId);
-                pstmt.setInt(2, supplierId);
                 ResultSet rs = pstmt.executeQuery();
 
                 while (rs.next()) {
@@ -237,7 +217,7 @@ public class SupplierOrderDialog extends JDialog {
                         rs.getString("code"),
                         rs.getString("name"),
                         rs.getString("description"),
-                        rs.getDouble("supplier_price"),
+                        SupplierPricing.price(conn, supplierId, rs.getInt("id"), 1, new Date()),
                         rs.getInt("quantity")
                     );
                     productsCache.put(product.getId(), product);
@@ -267,9 +247,10 @@ public class SupplierOrderDialog extends JDialog {
             row.add(item.getProductCode());
             row.add(item.getProductName());
             row.add(item.getQuantity());
-            row.add(String.format("%.2f", item.getUnitPrice()));
+            row.add(item.getUnitPrice());
             row.add(String.format("%.2f", item.getTotal()));
             row.add(item.getNotes());
+            row.add(item.getProductId());
             itemsTableModel.addRow(row);
         }
 
@@ -328,7 +309,13 @@ public class SupplierOrderDialog extends JDialog {
                 return;
             }
 
-            int quantity = (int)quantitySpinner.getValue();
+            int quantity; double quotedPrice;
+            try {
+                quantitySpinner.commitEdit();
+                quantity = Numbers.positiveQuantity(quantitySpinner.getValue());
+                quotedPrice = SupplierPricing.price(DatabaseManager.getInstance().getConnection(), supplierId,
+                    selectedProduct.getProduct().getId(), quantity, DateUtils.parseDate(dateField.getText(), dateFormat));
+            } catch (Exception ex) { JOptionPane.showMessageDialog(dialog, ex.getMessage(), "Invalid product", JOptionPane.ERROR_MESSAGE); return; }
             String note = noteField.getText().trim();
 
             // Check if product is already present
@@ -347,9 +334,10 @@ public class SupplierOrderDialog extends JDialog {
             row.add(selectedProduct.getProduct().getCode());
             row.add(selectedProduct.getProduct().getName());
             row.add(quantity);
-            row.add(String.format("%.2f", selectedProduct.getProduct().getPrice()));
-            row.add(String.format("%.2f", quantity * selectedProduct.getProduct().getPrice()));
+            row.add(quotedPrice);
+            row.add(String.format("%.2f", Numbers.lineTotal(quantity, quotedPrice)));
             row.add(note);
+            row.add(selectedProduct.getProduct().getId());
             itemsTableModel.addRow(row);
 
             updateTotals();
@@ -359,6 +347,7 @@ public class SupplierOrderDialog extends JDialog {
         cancelButton.addActionListener(e -> dialog.dispose());
 
         buttonPanel.add(addButton);
+
         buttonPanel.add(cancelButton);
 
         dialog.add(panel, BorderLayout.CENTER);
@@ -392,85 +381,53 @@ public class SupplierOrderDialog extends JDialog {
         }
     }
 
-    // FIXED: Improved method to prevent infinite recursion
-    private void updateTotals() {
-        if (updatingTotals) return;
-
-        updatingTotals = true;
+    private void applyPriceList() {
         try {
-            double total = 0;
+            Numbers.commitEdits(itemsTable);
+            if(JOptionPane.showConfirmDialog(this,"Replace all entered unit prices with the current price list for this date and these quantities?","Apply Price List",JOptionPane.YES_NO_OPTION)!=JOptionPane.YES_OPTION)return;
+            Date date=DateUtils.parseDate(dateField.getText(),dateFormat);
+            Connection c=DatabaseManager.getInstance().getConnection();
+            double[] prices=new double[itemsTableModel.getRowCount()];
+            for(int i=0;i<prices.length;i++)prices[i]=SupplierPricing.price(c,supplierId,productIdForRow(c,i),parseInteger(itemsTableModel.getValueAt(i,2)),date);
+            for(int i=0;i<prices.length;i++)itemsTableModel.setValueAt(prices[i],i,3);
+            updateTotals();
+        } catch(Exception e) {JOptionPane.showMessageDialog(this,e.getMessage(),"Unable to apply prices",JOptionPane.ERROR_MESSAGE);}
+    }
 
-            // Calculate total without modifying the table
-            for (int i = 0; i < itemsTableModel.getRowCount(); i++) {
-                Object quantityObj = itemsTableModel.getValueAt(i, 2);
-                Object priceObj = itemsTableModel.getValueAt(i, 3);
-
-                int quantity = parseInteger(quantityObj);
-                double price = parseDouble(priceObj);
-
-                double itemTotal = quantity * price;
-                total += itemTotal;
+    private void updateTotals() {
+        if(updatingTotals)return;
+        updatingTotals=true;
+        try {
+            double total=0;
+            for(int i=0;i<itemsTableModel.getRowCount();i++) {
+                double line=Numbers.lineTotal(parseInteger(itemsTableModel.getValueAt(i,2)),parseDouble(itemsTableModel.getValueAt(i,3)));
+                total=Numbers.add(total,line);
+                itemsTableModel.setValueAt(String.format("%.2f",line),i,4);
             }
-
-            // Update the total label
-            totalLabel.setText("Total: " + SettingsPanel.formatCurrency(total));
-
-            // Update row totals in a separate EDT event
-            SwingUtilities.invokeLater(() -> {
-                try {
-                    updatingTotals = true;
-                    for (int i = 0; i < itemsTableModel.getRowCount(); i++) {
-                        Object quantityObj = itemsTableModel.getValueAt(i, 2);
-                        Object priceObj = itemsTableModel.getValueAt(i, 3);
-
-                        int quantity = parseInteger(quantityObj);
-                        double price = parseDouble(priceObj);
-
-                        double itemTotal = quantity * price;
-
-                        // Only update if the value has changed
-                        String currentTotal = (String) itemsTableModel.getValueAt(i, 4);
-                        String newTotal = String.format("%.2f", itemTotal);
-                        if (!newTotal.equals(currentTotal)) {
-                            itemsTableModel.setValueAt(newTotal, i, 4);
-                        }
-                    }
-                } finally {
-                    updatingTotals = false;
-                }
-            });
-
-        } finally {
-            updatingTotals = false;
-        }
+            totalLabel.setText("Total: "+SettingsPanel.formatCurrency(total));
+        } catch(IllegalArgumentException e) {totalLabel.setText("Invalid quantity or price");}
+        finally {updatingTotals=false;}
     }
 
     // Helper methods for safe parsing
-    private int parseInteger(Object obj) {
-        if (obj instanceof Integer) {
-            return (Integer) obj;
-        }
-        try {
-            return Integer.parseInt(obj.toString());
-        } catch (NumberFormatException e) {
-            return 0;
-        }
-    }
+    private int parseInteger(Object value) { return Numbers.positiveQuantity(value); }
+    private double parseDouble(Object value) { return Numbers.nonNegative(value); }
 
-    private double parseDouble(Object obj) {
-        if (obj instanceof Double) {
-            return (Double) obj;
-        }
-        try {
-            String str = obj.toString().replace(",", ".");
-            return Double.parseDouble(str);
-        } catch (NumberFormatException e) {
-            return 0.0;
+    private int productIdForRow(Connection c, int row) throws SQLException {
+        if (itemsTableModel.getColumnCount()>6 && itemsTableModel.getValueAt(row,6)!=null)
+            return Numbers.positiveQuantity(itemsTableModel.getValueAt(row,6));
+        try (PreparedStatement p = c.prepareStatement("SELECT id FROM products WHERE code=?")) {
+            p.setString(1, String.valueOf(itemsTableModel.getValueAt(row,0)));
+            try (ResultSet r = p.executeQuery()) {
+                if (!r.next()) throw new SQLException("Product no longer exists: " + itemsTableModel.getValueAt(row,0));
+                return r.getInt(1);
+            }
         }
     }
 
     private void saveOrder() {
         try {
+            Numbers.commitEdits(itemsTable);
             // Validation
             if (itemsTableModel.getRowCount() == 0) {
                 JOptionPane.showMessageDialog(this,
@@ -505,8 +462,8 @@ public class SupplierOrderDialog extends JDialog {
             // Calculate total
             double total = 0.0;
             for (int i = 0; i < itemsTableModel.getRowCount(); i++) {
-                total += parseInteger(itemsTableModel.getValueAt(i, 2))
-                    * parseDouble(itemsTableModel.getValueAt(i, 3));
+                total = Numbers.add(total, Numbers.lineTotal(parseInteger(itemsTableModel.getValueAt(i, 2)),
+                    parseDouble(itemsTableModel.getValueAt(i, 3))));
             }
 
             String newStatus = (String)statusCombo.getSelectedItem();
@@ -518,26 +475,18 @@ public class SupplierOrderDialog extends JDialog {
                 String productName = (String)itemsTableModel.getValueAt(i, 1);
                 int quantity = parseInteger(itemsTableModel.getValueAt(i, 2));
 
-                // Find product ID by code
-                int productId = -1;
-                for (Product p : productsCache.values()) {
-                    if (p.getCode().equals(code)) {
-                        productId = p.getId();
-                        break;
-                    }
-                }
-                if (productId != -1) {
-                    stockItems.add(new StockManager.StockItem(productId, productName, quantity));
-                }
+                int productId = productIdForRow(DatabaseManager.getInstance().getConnection(), i);
+                stockItems.add(new StockManager.StockItem(productId, productName, quantity));
             }
 
             Connection conn = DatabaseManager.getInstance().getConnection();
-            conn.setAutoCommit(false);
+            DatabaseManager.beginTransaction(conn);
 
             try {
                 int orderId;
 
                 if (order == null) {
+                    numberField.setText(DocumentNumbers.nextSupplierNumber(conn, orderDate));
                     // Insert new order
                     String orderQuery = """
                         INSERT INTO supplier_orders (
@@ -579,6 +528,13 @@ public class SupplierOrderDialog extends JDialog {
                     orderId = order.getId();
                     List<StockManager.StockItem> oldStockItems = loadStoredStockItems(conn, orderId);
 
+                    try (PreparedStatement p = conn.prepareStatement("SELECT status FROM supplier_orders WHERE id=?")) {
+                        p.setInt(1, orderId);
+                        try (ResultSet r = p.executeQuery()) {
+                            if (!r.next()) throw new SQLException("Supplier order no longer exists");
+                            previousStatus = r.getString(1);
+                        }
+                    }
                     if ("Completed".equals(previousStatus)) {
                         StockManager.reverseSupplierOrder(conn, oldStockItems, order.getNumber());
                     }
@@ -620,14 +576,14 @@ public class SupplierOrderDialog extends JDialog {
                 orderSaved = true;
                 dispose();
 
-            } catch (SQLException e) {
+            } catch (Exception e) {
                 conn.rollback();
                 throw e;
             } finally {
                 conn.setAutoCommit(true);
             }
 
-        } catch (SQLException e) {
+        } catch (Exception e) {
             e.printStackTrace();
             JOptionPane.showMessageDialog(this,
                 "Error saving the order: " + e.getMessage(),
@@ -666,19 +622,11 @@ public class SupplierOrderDialog extends JDialog {
 
         try (PreparedStatement pstmt = conn.prepareStatement(detailQuery)) {
             for (int i = 0; i < itemsTableModel.getRowCount(); i++) {
-                String code = (String)itemsTableModel.getValueAt(i, 0);
-                int productId = -1;
-                for (Product p : productsCache.values()) {
-                    if (p.getCode().equals(code)) {
-                        productId = p.getId();
-                        break;
-                    }
-                }
-                if (productId == -1) continue;
+                int productId = productIdForRow(conn, i);
 
                 int quantity = parseInteger(itemsTableModel.getValueAt(i, 2));
                 double unitPrice = parseDouble(itemsTableModel.getValueAt(i, 3));
-                double total = parseDouble(itemsTableModel.getValueAt(i, 4));
+                double total = Numbers.lineTotal(quantity, unitPrice);
                 String notes = (String)itemsTableModel.getValueAt(i, 5);
 
                 pstmt.setInt(1, orderId);
@@ -689,29 +637,6 @@ public class SupplierOrderDialog extends JDialog {
                 pstmt.setString(6, notes);
                 pstmt.executeUpdate();
             }
-        }
-    }
-
-    private void handleStatusChange(Connection conn, int orderId, String oldStatus, String newStatus,
-                                    List<StockManager.StockItem> items, Date orderDate) throws SQLException {
-        // Supplier orders only increment stock when marked as Completed
-        // If changing FROM Completed to another status, we need to reverse the stock increment
-        if ("Completed".equals(oldStatus) && !"Completed".equals(newStatus)) {
-            // Reverse stock increment: decrement it back
-            for (StockManager.StockItem item : items) {
-                String query = "UPDATE products SET quantity = quantity - ? WHERE id = ?";
-                try (PreparedStatement pstmt = conn.prepareStatement(query)) {
-                    pstmt.setInt(1, item.getQuantity());
-                    pstmt.setInt(2, item.getProductId());
-                    pstmt.executeUpdate();
-                }
-            }
-        }
-
-        // If changing TO Completed from another status, increment stock
-        if ("Completed".equals(newStatus) && !"Completed".equals(oldStatus)) {
-            StockManager.incrementStock(conn, items, orderDate,
-                numberField.getText(), "SUPPLIER_ORDER");
         }
     }
 

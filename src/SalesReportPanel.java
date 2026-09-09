@@ -138,88 +138,27 @@ public class SalesReportPanel extends JPanel {
         SwingUtilities.invokeLater(() -> loadReportData());
     }
 
+    private boolean reportValid;
+
     private void loadReportData() {
+        reportValid=false;
         tableModel.setRowCount(0);
+        updateStatistics(0,0);
         try {
-            String startDateText = startDateField.getText().trim();
-            String endDateText = endDateField.getText().trim();
-
+            Date start = DateUtils.parseDate(startDateField.getText(),dateFormat);
+            Date end = DateUtils.parseDate(endDateField.getText(),dateFormat);
+            if (start!=null && end!=null && start.after(end)) throw new IllegalArgumentException("Start date must not follow end date");
             Connection conn = DatabaseManager.getInstance().getConnection();
-            String query;
-            PreparedStatement pstmt = null;
-
-            // If dates are empty, load everything
-            if (startDateText.isEmpty() || endDateText.isEmpty()) {
-                query = """
-                    SELECT o.id, o.order_date, o.status, o.total,
-                           COALESCE(c.first_name || ' ' || c.last_name, 'N/A') as customer_name
-                    FROM orders o
-                    LEFT JOIN customers c ON o.customer_id = c.id
-                    ORDER BY o.order_date DESC
-                    LIMIT 1000
-                """;
-                pstmt = conn.prepareStatement(query);
-                System.out.println("Loading all orders (no date filter)");
-            } else {
-                // Try to parse dates
-                Date startDate = null;
-                Date endDate = null;
-
-                try {
-                    startDate = DateUtils.parseDate(startDateText, dateFormat);
-                    endDate = DateUtils.parseDate(endDateText, dateFormat);
-                } catch (Exception e) {
-                    System.err.println("Error parsing dates: " + e.getMessage());
-                }
-
-                if (startDate == null || endDate == null) {
-                    JOptionPane.showMessageDialog(this,
-                        "Invalid date format. Use dd/MM/yyyy\nLoading all orders instead.",
-                        "Warning", JOptionPane.WARNING_MESSAGE);
-
-                    // Fallback: load everything
-                    query = """
-                        SELECT o.id, o.order_date, o.status, o.total,
-                               COALESCE(c.first_name || ' ' || c.last_name, 'N/A') as customer_name
-                        FROM orders o
-                        LEFT JOIN customers c ON o.customer_id = c.id
-                        ORDER BY o.order_date DESC
-                        LIMIT 1000
-                    """;
-                    pstmt = conn.prepareStatement(query);
-                } else {
-                    // DATE FILTER WITH SIMPLE STRING APPROACH
-                    query = """
-                        SELECT o.id, o.order_date, o.status, o.total,
-                               COALESCE(c.first_name || ' ' || c.last_name, 'N/A') as customer_name
-                        FROM orders o
-                        LEFT JOIN customers c ON o.customer_id = c.id
-                        WHERE ((typeof(o.order_date) IN ('integer', 'real')
-                                AND CAST(o.order_date AS INTEGER) >= ? AND CAST(o.order_date AS INTEGER) < ?)
-                            OR (typeof(o.order_date) = 'text'
-                                AND datetime(o.order_date) >= datetime(?) AND datetime(o.order_date) < datetime(?)))
-                        ORDER BY o.order_date DESC
-                    """;
-
-                    pstmt = conn.prepareStatement(query);
-
-                    // CONVERT DATES TO ISO STRING FOR COMPARISON
-                    String startDateISO = new SimpleDateFormat("yyyy-MM-dd 00:00:00").format(startDate);
-                    Calendar endExclusive = Calendar.getInstance();
-                    endExclusive.setTime(endDate);
-                    endExclusive.add(Calendar.DAY_OF_MONTH, 1);
-                    String endDateISO = String.format("%04d-%02d-%02d 00:00:00",
-                        endExclusive.get(Calendar.YEAR), endExclusive.get(Calendar.MONTH) + 1,
-                        endExclusive.get(Calendar.DAY_OF_MONTH));
-
-                    pstmt.setLong(1, startDate.getTime());
-                    pstmt.setLong(2, endExclusive.getTimeInMillis());
-                    pstmt.setString(3, startDateISO);
-                    pstmt.setString(4, endDateISO);
-
-                    System.out.println("Filtering orders from " + startDateISO + " to " + endDateISO);
-                }
-            }
+            String query = "SELECT o.id,o.order_date,o.status,o.total,COALESCE(c.first_name || ' ' || c.last_name,'N/A') customer_name " +
+                "FROM orders o LEFT JOIN customers c ON c.id=o.customer_id WHERE o.status='Completed'";
+            if (start!=null) query += " AND " + DateUtils.sqlDate("o.order_date") + ">=?";
+            if (end!=null) query += " AND " + DateUtils.sqlDate("o.order_date") + "<=?";
+            query += " ORDER BY " + DateUtils.sqlDate("o.order_date") + " DESC,o.id DESC";
+            PreparedStatement pstmt = conn.prepareStatement(query);
+            int parameter=1;
+            SimpleDateFormat iso=new SimpleDateFormat("yyyy-MM-dd");
+            if (start!=null) pstmt.setString(parameter++,iso.format(start));
+            if (end!=null) pstmt.setString(parameter++,iso.format(end));
 
             try (ResultSet rs = pstmt.executeQuery()) {
                 double totalSales = 0;
@@ -244,12 +183,13 @@ public class SalesReportPanel extends JPanel {
 
                     tableModel.addRow(row);
 
-                    totalSales += total;
+                    totalSales = Numbers.add(totalSales,total);
                     totalOrders++;
                 }
 
                 // Update statistics
                 updateStatistics(totalSales, totalOrders);
+                reportValid=true;
 
                 System.out.println("Loaded " + totalOrders + " orders, total sales: " + SettingsPanel.formatCurrency(totalSales));
             }
@@ -343,12 +283,13 @@ public class SalesReportPanel extends JPanel {
     }
 
     private void exportToPDF() {
+        loadReportData();if(!reportValid)return;
         String subtitle = String.format("From: %s to: %s", startDateField.getText(), endDateField.getText());
         String fileName = String.format("sales_report_%s.pdf", new SimpleDateFormat("yyyyMMdd").format(new Date()));
 
         ReportPDFGenerator pdfGenerator = new ReportPDFGenerator(
             tableModel,
-            "Sales Report",
+            "Sales Report - Completed Orders",
             subtitle,
             fileName
         );
@@ -357,6 +298,7 @@ public class SalesReportPanel extends JPanel {
     }
 
     private void exportToCSV() {
+        loadReportData();if(!reportValid)return;
         JFileChooser fileChooser = new JFileChooser();
         fileChooser.setDialogTitle("Export Report to CSV");
         fileChooser.setFileFilter(new FileNameExtensionFilter("CSV files (*.csv)", "csv"));
@@ -372,7 +314,7 @@ public class SalesReportPanel extends JPanel {
                 // Column headers
                 for (int i = 0; i < tableModel.getColumnCount(); i++) {
                     if (i > 0) writer.print(",");
-                    writer.print(tableModel.getColumnName(i));
+                    writer.print(Csv.cell(tableModel.getColumnName(i)));
                 }
                 writer.println();
 
@@ -381,10 +323,7 @@ public class SalesReportPanel extends JPanel {
                     StringBuilder line = new StringBuilder();
                     for (int j = 0; j < tableModel.getColumnCount(); j++) {
                         if (j > 0) line.append(",");
-                        String value = tableModel.getValueAt(i, j).toString();
-                        if (value.contains(",")) {
-                            value = "\"" + value + "\"";
-                        }
+                        String value = Csv.cell(tableModel.getValueAt(i, j));
                         line.append(value);
                     }
                     writer.println(line);
@@ -392,10 +331,11 @@ public class SalesReportPanel extends JPanel {
 
                 writer.println();
                 writer.println("Summary");
-                writer.println("Total Sales," + totalSalesLabel.getText().replace("Total Sales: ", ""));
-                writer.println("Number of Orders," + totalOrdersLabel.getText().replace("Number of Orders: ", ""));
-                writer.println("Average per Order," + averageOrderLabel.getText().replace("Average per Order: ", ""));
+                writer.println("Total Sales," + Csv.cell(totalSalesLabel.getText().replace("Total Sales: ", "")));
+                writer.println("Number of Orders," + Csv.cell(totalOrdersLabel.getText().replace("Number of Orders: ", "")));
+                writer.println("Average per Order," + Csv.cell(averageOrderLabel.getText().replace("Average per Order: ", "")));
 
+                Csv.finish(writer);
                 JOptionPane.showMessageDialog(this,
                     "Report exported successfully",
                     "Export complete", JOptionPane.INFORMATION_MESSAGE);
@@ -408,4 +348,5 @@ public class SalesReportPanel extends JPanel {
             }
         }
     }
+    public void refreshData() { loadReportData(); }
 }

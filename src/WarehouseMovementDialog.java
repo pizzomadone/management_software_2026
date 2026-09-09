@@ -76,6 +76,7 @@ public class WarehouseMovementDialog extends JDialog {
         gbc.gridx = 1;
         gbc.weightx = 1.0;
         selectProductButton = new JButton("Click to select product...");
+        selectProductButton.putClientProperty("i18n.literal", true);
         selectProductButton.setPreferredSize(new Dimension(300, 35));
         selectProductButton.setHorizontalAlignment(SwingConstants.LEFT);
         selectProductButton.addActionListener(e -> showProductSelectionDialog());
@@ -89,6 +90,7 @@ public class WarehouseMovementDialog extends JDialog {
         gbc.gridx = 1;
         gbc.weightx = 1.0;
         typeCombo = new JComboBox<>(new String[]{"INWARD", "OUTWARD"});
+        typeCombo.putClientProperty("i18n.values", true);
         typeCombo.setPreferredSize(new Dimension(300, 28));
         typeCombo.addActionListener(e -> updateAvailabilityCheck());
         formPanel.add(typeCombo, gbc);
@@ -137,6 +139,7 @@ public class WarehouseMovementDialog extends JDialog {
             "PURCHASE", "SALE", "CUSTOMER RETURN", "SUPPLIER RETURN",
             "INVENTORY", "GIFT", "THEFT/LOSS", "OTHER"
         });
+        reasonCombo.putClientProperty("i18n.values", true);
         reasonCombo.setPreferredSize(new Dimension(300, 28));
         formPanel.add(reasonCombo, gbc);
 
@@ -159,7 +162,7 @@ public class WarehouseMovementDialog extends JDialog {
         gbc.gridx = 1;
         gbc.weightx = 1.0;
         documentTypeCombo = new JComboBox<>(new String[]{
-            "", "DDT", "INVOICE", "ORDER", "INVENTORY"
+            "", "DDT", "INVOICE", "OTHER", "INVENTORY"
         });
         documentTypeCombo.setPreferredSize(new Dimension(300, 28));
         formPanel.add(documentTypeCombo, gbc);
@@ -368,6 +371,7 @@ public class WarehouseMovementDialog extends JDialog {
     // Save movement method
     private void saveMovement() {
         try {
+            quantitySpinner.commitEdit();
             // Validation
             if (selectedProduct == null) {
                 JOptionPane.showMessageDialog(this,
@@ -377,9 +381,13 @@ public class WarehouseMovementDialog extends JDialog {
             }
 
             String type = (String)typeCombo.getSelectedItem();
-            int quantity = (Integer)quantitySpinner.getValue();
+            int quantity = Numbers.positiveQuantity(quantitySpinner.getValue());
             String reason = (String)reasonCombo.getSelectedItem();
 
+            Connection conn = DatabaseManager.getInstance().getConnection();
+            DatabaseManager.beginTransaction(conn);
+            try {
+                if (movement != null) StockManager.requireManualMovement(conn, movement.getId());
             // Check availability for outward movements
             if ("OUTWARD".equals(type)) {
                 int availability = getCurrentStock(selectedProduct.getId());
@@ -392,22 +400,19 @@ public class WarehouseMovementDialog extends JDialog {
                         String.format("Insufficient quantity. Current availability: %d\n" +
                                      "Requested: %d\n\n" +
                                      "Do you want to proceed anyway?\n" +
-                                     "This will result in negative stock.",
+                                     I18n.tr("This will result in negative stock."),
                                      availability, quantity),
                         "Insufficient Stock",
                         JOptionPane.YES_NO_OPTION,
                         JOptionPane.WARNING_MESSAGE);
 
                     if (choice != JOptionPane.YES_OPTION) {
+                        conn.rollback();
                         return;
                     }
                 }
             }
 
-            Connection conn = DatabaseManager.getInstance().getConnection();
-            conn.setAutoCommit(false);
-
-            try {
                 if (movement == null) {
                     // Insert new movement
                     String insertQuery = """
@@ -500,14 +505,14 @@ public class WarehouseMovementDialog extends JDialog {
 
                 dispose();
 
-            } catch (SQLException e) {
+            } catch (Exception e) {
                 conn.rollback();
                 throw e;
             } finally {
                 conn.setAutoCommit(true);
             }
 
-        } catch (SQLException e) {
+        } catch (Exception e) {
             e.printStackTrace();
             JOptionPane.showMessageDialog(this,
                 "Error saving movement: " + e.getMessage(),

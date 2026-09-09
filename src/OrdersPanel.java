@@ -380,7 +380,7 @@ public class OrdersPanel extends JPanel {
             if (result == JOptionPane.YES_OPTION) {
                 try {
                     Connection conn = DatabaseManager.getInstance().getConnection();
-                    conn.setAutoCommit(false);
+                    DatabaseManager.beginTransaction(conn);
 
                     try {
                         // Restore stock and handle reservations based on order status
@@ -488,7 +488,7 @@ public class OrdersPanel extends JPanel {
             }
 
             Connection conn = DatabaseManager.getInstance().getConnection();
-            conn.setAutoCommit(false);
+            DatabaseManager.beginTransaction(conn);
 
             try {
                 // Generate invoice number
@@ -519,13 +519,13 @@ public class OrdersPanel extends JPanel {
                 double vatTotal = 0.0;
 
                 for (OrderItem item : order.getItems()) {
-                    double itemTaxable = item.getQuantity() * item.getUnitPrice();
-                    double itemVat = itemTaxable * vatRates.get(item.getProductId()) / 100.0;
-                    taxableAmount += itemTaxable;
-                    vatTotal += itemVat;
+                    double itemTaxable = Numbers.lineTotal(item.getQuantity(), item.getUnitPrice());
+                    double itemVat = Numbers.tax(itemTaxable, Numbers.vat(vatRates.get(item.getProductId())));
+                    taxableAmount = Numbers.add(taxableAmount,itemTaxable);
+                    vatTotal = Numbers.add(vatTotal,itemVat);
                 }
 
-                double total = taxableAmount + vatTotal;
+                double total = Numbers.add(taxableAmount,vatTotal);
 
                 // Insert invoice
                 String insertInvoice = """
@@ -558,7 +558,7 @@ public class OrdersPanel extends JPanel {
 
                 try (PreparedStatement pstmt = conn.prepareStatement(insertDetails)) {
                     for (OrderItem item : order.getItems()) {
-                        double itemTaxable = item.getQuantity() * item.getUnitPrice();
+                        double itemTaxable = Numbers.lineTotal(item.getQuantity(), item.getUnitPrice());
                         double vatRate = vatRates.get(item.getProductId());
 
                         pstmt.setInt(1, invoiceId);
@@ -572,6 +572,7 @@ public class OrdersPanel extends JPanel {
                     pstmt.executeBatch();
                 }
 
+                InvoiceSnapshots.capture(conn,invoiceId,false);
                 // Commit transaction (verify we're still in transaction mode)
                 if (!conn.getAutoCommit()) {
                     conn.commit();
@@ -657,4 +658,5 @@ public class OrdersPanel extends JPanel {
             "Order Not Found",
             JOptionPane.INFORMATION_MESSAGE);
     }
+    public void refreshData() { loadOrders(); }
 }

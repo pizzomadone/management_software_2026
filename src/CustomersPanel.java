@@ -297,11 +297,11 @@ public class CustomersPanel extends JPanel {
         }
 
         try {
-            conn.setAutoCommit(false);
+            DatabaseManager.beginTransaction(conn);
 
             try {
                 try (PreparedStatement pstmt = conn.prepareStatement(
-                        "UPDATE invoices SET order_id = NULL WHERE customer_id = ?")) {
+                        "UPDATE invoices SET order_id = NULL WHERE order_id IN (SELECT id FROM orders WHERE customer_id = ?)")) {
                     pstmt.setInt(1, id);
                     pstmt.executeUpdate();
                 }
@@ -406,4 +406,5 @@ public class CustomersPanel extends JPanel {
             return rs.next() && rs.getInt(1) > 0;
         }
     }
+    public void refreshData() { loadCustomers(); }
 }

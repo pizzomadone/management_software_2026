@@ -54,7 +54,8 @@ public class WarehouseReportPanel extends JPanel {
         statsPanel.setBorder(BorderFactory.createTitledBorder("General Statistics"));
 
         JLabel totalProductsLabel = new JLabel("Total Products: 0");
-        JLabel totalValueLabel = new JLabel("Total Value: " + SettingsPanel.formatCurrency(0));
+        JLabel totalValueLabel = new JLabel("Stock at standard cost: " + SettingsPanel.formatCurrency(0));
+        totalValueLabel.setToolTipText("Only active products with positive stock are valued at current catalog prices.");
         JLabel lowStockLabel = new JLabel("Low Stock Products: 0");
         JLabel outOfStockLabel = new JLabel("Out of Stock Products: 0");
 
@@ -64,7 +65,7 @@ public class WarehouseReportPanel extends JPanel {
         statsPanel.add(outOfStockLabel);
 
         // Products Table
-        String[] columns = {"Code", "Product", "Quantity", "Unit Value", "Total Value", "Status"};
+        String[] columns = {"Code", "Product", "Quantity", "Acquisition Cost", "Stock at standard cost", "Status"};
         productsModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -114,6 +115,7 @@ public class WarehouseReportPanel extends JPanel {
         startDateField = new DatePickerField(10);
         endDateField = new DatePickerField(10, true);
         typeCombo = new JComboBox<>(new String[]{"All", "INWARD", "OUTWARD"});
+        typeCombo.putClientProperty("i18n.values", true);
 
         // Set default dates (last month)
         java.util.Calendar cal = java.util.Calendar.getInstance();
@@ -173,14 +175,21 @@ public class WarehouseReportPanel extends JPanel {
         loadMovementsData();
     }
 
+    private boolean productsValid, movementsValid;
+
     private void loadProductsData() {
+        productsValid=false;
         productsModel.setRowCount(0);
+        JPanel statsPanel = (JPanel)((JPanel)tabbedPane.getComponentAt(0)).getComponent(0);
+        for (Component component : statsPanel.getComponents())
+            if (component instanceof JLabel label) label.setText("—");
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
-                SELECT p.*, COALESCE(sm.minimum_quantity, 0) as minimum_quantity
+                SELECT p.*, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity
                 FROM products p
-                LEFT JOIN minimum_stock sm ON p.id = sm.product_id
+                LEFT JOIN minimum_stock sm ON sm.product_id = p.id
+                WHERE p.active=1
                 ORDER BY p.name
             """;
 
@@ -196,9 +205,9 @@ public class WarehouseReportPanel extends JPanel {
                     row.add(rs.getString("code"));
                     row.add(rs.getString("name"));
 
-                    int quantity = rs.getInt("quantity");
-                    double price = rs.getDouble("price");
-                    double totalValueProduct = quantity * price;
+                    int quantity = Numbers.quantity(rs.getObject("quantity"));
+                    double price = Numbers.nonNegative(rs.getObject("acquisition_cost"));
+                    double totalValueProduct = Numbers.stockValue(quantity,price);
                     int minQuantity = rs.getInt("minimum_quantity");
 
                     row.add(quantity);
@@ -220,14 +229,16 @@ public class WarehouseReportPanel extends JPanel {
 
                     productsModel.addRow(row);
                     totalProducts++;
-                    totalValue += totalValueProduct;
+                    totalValue = Numbers.add(totalValue,totalValueProduct);
                 }
             }
 
             // Update statistics
             updateStatistics(totalProducts, totalValue, lowStock, outOfStock);
+            productsValid=true;
 
-        } catch (SQLException e) {
+        } catch (Exception e) {
+            productsModel.setRowCount(0);
             e.printStackTrace();
             JOptionPane.showMessageDialog(this,
                 "Error loading data: " + e.getMessage(),
@@ -243,7 +254,7 @@ public class WarehouseReportPanel extends JPanel {
 
             if (statsPanel.getComponentCount() >= 4) {
                 updateLocalizedStatistic((JLabel) statsPanel.getComponent(0), "Total Products", totalProducts);
-                updateLocalizedStatistic((JLabel) statsPanel.getComponent(1), "Total Value",
+                updateLocalizedStatistic((JLabel) statsPanel.getComponent(1), "Stock at standard cost",
                     SettingsPanel.formatCurrency(totalValue));
                 updateLocalizedStatistic((JLabel) statsPanel.getComponent(2), "Low Stock Products", lowStock);
                 updateLocalizedStatistic((JLabel) statsPanel.getComponent(3), "Out of Stock Products", outOfStock);
@@ -259,6 +270,7 @@ public class WarehouseReportPanel extends JPanel {
     }
 
     private void loadMovementsData() {
+        movementsValid=false;
         movementsModel.setRowCount(0);
         try {
             String startDateText = startDateField.getText().trim();
@@ -279,16 +291,18 @@ public class WarehouseReportPanel extends JPanel {
             Date startDate = null;
             Date endDate = null;
 
-            if (!startDateText.isEmpty() && !endDateText.isEmpty()) {
+            if (!startDateText.isEmpty() || !endDateText.isEmpty()) {
+                if (startDateText.isEmpty() || endDateText.isEmpty()) throw new IllegalArgumentException("Enter both dates for the movement report");
                 try {
                     startDate = DateUtils.parseDate(startDateText, dateFormat);
                     endDate = DateUtils.parseDate(endDateText, dateFormat);
                     if (startDate != null && endDate != null) {
-                        query += " AND DATE(m.date) >= DATE(?) AND DATE(m.date) <= DATE(?)";
+                        if(startDate.after(endDate)) throw new IllegalArgumentException("Start date must not follow end date");
+                        query += " AND " + DateUtils.sqlDate("m.date") + " >= ? AND " + DateUtils.sqlDate("m.date") + " <= ?";
                         hasDateFilter = true;
                     }
                 } catch (Exception e) {
-                    // Ignore date parsing errors and load all data
+                    throw new IllegalArgumentException("Invalid movement report dates",e);
                 }
             }
 
@@ -343,6 +357,7 @@ public class WarehouseReportPanel extends JPanel {
                     movementsModel.addRow(row);
                 }
             }
+            movementsValid=true;
         } catch (Exception e) {
             e.printStackTrace();
             JOptionPane.showMessageDialog(this,
@@ -352,6 +367,7 @@ public class WarehouseReportPanel extends JPanel {
     }
 
     private void exportProductsToPDF() {
+        loadProductsData();if(!productsValid)return;
         String fileName = String.format("warehouse_products_%s.pdf", new SimpleDateFormat("yyyyMMdd").format(new Date()));
 
         ReportPDFGenerator pdfGenerator = new ReportPDFGenerator(
@@ -365,6 +381,7 @@ public class WarehouseReportPanel extends JPanel {
     }
 
     private void exportMovementsToPDF() {
+        loadMovementsData();if(!movementsValid)return;
         String subtitle = String.format("From: %s to: %s",
             startDateField != null ? startDateField.getText() : "N/A",
             endDateField != null ? endDateField.getText() : "N/A");
@@ -381,6 +398,7 @@ public class WarehouseReportPanel extends JPanel {
     }
 
     private void exportProductsToCSV() {
+        loadProductsData();if(!productsValid)return;
         JFileChooser fileChooser = new JFileChooser();
         fileChooser.setDialogTitle("Save CSV Report");
         fileChooser.setSelectedFile(new File("warehouse_report.csv"));
@@ -389,22 +407,20 @@ public class WarehouseReportPanel extends JPanel {
             try (PrintWriter writer = new PrintWriter(new FileWriter(fileChooser.getSelectedFile(), java.nio.charset.StandardCharsets.UTF_8))) {
                 // Headers
                 for (int i = 0; i < productsModel.getColumnCount(); i++) {
-                    writer.print(productsModel.getColumnName(i));
+                    writer.print(Csv.cell(productsModel.getColumnName(i)));
                     writer.print(i < productsModel.getColumnCount() - 1 ? "," : "\n");
                 }
 
                 // Data
                 for (int row = 0; row < productsModel.getRowCount(); row++) {
                     for (int col = 0; col < productsModel.getColumnCount(); col++) {
-                        String value = productsModel.getValueAt(row, col).toString();
-                        if (value.contains(",")) {
-                            value = "\"" + value + "\"";
-                        }
+                        String value = Csv.cell(productsModel.getValueAt(row, col));
                         writer.print(value);
                         writer.print(col < productsModel.getColumnCount() - 1 ? "," : "\n");
                     }
                 }
 
+                Csv.finish(writer);
                 JOptionPane.showMessageDialog(this,
                     "Report exported successfully",
                     "Export Completed",
@@ -420,6 +436,7 @@ public class WarehouseReportPanel extends JPanel {
     }
 
     private void exportMovementsToCSV() {
+        loadMovementsData();if(!movementsValid)return;
         JFileChooser fileChooser = new JFileChooser();
         fileChooser.setDialogTitle("Save Movements CSV Report");
         fileChooser.setSelectedFile(new File("warehouse_movements_report.csv"));
@@ -433,22 +450,20 @@ public class WarehouseReportPanel extends JPanel {
 
                 // Column headers
                 for (int i = 0; i < movementsModel.getColumnCount(); i++) {
-                    writer.print(movementsModel.getColumnName(i));
+                    writer.print(Csv.cell(movementsModel.getColumnName(i)));
                     writer.print(i < movementsModel.getColumnCount() - 1 ? "," : "\n");
                 }
 
                 // Data
                 for (int row = 0; row < movementsModel.getRowCount(); row++) {
                     for (int col = 0; col < movementsModel.getColumnCount(); col++) {
-                        String value = movementsModel.getValueAt(row, col).toString();
-                        if (value.contains(",")) {
-                            value = "\"" + value + "\"";
-                        }
+                        String value = Csv.cell(movementsModel.getValueAt(row, col));
                         writer.print(value);
                         writer.print(col < movementsModel.getColumnCount() - 1 ? "," : "\n");
                     }
                 }
 
+                Csv.finish(writer);
                 JOptionPane.showMessageDialog(this,
                     "Movements report exported successfully",
                     "Export Completed",
@@ -462,4 +477,5 @@ public class WarehouseReportPanel extends JPanel {
             }
         }
     }
+    public void refreshData() { loadData(); }
 }

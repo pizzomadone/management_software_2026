@@ -112,6 +112,7 @@ public class InvoiceDialog extends JDialog {
 
         gbc.gridx = 1; gbc.gridwidth = 2;
         selectCustomerButton = new JButton("Click to select customer...");
+        selectCustomerButton.putClientProperty("i18n.literal", true);
         selectCustomerButton.setPreferredSize(new Dimension(300, 35));
         selectCustomerButton.setHorizontalAlignment(SwingConstants.LEFT);
         selectCustomerButton.addActionListener(e -> showCustomerSelectionDialog());
@@ -128,13 +129,15 @@ public class InvoiceDialog extends JDialog {
 
         gbc.gridx = 1;
         statusCombo = new JComboBox<>(new String[]{"Draft", "Issued", "Paid", "Canceled"});
+        statusCombo.putClientProperty("i18n.values", true);
         invoicePanel.add(statusCombo, gbc);
 
         // Products table
         String symbol = SettingsPanel.getCurrencySymbol();
-        String[] columns = {"Code", "Product", "Quantity", "Unit Price " + symbol, "VAT Rate %", "Total " + symbol};
+        String[] columns = {"Code", "Product", "Quantity", "Unit Price " + symbol, "VAT Rate %", "Total " + symbol, "Product ID"};
         itemsTableModel = new InvoiceTableModel(columns, 0);
         itemsTable = new JTable(itemsTableModel);
+        itemsTable.removeColumn(itemsTable.getColumnModel().getColumn(6));
 
         // Configure table
         itemsTable.getColumnModel().getColumn(0).setPreferredWidth(80);
@@ -255,7 +258,7 @@ public class InvoiceDialog extends JDialog {
                         intValue = Integer.parseInt(value.toString().trim());
                     }
 
-                    if (intValue < 0) {
+                    if (intValue <= 0) {
                         throw new NumberFormatException("Negative quantity not allowed");
                     }
 
@@ -263,7 +266,7 @@ public class InvoiceDialog extends JDialog {
                     SwingUtilities.invokeLater(() -> updateTotals());
 
                 } catch (NumberFormatException e) {
-                    super.setValueAt(1, row, col);
+                    super.setValueAt(value, row, col);
                     SwingUtilities.invokeLater(() -> {
                         JOptionPane.showMessageDialog(InvoiceDialog.this,
                             "Invalid quantity. Please enter a positive integer.",
@@ -283,7 +286,7 @@ public class InvoiceDialog extends JDialog {
                 try {
                     String value = (String) getCellEditorValue();
                     int intValue = Integer.parseInt(value.trim());
-                    if (intValue < 0) {
+                    if (intValue <= 0) {
                         throw new NumberFormatException("Quantity cannot be negative");
                     }
                     return super.stopCellEditing();
@@ -365,9 +368,10 @@ public class InvoiceDialog extends JDialog {
             row.add(product.getCode());
             row.add(product.getName());
             row.add(quantity);
-            row.add(String.format("%.2f", product.getPrice()));
-            row.add(String.format("%.1f", vatRate));
-            row.add(String.format("%.2f", quantity * product.getPrice()));
+            row.add(product.getPrice());
+            row.add(vatRate);
+            row.add(String.format("%.2f", Numbers.lineTotal(quantity, product.getPrice())));
+            row.add(product.getId());
             itemsTableModel.addRow(row);
 
             updateTotals();
@@ -484,9 +488,10 @@ public class InvoiceDialog extends JDialog {
             row.add(item.getProductCode());
             row.add(item.getProductName());
             row.add(item.getQuantity());
-            row.add(String.format("%.2f", item.getUnitPrice()));
-            row.add(String.format("%.2f", item.getVatRate()));
+            row.add(item.getUnitPrice());
+            row.add(item.getVatRate());
             row.add(String.format("%.2f", item.getTotal()));
+            row.add(item.getProductId());
             itemsTableModel.addRow(row);
         }
 
@@ -511,11 +516,11 @@ public class InvoiceDialog extends JDialog {
                     double price = parseDouble(priceObj);
                     double vatRate = parseDouble(vatRateObj);
 
-                    double subtotal = quantity * price;
-                    double vat = subtotal * (vatRate / 100);
+                    double subtotal = Numbers.lineTotal(quantity, price);
+                    double vat = Numbers.tax(subtotal, vatRate);
 
-                    taxableAmount += subtotal;
-                    totalVat += vat;
+                    taxableAmount = Numbers.add(taxableAmount, subtotal);
+                    totalVat = Numbers.add(totalVat, vat);
 
                     String currentTotal = (String) itemsTableModel.getValueAt(i, 5);
                     String newTotal = String.format("%.2f", subtotal);
@@ -524,12 +529,11 @@ public class InvoiceDialog extends JDialog {
                     }
 
                 } catch (Exception e) {
-                    System.err.println("Error processing row " + i + ": " + e.getMessage());
-                    continue;
+                    throw new IllegalArgumentException("Invalid invoice row " + (i+1),e);
                 }
             }
 
-            double total = taxableAmount + totalVat;
+            double total = Numbers.add(taxableAmount, totalVat);
 
             currentTaxableAmount = taxableAmount;
             currentVat = totalVat;
@@ -539,36 +543,44 @@ public class InvoiceDialog extends JDialog {
             vatLabel.setText("VAT: " + SettingsPanel.formatCurrency(totalVat));
             totalLabel.setText("TOTAL: " + SettingsPanel.formatCurrency(total));
 
+        } catch(IllegalArgumentException e) {
+            taxableAmountLabel.setText("Invalid invoice row");vatLabel.setText("");totalLabel.setText("Correct quantity, price and VAT before saving");
         } finally {
             isUpdatingTotals = false;
         }
     }
 
-    private int parseInteger(Object obj) {
-        if (obj instanceof Integer) {
-            return (Integer) obj;
+    private int parseInteger(Object value) { return Numbers.positiveQuantity(value); }
+    private double parseDouble(Object value) { return Numbers.nonNegative(value); }
+
+    private void validateRows() {
+        Numbers.commitEdits(itemsTable);
+        double taxable = 0, tax = 0;
+        for (int i=0; i<itemsTableModel.getRowCount(); i++) {
+            double line = Numbers.lineTotal(Numbers.positiveQuantity(itemsTableModel.getValueAt(i,2)),
+                Numbers.nonNegative(itemsTableModel.getValueAt(i,3)));
+            taxable = Numbers.add(taxable, line);
+            tax = Numbers.add(tax, Numbers.tax(line, Numbers.vat(itemsTableModel.getValueAt(i,4))));
         }
-        try {
-            return Integer.parseInt(obj.toString().trim());
-        } catch (NumberFormatException e) {
-            return 0;
-        }
+        currentTaxableAmount = taxable; currentVat = tax; currentTotal = Numbers.add(taxable, tax);
+        updateTotals();
     }
 
-    private double parseDouble(Object obj) {
-        if (obj instanceof Double) {
-            return (Double) obj;
-        }
-        try {
-            String str = obj.toString().replace(",", ".");
-            return Double.parseDouble(str.trim());
-        } catch (NumberFormatException e) {
-            return 0.0;
+    private int productIdForRow(Connection c, int row) throws SQLException {
+        if (itemsTableModel.getColumnCount()>6 && itemsTableModel.getValueAt(row,6)!=null)
+            return Numbers.positiveQuantity(itemsTableModel.getValueAt(row,6));
+        try (PreparedStatement p = c.prepareStatement("SELECT id FROM products WHERE code=?")) {
+            p.setString(1, String.valueOf(itemsTableModel.getValueAt(row,0)));
+            try (ResultSet r = p.executeQuery()) {
+                if (!r.next()) throw new SQLException("Product no longer exists: " + itemsTableModel.getValueAt(row,0));
+                return r.getInt(1);
+            }
         }
     }
 
     private void saveInvoice() {
         try {
+            validateRows();
             // Validation
             if (selectedCustomer == null) {
                 JOptionPane.showMessageDialog(this,
@@ -586,7 +598,8 @@ public class InvoiceDialog extends JDialog {
 
             Date invoiceDate;
             try {
-                invoiceDate = dateFormat.parse(dateField.getText());
+                invoiceDate = DateUtils.parseDate(dateField.getText(), dateFormat);
+                if (invoiceDate == null) throw new ParseException("Date is required",0);
             } catch (ParseException e) {
                 JOptionPane.showMessageDialog(this,
                     "Invalid date format. Use dd/MM/yyyy",
@@ -600,7 +613,7 @@ public class InvoiceDialog extends JDialog {
             // Invoices do not affect warehouse stock - stock is managed by orders only
 
             Connection conn = DatabaseManager.getInstance().getConnection();
-            conn.setAutoCommit(false);
+            DatabaseManager.beginTransaction(conn);
             try {
                 int invoiceId;
 
@@ -639,6 +652,13 @@ public class InvoiceDialog extends JDialog {
                 } else {
                     // Update existing invoice
                     invoiceId = invoice.getId();
+                    try(PreparedStatement draft=conn.prepareStatement("UPDATE invoices SET customer_snapshot=NULL,company_snapshot=NULL,snapshot_version=NULL WHERE id=? AND status='Draft'")) {
+                        draft.setInt(1,invoiceId);draft.executeUpdate();
+                    }
+                    try (PreparedStatement p=conn.prepareStatement("UPDATE invoices SET customer_snapshot=NULL " +
+                            "WHERE id=? AND customer_id<>?")) {
+                        p.setInt(1,invoiceId);p.setInt(2,selectedCustomer.getId());p.executeUpdate();
+                    }
 
                     String invoiceQuery = """
                         UPDATE invoices
@@ -666,18 +686,19 @@ public class InvoiceDialog extends JDialog {
                     insertInvoiceDetails(conn, invoiceId);
                 }
 
+                InvoiceSnapshots.capture(conn,invoiceId,false);
                 conn.commit();
                 invoiceSaved = true;
                 dispose();
 
-            } catch (SQLException e) {
+            } catch (Exception e) {
                 conn.rollback();
                 throw e;
             } finally {
                 conn.setAutoCommit(true);
             }
 
-        } catch (SQLException e) {
+        } catch (Exception e) {
             e.printStackTrace();
             JOptionPane.showMessageDialog(this,
                 "Error while saving the invoice: " + e.getMessage(),
@@ -688,25 +709,17 @@ public class InvoiceDialog extends JDialog {
     private void insertInvoiceDetails(Connection conn, int invoiceId) throws SQLException {
         String detailQuery = """
             INSERT INTO invoice_details
-            (invoice_id, product_id, quantity, unit_price, vat_rate, total)
-            VALUES (?, ?, ?, ?, ?, ?)
+            (invoice_id, product_id, quantity, unit_price, vat_rate, total, product_code, product_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """;
         try (PreparedStatement pstmt = conn.prepareStatement(detailQuery)) {
             for (int i = 0; i < itemsTableModel.getRowCount(); i++) {
-                String code = (String)itemsTableModel.getValueAt(i, 0);
-                int productId = -1;
-                for (Product p : productsCache.values()) {
-                    if (p.getCode().equals(code)) {
-                        productId = p.getId();
-                        break;
-                    }
-                }
-                if (productId == -1) continue;
+                int productId = productIdForRow(conn, i);
 
                 int quantity = parseInteger(itemsTableModel.getValueAt(i, 2));
                 double unitPrice = parseDouble(itemsTableModel.getValueAt(i, 3));
-                double vatRate = parseDouble(itemsTableModel.getValueAt(i, 4));
-                double productTotal = quantity * unitPrice;
+                double vatRate = Numbers.vat(itemsTableModel.getValueAt(i, 4));
+                double productTotal = Numbers.lineTotal(quantity, unitPrice);
 
                 pstmt.setInt(1, invoiceId);
                 pstmt.setInt(2, productId);
@@ -714,6 +727,8 @@ public class InvoiceDialog extends JDialog {
                 pstmt.setDouble(4, unitPrice);
                 pstmt.setDouble(5, vatRate);
                 pstmt.setDouble(6, productTotal);
+                pstmt.setString(7,String.valueOf(itemsTableModel.getValueAt(i,0)));
+                pstmt.setString(8,String.valueOf(itemsTableModel.getValueAt(i,1)));
                 pstmt.executeUpdate();
             }
         }

@@ -51,6 +51,12 @@
         <available file="${lib.dir}/webview-1.0.10.jar" property="webview.jar.available"/>
         <fail unless="webview.jar.available"
               message="Missing lib/webview-1.0.10.jar; Discover requires WebViewComponent."/>
+        <available file="${resources.dir}/fonts/DejaVuSans.ttf" property="pdf.font.regular.available"/>
+        <available file="${resources.dir}/fonts/DejaVuSans-Bold.ttf" property="pdf.font.bold.available"/>
+        <available file="${resources.dir}/fonts/LICENSE-DejaVu.txt" property="pdf.font.license.available"/>
+        <fail unless="pdf.font.regular.available" message="Missing resources/fonts/DejaVuSans.ttf. Update the complete project before building."/>
+        <fail unless="pdf.font.bold.available" message="Missing resources/fonts/DejaVuSans-Bold.ttf. Update the complete project before building."/>
+        <fail unless="pdf.font.license.available" message="Missing resources/fonts/LICENSE-DejaVu.txt. Restore the font license before building."/>
         <mkdir dir="${build.dir}"/>
         <mkdir dir="${build.classes.dir}"/>
         <mkdir dir="${dist.dir}"/>
@@ -75,6 +81,7 @@
                destdir="${build.classes.dir}"
                includeantruntime="false"
                debug="true"
+               encoding="UTF-8"
                source="21"
                target="21">
             <classpath refid="compile.classpath"/>
@@ -84,6 +91,7 @@
             <fileset dir="${resources.dir}">
                 <include name="i18n/**"/>
                 <include name="icons/**"/>
+                <include name="fonts/**"/>
             </fileset>
 
             <!-- Legal notices must remain readable in every distribution. -->
@@ -127,12 +135,6 @@
             <!-- Add compiled classes -->
             <fileset dir="${build.classes.dir}"/>
 
-            <!-- Add localization resource bundles -->
-            <fileset dir="${resources.dir}">
-                <include name="i18n/**"/>
-                <include name="icons/**"/>
-            </fileset>
-
             <!-- Add unpacked dependencies -->
             <fileset dir="${build.dir}/jar-temp">
                 <!-- Exclude signature files to avoid security exceptions -->
@@ -142,6 +144,13 @@
             </fileset>
         </jar>
         <copy file="${lib.dir}/webview-1.0.10.jar" todir="${dist.dir}"/>
+
+        <resourcecount property="runtime.jar.font.count">
+            <zipfileset src="${jar.file}" includes="fonts/DejaVuSans.ttf,fonts/DejaVuSans-Bold.ttf,fonts/LICENSE-DejaVu.txt"/>
+        </resourcecount>
+        <fail message="Invalid application JAR: PDF fonts or their license are missing.">
+            <condition><not><equals arg1="${runtime.jar.font.count}" arg2="3"/></not></condition>
+        </fail>
         <copy file="LICENSE-THIRD-PARTY.txt" todir="${dist.dir}"/>
         <copy file="NOTICE.txt" todir="${dist.dir}"/>
 
@@ -230,6 +239,12 @@
         </available>
         <fail unless="runtime.obfuscated.jar.about.available"
               message="Invalid obfuscated JAR: AboutDialog.class is missing."/>
+        <resourcecount property="runtime.obfuscated.jar.font.count">
+            <zipfileset src="${jar.obfuscated.file}" includes="fonts/DejaVuSans.ttf,fonts/DejaVuSans-Bold.ttf,fonts/LICENSE-DejaVu.txt"/>
+        </resourcecount>
+        <fail message="Invalid obfuscated JAR: PDF fonts or their license are missing.">
+            <condition><not><equals arg1="${runtime.obfuscated.jar.font.count}" arg2="3"/></not></condition>
+        </fail>
 
         <echo message="Obfuscation complete: ${jar.obfuscated.file}"/>
         <echo message="Mapping file saved to: ${dist.dir}/yguard-log.xml"/>
@@ -717,4 +732,18 @@
         <echo message=""/>
     </target>
 
+    <target name="test" depends="compile" description="Run isolated business and data regression scenarios">
+        <mkdir dir="${build.dir}/test-classes"/>
+        <tempfile property="test.run.dir" destdir="${build.dir}" prefix="regression-" createfile="false"/>
+        <mkdir dir="${test.run.dir}/home"/>
+        <javac srcdir="tests" destdir="${build.dir}/test-classes" includeantruntime="false" release="21" encoding="UTF-8">
+            <classpath><pathelement location="${build.classes.dir}"/><path refid="compile.classpath"/></classpath>
+        </javac>
+        <java classname="RegressionTest" fork="true" failonerror="true">
+            <classpath><pathelement location="${build.dir}/test-classes"/><pathelement location="${build.classes.dir}"/><path refid="compile.classpath"/></classpath>
+            <sysproperty key="java.awt.headless" value="true"/>
+            <sysproperty key="user.home" value="${test.run.dir}/home"/>
+            <sysproperty key="test.output" value="${test.run.dir}/evidence"/>
+        </java>
+    </target>
 </project>

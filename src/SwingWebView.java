@@ -27,7 +27,7 @@ public final class SwingWebView extends JPanel {
         webView.setUrl(url);
         stateTimer = new Timer(350, event -> pollDocumentState(failureListener));
         loadingTimeoutTimer = new Timer(8_000, event -> {
-            navigationListener.changed(true, true, false);
+            navigationListener.changed(false, false, false);
             stateTimer.stop();
         });
         loadingTimeoutTimer.setRepeats(false);
@@ -40,14 +40,15 @@ public final class SwingWebView extends JPanel {
         // This also prevents background cards from producing false startup errors.
         if (!webView.isShowing() || stateRequestPending) return;
         stateRequestPending = true;
-        webView.evalAsync("document.readyState").whenComplete((state, error) ->
+        webView.evalAsync("document.readyState + '|' + (window.navigation ? navigation.canGoBack : false) + '|' + (window.navigation ? navigation.canGoForward : false)").whenComplete((state, error) ->
             SwingUtilities.invokeLater(() -> {
                 stateRequestPending = false;
                 if (error == null) {
-                    boolean loading = !isDocumentReady(state);
-                    navigationListener.changed(true, true, loading);
+                    String[] parts = state == null ? new String[0] : state.replace("\"", "").split("\\|");
+                    boolean loading = parts.length == 0 || !isDocumentReady(parts[0]);
+                    navigationListener.changed(parts.length > 1 && Boolean.parseBoolean(parts[1]),
+                        parts.length > 2 && Boolean.parseBoolean(parts[2]), loading);
                     if (!loading) {
-                        stateTimer.stop();
                         loadingTimeoutTimer.stop();
                     }
                 } else if (webView.isShowing() && !isNotDisplayedError(error)) {
@@ -57,8 +58,8 @@ public final class SwingWebView extends JPanel {
                 // A remote page may keep document.readyState incomplete because
                 // of a slow third-party resource. Do not leave a permanent
                 // "Loading..." message once the page has had time to render.
-                if (statePollAttempts >= 30) {
-                    navigationListener.changed(true, true, false);
+                if (statePollAttempts >= 30 && loadingTimeoutTimer.isRunning()) {
+                    navigationListener.changed(false, false, false);
                     stateTimer.stop();
                     loadingTimeoutTimer.stop();
                 }
@@ -73,8 +74,8 @@ public final class SwingWebView extends JPanel {
         return false;
     }
 
-    public void goBack() { webView.eval("history.back()"); }
-    public void goForward() { webView.eval("history.forward()"); }
+    public void goBack() { webView.eval("if (window.navigation && navigation.canGoBack) navigation.back()"); }
+    public void goForward() { webView.eval("if (window.navigation && navigation.canGoForward) navigation.forward()"); }
     public void reload() {
         statePollAttempts = 0;
         navigationListener.changed(false, false, true);

@@ -101,15 +101,13 @@ public class AdvancedStatsPanel extends JPanel {
             };
 
             // Query with proper period filtering
-            String normalizedDate = "CASE WHEN typeof(o.order_date) IN ('integer','real') " +
-                "THEN datetime(o.order_date / 1000, 'unixepoch', 'localtime') " +
-                "ELSE datetime(o.order_date) END";
+            String normalizedDate = DateUtils.sqlDate("o.order_date");
             String query = "SELECT strftime('%Y-%m', " + normalizedDate + ") as month, " +
                           "SUM(o.total) as total, " +
                           "COUNT(*) as num_orders " +
                           "FROM orders o " +
-                          "WHERE o.order_date IS NOT NULL " +
-                          "AND " + normalizedDate + " >= datetime('now', 'localtime', '-" + months + " months') " +
+                          "WHERE o.order_date IS NOT NULL AND o.status='Completed' " +
+                          "AND " + normalizedDate + " BETWEEN '" + java.time.LocalDate.now().minusMonths(months) + "' AND '" + java.time.LocalDate.now() + "' " +
                           "GROUP BY month " +
                           "ORDER BY month";
 
@@ -226,6 +224,8 @@ public class AdvancedStatsPanel extends JPanel {
         }
     }
 
+    private double productsTotalRevenue;
+
     private void loadProductsData() {
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
@@ -237,21 +237,18 @@ public class AdvancedStatsPanel extends JPanel {
                 default -> 12;
             };
 
-            String normalizedDate = "CASE WHEN typeof(o.order_date) IN ('integer','real') " +
-                "THEN datetime(o.order_date / 1000, 'unixepoch', 'localtime') " +
-                "ELSE datetime(o.order_date) END";
+            String normalizedDate = DateUtils.sqlDate("o.order_date");
             String query = "SELECT COALESCE(p.name, 'Product N/A') as name, " +
                           "SUM(d.quantity) as total_quantity, " +
-                          "SUM(d.quantity * d.unit_price) as revenue, " +
+                          "SUM(ROUND(d.quantity * d.unit_price, 2)) as revenue, " +
                           "COUNT(DISTINCT o.id) as num_orders " +
                           "FROM order_details d " +
                           "LEFT JOIN products p ON d.product_id = p.id " +
                           "LEFT JOIN orders o ON d.order_id = o.id " +
-                          "WHERE o.order_date IS NOT NULL " +
-                          "AND " + normalizedDate + " >= datetime('now', 'localtime', '-" + months + " months') " +
+                          "WHERE o.order_date IS NOT NULL AND o.status='Completed' " +
+                          "AND " + normalizedDate + " BETWEEN '" + java.time.LocalDate.now().minusMonths(months) + "' AND '" + java.time.LocalDate.now() + "' " +
                           "GROUP BY d.product_id, p.name " +
-                          "ORDER BY revenue DESC " +
-                          "LIMIT 10";
+                          "ORDER BY revenue DESC";
 
             System.out.println("Loading products data for last " + months + " months");
 
@@ -263,13 +260,15 @@ public class AdvancedStatsPanel extends JPanel {
 
                 while (rs.next()) {
                     String name = rs.getString("name");
-                    int quantity = rs.getInt("total_quantity");
+                    long quantity = rs.getLong("total_quantity");
                     double revenue = rs.getDouble("revenue");
-                    totalRevenue += revenue;
-                    productStats.add(new Object[]{name, quantity, revenue});
+                    totalRevenue = Numbers.add(totalRevenue,revenue);
+                    if (productStats.size()<10) productStats.add(new Object[]{name, quantity, revenue});
                 }
 
                 System.out.println("Loaded " + productStats.size() + " products, total revenue: " + SettingsPanel.formatCurrency(totalRevenue));
+
+                productsTotalRevenue=totalRevenue;
 
                 // Update table
                 Object[][] data = new Object[productStats.size()][4];
@@ -289,6 +288,7 @@ public class AdvancedStatsPanel extends JPanel {
                     data,
                     new String[]{"Product", "Quantity Sold", "Revenue", "% of Total"}
                 ));
+                TableSorterUtil.enableSorting(topProductsTable);
                 I18n.localize(topProductsTable);
             }
 
@@ -317,9 +317,7 @@ public class AdvancedStatsPanel extends JPanel {
             return;
         }
 
-        double totalRevenue = productStats.stream()
-            .mapToDouble(row -> (double)row[2])
-            .sum();
+        double totalRevenue = productsTotalRevenue;
 
         if (totalRevenue == 0) {
             g2d.setColor(Color.BLACK);
@@ -369,5 +367,11 @@ public class AdvancedStatsPanel extends JPanel {
 
             startAngle += arcAngle;
         }
+        if(startAngle<359.99) {
+            g2d.setColor(Color.LIGHT_GRAY);
+            g2d.fillArc(centerX-diameter/2,centerY-diameter/2,diameter,diameter,(int)startAngle,(int)Math.ceil(360-startAngle));
+            if(width>400) {g2d.fillRect(width-200,legendY,15,15);g2d.setColor(Color.BLACK);g2d.drawString(String.format("Other products (%.1f%%)",(360-startAngle)/3.6),width-180,legendY+12);}
+        }
     }
+    public void refreshData() { loadData(); }
 }

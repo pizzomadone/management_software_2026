@@ -96,7 +96,7 @@ public class SupplierOrdersPanel extends JPanel {
     private void deleteSelected() {
         int row = selectedModelRow(); if (row < 0) return; int id=(int)model.getValueAt(row,0); String number=String.valueOf(model.getValueAt(row,1));
         if (JOptionPane.showConfirmDialog(this,"Are you sure you want to delete order " + number + "?","Confirm Deletion",JOptionPane.YES_NO_OPTION,JOptionPane.WARNING_MESSAGE)!=JOptionPane.YES_OPTION) return;
-        Connection conn=null; try { conn=DatabaseManager.getInstance().getConnection(); conn.setAutoCommit(false); SupplierOrder order=loadOrder(id);
+        Connection conn=null; try { conn=DatabaseManager.getInstance().getConnection(); DatabaseManager.beginTransaction(conn); SupplierOrder order=loadOrder(id);
             if (order != null && "Completed".equals(order.getStatus())) {
                 java.util.List<StockManager.StockItem> items=new java.util.ArrayList<>(); for(SupplierOrderItem item:order.getItems()) items.add(new StockManager.StockItem(item.getProductId(),item.getProductName(),item.getQuantity())); StockManager.reverseSupplierOrder(conn,items,number);
             }

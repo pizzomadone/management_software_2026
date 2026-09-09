@@ -336,7 +336,7 @@ public class ProductSelectionDialog extends JDialog {
         }
         row.add(description);
 
-        row.add(String.format("%.2f", rs.getDouble("price")));
+        row.add(rs.getDouble("price"));
 
         int stock = rs.getInt("quantity");
         row.add(stock);
@@ -359,10 +359,11 @@ public class ProductSelectionDialog extends JDialog {
     private void updateProductDetails() {
         int selectedRow = productsTable.getSelectedRow();
         if (selectedRow != -1) {
+            selectedRow = productsTable.convertRowIndexToModel(selectedRow);
             int productId = (int)tableModel.getValueAt(selectedRow, 0);
             String code = (String)tableModel.getValueAt(selectedRow, 1);
             String name = (String)tableModel.getValueAt(selectedRow, 2);
-            String priceStr = (String)tableModel.getValueAt(selectedRow, 4);
+            String priceStr = String.valueOf(tableModel.getValueAt(selectedRow, 4));
             int stock = (int)tableModel.getValueAt(selectedRow, 5);
             String status = (String)tableModel.getValueAt(selectedRow, 6);
 
@@ -378,7 +379,7 @@ public class ProductSelectionDialog extends JDialog {
                             if (rs.wasNull()) {
                                 vatRateField.setText(String.valueOf(SettingsPanel.getDefaultVatRate()));
                             } else {
-                                vatRateField.setText(String.format("%.1f", productVatRate));
+                                vatRateField.setText(String.valueOf(productVatRate));
                             }
                         }
                     }
@@ -428,25 +429,26 @@ public class ProductSelectionDialog extends JDialog {
     private void selectProduct() {
         int selectedRow = productsTable.getSelectedRow();
         if (selectedRow != -1) {
+            selectedRow = productsTable.convertRowIndexToModel(selectedRow);
             selectedProduct = new Product(
                 (int)tableModel.getValueAt(selectedRow, 0),
                 (String)tableModel.getValueAt(selectedRow, 1),
                 (String)tableModel.getValueAt(selectedRow, 2),
                 null, // Full description if needed
-                Double.parseDouble(((String)tableModel.getValueAt(selectedRow, 4)).replace(",", ".")),
+                Numbers.nonNegative(tableModel.getValueAt(selectedRow, 4)),
                 (int)tableModel.getValueAt(selectedRow, 5)
             );
 
-            selectedQuantity = (int)quantitySpinner.getValue();
-
             try {
-                selectedVatRate = Double.parseDouble(vatRateField.getText().replace(",", "."));
+                quantitySpinner.commitEdit();
+                selectedQuantity = Numbers.positiveQuantity(quantitySpinner.getValue());
+                selectedVatRate = Numbers.vat(vatRateField.getText());
                 if (selectedVatRate < 0 || selectedVatRate > 100) {
                     throw new NumberFormatException("VAT rate out of range");
                 }
-            } catch (NumberFormatException e) {
+            } catch (Exception e) {
                 JOptionPane.showMessageDialog(this,
-                    "Please enter a valid VAT rate (0-100%)",
+                    e.getMessage(),
                     "Invalid VAT Rate", JOptionPane.WARNING_MESSAGE);
                 vatRateField.requestFocus();
                 vatRateField.selectAll();

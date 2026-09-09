@@ -248,7 +248,7 @@ public class SupplierOrdersWindow extends JDialog {
             if (result == JOptionPane.YES_OPTION) {
                 try {
                     Connection conn = DatabaseManager.getInstance().getConnection();
-                    conn.setAutoCommit(false);
+                    DatabaseManager.beginTransaction(conn);
 
                     try {
                         int orderId = 0;

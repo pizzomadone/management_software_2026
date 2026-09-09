@@ -82,42 +82,9 @@ public final class I18n {
         if (source == null) return null;
         if (translations.containsKey(source)) return translations.get(source);
 
-        // Translate complete words/phrases in dynamic labels without repeatedly
-        // translating the result. Plain String.replace() used to turn "Backup"
-        // into values such as "Indietroup" because the key "Back" matched inside it.
-        java.util.List<String> keys = translations.keySet().stream()
-            .filter(key -> !key.isEmpty())
-            .sorted(Comparator.comparingInt(String::length).reversed()).toList();
-        StringBuilder translated = new StringBuilder(source.length());
-        for (int offset = 0; offset < source.length();) {
-            String match = null;
-            for (String key : keys) {
-                if (source.startsWith(key, offset) && hasTranslationBoundaries(source, offset, key)) {
-                    match = key;
-                    break;
-                }
-            }
-            if (match == null) {
-                translated.append(source.charAt(offset++));
-            } else {
-                translated.append(translations.get(match));
-                offset += match.length();
-            }
-        }
-        return translated.toString();
-    }
-
-    private static boolean hasTranslationBoundaries(String source, int offset, String key) {
-        int end = offset + key.length();
-        boolean leftBoundary = !isTranslationWordCharacter(key.charAt(0)) || offset == 0 ||
-            !isTranslationWordCharacter(source.charAt(offset - 1));
-        boolean rightBoundary = !isTranslationWordCharacter(key.charAt(key.length() - 1)) ||
-            end == source.length() || !isTranslationWordCharacter(source.charAt(end));
-        return leftBoundary && rightBoundary;
-    }
-
-    private static boolean isTranslationWordCharacter(char value) {
-        return Character.isLetterOrDigit(value) || value == '_';
+        // Unregistered dynamic text may contain customer names, SKUs or other business data.
+        // Only complete registered messages are translated; parameters must stay literal.
+        return source;
     }
 
     private static String localized(Object owner, String current) {
@@ -157,6 +124,7 @@ public final class I18n {
     }
 
     public static void localize(Component component) {
+        if (component instanceof JComponent jc && Boolean.TRUE.equals(jc.getClientProperty("i18n.literal"))) return;
         if (component instanceof JFrame frame) frame.setTitle(localized(frame, frame.getTitle()));
         if (component instanceof JDialog dialog) dialog.setTitle(localized(dialog, dialog.getTitle()));
         if (component instanceof AbstractButton button) {
@@ -192,7 +160,7 @@ public final class I18n {
                 table.setDefaultRenderer(Object.class, new LocalizedTableRenderer(delegate));
             }
         }
-        if (component instanceof JComboBox<?> comboBox &&
+        if (component instanceof JComboBox<?> comboBox && Boolean.TRUE.equals(comboBox.getClientProperty("i18n.values")) &&
                 !(comboBox.getRenderer() instanceof LocalizedListRenderer)) {
             installLocalizedListRenderer(comboBox);
         }
@@ -269,7 +237,9 @@ public final class I18n {
         @Override
         public Component getTableCellRendererComponent(JTable table, Object value,
                 boolean selected, boolean focus, int row, int column) {
-            Object displayValue = value instanceof String text ? tr(text) : value;
+            String heading = table.getModel().getColumnName(table.convertColumnIndexToModel(column));
+            boolean enumColumn = java.util.Set.of("Status","Payment Status","Type","Reason","Priority").contains(heading);
+            Object displayValue = enumColumn && value instanceof String text ? tr(text) : value;
             return delegate.getTableCellRendererComponent(table, displayValue,
                 selected, focus, row, column);
         }

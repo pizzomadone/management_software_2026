@@ -114,7 +114,7 @@ public class ProductsPanel extends JPanel {
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
-                SELECT p.*,
+                SELECT p.*, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity,
                        f.company_name as supplier_name,
                        COALESCE(SUM(CASE
                            WHEN so.status IN ('Draft', 'Confirmed', 'In Transit')
@@ -122,6 +122,7 @@ public class ProductsPanel extends JPanel {
                            ELSE 0
                        END), 0) as on_order_quantity
                 FROM products p
+                LEFT JOIN minimum_stock sm ON sm.product_id = p.id
                 LEFT JOIN suppliers f ON p.supplier_id = f.id
                 LEFT JOIN supplier_order_details sod ON p.id = sod.product_id
                 LEFT JOIN supplier_orders so ON sod.order_id = so.id
@@ -176,7 +177,7 @@ public class ProductsPanel extends JPanel {
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
-                SELECT p.*,
+                SELECT p.*, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity,
                        f.company_name as supplier_name,
                        COALESCE(SUM(CASE
                            WHEN so.status IN ('Draft', 'Confirmed', 'In Transit')
@@ -184,6 +185,7 @@ public class ProductsPanel extends JPanel {
                            ELSE 0
                        END), 0) as on_order_quantity
                 FROM products p
+                LEFT JOIN minimum_stock sm ON sm.product_id = p.id
                 LEFT JOIN suppliers f ON p.supplier_id = f.id
                 LEFT JOIN supplier_order_details sod ON p.id = sod.product_id
                 LEFT JOIN supplier_orders so ON sod.order_id = so.id
@@ -262,8 +264,9 @@ public class ProductsPanel extends JPanel {
             try {
                 Connection conn = DatabaseManager.getInstance().getConnection();
                 String query = """
-                    SELECT p.*, f.company_name as supplier_name
+                    SELECT p.*, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity, f.company_name as supplier_name
                     FROM products p
+                    LEFT JOIN minimum_stock sm ON sm.product_id = p.id
                     LEFT JOIN suppliers f ON p.supplier_id = f.id
                     WHERE p.id = ?
                 """;
@@ -400,7 +403,7 @@ public class ProductsPanel extends JPanel {
     }
 
     private void deleteProductAndNonCriticalData(Connection conn, int productId) throws SQLException {
-        conn.setAutoCommit(false);
+        DatabaseManager.beginTransaction(conn);
         try {
             String[] statements = {
                 "DELETE FROM supplier_price_lists WHERE product_id = ?",

@@ -49,7 +49,7 @@ public class SupplierPriceListWindow extends JDialog {
 
     private void initComponents() {
         // Price list table
-        String[] columns = {"Product", "Supplier Code", "Price " + SettingsPanel.getCurrencySymbol(), "Min. Qty.", "Valid From", "Valid Until", "Notes"};
+        String[] columns = {"Product", "Supplier Code", "Price " + SettingsPanel.getCurrencySymbol(), "Min. Qty.", "Valid From", "Valid Until", "Notes", "ID"};
         tableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -57,6 +57,7 @@ public class SupplierPriceListWindow extends JDialog {
             }
         };
         priceListTable = new JTable(tableModel);
+        priceListTable.removeColumn(priceListTable.getColumnModel().getColumn(7));
         priceListTable.getSelectionModel().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         priceListTable.getSelectionModel().addListSelectionListener(e -> updateButtonStates());
 
@@ -112,10 +113,11 @@ public class SupplierPriceListWindow extends JDialog {
                     row.add(rs.getString("supplier_product_code"));
                     row.add(String.format("%.2f", rs.getDouble("price")));
                     row.add(rs.getInt("minimum_quantity"));
-                    row.add(dateFormat.format(rs.getDate("validity_start_date")));
-                    Date endDate = rs.getDate("validity_end_date");
+                    row.add(DateUtils.formatDate(DateUtils.parseDate(rs,"validity_start_date"),dateFormat));
+                    Date endDate = DateUtils.parseDate(rs,"validity_end_date");
                     row.add(endDate != null ? dateFormat.format(endDate) : "");
                     row.add(rs.getString("notes"));
+                    row.add(rs.getInt("id"));
                     tableModel.addRow(row);
                 }
             }
@@ -138,10 +140,12 @@ public class SupplierPriceListWindow extends JDialog {
     private void editSelectedPrice() {
         int selectedRow = priceListTable.getSelectedRow();
         if (selectedRow != -1) {
+            selectedRow = priceListTable.convertRowIndexToModel(selectedRow);
+            int priceId = ((Number)tableModel.getValueAt(selectedRow,7)).intValue();
             String productName = (String)tableModel.getValueAt(selectedRow, 0);
             String supplierCode = (String)tableModel.getValueAt(selectedRow, 1);
             try {
-                SupplierPriceList priceList = loadPriceListItem(productName, supplierCode);
+                SupplierPriceList priceList = loadPriceListItem(priceId);
                 if (priceList != null) {
                     showPriceDialog(priceList);
                 }
@@ -154,19 +158,18 @@ public class SupplierPriceListWindow extends JDialog {
         }
     }
 
-    private SupplierPriceList loadPriceListItem(String productName, String supplierCode) throws SQLException {
+    private SupplierPriceList loadPriceListItem(int priceId) throws SQLException {
         Connection conn = DatabaseManager.getInstance().getConnection();
         String query = """
             SELECT l.*, p.name as product_name
             FROM supplier_price_lists l
             JOIN products p ON l.product_id = p.id
-            WHERE l.supplier_id = ? AND p.name = ? AND l.supplier_product_code = ?
+            WHERE l.supplier_id = ? AND l.id = ?
         """;
 
         try (PreparedStatement pstmt = conn.prepareStatement(query)) {
             pstmt.setInt(1, supplierId);
-            pstmt.setString(2, productName);
-            pstmt.setString(3, supplierCode);
+            pstmt.setInt(2, priceId);
             try (ResultSet rs = pstmt.executeQuery()) {
                 if (rs.next()) {
                     return new SupplierPriceList(
@@ -176,8 +179,8 @@ public class SupplierPriceListWindow extends JDialog {
                         rs.getString("supplier_product_code"),
                         rs.getDouble("price"),
                         rs.getInt("minimum_quantity"),
-                        rs.getDate("validity_start_date"),
-                        rs.getDate("validity_end_date"),
+                        DateUtils.parseDate(rs,"validity_start_date"),
+                        DateUtils.parseDate(rs,"validity_end_date"),
                         rs.getString("notes")
                     );
                 }
@@ -189,6 +192,8 @@ public class SupplierPriceListWindow extends JDialog {
     private void deleteSelectedPrice() {
         int selectedRow = priceListTable.getSelectedRow();
         if (selectedRow != -1) {
+            selectedRow = priceListTable.convertRowIndexToModel(selectedRow);
+            int priceId = ((Number)tableModel.getValueAt(selectedRow,7)).intValue();
             String productName = (String)tableModel.getValueAt(selectedRow, 0);
             String supplierCode = (String)tableModel.getValueAt(selectedRow, 1);
 
@@ -204,14 +209,12 @@ public class SupplierPriceListWindow extends JDialog {
                     String query = """
                         DELETE FROM supplier_price_lists
                         WHERE supplier_id = ?
-                        AND product_id = (SELECT id FROM products WHERE name = ?)
-                        AND supplier_product_code = ?
+                        AND id = ?
                     """;
 
                     try (PreparedStatement pstmt = conn.prepareStatement(query)) {
                         pstmt.setInt(1, supplierId);
-                        pstmt.setString(2, productName);
-                        pstmt.setString(3, supplierCode);
+                        pstmt.setInt(2, priceId);
                         pstmt.executeUpdate();
                         loadPriceList();
                     }

@@ -127,7 +127,7 @@ public class InvoicesPanel extends JPanel {
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
-                SELECT i.number, i.date, i.customer_id, i.status,
+                SELECT i.id, i.number, i.date, i.customer_id, i.status,
                        c.first_name || ' ' || c.last_name as customer_name
                 FROM invoices i
                 LEFT JOIN customers c ON i.customer_id = c.id
@@ -155,7 +155,7 @@ public class InvoicesPanel extends JPanel {
                         row.add("");
                     }
 
-                    row.add(rs.getString("customer_name"));
+                    row.add(snapshotCustomerName(conn,rs.getInt("id")));
                     row.add(SettingsPanel.formatCurrency(taxableAmount));
                     row.add(SettingsPanel.formatCurrency(vat));
                     row.add(SettingsPanel.formatCurrency(total));
@@ -172,25 +172,13 @@ public class InvoicesPanel extends JPanel {
     }
 
     private double[] recalculateInvoiceTotals(String invoiceNumber) throws SQLException {
-        Connection conn = DatabaseManager.getInstance().getConnection();
-        String query = """
-            SELECT SUM(d.quantity * d.unit_price) as taxable_amount_calc,
-                   SUM(d.quantity * d.unit_price * d.vat_rate / 100) as vat_calc
-            FROM invoice_details d
-            WHERE d.invoice_id = (SELECT id FROM invoices WHERE number = ?)
-        """;
-
-        try (PreparedStatement pstmt = conn.prepareStatement(query)) {
-            pstmt.setString(1, invoiceNumber);
-            ResultSet rs = pstmt.executeQuery();
-            if (rs.next()) {
-                double taxableAmount = rs.getDouble("taxable_amount_calc");
-                double vat = rs.getDouble("vat_calc");
-                double total = taxableAmount + vat;
-                return new double[]{taxableAmount, vat, total};
+        try(PreparedStatement p=DatabaseManager.getInstance().getConnection().prepareStatement(
+                "SELECT taxable_amount,vat,total FROM invoices WHERE number=?")) {
+            p.setString(1,invoiceNumber);try(ResultSet r=p.executeQuery()) {
+                if(!r.next())throw new SQLException("Invoice no longer exists");
+                return new double[]{r.getDouble(1),r.getDouble(2),r.getDouble(3)};
             }
         }
-        return new double[]{0.0, 0.0, 0.0};
     }
 
     private void searchInvoices() {
@@ -204,27 +192,22 @@ public class InvoicesPanel extends JPanel {
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
-                SELECT i.number, i.date, i.customer_id, i.status,
+                SELECT i.id, i.number, i.date, i.customer_id, i.status,
                        c.first_name || ' ' || c.last_name as customer_name
                 FROM invoices i
                 LEFT JOIN customers c ON i.customer_id = c.id
-                WHERE i.number LIKE ?
-                   OR c.first_name LIKE ?
-                   OR c.last_name LIKE ?
-                   OR (c.first_name || ' ' || c.last_name) LIKE ?
                 ORDER BY i.date DESC
             """;
 
             String searchPattern = "%" + searchTerm + "%";
             try (PreparedStatement pstmt = conn.prepareStatement(query)) {
-                pstmt.setString(1, searchPattern);
-                pstmt.setString(2, searchPattern);
-                pstmt.setString(3, searchPattern);
-                pstmt.setString(4, searchPattern);
 
                 try (ResultSet rs = pstmt.executeQuery()) {
                     while (rs.next()) {
                         String number = rs.getString("number");
+                        String customerName = snapshotCustomerName(conn,rs.getInt("id"));
+                        String term = searchTerm.toLowerCase(java.util.Locale.ROOT);
+                        if(!number.toLowerCase(java.util.Locale.ROOT).contains(term) && !customerName.toLowerCase(java.util.Locale.ROOT).contains(term))continue;
 
                         // Recalculate totals
                         double[] totals = recalculateInvoiceTotals(number);
@@ -239,7 +222,7 @@ public class InvoicesPanel extends JPanel {
                             row.add("");
                         }
 
-                        row.add(rs.getString("customer_name"));
+                        row.add(snapshotCustomerName(conn,rs.getInt("id")));
                         row.add(SettingsPanel.formatCurrency(totals[0]));
                         row.add(SettingsPanel.formatCurrency(totals[1]));
                         row.add(SettingsPanel.formatCurrency(totals[2]));
@@ -348,32 +331,8 @@ public class InvoicesPanel extends JPanel {
         }
     }
 
-    private Customer loadCustomerByInvoice(Invoice invoice) {
-        if (invoice == null) return null;
-
-        try {
-            Connection conn = DatabaseManager.getInstance().getConnection();
-            String query = "SELECT * FROM customers WHERE id = ?";
-
-            try (PreparedStatement pstmt = conn.prepareStatement(query)) {
-                pstmt.setInt(1, invoice.getCustomerId());
-                try (ResultSet rs = pstmt.executeQuery()) {
-                    if (rs.next()) {
-                        return new Customer(
-                            rs.getInt("id"),
-                            rs.getString("first_name"),
-                            rs.getString("last_name"),
-                            rs.getString("email"),
-                            rs.getString("phone"),
-                            rs.getString("address")
-                        );
-                    }
-                }
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-        return null;
+    private Customer loadCustomerByInvoice(Invoice invoice) throws SQLException {
+        return invoice==null?null:InvoiceSnapshots.customer(DatabaseManager.getInstance().getConnection(),invoice);
     }
 
     private Invoice loadInvoiceByNumber(String number) throws SQLException {
@@ -391,7 +350,7 @@ public class InvoicesPanel extends JPanel {
                 if (rs.next()) {
                     Date date = DateUtils.parseDate(rs, "date");
                     if (date == null) {
-                        date = new Date();
+                        throw new SQLException("Invoice contains an invalid date");
                     }
 
                     // Recalculate totals
@@ -402,7 +361,7 @@ public class InvoicesPanel extends JPanel {
                         rs.getString("number"),
                         date,
                         rs.getInt("customer_id"),
-                        rs.getString("customer_name"),
+                        snapshotCustomerName(conn,rs.getInt("id")),
                         totals[0], // taxableAmount
                         totals[1], // vat
                         totals[2], // total
@@ -419,7 +378,7 @@ public class InvoicesPanel extends JPanel {
 
     private void loadInvoiceItems(Invoice invoice) throws SQLException {
         String query = """
-            SELECT i.*, p.name as product_name, p.code as product_code
+            SELECT i.*
             FROM invoice_details i
             LEFT JOIN products p ON i.product_id = p.id
             WHERE i.invoice_id = ?
@@ -466,7 +425,7 @@ public class InvoicesPanel extends JPanel {
             if (result == JOptionPane.YES_OPTION) {
                 try {
                     Connection conn = DatabaseManager.getInstance().getConnection();
-                    conn.setAutoCommit(false);
+                    DatabaseManager.beginTransaction(conn);
 
                     try {
                         // Get invoice ID
@@ -516,6 +475,15 @@ public class InvoicesPanel extends JPanel {
                         "Error while deleting the invoice: " + e.getMessage(),
                         "Error", JOptionPane.ERROR_MESSAGE);
                 }
+            }
+        }
+    }
+    private String snapshotCustomerName(Connection c,int invoiceId) throws SQLException {
+        try(PreparedStatement p=c.prepareStatement("SELECT customer_snapshot FROM invoices WHERE id=?")) {
+            p.setInt(1,invoiceId);try(ResultSet r=p.executeQuery()) {
+                if(!r.next())throw new SQLException("Invoice no longer exists");
+                java.util.Properties v=InvoiceSnapshots.decode(r.getString(1));
+                return v.getProperty("first_name","")+" "+v.getProperty("last_name","");
             }
         }
     }

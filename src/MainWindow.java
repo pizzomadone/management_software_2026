@@ -88,8 +88,11 @@ public class MainWindow extends JFrame {
             }
         }
 
+        ApplicationLock.acquire();
+
         // Initialize the database FIRST before any UI setup
         DatabaseManager.getInstance().initDatabase();
+        BackupManager.getInstance().startAutomaticBackups();
 
         // Ensure license file exists
         LicenseText.ensureLicenseFileExists();
@@ -644,6 +647,19 @@ public class MainWindow extends JFrame {
                 backupPanel.refreshBackups();
             }
 
+            switch (panelName) {
+                case "WAREHOUSE": if (warehousePanel!=null) warehousePanel.refreshData(); break;
+                case "WAREHOUSE_REPORT": if (warehouseReportPanel!=null) warehouseReportPanel.refreshData(); break;
+                case "SALES_REPORT": if (salesReportPanel!=null) salesReportPanel.refreshData(); break;
+                case "ADVANCED_STATS": if (advancedStatsPanel!=null) advancedStatsPanel.refreshData(); break;
+                case "PRODUCTS": if (productsPanel!=null) productsPanel.loadProducts(); break;
+                case "ORDERS": if (ordersPanel!=null) ordersPanel.refreshData(); break;
+                case "INVOICES": if (invoicesPanel!=null) invoicesPanel.loadInvoices(); break;
+                case "CUSTOMERS": if (customersPanel!=null) customersPanel.refreshData(); break;
+                case "SUPPLIERS": if (suppliersPanel!=null) suppliersPanel.refreshData(); break;
+                default: break;
+            }
+
             // Update window title
             updateWindowTitle(panelName);
 
@@ -825,14 +841,16 @@ public class MainWindow extends JFrame {
         if (choice != 0 && choice != 1) return;
 
         try {
-            BackupManager.getInstance().importDatabase(source);
+            String currency = DatabaseCurrency.confirmLegacyCurrency(this, source);
+            if (currency == null) return;
+            BackupManager.getInstance().importDatabase(source, currency);
             JOptionPane.showMessageDialog(this,
                     I18n.tr("Database imported successfully.") + "\n"
                     + I18n.tr("WareStat will now close. Reopen it to use the imported database."),
                     I18n.tr("Import Database"), JOptionPane.INFORMATION_MESSAGE);
             dispose();
             System.exit(0);
-        } catch (RuntimeException exception) {
+        } catch (Exception exception) {
             showDatabaseError("Unable to import database", exception);
         }
     }
@@ -881,7 +899,7 @@ public class MainWindow extends JFrame {
         return result == JFileChooser.APPROVE_OPTION ? chooser.getSelectedFile().toPath() : null;
     }
 
-    private void showDatabaseError(String message, RuntimeException exception) {
+    private void showDatabaseError(String message, Exception exception) {
         JOptionPane.showMessageDialog(this, I18n.tr(message) + ":\n" + exception.getMessage(),
                 I18n.tr("Database Error"), JOptionPane.ERROR_MESSAGE);
     }
@@ -967,8 +985,13 @@ public class MainWindow extends JFrame {
             } catch (Exception e) {
                 e.printStackTrace();
             }
-            MainWindow mainWindow = new MainWindow();
-            mainWindow.setVisible(true);
+            try {
+                MainWindow mainWindow = new MainWindow();
+                mainWindow.setVisible(true);
+            } catch (RuntimeException error) {
+                JOptionPane.showMessageDialog(null,error.getMessage(),"WareStat",JOptionPane.ERROR_MESSAGE);
+                System.exit(1);
+            }
         });
     }
 }

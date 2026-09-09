@@ -1,0 +1,65 @@
+JDK 21; SQLite JDBC 3.50.3.0; PDFBox 3.0.6; synthetic databases; headless Swing.
+
+PASS completed saves are idempotent
+PASS editing and cancelling restores original quantity
+PASS all customer order state transitions preserve balances
+PASS changing product reverses the original product
+PASS cancelled rows do not create phantom availability
+PASS active table editor is committed before totals and persistence
+PASS invalid quantities and non-finite payments never persist
+PASS new invoice product resolves despite empty cache
+PASS supplier reassignment preserves existing purchase rows and stock
+PASS automatic movements cannot be edited independently
+PASS overflow aborts the entire receiving transaction
+PASS dates reject impossible days and trailing text
+PASS decimal calculations preserve unit precision
+PASS supplier sequence excludes year digits
+PASS supplier pricing respects dates and minimum quantities
+PASS WAL import includes committed data and retains a prior copy
+PASS incompatible imports leave live data intact
+PASS retention only removes managed backup files
+PASS all supplier order state transitions preserve receipts
+PASS invoice rounding agrees between lines and saved header
+PASS completed sales exclude cancelled documents and have no 1000 row cap
+PASS dominant product belongs to ABC class A
+PASS top ten percentages include all products in the denominator
+PASS both editors use the warehouse threshold without overwriting reorder settings
+PASS missing and zero thresholds remain disabled and product saves create warehouse settings
+PASS failed threshold saves roll back product changes and inventory movements
+PASS stock threshold migration preserves settings stock history and repeated upgrades
+PASS legacy warehouse thresholds including zero win conflicts without losing other settings
+PASS failed stock migration restores the old schema values and triggers atomically
+PASS stock thresholds reject invalid legacy and new values and accept the integer limit
+PASS advanced statistics exclude unfinished cancelled and out-of-period orders
+PASS PDF export finds embedded source-folder and bundled fallback fonts
+PASS movement reports include timestamp and SQL text dates
+PASS business text is never translated
+PASS numeric and formatted currency sorting is numeric
+PASS CSV preserves quotes commas and newlines and detects write failure
+PASS price list lookup identifies the selected period by ID
+PASS legacy supplier migration preserves referenced products
+PASS invoice source order foreign key survives migration
+PASS database rejects non-finite and invalid persisted numbers
+PASS changing currency cannot relabel an existing database
+PASS invoice snapshots survive later party and catalog changes
+PASS fifty line invoice prints every row and totals within page bounds
+PASS empty and long report PDFs remain complete and readable
+PASS inventory correction records only the physical delta
+PASS notification actions target selected database IDs
+PASS warehouse valuation agrees with dashboard and zero cost margin
+PASS monthly invoiced total includes the exact first millisecond
+PASS stock at zero cost is distinct from sale value and an empty warehouse
+PASS negative stock cannot cancel positive assets and stays visible after restocking
+PASS monthly sales follow completed order edits resaves and cancellations without an invoice
+PASS monthly orders and invoices respect statuses date formats and local month boundaries
+PASS invoicing a sale keeps net orders and net invoiced revenue separate
+PASS potential stock margin is value weighted and handles loss free cost and no denominator
+PASS stock and pending order counts match the documented physical stock rules
+PASS KPI titles notes and explanations translate in every supported language
+PASS failed dashboard and warehouse refreshes clear stale or partial figures
+PASS automatic backup schedule honors interval retry and running state
+PASS IMMEDIATE transactions serialize stock availability checks
+PASS legacy import requires and preserves the declared original currency
+PASS SQL and UI use the same calendar day across time zones
+PASS startup refuses an empty existing database without replacing it
+Regression checks: 62 passed, 0 failed

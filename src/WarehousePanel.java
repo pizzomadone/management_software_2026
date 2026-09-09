@@ -173,7 +173,7 @@ public class WarehousePanel extends JPanel {
         JPanel panel = new JPanel(new BorderLayout());
 
         // Notifications table
-        String[] columns = {"Date", "Product", "Type", "Message", "Status"};
+        String[] columns = {"Date", "Product", "Type", "Message", "Status", "ID"};
         notificationsModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -181,6 +181,7 @@ public class WarehousePanel extends JPanel {
             }
         };
         notificationsTable = new JTable(notificationsModel);
+        notificationsTable.removeColumn(notificationsTable.getColumnModel().getColumn(5));
 
         // Enable column sorting with date support (column 0 is "Date")
         TableSorterUtil.enableSorting(notificationsTable, new int[]{0}, dateFormat);
@@ -216,8 +217,8 @@ public class WarehousePanel extends JPanel {
     private void loadData() {
         loadStockData();
         loadMovementsData();
-        loadNotificationsData();
         checkLowStock();
+        loadNotificationsData();
     }
 
     private void loadStockData() {
@@ -225,7 +226,7 @@ public class WarehousePanel extends JPanel {
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
-                SELECT p.*, sm.minimum_quantity, sm.reorder_quantity,
+                SELECT p.*, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity, sm.reorder_quantity,
                         s.company_name as supplier_name
                 FROM products p
                 LEFT JOIN minimum_stock sm ON p.id = sm.product_id
@@ -242,7 +243,7 @@ public class WarehousePanel extends JPanel {
 
                     int physicalStock = rs.getInt("quantity");
                     int reservedStock = rs.getInt("reserved_quantity");
-                    int availableStock = physicalStock - reservedStock;
+                    long availableStock = (long)physicalStock - reservedStock;
 
                     row.add(physicalStock);
                     row.add(reservedStock);
@@ -356,6 +357,7 @@ public class WarehousePanel extends JPanel {
                     row.add(rs.getString("type"));
                     row.add(rs.getString("message"));
                     row.add(rs.getString("status"));
+                    row.add(rs.getInt("id"));
                     notificationsModel.addRow(row);
                 }
             }
@@ -373,19 +375,20 @@ public class WarehousePanel extends JPanel {
             String query = """
                 SELECT p.id, p.name, p.quantity, sm.minimum_quantity, sm.reorder_quantity
                 FROM products p
-                JOIN minimum_stock sm ON p.id = sm.product_id
-                WHERE p.quantity <= sm.minimum_quantity
+                LEFT JOIN minimum_stock sm ON p.id = sm.product_id
+                WHERE p.active=1 AND sm.minimum_quantity>0 AND p.quantity < sm.minimum_quantity
                 AND NOT EXISTS (
                     SELECT 1 FROM warehouse_notifications n
                     WHERE n.product_id = p.id
                     AND n.type = 'MIN_STOCK'
                     AND n.status != 'HANDLED'
-                    AND DATE(n.date) = DATE('now')
+                    AND warestat_date(n.date) = ?
                 )
             """;
 
-            try (Statement stmt = conn.createStatement();
-                 ResultSet rs = stmt.executeQuery(query)) {
+            try (PreparedStatement stmt = conn.prepareStatement(query)) {
+                stmt.setString(1,java.time.LocalDate.now().toString());
+                try(ResultSet rs=stmt.executeQuery()) {
                 while (rs.next()) {
                     int productId = rs.getInt("id");
                     String productName = rs.getString("name");
@@ -400,6 +403,7 @@ public class WarehousePanel extends JPanel {
 
                     createNotification(productId, "MIN_STOCK", message);
                 }
+            }
             }
         } catch (SQLException e) {
             e.printStackTrace();
@@ -495,7 +499,7 @@ public class WarehousePanel extends JPanel {
 
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
-            conn.setAutoCommit(false);
+            DatabaseManager.beginTransaction(conn);
 
             try {
                 String updateQuery = "UPDATE warehouse_notifications SET status = ? WHERE id = ?";
@@ -503,13 +507,7 @@ public class WarehousePanel extends JPanel {
                     for (int row : selectedRows) {
                         // Convert view index to model index (important when table is sorted)
                         int modelRow = notificationsTable.convertRowIndexToModel(row);
-                        // Find notification ID by matching data
-                        String dateStr = (String)notificationsModel.getValueAt(modelRow, 0);
-                        String product = (String)notificationsModel.getValueAt(modelRow, 1);
-                        String type = (String)notificationsModel.getValueAt(modelRow, 2);
-                        String message = (String)notificationsModel.getValueAt(modelRow, 3);
-
-                        int notificationId = findNotificationId(dateStr, product, type, message);
+                        int notificationId = ((Number)notificationsModel.getValueAt(modelRow,5)).intValue();
                         if (notificationId > 0) {
                             pstmt.setString(1, newStatus);
                             pstmt.setInt(2, notificationId);
@@ -533,62 +531,6 @@ public class WarehousePanel extends JPanel {
                 "Error updating notifications: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
-    }
-
-    private int findNotificationId(String dateStr, String productName, String type, String message) {
-        try {
-            Connection conn = DatabaseManager.getInstance().getConnection();
-
-            // Try to parse the date string to match against database
-            SimpleDateFormat displayFormat = new SimpleDateFormat("dd/MM/yyyy HH:mm");
-            Date parsedDate = null;
-            try {
-                parsedDate = displayFormat.parse(dateStr);
-            } catch (Exception e) {
-                // If parsing fails, we'll search without date
-            }
-
-            String query;
-            if (parsedDate != null) {
-                // Include date in search for more precision
-                query = """
-                    SELECT n.id
-                    FROM warehouse_notifications n
-                    JOIN products p ON n.product_id = p.id
-                    WHERE p.name = ? AND n.type = ? AND n.message = ?
-                    AND datetime(n.date) = datetime(?)
-                    LIMIT 1
-                """;
-            } else {
-                // Fallback to original query without date
-                query = """
-                    SELECT n.id
-                    FROM warehouse_notifications n
-                    JOIN products p ON n.product_id = p.id
-                    WHERE p.name = ? AND n.type = ? AND n.message = ?
-                    ORDER BY n.date DESC
-                    LIMIT 1
-                """;
-            }
-
-            try (PreparedStatement pstmt = conn.prepareStatement(query)) {
-                pstmt.setString(1, productName);
-                pstmt.setString(2, type);
-                pstmt.setString(3, message);
-                if (parsedDate != null) {
-                    pstmt.setTimestamp(4, new java.sql.Timestamp(parsedDate.getTime()));
-                }
-
-                try (ResultSet rs = pstmt.executeQuery()) {
-                    if (rs.next()) {
-                        return rs.getInt("id");
-                    }
-                }
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-        return 0;
     }
 
     private void showMovementDialog(WarehouseMovement movement) {
@@ -649,7 +591,7 @@ public class WarehousePanel extends JPanel {
     private MinimumStock loadMinimumStock(String code) throws SQLException {
         Connection conn = DatabaseManager.getInstance().getConnection();
         String query = """
-            SELECT p.id, p.name, sm.minimum_quantity, sm.reorder_quantity,
+            SELECT p.id, p.name, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity, sm.reorder_quantity,
                     sm.lead_time_days, sm.preferred_supplier_id,
                     s.company_name as supplier_name, sm.notes
             FROM products p
@@ -750,9 +692,10 @@ public class WarehousePanel extends JPanel {
             if (result == JOptionPane.YES_OPTION) {
                 try {
                     Connection conn = DatabaseManager.getInstance().getConnection();
-                    conn.setAutoCommit(false);
+                    DatabaseManager.beginTransaction(conn);
 
                     try {
+                        StockManager.requireManualMovement(conn, movementId);
                         // Get movement details to restore stock
                         int productId = 0;
                         String movementType = "";
@@ -810,4 +753,5 @@ public class WarehousePanel extends JPanel {
             }
         }
     }
+    public void refreshData() { loadData(); }
 }
