@@ -506,13 +506,14 @@ public class OrderDialog extends JDialog {
             } else if ("Partially Paid".equals(paymentStatusUI)) {
                 paymentStatus = "PARTIALLY_PAID";
                 try {
-                    paidAmount = Numbers.nonNegative(paidAmountField.getText());
-                    if (paidAmount < 0) {
+                    java.math.BigDecimal enteredPaid=Numbers.decimal(paidAmountField.getText());
+                    if (enteredPaid.signum() < 0) {
                         JOptionPane.showMessageDialog(this,
                             "Paid amount cannot be negative",
                             "Error", JOptionPane.ERROR_MESSAGE);
                         return;
                     }
+                    paidAmount = Numbers.money(enteredPaid);
                     if (paidAmount > currentTotal) {
                         int choice = JOptionPane.showConfirmDialog(this,
                             I18n.tr("Paid amount exceeds order total. Continue?"),
@@ -522,7 +523,7 @@ public class OrderDialog extends JDialog {
                             return;
                         }
                     }
-                } catch (NumberFormatException ex) {
+                } catch (IllegalArgumentException ex) {
                     JOptionPane.showMessageDialog(this,
                         "Invalid paid amount. Please enter a valid number.",
                         "Error", JOptionPane.ERROR_MESSAGE);
