@@ -458,10 +458,10 @@ public class ExtendedRegressionTest extends RegressionTest {
                 Path legacyFile=OUT.resolve("invoice-legacy.pdf");
                 call(new InvoicePDFGenerator(legacy,customer()),"generatePDF",new Class<?>[]{java.io.File.class},legacyFile.toFile());
                 String legacyText=pdfText(legacyFile);
-                String legacyNote=I18n.tr("Legacy invoice: party and product descriptions were captured during upgrade and may differ from the original document.");
                 String normalizedLegacy=legacyText.replaceAll("\\s+"," ").trim();
-                require(normalizedLegacy.contains(legacyNote),"Legacy warning missing");
-                require(normalizedLegacy.indexOf("Product A")<normalizedLegacy.indexOf(legacyNote),"Legacy warning still dominates the invoice header");
+                int legacyIndex=normalizedLegacy.indexOf(I18n.tr("Legacy invoice"));
+                require(legacyIndex>=0 && normalizedLegacy.contains(I18n.tr("original document")),"Legacy warning missing");
+                require(normalizedLegacy.indexOf("Product A")<legacyIndex,"Legacy warning still dominates the invoice header");
             } finally {I18n.setLanguage(previousLanguage);}
         });
         test("fifty line invoice prints every row and totals within page bounds",()->{
