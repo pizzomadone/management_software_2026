@@ -361,7 +361,13 @@ public class ExtendedRegressionTest extends RegressionTest {
                     require(text.contains("Łódź") && text.contains("Crème Société"),"Unicode party data missing in "+language);
                 }
 
-                I18n.setLanguage("en");fresh();
+                I18n.setLanguage("en");
+                sql("UPDATE invoices SET logo_snapshot=x'00010203' WHERE id=1");
+                Path damagedLogo=OUT.resolve("invoice-damaged-logo.pdf");
+                call(new InvoicePDFGenerator(longModel,customer()),"generatePDF",new Class<?>[]{java.io.File.class},damagedLogo.toFile());
+                require(pdfText(damagedLogo).contains("TOTAL: EUR 36.60"),"Damaged historical logo prevented invoice export");
+
+                fresh();
                 sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(1,'VAT-MIX',"+System.currentTimeMillis()+",1,30,4.4,34.4,'Issued')");
                 sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total,product_code,product_name) VALUES(1,1,1,10,0,10,'A','Zero VAT'),(1,2,1,20,22,20,'B','Standard VAT')");
                 InvoiceSnapshots.capture(db,1,false);
@@ -392,7 +398,10 @@ public class ExtendedRegressionTest extends RegressionTest {
             Path file=OUT.resolve("invoice-50-lines.pdf");call(new InvoicePDFGenerator(i,customer()),"generatePDF",new Class<?>[]{java.io.File.class},file.toFile());
             String text=pdfText(file);for(int row=0;row<50;row++)require(text.contains("ROW-"+String.format("%03d",row)),"Invoice row clipped: "+row);
             require(text.contains("TOTAL: EUR 610.00"),"Final invoice total missing");
-            try(PDDocument doc=Loader.loadPDF(file.toFile())){require(doc.getNumberOfPages()>1,"Invoice did not paginate");}
+            try(PDDocument doc=Loader.loadPDF(file.toFile())){
+                int pages=doc.getNumberOfPages();require(pages>1,"Invoice did not paginate");
+                require(text.split("TEST-50",-1).length-1>=pages,"Continuation pages do not identify the invoice");
+            }
             sql("UPDATE invoices SET total=611 WHERE id=1");byte[] original=Files.readAllBytes(file);boolean blocked=false;
             try{call(new InvoicePDFGenerator(i,customer()),"generatePDF",new Class<?>[]{java.io.File.class},file.toFile());}catch(java.io.IOException e){blocked=true;}
             require(blocked && Arrays.equals(original,Files.readAllBytes(file)),"Inconsistent invoice overwrote prior export");
