@@ -13,6 +13,7 @@ public final class PdfWriter implements AutoCloseable {
     private final PDFont regular, bold;
     private final PDRectangle paper;
     private final String title;
+    private String continuationTitle="";
     private PDPageContentStream stream;
     private float y;
     private String[] headers;
@@ -26,6 +27,10 @@ public final class PdfWriter implements AutoCloseable {
             newPage();
         } catch (IOException | RuntimeException e) { document.close(); throw e; }
     }
+    public void setContinuationTitle(String value) {
+        continuationTitle=Objects.toString(value,"");
+    }
+
     private PDFont font(String name) throws IOException {
         try(InputStream in=openFont(name)) {
             return PDType0Font.load(document,in);
@@ -74,8 +79,9 @@ public final class PdfWriter implements AutoCloseable {
         stream=new PDPageContentStream(document,page);
         text("WareStat | "+pageLabel()+" "+document.getNumberOfPages(),MARGIN,28,regular,8);
         y=paper.getHeight()-MARGIN;
-        if(!title.isBlank()) {
-            for(String line:wrap(title,paper.getWidth()-2*MARGIN,bold,14)) {
+        String pageTitle=!title.isBlank()?title:(document.getNumberOfPages()>1?continuationTitle:"");
+        if(!pageTitle.isBlank()) {
+            for(String line:wrap(pageTitle,paper.getWidth()-2*MARGIN,bold,14)) {
                 if(y<BOTTOM+60) throw new IOException("Report title is too long");
                 text(line,MARGIN,y,bold,14);y-=19;
             }
@@ -141,10 +147,14 @@ public final class PdfWriter implements AutoCloseable {
         headers=null;widths=null;
         float top=y;
         if(logoBytes!=null && logoBytes.length>0) {
-            PDImageXObject logo=PDImageXObject.createFromByteArray(document,logoBytes,"Company logo");
-            float scale=Math.min(112f/logo.getWidth(),50f/logo.getHeight());
-            float h=logo.getHeight()*scale;
-            stream.drawImage(logo,MARGIN,top-h,logo.getWidth()*scale,h);
+            try {
+                PDImageXObject logo=PDImageXObject.createFromByteArray(document,logoBytes,"Company logo");
+                float scale=Math.min(112f/logo.getWidth(),50f/logo.getHeight());
+                float h=logo.getHeight()*scale;
+                stream.drawImage(logo,MARGIN,top-h,logo.getWidth()*scale,h);
+            } catch(IOException | IllegalArgumentException invalidLogo) {
+                // A damaged historical logo must never prevent the invoice itself from being exported.
+            }
         }
         float right=paper.getWidth()-MARGIN;
         rightText(documentTitle,right,top-2,bold,22);
