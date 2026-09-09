@@ -62,8 +62,8 @@ public class ReportPDFGenerator {
      */
     public void generateAndSave(Component parent) {
         JFileChooser fileChooser = new JFileChooser();
-        fileChooser.setDialogTitle("Save Report as PDF");
-        fileChooser.setFileFilter(new FileNameExtensionFilter("PDF Files", "pdf"));
+        fileChooser.setDialogTitle(I18n.tr("Save Report as PDF"));
+        fileChooser.setFileFilter(new FileNameExtensionFilter(I18n.tr("PDF Files"), "pdf"));
 
         // Use settings system for last directory
         String lastDirectory = getLastDirectory();
@@ -98,8 +98,8 @@ public class ReportPDFGenerator {
 
                 // Ask to open the file
                 int choice = JOptionPane.showConfirmDialog(parent,
-                    "PDF report saved successfully!\nWould you like to open the PDF file?",
-                    "Open PDF",
+                    I18n.tr("PDF report saved successfully!") + "\n" + I18n.tr("Would you like to open the PDF file?"),
+                    I18n.tr("Open PDF"),
                     JOptionPane.YES_NO_OPTION);
 
                 if (choice == JOptionPane.YES_OPTION) {
@@ -107,8 +107,8 @@ public class ReportPDFGenerator {
                         Desktop.getDesktop().open(file);
                     } catch (Exception e) {
                         JOptionPane.showMessageDialog(parent,
-                            "Cannot open PDF automatically. File saved to:\n" + file.getAbsolutePath(),
-                            "Information",
+                            I18n.tr("Cannot open PDF automatically. File saved to") + ":\n" + file.getAbsolutePath(),
+                            I18n.tr("Information"),
                             JOptionPane.INFORMATION_MESSAGE);
                     }
                 }
@@ -116,8 +116,8 @@ public class ReportPDFGenerator {
             } catch (IOException e) {
                 e.printStackTrace();
                 JOptionPane.showMessageDialog(parent,
-                    "Error generating PDF: " + e.getMessage(),
-                    "Error",
+                    I18n.tr("Error generating PDF") + ": " + e.getMessage(),
+                    I18n.tr("Error"),
                     JOptionPane.ERROR_MESSAGE);
             }
         }
@@ -141,21 +141,26 @@ public class ReportPDFGenerator {
     }
 
     private void generatePDF(File outputFile) throws IOException {
-        try(PdfWriter pdf=new PdfWriter(reportTitle,tableModel.getColumnCount()>6)) {
-            if(subtitle!=null && !subtitle.isBlank())pdf.paragraph(subtitle,false);
+        try(PdfWriter pdf=new PdfWriter(I18n.tr(reportTitle),tableModel.getColumnCount()>6)) {
+            if(subtitle!=null && !subtitle.isBlank())pdf.paragraph(I18n.tr(subtitle),false);
             int columns=tableModel.getColumnCount();
             if(columns>0) {
                 String[] headers=new String[columns];float[] weights=new float[columns];
-                for(int i=0;i<columns;i++) {headers[i]=tableModel.getColumnName(i);weights[i]=1;}
+                for(int i=0;i<columns;i++) {headers[i]=I18n.tr(tableModel.getColumnName(i));weights[i]=1;}
                 pdf.startTable(headers,weights);
                 for(int row=0;row<tableModel.getRowCount();row++) {
                     String[] values=new String[columns];
-                    for(int col=0;col<columns;col++)values[col]=java.util.Objects.toString(tableModel.getValueAt(row,col),"");
+                    for(int col=0;col<columns;col++) {
+                        Object value=tableModel.getValueAt(row,col);
+                        String heading=tableModel.getColumnName(col);
+                        boolean localizedValue=java.util.Set.of("Status","Payment Status","Type","Reason","Priority").contains(heading);
+                        values[col]=localizedValue && value instanceof String text ? I18n.tr(text) : java.util.Objects.toString(value,"");
+                    }
                     pdf.row(values);
                 }
             }
-            if(tableModel.getRowCount()==0)pdf.paragraph("No data for the selected criteria.",false);
+            if(tableModel.getRowCount()==0)pdf.paragraph(I18n.tr("No data for the selected criteria."),false);
             pdf.save(outputFile);
-        } catch(IllegalArgumentException e) {throw new IOException("Unable to export report: "+e.getMessage(),e);}
+        } catch(IllegalArgumentException e) {throw new IOException(I18n.tr("Unable to export report")+": "+e.getMessage(),e);}
     }
 }
