@@ -44,7 +44,7 @@ public class AboutDialog extends JDialog {
         contentPanel.add(Box.createVerticalStrut(5));
 
         // Version
-        JLabel versionLabel = new JLabel("Version " + AppConstants.VERSION);
+        JLabel versionLabel = new JLabel(I18n.tr("Version") + " " + AppConstants.VERSION);
         versionLabel.setFont(new Font("SansSerif", Font.PLAIN, 14));
         versionLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
         versionLabel.setForeground(Color.GRAY);
@@ -78,7 +78,7 @@ public class AboutDialog extends JDialog {
         contentPanel.add(Box.createVerticalStrut(20));
 
         // License type
-        JLabel licenseTypeLabel = new JLabel(AppConstants.LICENSE_TYPE + " - Version " + AppConstants.LICENSE_VERSION_APPLIES_TO);
+        JLabel licenseTypeLabel = new JLabel(AppConstants.LICENSE_TYPE + " - " + I18n.tr("Version") + " " + AppConstants.LICENSE_VERSION_APPLIES_TO);
         licenseTypeLabel.setFont(new Font("SansSerif", Font.BOLD, 11));
         licenseTypeLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
         contentPanel.add(licenseTypeLabel);
