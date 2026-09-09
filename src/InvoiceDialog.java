@@ -402,7 +402,7 @@ public class InvoiceDialog extends JDialog {
             row.add(quantity);
             row.add(product.getPrice());
             row.add(vatRate);
-            row.add(String.format("%.2f", Numbers.lineTotal(quantity, product.getPrice())));
+            row.add(Numbers.moneyText(Numbers.lineTotal(quantity, product.getPrice())));
             row.add(product.getId());
             itemsTableModel.addRow(row);
 
@@ -524,7 +524,7 @@ public class InvoiceDialog extends JDialog {
             row.add(item.getQuantity());
             row.add(item.getUnitPrice());
             row.add(item.getVatRate());
-            row.add(String.format("%.2f", item.getTotal()));
+            row.add(Numbers.moneyText(item.getTotal()));
             row.add(item.getProductId());
             itemsTableModel.addRow(row);
         }
@@ -609,7 +609,7 @@ public class InvoiceDialog extends JDialog {
                     totalVat = Numbers.add(totalVat, vat);
 
                     String currentTotal = (String) itemsTableModel.getValueAt(i, 5);
-                    String newTotal = String.format("%.2f", subtotal);
+                    String newTotal = Numbers.moneyText(subtotal);
                     if (!newTotal.equals(currentTotal)) {
                         itemsTableModel.setValueAt(newTotal, i, 5);
                     }
