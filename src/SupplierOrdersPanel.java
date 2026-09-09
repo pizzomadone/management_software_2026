@@ -57,7 +57,7 @@ public class SupplierOrdersPanel extends JPanel {
                     Vector<Object> row = new Vector<>(); row.add(rs.getInt("id")); row.add(rs.getString("number")); row.add(rs.getString("company_name"));
                     Date date = DateUtils.parseDate(rs, "order_date"); Date delivery = DateUtils.parseDate(rs, "expected_delivery_date");
                     row.add(date == null ? "" : DateUtils.formatDate(date, dateFormat)); row.add(delivery == null ? "" : DateUtils.formatDate(delivery, dateFormat));
-                    row.add(rs.getString("status")); row.add(String.format("%.2f", rs.getDouble("total"))); row.add(rs.getString("notes")); model.addRow(row);
+                    row.add(rs.getString("status")); row.add(Numbers.moneyText(rs.getDouble("total"))); row.add(rs.getString("notes")); model.addRow(row);
                 }
             }
         } catch (SQLException ex) { JOptionPane.showMessageDialog(this, "Error loading supplier orders: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE); }
