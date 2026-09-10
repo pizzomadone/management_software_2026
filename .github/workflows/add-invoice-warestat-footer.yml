@@ -28,8 +28,7 @@ jobs:
 
           p=Path('src/PdfWriter.java')
           s=p.read_text(encoding='utf-8')
-          anchor='''    public void startTable(String[] labels,float[] weights) throws IOException {
-          '''
+          anchor='    public void startTable(String[] labels,float[] weights) throws IOException {'
           method='''    public void smallText(String value) throws IOException {
               if(value==null || value.isBlank())return;
               headers=null;widths=null;
@@ -41,7 +40,7 @@ jobs:
               y-=2;
           }
 
-          '''
+'''
           if 'public void smallText(String value)' not in s:
               if anchor not in s: raise SystemExit('PdfWriter insertion anchor not found')
               s=s.replace(anchor,method+anchor,1)
@@ -49,15 +48,11 @@ jobs:
 
           p=Path('src/InvoicePDFGenerator.java')
           s=p.read_text(encoding='utf-8')
-          anchor='''                if(legacy)pdf.note(I18n.tr("Legacy invoice: party and product descriptions were captured during upgrade and may differ from the original document."));
-                pdf.save(outputFile);
-          '''
-          replacement='''                if(legacy)pdf.note(I18n.tr("Legacy invoice: party and product descriptions were captured during upgrade and may differ from the original document."));
-                pdf.smallText(I18n.tr("Document generated with WareStat"));
-                pdf.save(outputFile);
-          '''
-          if anchor not in s: raise SystemExit('Invoice PDF insertion anchor not found')
-          s=s.replace(anchor,replacement,1)
+          save='                pdf.save(outputFile);'
+          insert='                pdf.smallText(I18n.tr("Document generated with WareStat"));\n'+save
+          if 'Document generated with WareStat' not in s:
+              if s.count(save)!=1: raise SystemExit('Invoice PDF save anchor not unique')
+              s=s.replace(save,insert,1)
           p.write_text(s,encoding='utf-8')
 
           translations={
