@@ -24,6 +24,7 @@ public class SettingsPanel extends JPanel {
     private JTextField defaultVatField;
     private JComboBox<String> languageCombo;
     private boolean currencyChangedDuringUpdate;
+    private boolean currencyChangeDeferredForBackup;
 
     // Company Data fields
     private JTextField companyNameField;
@@ -406,6 +407,10 @@ public class SettingsPanel extends JPanel {
     private void applyAllSettings() {
         try {
             updateSettingsFromFields();
+            if (currencyChangeDeferredForBackup) {
+                currencyChangeDeferredForBackup = false;
+                return;
+            }
             boolean currencyChanged = currencyChangedDuringUpdate;
             applySettings();
             if (!currencyChanged) {
@@ -424,6 +429,10 @@ public class SettingsPanel extends JPanel {
 
         try {
             saveAppSettings();
+            if (currencyChangeDeferredForBackup) {
+                currencyChangeDeferredForBackup = false;
+                return;
+            }
         } catch (Exception e) {
             success = false;
             JOptionPane.showMessageDialog(this,
@@ -448,6 +457,7 @@ public class SettingsPanel extends JPanel {
 
     private void saveAppSettings() {
         updateSettingsFromFields();
+        if (currencyChangeDeferredForBackup) return;
 
         try (OutputStreamWriter writer = new OutputStreamWriter(
                 new FileOutputStream(AppConstants.getSettingsPath().toFile()),
@@ -461,6 +471,7 @@ public class SettingsPanel extends JPanel {
     /** Copies every editable application option into the live settings. */
     private void updateSettingsFromFields() {
         currencyChangedDuringUpdate = false;
+        currencyChangeDeferredForBackup = false;
         double vatRate;
         try {
             vatRate = Numbers.vat(defaultVatField.getText());
@@ -495,18 +506,49 @@ public class SettingsPanel extends JPanel {
             "\n• "+I18n.tr("Convert values: monetary values are recalculated using a rate you enter.")+
             "\n\n"+I18n.tr("Issued, Paid and Canceled invoices keep their original currency and amounts.");
 
-        Object[] options={
-            I18n.tr("Change currency only"),
-            I18n.tr("Convert values"),
-            I18n.tr("Cancel")
-        };
-        int choice=JOptionPane.showOptionDialog(this,warning,I18n.tr("Change Currency"),
-            JOptionPane.DEFAULT_OPTION,JOptionPane.WARNING_MESSAGE,null,options,options[0]);
+        JPanel warningPanel=new JPanel();
+    warningPanel.setLayout(new BoxLayout(warningPanel,BoxLayout.Y_AXIS));
+    JTextArea warningText=new JTextArea(warning);
+    warningText.setEditable(false);
+    warningText.setFocusable(false);
+    warningText.setOpaque(false);
+    warningText.setBorder(null);
+    warningText.setFont(UIManager.getFont("Label.font"));
+    warningPanel.add(warningText);
+    warningPanel.add(Box.createVerticalStrut(10));
+    warningPanel.add(new JLabel(I18n.tr("Before changing currency, we recommend creating a backup of your database.")));
 
-        if(choice<0 || choice==2) {
-            restoreCurrencySelection(oldCode);
-            return (String)currencyCombo.getSelectedItem();
+    boolean[] backupRequested={false};
+    JLabel backupLink=new JLabel("<html><a href='backup'>"+I18n.tr("Open Backup")+"</a></html>");
+    backupLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+    backupLink.addMouseListener(new MouseAdapter() {
+        @Override public void mouseClicked(MouseEvent event) {
+            backupRequested[0]=true;
+            Window dialog=SwingUtilities.getWindowAncestor(backupLink);
+            if(dialog!=null) dialog.dispose();
         }
+    });
+    warningPanel.add(backupLink);
+
+    Object[] options={
+        I18n.tr("Change currency only"),
+        I18n.tr("Convert values"),
+        I18n.tr("Cancel")
+    };
+    int choice=JOptionPane.showOptionDialog(this,warningPanel,I18n.tr("Change Currency"),
+        JOptionPane.DEFAULT_OPTION,JOptionPane.WARNING_MESSAGE,null,options,options[0]);
+
+    if(backupRequested[0]) {
+        currencyChangeDeferredForBackup=true;
+        restoreCurrencySelection(oldCode);
+        Window owner=SwingUtilities.getWindowAncestor(this);
+        if(owner instanceof MainWindow mainWindow) mainWindow.showPanelByName("BACKUP");
+        return (String)currencyCombo.getSelectedItem();
+    }
+    if(choice<0 || choice==2) {
+        restoreCurrencySelection(oldCode);
+        return (String)currencyCombo.getSelectedItem();
+    }
 
         try {
             if(choice==0) {

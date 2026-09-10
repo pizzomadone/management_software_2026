@@ -363,7 +363,9 @@ public class ExtendedRegressionTest extends RegressionTest {
                 "Operational values were converted using the selected exchange rate.",
                 "Finalized invoice: only the status can be changed.",
                 "Issued, Paid and Canceled invoices are historical documents. Only their status can be changed.",
-                "A finalized invoice cannot be returned to Draft."
+                "A finalized invoice cannot be returned to Draft.",
+                "Before changing currency, we recommend creating a backup of your database.",
+                "Open Backup"
             };
             try {
                 for(String language:List.of("it","es","pt_BR","fr","de","pl","en")) {
