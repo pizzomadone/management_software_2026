@@ -1,0 +1,90 @@
+name: Add invoice footer v2
+
+on:
+  push:
+    branches:
+      - fix/macos-filechooser-i18n
+
+permissions:
+  contents: write
+
+jobs:
+  test-and-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/macos-filechooser-i18n
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install Ant
+        run: sudo apt-get update && sudo apt-get install -y ant
+      - name: Patch invoice footer
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('src/PdfWriter.java')
+          s = p.read_text(encoding='utf-8')
+          anchor = '    public void startTable(String[] labels,float[] weights) throws IOException {'
+          method = '''    public void smallText(String value) throws IOException {
+              if(value==null || value.isBlank())return;
+              headers=null;widths=null;
+              y-=6;
+              for(String line:wrap(value,paper.getWidth()-2*MARGIN,regular,7f)) {
+                  if(y-10<BOTTOM)newPage();
+                  text(line,MARGIN,y,regular,7f);y-=10;
+              }
+              y-=2;
+          }
+
+'''
+          if 'public void smallText(String value)' not in s:
+              if anchor not in s:
+                  raise SystemExit('PdfWriter anchor not found')
+              s = s.replace(anchor, method + anchor, 1)
+          p.write_text(s, encoding='utf-8')
+
+          p = Path('src/InvoicePDFGenerator.java')
+          s = p.read_text(encoding='utf-8')
+          save = '                pdf.save(outputFile);'
+          if 'Document generated with WareStat' not in s:
+              if s.count(save) != 1:
+                  raise SystemExit('Invoice PDF save anchor not unique')
+              s = s.replace(save, '                pdf.smallText(I18n.tr("Document generated with WareStat"));\n' + save, 1)
+          p.write_text(s, encoding='utf-8')
+
+          translations = {
+              'messages_en.properties': 'Document generated with WareStat',
+              'messages_it.properties': 'Documento generato con WareStat',
+              'messages_es.properties': 'Documento generado con WareStat',
+              'messages_fr.properties': 'Document généré avec WareStat',
+              'messages_de.properties': 'Dokument erstellt mit WareStat',
+              'messages_pl.properties': 'Dokument wygenerowany za pomocą WareStat',
+              'messages_pt_BR.properties': 'Documento gerado com WareStat',
+          }
+          key = 'Document\\ generated\\ with\\ WareStat='
+          for filename, value in translations.items():
+              path = Path('resources/i18n') / filename
+              text = path.read_text(encoding='utf-8')
+              if key not in text:
+                  if not text.endswith('\n'):
+                      text += '\n'
+                  text += key + value + '\n'
+                  path.write_text(text, encoding='utf-8')
+          PY
+      - name: Run regression suite
+        run: ant test
+      - name: Commit tested change
+        run: |
+          git config user.name "WareStat audit"
+          git config user.email "actions@github.com"
+          git rm .github/workflows/add-invoice-footer-v2.yml
+          git rm -f .github/workflows/add-invoice-warestat-footer.yml
+          git add src/PdfWriter.java src/InvoicePDFGenerator.java resources/i18n/messages_*.properties
+          git commit -m "Add WareStat footer to invoice PDF"
+          git push origin HEAD:fix/macos-filechooser-i18n
