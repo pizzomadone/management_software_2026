@@ -1,0 +1,44 @@
+name: Audit messagebox translations
+on:
+  push:
+    branches: [fix/macos-filechooser-i18n]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/macos-filechooser-i18n
+      - name: Find message boxes with literal English text
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+          for p in sorted(Path('src').glob('*.java')):
+              s=p.read_text(encoding='utf-8')
+              lines=s.splitlines()
+              for i,line in enumerate(lines):
+                  if 'JOptionPane.show' not in line:
+                      continue
+                  block='\n'.join(lines[i:min(len(lines),i+12)])
+                  # stop roughly after the call closes
+                  m=re.search(r'JOptionPane\.show(?:Message|Confirm|Option|Input)Dialog\([\s\S]*?\);',block)
+                  if m:
+                      block=m.group(0)
+                  # report dialogs containing quoted literals outside I18n.tr wrappers
+                  literals=re.findall(r'"([^"\\]*(?:\\.[^"\\]*)*)"',block)
+                  suspect=[]
+                  for lit in literals:
+                      if not lit.strip() or lit in ('Error','Warning','Information'):
+                          continue
+                      # Ignore DB/code-only fragments and already translated simple literals
+                      if f'I18n.tr("{lit}")' in block:
+                          continue
+                      if re.search(r'[A-Za-z]{3}',lit): suspect.append(lit)
+                  if suspect:
+                      print(f'FILE {p}:{i+1}')
+                      print(block)
+                      print('LITERALS:',suspect)
+                      print('---')
