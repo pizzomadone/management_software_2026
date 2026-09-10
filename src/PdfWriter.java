@@ -14,6 +14,7 @@ public final class PdfWriter implements AutoCloseable {
     private final PDRectangle paper;
     private final String title;
     private final String pageLabel;
+    private final String footerPrefix;
     private String continuationTitle="";
     private PDPageContentStream stream;
     private float y;
@@ -25,8 +26,13 @@ public final class PdfWriter implements AutoCloseable {
     }
 
     public PdfWriter(String title, boolean landscape, String pageLabel) throws IOException {
+        this(title,landscape,pageLabel,"WareStat");
+    }
+
+    public PdfWriter(String title, boolean landscape, String pageLabel, String footerPrefix) throws IOException {
         this.title=Objects.toString(title,"");
         this.pageLabel=Objects.toString(pageLabel,"Page").isBlank()?"Page":pageLabel;
+        this.footerPrefix=Objects.toString(footerPrefix,"").trim();
         paper=landscape?new PDRectangle(PDRectangle.A4.getHeight(),PDRectangle.A4.getWidth()):PDRectangle.A4;
         try {
             regular=font("DejaVuSans.ttf"); bold=font("DejaVuSans-Bold.ttf");
@@ -72,7 +78,8 @@ public final class PdfWriter implements AutoCloseable {
         if(stream!=null)stream.close();
         PDPage page=new PDPage(paper);document.addPage(page);
         stream=new PDPageContentStream(document,page);
-        text("WareStat | "+pageLabel+" "+document.getNumberOfPages(),MARGIN,28,regular,8);
+        String footer=(footerPrefix.isBlank()?"":footerPrefix+" | ")+pageLabel+" "+document.getNumberOfPages();
+        text(footer,MARGIN,28,regular,8);
         y=paper.getHeight()-MARGIN;
         String pageTitle=!title.isBlank()?title:(document.getNumberOfPages()>1?continuationTitle:"");
         if(!pageTitle.isBlank()) {
