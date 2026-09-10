@@ -90,8 +90,25 @@ public class DashboardPanel extends JPanel {
         JScrollPane scrollPane = new JScrollPane(mainContainer);
         scrollPane.setBorder(null);
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        routeNestedMouseWheel(mainContainer, scrollPane);
 
         add(scrollPane, BorderLayout.CENTER);
+    }
+
+    private void routeNestedMouseWheel(Container root, JScrollPane dashboardScrollPane) {
+        for (Component component : root.getComponents()) {
+            if (component instanceof JScrollPane nestedScrollPane) {
+                nestedScrollPane.setWheelScrollingEnabled(false);
+                nestedScrollPane.addMouseWheelListener(event -> {
+                    JScrollBar bar = dashboardScrollPane.getVerticalScrollBar();
+                    int increment = Math.max(1, bar.getUnitIncrement(event.getWheelRotation()));
+                    bar.setValue(bar.getValue() + event.getUnitsToScroll() * increment);
+                    event.consume();
+                });
+            } else if (component instanceof Container container) {
+                routeNestedMouseWheel(container, dashboardScrollPane);
+            }
+        }
     }
 
     private JPanel createHeaderPanel() {
