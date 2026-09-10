@@ -218,6 +218,7 @@ public class InvoicePDFGenerator {
                     new String[]{I18n.tr("Taxable amount")+":",I18n.tr("VAT")+":",I18n.tr("TOTAL")+":"},
                     new String[]{currency+" "+money(invoice.getTaxableAmount()),currency+" "+money(invoice.getVat()),currency+" "+money(invoice.getTotal())});
                 if(legacy)pdf.note(I18n.tr("Legacy invoice: party and product descriptions were captured during upgrade and may differ from the original document."));
+                pdf.note("Documento generato con WareStat");
                 pdf.save(outputFile);
             }
         } catch(SQLException | IllegalArgumentException e) {throw new IOException(I18n.tr("Unable to generate a consistent invoice")+": "+e.getMessage(),e);}
