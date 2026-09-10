@@ -546,6 +546,13 @@ public class OrderDialog extends JDialog {
             Connection conn = DatabaseManager.getInstance().getConnection();
             DatabaseManager.beginTransaction(conn);
             try {
+            if (order != null) {
+                try (PreparedStatement p=conn.prepareStatement("SELECT 1 FROM invoices WHERE order_id=? LIMIT 1")) {
+                    p.setInt(1,order.getId()); try (ResultSet r=p.executeQuery()) {
+                        if (r.next()) throw new SQLException(I18n.tr("This order already has an invoice and cannot be modified."));
+                    }
+                }
+            }
             // Check stock availability for New, In Progress and Completed states
             if ("New".equals(newStatus) || "In Progress".equals(newStatus) || "Completed".equals(newStatus)) {
                 Map<String, StockManager.StockAvailability> insufficient =

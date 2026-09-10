@@ -361,6 +361,7 @@ public class DatabaseManager {
 
         // Create triggers for stock reservation synchronization
         createStockReservationTriggers();
+        StockManager.reconcileReservedStock(connection);
     }
 
     private void createStockReservationTriggers() throws SQLException {

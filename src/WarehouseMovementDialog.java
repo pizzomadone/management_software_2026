@@ -267,22 +267,17 @@ public class WarehouseMovementDialog extends JDialog {
             int currentStock = getCurrentStock(selectedProduct.getId());
 
             if ("OUTWARD".equals(type)) {
-                if (movement != null && "OUTWARD".equals(movement.getType()) &&
-                    movement.getProductId() == selectedProduct.getId()) {
-                    // If editing an outward movement for the same product, add back the original quantity
-                    currentStock += movement.getQuantity();
-                }
-
-                if (requestedQuantity > currentStock) {
+                int available=availableForOutward(DatabaseManager.getInstance().getConnection(),selectedProduct.getId());
+                if (requestedQuantity > available) {
                     availabilityLabel.setText(String.format(
                         "⚠️ Insufficient stock! Available: %d, Requested: %d",
-                        currentStock, requestedQuantity));
+                        available, requestedQuantity));
                     availabilityLabel.setForeground(Color.RED);
                     availabilityLabel.setBackground(new Color(255, 240, 240));
                 } else {
                     availabilityLabel.setText(String.format(
                         "✓ Available: %d, After movement: %d",
-                        currentStock, currentStock - requestedQuantity));
+                        available, available - requestedQuantity));
                     availabilityLabel.setForeground(new Color(0, 120, 0));
                     availabilityLabel.setBackground(new Color(240, 255, 240));
                 }
@@ -318,6 +313,16 @@ public class WarehouseMovementDialog extends JDialog {
             e.printStackTrace();
         }
         return 0;
+    }
+
+    private int availableForOutward(Connection conn,int productId) throws SQLException {
+        int available=StockManager.getAvailableStock(conn,productId);
+        if (movement==null || movement.getProductId()!=productId) return available;
+        try {
+            if ("OUTWARD".equals(movement.getType())) return Math.addExact(available,movement.getQuantity());
+            if ("INWARD".equals(movement.getType())) return Math.subtractExact(available,movement.getQuantity());
+        } catch (ArithmeticException e) { throw new SQLException("Stock availability exceeds the supported range",e); }
+        throw new SQLException("Unsupported existing movement type: "+movement.getType());
     }
 
     // Method to load movement data for editing
@@ -390,11 +395,7 @@ public class WarehouseMovementDialog extends JDialog {
                 if (movement != null) StockManager.requireManualMovement(conn, movement.getId());
             // Check availability for outward movements
             if ("OUTWARD".equals(type)) {
-                int availability = getCurrentStock(selectedProduct.getId());
-                if (movement != null && "OUTWARD".equals(movement.getType()) &&
-                    movement.getProductId() == selectedProduct.getId()) {
-                    availability += movement.getQuantity(); // Restore original quantity
-                }
+                int availability = availableForOutward(conn,selectedProduct.getId());
                 if (quantity > availability) {
                     int choice = JOptionPane.showConfirmDialog(this,
                         String.format("Insufficient quantity. Current availability: %d\n" +

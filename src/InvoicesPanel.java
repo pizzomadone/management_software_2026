@@ -416,6 +416,11 @@ public class InvoicesPanel extends JPanel {
             String number = (String)tableModel.getValueAt(modelRow, 0);
             String customer = (String)tableModel.getValueAt(modelRow, 2);
             String status = (String)tableModel.getValueAt(modelRow, 6);
+        if (InvoiceDialog.isFinalizedStatus(status)) {
+            JOptionPane.showMessageDialog(this,I18n.tr("Issued, Paid and Canceled invoices are historical documents. Only their status can be changed."),I18n.tr("Historical Invoice"),JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
 
             int result = JOptionPane.showConfirmDialog(this,
                 "Are you sure you want to delete invoice " + number + " from customer " + customer + "?\n" +

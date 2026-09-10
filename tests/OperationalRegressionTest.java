@@ -29,6 +29,27 @@ public class OperationalRegressionTest extends RegressionTest {
         put(d,"unitOfMeasureComboBox",new JComboBox<>(new String[]{"pcs"}));put(d,"activeCheckBox",new JCheckBox("",true));return d;
     }
     static void operational() throws Exception {
+        test("startup reconciles active reservation cache",()->{
+            fresh();StockManager.createOrUpdateReservation(db,1,"ORDER",77,8,"");sql("UPDATE products SET reserved_quantity=0 WHERE id=1");call(DatabaseManager.getInstance(),"createTables");
+            require("8".equals(value("SELECT reserved_quantity FROM products WHERE id=1")),"Active reservations were lost from availability after startup");
+        });
+        test("manual outward availability honors reservations and edit reversal",()->{
+            fresh();StockManager.createOrUpdateReservation(db,1,"ORDER",77,8,"");WarehouseMovementDialog d=empty(WarehouseMovementDialog.class);put(d,"movement",null);
+            require(((Number)call(d,"availableForOutward",new Class<?>[]{Connection.class,int.class},db,1)).intValue()==2,"Manual issue ignored reservations");
+            sql("UPDATE products SET quantity=15 WHERE id=1");put(d,"movement",new WarehouseMovement(1,1,"A",new java.util.Date(),"INWARD",5,"OTHER",null,null,""));
+            require(((Number)call(d,"availableForOutward",new Class<?>[]{Connection.class,int.class},db,1)).intValue()==2,"Edited inward movement availability is wrong");
+            sql("UPDATE products SET quantity=5 WHERE id=1");put(d,"movement",new WarehouseMovement(1,1,"A",new java.util.Date(),"OUTWARD",5,"OTHER",null,null,""));
+            require(((Number)call(d,"availableForOutward",new Class<?>[]{Connection.class,int.class},db,1)).intValue()==2,"Edited outward movement availability is wrong");
+        });
+        test("linked invoice freezes its source order",()->{
+            fresh();completed();sql("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status,order_id,currency_code) VALUES('LOCKED',0,1,30,0,30,'Issued',1,'EUR')");
+            OD d=order(true,5,"Completed");rejectedSave(d,"saveOrder","orderSaved");
+            require(qty()==7 && "30.0|3".equals(value("SELECT total||'|'||(SELECT quantity FROM order_details WHERE order_id=1) FROM orders WHERE id=1")),"Invoiced order diverged from invoice");
+            CustomersPanel customers=new CustomersPanel();require((Boolean)call(customers,"hasFinalizedCustomerInvoices",new Class<?>[]{Connection.class,int.class},db,1),"Finalized customer history was not detected");
+        });
+        test("non-completed orders cannot be invoiced",()->{
+            for(String status:java.util.List.of("New","In Progress","Cancelled")) { fresh();sql("INSERT INTO orders(id,customer_id,order_date,status,total) VALUES(10,1,0,'"+status+"',10)");sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(10,1,1,10)");OrdersPanel p=new OrdersPanel();JTable t=(JTable)get(p,"ordersTable");t.setRowSelectionInterval(0,0);try{call(p,"generateInvoiceFromOrder");}catch(java.awt.HeadlessException expected){}require("0".equals(value("SELECT COUNT(*) FROM invoices")),"Non-completed order was invoiced: "+status); }
+        });
         test("inventory correction records only the physical delta",()->{
             fresh();call(productEditor(15),"saveProduct");require(qty()==15,"Stock count not saved");
             require("5".equals(value("SELECT quantity FROM warehouse_movements")) && "INWARD".equals(value("SELECT type FROM warehouse_movements")),"Wrong inventory delta");

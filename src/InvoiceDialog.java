@@ -62,8 +62,7 @@ public class InvoiceDialog extends JDialog {
         this.dateFormat = new SimpleDateFormat("dd/MM/yyyy");
         this.productsCache = new HashMap<>();
         this.documentCurrency = resolveDocumentCurrency(invoice);
-        this.historicalForeignCurrencyLocked = invoice != null && !"Draft".equals(invoice.getStatus())
-            && !currencyCode().equals(SettingsPanel.getCurrencyCode());
+        this.historicalForeignCurrencyLocked = invoice != null && isFinalizedStatus(invoice.getStatus());
 
         setupWindow();
         initComponents();
@@ -77,7 +76,7 @@ public class InvoiceDialog extends JDialog {
         setLocationRelativeTo(parent);
     }
 
-    private static boolean isFinalizedStatus(String status) {
+    static boolean isFinalizedStatus(String status) {
         return status!=null && !"Draft".equals(status);
     }
 
