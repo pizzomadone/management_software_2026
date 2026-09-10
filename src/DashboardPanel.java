@@ -849,7 +849,7 @@ public class DashboardPanel extends JPanel {
             }
 
             if (products.isEmpty() || totalRevenue == 0) {
-                model.addRow(new Object[]{"N/A", "0", "0%", SettingsPanel.formatCurrency(0), "0%", "No data available"});
+                model.addRow(new Object[]{"N/A", "0", "0%", SettingsPanel.formatCurrency(0), "0%", I18n.tr("No data available")});
                 return;
             }
 
@@ -882,7 +882,7 @@ public class DashboardPanel extends JPanel {
                 String.format("%.1f%%", (classACount * 100.0 / totalProducts)),
                 SettingsPanel.formatCurrency(classARevenue),
                 String.format("%.1f%%", (classARevenue * 100.0 / totalRevenue)),
-                "High-value products - Priority focus"
+                I18n.tr("High-value products - Priority focus")
             });
 
             model.addRow(new Object[]{
@@ -891,7 +891,7 @@ public class DashboardPanel extends JPanel {
                 String.format("%.1f%%", (classBCount * 100.0 / totalProducts)),
                 SettingsPanel.formatCurrency(classBRevenue),
                 String.format("%.1f%%", (classBRevenue * 100.0 / totalRevenue)),
-                "Medium-value products - Monitor"
+                I18n.tr("Medium-value products - Monitor")
             });
 
             model.addRow(new Object[]{
@@ -900,7 +900,7 @@ public class DashboardPanel extends JPanel {
                 String.format("%.1f%%", (classCCount * 100.0 / totalProducts)),
                 SettingsPanel.formatCurrency(classCRevenue),
                 String.format("%.1f%%", (classCRevenue * 100.0 / totalRevenue)),
-                "Low-value products - Consider liquidation"
+                I18n.tr("Low-value products - Consider liquidation")
             });
 
         } catch (SQLException e) {
