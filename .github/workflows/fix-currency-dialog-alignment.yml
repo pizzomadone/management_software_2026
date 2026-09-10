@@ -27,48 +27,20 @@ jobs:
           from pathlib import Path
           p=Path('src/SettingsPanel.java')
           s=p.read_text(encoding='utf-8')
-          old='''        JPanel warningPanel=new JPanel();
-    warningPanel.setLayout(new BoxLayout(warningPanel,BoxLayout.Y_AXIS));
-    JTextArea warningText=new JTextArea(warning);
-    warningText.setEditable(false);
-    warningText.setFocusable(false);
-    warningText.setOpaque(false);
-    warningText.setBorder(null);
-    warningText.setFont(UIManager.getFont("Label.font"));
-    warningPanel.add(warningText);
-    warningPanel.add(Box.createVerticalStrut(10));
-    warningPanel.add(new JLabel(I18n.tr("Before changing currency, we recommend creating a backup of your database.")));
-
-    boolean[] backupRequested={false};
-    JLabel backupLink=new JLabel("<html><a href='backup'>"+I18n.tr("Open Backup")+"</a></html>");
-    backupLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-'''
-          new='''        JPanel warningPanel=new JPanel();
-        warningPanel.setLayout(new BoxLayout(warningPanel,BoxLayout.Y_AXIS));
-
-        JTextArea warningText=new JTextArea(warning);
-        warningText.setEditable(false);
-        warningText.setFocusable(false);
-        warningText.setOpaque(false);
-        warningText.setBorder(null);
-        warningText.setMargin(new Insets(0,0,0,0));
-        warningText.setFont(UIManager.getFont("Label.font"));
-        warningText.setAlignmentX(Component.LEFT_ALIGNMENT);
-        warningPanel.add(warningText);
-        warningPanel.add(Box.createVerticalStrut(10));
-
-        JLabel backupAdvice=new JLabel(I18n.tr("Before changing currency, we recommend creating a backup of your database."));
-        backupAdvice.setAlignmentX(Component.LEFT_ALIGNMENT);
-        warningPanel.add(backupAdvice);
-
-        boolean[] backupRequested={false};
-        JLabel backupLink=new JLabel("<html><a href='backup'>"+I18n.tr("Open Backup")+"</a></html>");
-        backupLink.setAlignmentX(Component.LEFT_ALIGNMENT);
-        backupLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-'''
+          s=s.replace('    warningPanel.setLayout(new BoxLayout(warningPanel,BoxLayout.Y_AXIS));','        warningPanel.setLayout(new BoxLayout(warningPanel,BoxLayout.Y_AXIS));',1)
+          s=s.replace('    JTextArea warningText=new JTextArea(warning);','        JTextArea warningText=new JTextArea(warning);',1)
+          for line in ['warningText.setEditable(false);','warningText.setFocusable(false);','warningText.setOpaque(false);','warningText.setBorder(null);','warningText.setFont(UIManager.getFont("Label.font"));','warningPanel.add(warningText);','warningPanel.add(Box.createVerticalStrut(10));']:
+              s=s.replace('    '+line,'        '+line,1)
+          s=s.replace('        warningText.setBorder(null);\n','        warningText.setBorder(null);\n        warningText.setMargin(new Insets(0,0,0,0));\n',1)
+          s=s.replace('        warningText.setFont(UIManager.getFont("Label.font"));\n','        warningText.setFont(UIManager.getFont("Label.font"));\n        warningText.setAlignmentX(Component.LEFT_ALIGNMENT);\n',1)
+          old='    warningPanel.add(new JLabel(I18n.tr("Before changing currency, we recommend creating a backup of your database.")));'
+          new='        JLabel backupAdvice=new JLabel(I18n.tr("Before changing currency, we recommend creating a backup of your database."));\n        backupAdvice.setAlignmentX(Component.LEFT_ALIGNMENT);\n        warningPanel.add(backupAdvice);'
           if old not in s:
-              raise SystemExit('Currency warning block not found')
+              raise SystemExit('Backup advice line not found')
           s=s.replace(old,new,1)
+          s=s.replace('    boolean[] backupRequested={false};','        boolean[] backupRequested={false};',1)
+          s=s.replace('    JLabel backupLink=new JLabel("<html><a href=\'backup\'>"+I18n.tr("Open Backup")+"</a></html>");','        JLabel backupLink=new JLabel("<html><a href=\'backup\'>"+I18n.tr("Open Backup")+"</a></html>");',1)
+          s=s.replace('    backupLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));','        backupLink.setAlignmentX(Component.LEFT_ALIGNMENT);\n        backupLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));',1)
           p.write_text(s,encoding='utf-8')
       - name: Run regression suite
         run: ant test
