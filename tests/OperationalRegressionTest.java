@@ -29,6 +29,30 @@ public class OperationalRegressionTest extends RegressionTest {
         put(d,"unitOfMeasureComboBox",new JComboBox<>(new String[]{"pcs"}));put(d,"activeCheckBox",new JCheckBox("",true));return d;
     }
     static void operational() throws Exception {
+        test("startup reconciles active reservation cache",()->{
+            fresh();StockManager.createOrUpdateReservation(db,1,"ORDER",77,8,"");sql("UPDATE products SET reserved_quantity=0 WHERE id=1");call(DatabaseManager.getInstance(),"createTables");
+            require("8".equals(value("SELECT reserved_quantity FROM products WHERE id=1")),"Active reservations were lost from availability after startup");
+        });
+        test("manual outward availability honors reservations and edit reversal",()->{
+            fresh();StockManager.createOrUpdateReservation(db,1,"ORDER",77,8,"");WarehouseMovementDialog d=empty(WarehouseMovementDialog.class);put(d,"movement",null);
+            require(((Number)call(d,"availableForOutward",new Class<?>[]{Connection.class,int.class},db,1)).intValue()==2,"Manual issue ignored reservations");
+            sql("UPDATE products SET quantity=15 WHERE id=1");put(d,"movement",new WarehouseMovement(1,1,"A",new java.util.Date(),"INWARD",5,"OTHER",null,null,""));
+            require(((Number)call(d,"availableForOutward",new Class<?>[]{Connection.class,int.class},db,1)).intValue()==2,"Edited inward movement availability is wrong");
+            sql("UPDATE products SET quantity=5 WHERE id=1");put(d,"movement",new WarehouseMovement(1,1,"A",new java.util.Date(),"OUTWARD",5,"OTHER",null,null,""));
+            require(((Number)call(d,"availableForOutward",new Class<?>[]{Connection.class,int.class},db,1)).intValue()==2,"Edited outward movement availability is wrong");
+        });
+        test("linked invoice freezes its source order",()->{
+            fresh();completed();sql("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status,order_id,currency_code) VALUES('LOCKED',0,1,30,0,30,'Issued',1,'EUR')");
+            OD d=order(true,5,"Completed");rejectedSave(d,"saveOrder","orderSaved");
+            require(qty()==7 && "30.0|3".equals(value("SELECT total||'|'||(SELECT quantity FROM order_details WHERE order_id=1) FROM orders WHERE id=1")),"Invoiced order diverged from invoice");
+            CustomersPanel customers=new CustomersPanel();require((Boolean)call(customers,"hasFinalizedCustomerInvoices",new Class<?>[]{Connection.class,int.class},db,1),"Finalized customer history was not detected");
+        });
+        test("only completed customer orders are invoice eligible",()->{
+            require(OrdersPanel.canGenerateInvoice("Completed"),"Completed order cannot be invoiced");
+            for(String status:java.util.List.of("New","In Progress","Cancelled"))
+                require(!OrdersPanel.canGenerateInvoice(status),"Non-completed order is invoice eligible: "+status);
+            require(!OrdersPanel.canGenerateInvoice(null),"Missing status is invoice eligible");
+        });
         test("inventory correction records only the physical delta",()->{
             fresh();call(productEditor(15),"saveProduct");require(qty()==15,"Stock count not saved");
             require("5".equals(value("SELECT quantity FROM warehouse_movements")) && "INWARD".equals(value("SELECT type FROM warehouse_movements")),"Wrong inventory delta");
@@ -51,7 +75,7 @@ public class OperationalRegressionTest extends RegressionTest {
         });
         test("monthly invoiced total includes the exact first millisecond",()->{
             fresh();Calendar month=Calendar.getInstance();month.set(Calendar.DAY_OF_MONTH,1);month.set(Calendar.HOUR_OF_DAY,0);month.set(Calendar.MINUTE,0);month.set(Calendar.SECOND,0);month.set(Calendar.MILLISECOND,0);
-            sql("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status) VALUES('START',"+month.getTimeInMillis()+",1,10,0,10,'Issued'),('CANCELLED',"+month.getTimeInMillis()+",1,900,0,900,'Cancelled')");
+            sql("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status,currency_code) VALUES('START',"+month.getTimeInMillis()+",1,10,0,10,'Issued','EUR'),('CANCELLED',"+month.getTimeInMillis()+",1,900,0,900,'Cancelled','EUR')");
             DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");require(kpi(dash,"monthInvoicedLabel").equals(SettingsPanel.formatCurrency(10)),"Wrong monthly invoice boundary/status");
         });
         test("stock at zero cost is distinct from sale value and an empty warehouse",()->{
@@ -107,14 +131,14 @@ public class OperationalRegressionTest extends RegressionTest {
                     String day=new java.text.SimpleDateFormat("yyyy-MM-dd").format(new java.util.Date(start));
                     Object[] dates={start-1,start,end-1,end,day+" 12:00:00",day};
                     try(PreparedStatement order=db.prepareStatement("INSERT INTO orders(customer_id,order_date,status,total) VALUES(1,?,'Completed',10)");
-                        PreparedStatement invoice=db.prepareStatement("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status) VALUES(?,?,1,10,0,10,'Issued')")) {
+                        PreparedStatement invoice=db.prepareStatement("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status,currency_code) VALUES(?,?,1,10,0,10,'Issued','EUR')")) {
                         for(int i=0;i<dates.length;i++) {order.setObject(1,dates[i]);order.executeUpdate();invoice.setString(1,"BOUNDARY-"+i);invoice.setObject(2,dates[i]);invoice.executeUpdate();}
                     }
                     for(String status:List.of("New","In Progress","Cancelled"))
                         sql("INSERT INTO orders(customer_id,order_date,status,total) VALUES(1,"+start+",'"+status+"',900)");
                     for(String status:List.of("Draft","Canceled"))
-                        sql("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status) VALUES('"+status+"',"+start+",1,900,0,900,'"+status+"')");
-                    sql("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status) VALUES('PAID',"+start+",1,20,0,20,'Paid')");
+                        sql("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status,currency_code) VALUES('"+status+"',"+start+",1,900,0,900,'"+status+"','EUR')");
+                    sql("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status,currency_code) VALUES('PAID',"+start+",1,20,0,20,'Paid','EUR')");
                     DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
                     require(kpi(dash,"monthRevenueLabel").equals(SettingsPanel.formatCurrency(40)),"Wrong monthly orders in "+zone);
                     require(kpi(dash,"monthInvoicedLabel").equals(SettingsPanel.formatCurrency(60)),"Wrong monthly invoices in "+zone);

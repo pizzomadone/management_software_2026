@@ -121,7 +121,7 @@ public class AdvancedStatsPanel extends JPanel {
                 while (rs.next()) {
                     String month = rs.getString("month");
                     if (month != null && !month.trim().isEmpty()) {
-                        double total = rs.getDouble("total");
+                        double total = Numbers.money(java.math.BigDecimal.valueOf(rs.getDouble("total")));
                         int numOrders = rs.getInt("num_orders");
                         newMonthlySales.put(month, new double[]{total, numOrders});
                         System.out.println("Month: " + month + ", Total: " + SettingsPanel.formatCurrency(total) + ", Orders: " + numOrders);
@@ -240,7 +240,7 @@ public class AdvancedStatsPanel extends JPanel {
             String normalizedDate = DateUtils.sqlDate("o.order_date");
             String query = "SELECT COALESCE(p.name, 'Product N/A') as name, " +
                           "SUM(d.quantity) as total_quantity, " +
-                          "SUM(ROUND(d.quantity * d.unit_price, 2)) as revenue, " +
+                          "SUM(warestat_line_total(d.quantity,d.unit_price)) as revenue, " +
                           "COUNT(DISTINCT o.id) as num_orders " +
                           "FROM order_details d " +
                           "LEFT JOIN products p ON d.product_id = p.id " +
@@ -261,7 +261,7 @@ public class AdvancedStatsPanel extends JPanel {
                 while (rs.next()) {
                     String name = rs.getString("name");
                     long quantity = rs.getLong("total_quantity");
-                    double revenue = rs.getDouble("revenue");
+                    double revenue = Numbers.money(java.math.BigDecimal.valueOf(rs.getDouble("revenue")));
                     totalRevenue = Numbers.add(totalRevenue,revenue);
                     if (productStats.size()<10) productStats.add(new Object[]{name, quantity, revenue});
                 }

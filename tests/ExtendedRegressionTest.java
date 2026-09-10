@@ -69,6 +69,26 @@ public class ExtendedRegressionTest extends RegressionTest {
             require("1.01".equals(value("SELECT taxable_amount FROM invoices")),"Taxable rounding differs");
             require("1.23".equals(value("SELECT total FROM invoices")),"VAT rounding differs");
         });
+        test("accounting rounding agrees in Java SQL reports and visible unit values",()->{
+            fresh();
+            require(Numbers.moneyText(2.675).equals("2.68"),"HALF_UP decimal boundary is wrong");
+            require(Numbers.lineTotal(1,2.675)==2.68,"Line total does not use HALF_UP");
+            require(new OrderItem(1,1,1,"Boundary",1,2.675).getTotal()==2.68,"OrderItem bypasses accounting rounding");
+            require(SettingsPanel.formatCurrency(2.675,"USD").contains("2.68"),"Visible currency formatting disagrees with HALF_UP");
+            require("2.68".equals(value("SELECT warestat_line_total(1,2.675)")),"SQL report rounding differs from document rounding");
+            require("0.335".equals(Numbers.unitText(0.335)),"Unit precision was hidden");
+            require(Numbers.moneyText(Numbers.lineTotal(3,0.335)).equals("1.01"),"Precise unit price does not reconcile with line total");
+
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total) VALUES(20,1,"+System.currentTimeMillis()+",'Completed',2.68)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(20,1,1,2.675)");
+            SalesReportPanel report=new SalesReportPanel();call(report,"loadReportData");
+            DefaultTableModel rows=(DefaultTableModel)get(report,"tableModel");
+            boolean found=false;
+            for(int i=0;i<rows.getRowCount();i++) if(((Number)rows.getValueAt(i,1)).intValue()==20) {
+                found=true;require("2.68".equals(String.valueOf(rows.getValueAt(i,4))),"Sales report header total rounded differently");
+            }
+            require(found,"Boundary order missing from sales report");
+        });
         test("completed sales exclude cancelled documents and have no 1000 row cap",()->{
             fresh();db.setAutoCommit(false);
             for(int i=0;i<1005;i++)sql("INSERT INTO orders(customer_id,order_date,status,total) VALUES(1,"+System.currentTimeMillis()+",'Completed',1)");
@@ -316,10 +336,243 @@ public class ExtendedRegressionTest extends RegressionTest {
             }
             DatabaseIntegrity.validate(db,false);
         });
-        test("changing currency cannot relabel an existing database",()->{
-            fresh();String original=DatabaseCurrency.read(db);boolean blocked=false;try{DatabaseCurrency.change("USD");}catch(SQLException e){blocked=true;}
-            require(blocked && original.equals(DatabaseCurrency.read(db)),"Existing prices relabelled");
-            sql("DELETE FROM products");DatabaseCurrency.change("USD");require("USD".equals(SettingsPanel.getCurrencyCode()),"Empty database currency did not change");DatabaseCurrency.change(original);
+        test("dashboard can be recreated after currency refresh",()->{
+            fresh();
+            MainWindow window=empty(MainWindow.class);
+            javax.swing.JPanel container=new javax.swing.JPanel(new java.awt.CardLayout());
+            put(window,"mainPanel",container);
+            call(window,"createPanel",new Class<?>[]{String.class},"HOME");
+            Object first=get(window,"dashboardPanel");
+            require(first instanceof DashboardPanel && container.getComponentCount()==1,
+                "Dashboard was not created");
+            call(window,"refreshAfterCurrencyChange");
+            require(get(window,"dashboardPanel")==null && container.getComponentCount()==0,
+                "Currency refresh did not invalidate the old dashboard");
+            call(window,"createPanel",new Class<?>[]{String.class},"HOME");
+            require(get(window,"dashboardPanel") instanceof DashboardPanel && container.getComponentCount()==1,
+                "Dashboard cannot be recreated after currency change");
+        });
+        test("currency change explanations translate in every supported language",()->{
+            String previous=I18n.getLanguage();
+            String[] keys={
+                "Currency change: {OLD} → {NEW}",
+                "Change currency only: numbers stay the same.",
+                "Convert values: monetary values are recalculated using a rate you enter.",
+                "Currency changed successfully.",
+                "No amounts were converted.",
+                "Operational values were converted using the selected exchange rate.",
+                "Finalized invoice: only the status can be changed.",
+                "Issued, Paid and Canceled invoices are historical documents. Only their status can be changed.",
+                "A finalized invoice cannot be returned to Draft.",
+                "Before changing currency, we recommend creating a backup of your database.",
+                "Open Backup"
+            };
+            try {
+                for(String language:List.of("it","es","pt_BR","fr","de","pl","en")) {
+                    I18n.setLanguage(language);
+                    for(String key:keys) {
+                        String translated=I18n.tr(key);
+                        require(language.equals("en") || !translated.equals(key),
+                            "Missing currency explanation in "+language+": "+key);
+                    }
+                }
+            } finally {I18n.setLanguage(previous);}
+        });
+        test("currency relabel changes operational currency without touching finalized invoices",()->{
+            fresh();
+            sql("UPDATE products SET price=10,acquisition_cost=5 WHERE id=1");
+            sql("INSERT INTO supplier_price_lists(supplier_id,product_id,price,minimum_quantity,validity_start_date) VALUES(1,1,9,1,0)");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) VALUES(10,1,0,'Completed',30,'PARTIALLY_PAID',10)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(10,1,3,10)");
+            sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,status,total) VALUES(10,1,'CUR-SUP',0,'Completed',10)");
+            sql("INSERT INTO supplier_order_details(order_id,product_id,quantity,unit_price,total) VALUES(10,1,2,5,10)");
+            sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(10,'CUR-ISSUED',0,1,10,2.2,12.2,'Issued')");
+            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total) VALUES(10,1,1,10,22,10)");
+            InvoiceSnapshots.capture(db,10,false);
+            sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(11,'CUR-DRAFT',0,1,20,4.4,24.4,'Draft')");
+            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total) VALUES(11,1,2,10,22,20)");
+            InvoiceSnapshots.capture(db,11,false);
+
+            DatabaseCurrency.change("USD",DatabaseCurrency.ChangeMode.RELABEL,null);
+
+            require("USD".equals(DatabaseCurrency.read(db)) && "USD".equals(SettingsPanel.getCurrencyCode()),"Operating currency did not change");
+            require("10.0|5.0".equals(value("SELECT price||'|'||acquisition_cost FROM products WHERE id=1")),"Relabel converted product values");
+            require("9.0".equals(value("SELECT price FROM supplier_price_lists WHERE product_id=1")),"Relabel converted supplier price");
+            require("30.0|10.0|10.0".equals(value("SELECT total||'|'||paid_amount||'|'||(SELECT unit_price FROM order_details WHERE order_id=10) FROM orders WHERE id=10")),"Relabel changed customer order values");
+            require("10.0|5.0".equals(value("SELECT total||'|'||(SELECT unit_price FROM supplier_order_details WHERE order_id=10) FROM supplier_orders WHERE id=10")),"Relabel changed supplier order values");
+            require("EUR|10.0|2.2|12.2".equals(value("SELECT currency_code||'|'||taxable_amount||'|'||vat||'|'||total FROM invoices WHERE id=10")),"Finalized invoice was relabelled");
+            require("USD|20.0|4.4|24.4".equals(value("SELECT currency_code||'|'||taxable_amount||'|'||vat||'|'||total FROM invoices WHERE id=11")),"Draft did not adopt the new currency");
+        });
+        test("currency conversion updates all operational values and preserves finalized invoices",()->{
+            fresh();
+            sql("UPDATE products SET price=10,acquisition_cost=5 WHERE id=1");
+            sql("INSERT INTO supplier_price_lists(supplier_id,product_id,price,minimum_quantity,validity_start_date) VALUES(1,1,9,1,0)");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) VALUES(10,1,0,'Completed',30,'PARTIALLY_PAID',10)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(10,1,3,10)");
+            sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,status,total) VALUES(10,1,'FX-SUP',0,'Completed',10)");
+            sql("INSERT INTO supplier_order_details(order_id,product_id,quantity,unit_price,total) VALUES(10,1,2,5,10)");
+            sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(10,'FX-ISSUED',"+System.currentTimeMillis()+",1,10,2.2,12.2,'Issued')");
+            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total) VALUES(10,1,1,10,22,10)");
+            InvoiceSnapshots.capture(db,10,false);
+            sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(11,'FX-DRAFT',"+System.currentTimeMillis()+",1,20,4.4,24.4,'Draft')");
+            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total) VALUES(11,1,2,10,22,20)");
+            InvoiceSnapshots.capture(db,11,false);
+
+            DatabaseCurrency.change("USD",DatabaseCurrency.ChangeMode.CONVERT,new java.math.BigDecimal("1.2"));
+
+            require("12.0|6.0".equals(value("SELECT price||'|'||acquisition_cost FROM products WHERE id=1")),"Product price or acquisition cost not converted");
+            require("10.8".equals(value("SELECT price FROM supplier_price_lists WHERE product_id=1")),"Supplier price list not converted");
+            require("36.0|12.0|12.0".equals(value("SELECT total||'|'||paid_amount||'|'||(SELECT unit_price FROM order_details WHERE order_id=10) FROM orders WHERE id=10")),"Customer order conversion is inconsistent");
+            require("12.0|6.0|12.0".equals(value("SELECT total||'|'||(SELECT unit_price FROM supplier_order_details WHERE order_id=10)||'|'||(SELECT total FROM supplier_order_details WHERE order_id=10) FROM supplier_orders WHERE id=10")),"Supplier order conversion is inconsistent");
+            require("USD|24.0|5.28|29.28|12.0|24.0".equals(value("SELECT currency_code||'|'||taxable_amount||'|'||vat||'|'||total||'|'||(SELECT unit_price FROM invoice_details WHERE invoice_id=11)||'|'||(SELECT total FROM invoice_details WHERE invoice_id=11) FROM invoices WHERE id=11")),"Draft invoice conversion is inconsistent");
+            require("EUR|10.0|2.2|12.2|10.0".equals(value("SELECT currency_code||'|'||taxable_amount||'|'||vat||'|'||total||'|'||(SELECT unit_price FROM invoice_details WHERE invoice_id=10) FROM invoices WHERE id=10")),"Finalized invoice changed during conversion");
+
+            sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status,currency_code,customer_snapshot,company_snapshot,snapshot_version) VALUES(12,'FX-USD',"+System.currentTimeMillis()+",1,12,2.64,14.64,'Issued','USD','','',1)");
+            DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
+            String mixed=((JLabel)get(dash,"monthInvoicedLabel")).getText();
+            require(mixed.contains(SettingsPanel.formatCurrency(10,"EUR")) && mixed.contains(SettingsPanel.formatCurrency(12,"USD")) && mixed.contains(" + "),"Mixed invoice currencies were incorrectly summed");
+        });
+        test("currency conversion preserves sub-cent unit precision and recalculates cents consistently",()->{
+            fresh();
+            sql("UPDATE products SET price=0.000001,acquisition_cost=0.000001 WHERE id=1");
+            sql("INSERT INTO supplier_price_lists(supplier_id,product_id,price,minimum_quantity,validity_start_date) VALUES(1,1,0.000001,1,0)");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) VALUES(20,1,0,'Completed',1.00,'PARTIALLY_PAID',0.33)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(20,1,1000000,0.000001)");
+            sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,status,total) VALUES(20,1,'FX-PRECISION',0,'Completed',1.00)");
+            sql("INSERT INTO supplier_order_details(order_id,product_id,quantity,unit_price,total) VALUES(20,1,1000000,0.000001,1.00)");
+            sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(20,'FX-PRECISION',0,1,1.00,0.22,1.22,'Draft')");
+            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total) VALUES(20,1,1000000,0.000001,22,1.00)");
+            InvoiceSnapshots.capture(db,20,false);
+
+            DatabaseCurrency.change("USD",DatabaseCurrency.ChangeMode.CONVERT,new java.math.BigDecimal("1.5"));
+
+            try(Statement s=db.createStatement()) {
+                try(ResultSet r=s.executeQuery("SELECT price,acquisition_cost FROM products WHERE id=1")) {
+                    require(r.next() && Math.abs(r.getDouble(1)-0.0000015)<1e-15 && Math.abs(r.getDouble(2)-0.0000015)<1e-15,
+                        "Unit precision was lost during product conversion");
+                }
+                try(ResultSet r=s.executeQuery("SELECT total,paid_amount,(SELECT unit_price FROM order_details WHERE order_id=20) FROM orders WHERE id=20")) {
+                    require(r.next() && r.getDouble(1)==1.50 && r.getDouble(2)==0.50 && Math.abs(r.getDouble(3)-0.0000015)<1e-15,
+                        "Customer order conversion lost precision or rounded payment incorrectly");
+                }
+                try(ResultSet r=s.executeQuery("SELECT total,(SELECT unit_price FROM supplier_order_details WHERE order_id=20),(SELECT total FROM supplier_order_details WHERE order_id=20) FROM supplier_orders WHERE id=20")) {
+                    require(r.next() && r.getDouble(1)==1.50 && Math.abs(r.getDouble(2)-0.0000015)<1e-15 && r.getDouble(3)==1.50,
+                        "Supplier order conversion lost precision");
+                }
+                try(ResultSet r=s.executeQuery("SELECT currency_code,taxable_amount,vat,total,(SELECT unit_price FROM invoice_details WHERE invoice_id=20),(SELECT total FROM invoice_details WHERE invoice_id=20) FROM invoices WHERE id=20")) {
+                    require(r.next() && "USD".equals(r.getString(1)) && r.getDouble(2)==1.50 && r.getDouble(3)==0.33 && r.getDouble(4)==1.83 &&
+                        Math.abs(r.getDouble(5)-0.0000015)<1e-15 && r.getDouble(6)==1.50,
+                        "Draft invoice conversion or VAT recalculation is inconsistent");
+                }
+            }
+            require("0.0000015".equals(Numbers.unitText(0.0000015)),"Precise converted unit value is hidden");
+        });
+        test("all report line totals use the same HALF_UP accounting rule",()->{
+            fresh();
+            require(Numbers.lineTotal(1,2.675)==2.68 && new OrderItem(1,1,1,"Tie",1,2.675).getTotal()==2.68,
+                "Java order totals do not use HALF_UP");
+            try(Statement s=db.createStatement();ResultSet r=s.executeQuery(
+                    "SELECT warestat_line_total(1,2.675),warestat_line_total(3,1.005)")) {
+                require(r.next() && r.getDouble(1)==2.68 && r.getDouble(2)==3.02,
+                    "SQL reports disagree with WareStat HALF_UP line totals");
+            }
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total) VALUES(20,1,"+System.currentTimeMillis()+",'Completed',2.68)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(20,1,1,2.675)");
+            DashboardPanel dash=new DashboardPanel(null);call(dash,"loadTopProducts");call(dash,"loadABCAnalysis");
+            JTable top=(JTable)get(dash,"topProductsTable");
+            require(top.getRowCount()>0 && SettingsPanel.formatCurrency(2.68).equals(top.getValueAt(0,3)),
+                "Dashboard top-product revenue uses different rounding");
+            JTable abc=(JTable)get(dash,"abcAnalysisTable");
+            require(SettingsPanel.formatCurrency(2.68).equals(abc.getValueAt(0,3)),
+                "ABC revenue uses different rounding");
+            AdvancedStatsPanel stats=new AdvancedStatsPanel();call(stats,"loadProductsData");
+            JTable productStats=(JTable)get(stats,"topProductsTable");
+            require(productStats.getRowCount()>0 && SettingsPanel.formatCurrency(2.68).equals(productStats.getValueAt(0,2)),
+                "Advanced statistics revenue uses different rounding");
+        });
+        test("currency conversion refuses to silently repair inconsistent documents",()->{
+            fresh();
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) VALUES(20,1,0,'Completed',10,'NOT_PAID',0)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(20,1,1,9.99)");
+            boolean blocked=false;
+            try {DatabaseCurrency.change("USD",DatabaseCurrency.ChangeMode.CONVERT,new java.math.BigDecimal("1.2"));}
+            catch(SQLException e){blocked=true;}
+            require(blocked,"Inconsistent source order was silently reconciled during conversion");
+            require("EUR".equals(DatabaseCurrency.read(db)) && "9.99".equals(value("SELECT unit_price FROM order_details WHERE order_id=20")),
+                "Rejected conversion left partial changes");
+        });
+        test("every non-Draft invoice is treated as finalized regardless of currency",()->{
+            java.lang.reflect.Method method=InvoiceDialog.class.getDeclaredMethod("isFinalizedStatus",String.class);
+            method.setAccessible(true);
+            require(!(Boolean)method.invoke(null,"Draft"),"Draft invoice was locked");
+            for(String status:List.of("Issued","Paid","Canceled"))
+                require((Boolean)method.invoke(null,status),"Finalized invoice remained economically editable: "+status);
+        });
+        test("currency conversion keeps cents consistent with high quantities VAT and partial payments",()->{
+            fresh();
+            sql("UPDATE products SET price=0.0000004,acquisition_cost=2.675 WHERE id=1");
+            sql("INSERT INTO supplier_price_lists(supplier_id,product_id,price,minimum_quantity,validity_start_date) VALUES(1,1,0.0000004,1,0)");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) VALUES(20,1,"+System.currentTimeMillis()+",'Completed',0.40,'PARTIALLY_PAID',0.335)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(20,1,1000000,0.0000004)");
+            sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(20,'FX-PRECISION',"+System.currentTimeMillis()+",1,8.03,1.77,9.80,'Draft')");
+            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total) VALUES(20,1,3,2.675,22,8.03)");
+            InvoiceSnapshots.capture(db,20,false);
+
+            java.math.BigDecimal rate=new java.math.BigDecimal("1.234567");
+            DatabaseCurrency.change("USD",DatabaseCurrency.ChangeMode.CONVERT,rate);
+
+            double convertedTiny=Double.parseDouble(value("SELECT unit_price FROM order_details WHERE order_id=20"));
+            double orderTotal=Double.parseDouble(value("SELECT total FROM orders WHERE id=20"));
+            require(Numbers.moneyText(orderTotal).equals(Numbers.moneyText(Numbers.lineTotal(1000000,convertedTiny))),
+                "High-quantity order no longer reconciles after conversion");
+            require("0.41".equals(Numbers.moneyText(Double.parseDouble(value("SELECT paid_amount FROM orders WHERE id=20")))),
+                "Partial payment conversion did not round to cents");
+
+            double invoicePrice=Double.parseDouble(value("SELECT unit_price FROM invoice_details WHERE invoice_id=20"));
+            double line=Numbers.lineTotal(3,invoicePrice);
+            double vat=Numbers.tax(line,22);
+            require(Numbers.moneyText(Double.parseDouble(value("SELECT taxable_amount FROM invoices WHERE id=20"))).equals(Numbers.moneyText(line)),
+                "Converted draft taxable amount differs from its lines");
+            require(Numbers.moneyText(Double.parseDouble(value("SELECT vat FROM invoices WHERE id=20"))).equals(Numbers.moneyText(vat)),
+                "Converted draft VAT differs from its lines");
+            require(Numbers.moneyText(Double.parseDouble(value("SELECT total FROM invoices WHERE id=20"))).equals(Numbers.moneyText(Numbers.add(line,vat))),
+                "Converted draft total differs from taxable plus VAT");
+            require("USD".equals(value("SELECT currency_code FROM invoices WHERE id=20")),"Converted draft kept the old currency");
+        });
+        test("currency conversion refuses to repair inconsistent documents silently",()->{
+            fresh();
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) VALUES(30,1,0,'Completed',99,'NOT_PAID',0)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(30,1,1,10)");
+            boolean blocked=false;
+            try {DatabaseCurrency.change("USD",DatabaseCurrency.ChangeMode.CONVERT,new java.math.BigDecimal("1.2"));}
+            catch(SQLException e){blocked=true;}
+            require(blocked,"Inconsistent order was silently rewritten by currency conversion");
+            require("EUR".equals(DatabaseCurrency.read(db)),"Rejected conversion changed database currency");
+            require("99.0|10.0".equals(value("SELECT total||'|'||(SELECT unit_price FROM order_details WHERE order_id=30) FROM orders WHERE id=30")),
+                "Rejected conversion changed inconsistent order values");
+        });
+        test("currency conversion is atomic and historical foreign invoice only changes status",()->{
+            fresh();
+            sql("UPDATE products SET price=10,acquisition_cost=5 WHERE id=1");
+            sql("INSERT INTO supplier_price_lists(supplier_id,product_id,price,minimum_quantity,validity_start_date) VALUES(1,1,9,1,0)");
+            sql("CREATE TRIGGER reject_currency_test BEFORE UPDATE ON supplier_price_lists BEGIN SELECT RAISE(ABORT,'currency rollback test'); END");
+            boolean blocked=false;
+            try{DatabaseCurrency.change("USD",DatabaseCurrency.ChangeMode.CONVERT,new java.math.BigDecimal("1.2"));}catch(SQLException e){blocked=true;}
+            require(blocked,"Injected conversion failure was ignored");
+            require("EUR".equals(DatabaseCurrency.read(db)) && "EUR".equals(SettingsPanel.getCurrencyCode()),"Failed conversion changed database currency");
+            require("10.0|5.0|9.0".equals(value("SELECT p.price||'|'||p.acquisition_cost||'|'||s.price FROM products p JOIN supplier_price_lists s ON s.product_id=p.id WHERE p.id=1")),"Failed conversion left partial monetary changes");
+            sql("DROP TRIGGER reject_currency_test");
+
+            sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(10,'HIST-EUR',0,1,10,2.2,12.2,'Issued')");
+            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total) VALUES(10,1,1,10,22,10)");
+            InvoiceSnapshots.capture(db,10,false);
+            DatabaseCurrency.change("USD",DatabaseCurrency.ChangeMode.RELABEL,null);
+            Invoice model=new Invoice(10,"HIST-EUR",new java.util.Date(),1,"Test Customer",10,2.2,12.2,"Issued");
+            ID dialog=empty(ID.class);put(dialog,"invoice",model);put(dialog,"documentCurrency","EUR");put(dialog,"historicalForeignCurrencyLocked",true);
+            put(dialog,"statusCombo",new JComboBox<>(new String[]{"Paid"}));
+            call(dialog,"saveInvoice");
+            require(Boolean.TRUE.equals(get(dialog,"invoiceSaved")),"Historical status-only save failed");
+            require("Paid|EUR|10.0|2.2|12.2|10.0".equals(value("SELECT status||'|'||currency_code||'|'||taxable_amount||'|'||vat||'|'||total||'|'||(SELECT unit_price FROM invoice_details WHERE invoice_id=10) FROM invoices WHERE id=10")),"Historical invoice monetary data changed while updating status");
         });
         test("invoice snapshots survive later party and catalog changes",()->{
             fresh();sql("UPDATE customers SET first_name='Łódź',last_name='Original' WHERE id=1");
@@ -330,6 +583,68 @@ public class ExtendedRegressionTest extends RegressionTest {
             Path file=OUT.resolve("invoice-unicode-barcode.pdf");call(new InvoicePDFGenerator(i,customer()),"generatePDF",new Class<?>[]{java.io.File.class},file.toFile());
             String text=pdfText(file);require(text.contains("Łódź Original") && text.contains("5901234123457") && text.contains("Crème Łódź original") && !text.contains("Changed"),"Historical invoice text changed or was truncated");
         });
+        test("invoice PDF covers statuses languages sparse parties and VAT variants",()->{
+            String previousLanguage=I18n.getLanguage();
+            try {
+                for(String status:List.of("Draft","Issued","Paid","Canceled")) {
+                    fresh();
+                    ID d=invoice();put(d,"statusCombo",new JComboBox<>(new String[]{status}));call(d,"saveInvoice");
+                    Invoice i=new Invoice(1,"PDF",new java.util.Date(),1,"",30,6.6,36.6,status);
+                    Path file=OUT.resolve("invoice-status-"+status+".pdf");
+                    call(new InvoicePDFGenerator(i,customer()),"generatePDF",new Class<?>[]{java.io.File.class},file.toFile());
+                    String text=pdfText(file);
+                    require(text.contains(status) && text.contains("FROM") && text.contains("BILL TO"),"Missing invoice state or party section: "+status);
+                    require(text.contains("10.00") && text.contains("TOTAL: EUR 36.60"),"Currency formatting changed: "+status);
+                    require(!text.contains("null"),"Sparse party data leaked null text: "+status);
+                }
+
+                fresh();
+                sql("UPDATE customers SET first_name='Very Long Customer Name With Unicode Łódź',last_name='Crème Société',address='123 Long Address Street, Building 45, Floor 6, Suite 789, International Business District' WHERE id=1");
+                sql("INSERT INTO company_data(company_name,vat_number,tax_code,address,city,postal_code,country,phone,email,website) VALUES('WareStat Example Company With A Long Legal Name','IT12345678901','ABCDEF12G34H567I','456 Very Long Corporate Avenue, Industrial Park','Palermo','90100','Italia','+39 091 000000','billing@example.com','https://example.com')");
+                ID longInvoice=invoice();call(longInvoice,"saveInvoice");
+                Invoice longModel=new Invoice(1,"PDF",new java.util.Date(),1,"",30,6.6,36.6,"Issued");
+                for(String language:List.of("en","it","es","pt_BR","fr","de","pl")) {
+                    I18n.setLanguage(language);
+                    Path file=OUT.resolve("invoice-language-"+language+".pdf");
+                    call(new InvoicePDFGenerator(longModel,customer()),"generatePDF",new Class<?>[]{java.io.File.class},file.toFile());
+                    String text=pdfText(file);
+                    require(text.contains(I18n.tr("INVOICE")) && text.contains(I18n.tr("FROM")) &&
+                        text.contains(I18n.tr("BILL TO")) && text.contains(I18n.tr("TOTAL")),
+                        "Invoice labels not localized in "+language);
+                    require(text.contains("Łódź") && text.contains("Crème Société"),"Unicode party data missing in "+language);
+                }
+
+                I18n.setLanguage("en");
+                sql("UPDATE invoices SET logo_snapshot=x'00010203' WHERE id=1");
+                Path damagedLogo=OUT.resolve("invoice-damaged-logo.pdf");
+                call(new InvoicePDFGenerator(longModel,customer()),"generatePDF",new Class<?>[]{java.io.File.class},damagedLogo.toFile());
+                require(pdfText(damagedLogo).contains("TOTAL: EUR 36.60"),"Damaged historical logo prevented invoice export");
+
+                fresh();
+                sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(1,'VAT-MIX',"+System.currentTimeMillis()+",1,30,4.4,34.4,'Issued')");
+                sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total,product_code,product_name) VALUES(1,1,1,10,0,10,'A','Zero VAT'),(1,2,1,20,22,20,'B','Standard VAT')");
+                InvoiceSnapshots.capture(db,1,false);
+                Invoice mixed=new Invoice(1,"VAT-MIX",new java.util.Date(),1,"",30,4.4,34.4,"Issued");
+                Path mixedFile=OUT.resolve("invoice-mixed-vat.pdf");
+                call(new InvoicePDFGenerator(mixed,customer()),"generatePDF",new Class<?>[]{java.io.File.class},mixedFile.toFile());
+                String mixedText=pdfText(mixedFile);
+                require(mixedText.contains("Zero VAT") && mixedText.contains("Standard VAT") &&
+                    mixedText.contains("EUR 4.40") && mixedText.contains("EUR 34.40"),"Mixed VAT invoice rendered incorrectly");
+
+                fresh();
+                sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(1,'LEGACY',"+System.currentTimeMillis()+",1,10,2.2,12.2,'Issued')");
+                sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total) VALUES(1,1,1,10,22,10)");
+                InvoiceSnapshots.capture(db,1,true);
+                Invoice legacy=new Invoice(1,"LEGACY",new java.util.Date(),1,"",10,2.2,12.2,"Issued");
+                Path legacyFile=OUT.resolve("invoice-legacy.pdf");
+                call(new InvoicePDFGenerator(legacy,customer()),"generatePDF",new Class<?>[]{java.io.File.class},legacyFile.toFile());
+                String legacyText=pdfText(legacyFile);
+                String normalizedLegacy=legacyText.replaceAll("\\s+"," ").trim();
+                int legacyIndex=normalizedLegacy.indexOf(I18n.tr("Legacy invoice"));
+                require(legacyIndex>=0 && normalizedLegacy.contains(I18n.tr("original document")),"Legacy warning missing");
+                require(normalizedLegacy.indexOf("Product A")<legacyIndex,"Legacy warning still dominates the invoice header");
+            } finally {I18n.setLanguage(previousLanguage);}
+        });
         test("fifty line invoice prints every row and totals within page bounds",()->{
             fresh();sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(1,'TEST-50',"+System.currentTimeMillis()+",1,500,110,610,'Issued')");
             for(int i=0;i<50;i++)sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total,product_code,product_name) VALUES(1,1,1,10,22,10,'5901234123457','ROW-"+String.format("%03d",i)+"')");
@@ -337,7 +652,10 @@ public class ExtendedRegressionTest extends RegressionTest {
             Path file=OUT.resolve("invoice-50-lines.pdf");call(new InvoicePDFGenerator(i,customer()),"generatePDF",new Class<?>[]{java.io.File.class},file.toFile());
             String text=pdfText(file);for(int row=0;row<50;row++)require(text.contains("ROW-"+String.format("%03d",row)),"Invoice row clipped: "+row);
             require(text.contains("TOTAL: EUR 610.00"),"Final invoice total missing");
-            try(PDDocument doc=Loader.loadPDF(file.toFile())){require(doc.getNumberOfPages()>1,"Invoice did not paginate");}
+            try(PDDocument doc=Loader.loadPDF(file.toFile())){
+                int pages=doc.getNumberOfPages();require(pages>1,"Invoice did not paginate");
+                require(text.split("TEST-50",-1).length-1>=pages,"Continuation pages do not identify the invoice");
+            }
             sql("UPDATE invoices SET total=611 WHERE id=1");byte[] original=Files.readAllBytes(file);boolean blocked=false;
             try{call(new InvoicePDFGenerator(i,customer()),"generatePDF",new Class<?>[]{java.io.File.class},file.toFile());}catch(java.io.IOException e){blocked=true;}
             require(blocked && Arrays.equals(original,Files.readAllBytes(file)),"Inconsistent invoice overwrote prior export");

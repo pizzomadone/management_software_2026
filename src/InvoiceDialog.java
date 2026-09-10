@@ -31,6 +31,8 @@ public class InvoiceDialog extends JDialog {
     private double currentVat = 0.0;
     private double currentTotal = 0.0;
     private String previousStatus = null;
+    private String documentCurrency;
+    private boolean historicalForeignCurrencyLocked;
 
     // Constructor for JFrame parent
     public InvoiceDialog(JFrame parent, Invoice invoice) {
@@ -38,6 +40,8 @@ public class InvoiceDialog extends JDialog {
         this.invoice = invoice;
         this.dateFormat = new SimpleDateFormat("dd/MM/yyyy");
         this.productsCache = new HashMap<>();
+        this.documentCurrency = resolveDocumentCurrency(invoice);
+        this.historicalForeignCurrencyLocked = invoice != null && isFinalizedStatus(invoice.getStatus());
 
         setupWindow();
         initComponents();
@@ -57,6 +61,8 @@ public class InvoiceDialog extends JDialog {
         this.invoice = invoice;
         this.dateFormat = new SimpleDateFormat("dd/MM/yyyy");
         this.productsCache = new HashMap<>();
+        this.documentCurrency = resolveDocumentCurrency(invoice);
+        this.historicalForeignCurrencyLocked = invoice != null && isFinalizedStatus(invoice.getStatus());
 
         setupWindow();
         initComponents();
@@ -68,6 +74,32 @@ public class InvoiceDialog extends JDialog {
         }
 
         setLocationRelativeTo(parent);
+    }
+
+    static boolean isFinalizedStatus(String status) {
+        return status!=null && !"Draft".equals(status);
+    }
+
+    private String resolveDocumentCurrency(Invoice target) {
+        if(target==null) return SettingsPanel.getCurrencyCode();
+        try(PreparedStatement p=DatabaseManager.getInstance().getConnection().prepareStatement(
+                "SELECT currency_code FROM invoices WHERE id=?")) {
+            p.setInt(1,target.getId());
+            try(ResultSet r=p.executeQuery()) {
+                if(!r.next()) throw new IllegalStateException("Invoice no longer exists");
+                String code=r.getString(1);
+                if(code==null || code.isBlank()) throw new IllegalStateException("Invoice currency is missing");
+                java.util.Currency.getInstance(code);
+                return code;
+            }
+        } catch(SQLException e) {
+            throw new IllegalStateException("Unable to load invoice currency: "+e.getMessage(),e);
+        }
+    }
+
+    private String currencyCode() {
+        return documentCurrency==null || documentCurrency.isBlank()
+            ? SettingsPanel.getCurrencyCode() : documentCurrency;
     }
 
     private void setupWindow() {
@@ -133,7 +165,7 @@ public class InvoiceDialog extends JDialog {
         invoicePanel.add(statusCombo, gbc);
 
         // Products table
-        String symbol = SettingsPanel.getCurrencySymbol();
+        String symbol = SettingsPanel.getCurrencySymbol(currencyCode());
         String[] columns = {"Code", "Product", "Quantity", "Unit Price " + symbol, "VAT Rate %", "Total " + symbol, "Product ID"};
         itemsTableModel = new InvoiceTableModel(columns, 0);
         itemsTable = new JTable(itemsTableModel);
@@ -174,9 +206,9 @@ public class InvoiceDialog extends JDialog {
         totalsPanel.setLayout(new BoxLayout(totalsPanel, BoxLayout.Y_AXIS));
         totalsPanel.setBorder(BorderFactory.createTitledBorder("Totals"));
 
-        taxableAmountLabel = new JLabel("Taxable Amount: " + SettingsPanel.formatCurrency(0));
-        vatLabel = new JLabel("VAT: " + SettingsPanel.formatCurrency(0));
-        totalLabel = new JLabel("TOTAL: " + SettingsPanel.formatCurrency(0));
+        taxableAmountLabel = new JLabel("Taxable Amount: " + SettingsPanel.formatCurrency(0,currencyCode()));
+        vatLabel = new JLabel("VAT: " + SettingsPanel.formatCurrency(0,currencyCode()));
+        totalLabel = new JLabel("TOTAL: " + SettingsPanel.formatCurrency(0,currencyCode()));
 
         totalLabel.setFont(totalLabel.getFont().deriveFont(Font.BOLD, 16f));
 
@@ -301,6 +333,7 @@ public class InvoiceDialog extends JDialog {
     }
 
     private void showCustomerSelectionDialog() {
+        if(blockHistoricalCurrencyEdit()) return;
         CustomerSelectionDialog dialog = new CustomerSelectionDialog(this);
         dialog.setVisible(true);
 
@@ -326,6 +359,7 @@ public class InvoiceDialog extends JDialog {
     }
 
     private void createNewCustomer() {
+        if(blockHistoricalCurrencyEdit()) return;
         CustomerDialog dialog = new CustomerDialog(this, null);
         dialog.setVisible(true);
         if (dialog.isCustomerSaved()) {
@@ -336,6 +370,7 @@ public class InvoiceDialog extends JDialog {
     }
 
     private void showProductSelectionDialog() {
+        if(blockHistoricalCurrencyEdit()) return;
         ProductSelectionDialog dialog = new ProductSelectionDialog(this);
         dialog.setVisible(true);
 
@@ -370,7 +405,7 @@ public class InvoiceDialog extends JDialog {
             row.add(quantity);
             row.add(product.getPrice());
             row.add(vatRate);
-            row.add(String.format("%.2f", Numbers.lineTotal(quantity, product.getPrice())));
+            row.add(Numbers.moneyText(Numbers.lineTotal(quantity, product.getPrice())));
             row.add(product.getId());
             itemsTableModel.addRow(row);
 
@@ -379,6 +414,7 @@ public class InvoiceDialog extends JDialog {
     }
 
     private void editSelectedProduct() {
+        if(blockHistoricalCurrencyEdit()) return;
         int selectedRow = itemsTable.getSelectedRow();
         if (selectedRow == -1) {
             JOptionPane.showMessageDialog(this,
@@ -417,6 +453,7 @@ public class InvoiceDialog extends JDialog {
     }
 
     private void removeSelectedProduct() {
+        if(blockHistoricalCurrencyEdit()) return;
         int selectedRow = itemsTable.getSelectedRow();
         if (selectedRow != -1) {
             String productName = (String) itemsTableModel.getValueAt(selectedRow, 1);
@@ -490,12 +527,64 @@ public class InvoiceDialog extends JDialog {
             row.add(item.getQuantity());
             row.add(item.getUnitPrice());
             row.add(item.getVatRate());
-            row.add(String.format("%.2f", item.getTotal()));
+            row.add(Numbers.moneyText(item.getTotal()));
             row.add(item.getProductId());
             itemsTableModel.addRow(row);
         }
 
         updateTotals();
+        if(historicalForeignCurrencyLocked) {
+            dateField.setEnabled(false);
+            selectCustomerButton.setEnabled(false);
+            itemsTable.setEnabled(false);
+            statusCombo.setModel(new DefaultComboBoxModel<>(new String[]{"Issued","Paid","Canceled"}));
+            statusCombo.putClientProperty("i18n.values", true);
+            statusCombo.setSelectedItem(invoice.getStatus());
+            String notice=!currencyCode().equals(SettingsPanel.getCurrencyCode())
+                ? I18n.tr("Historical invoice in a different currency: only the status can be changed.")
+                : I18n.tr("Finalized invoice: only the status can be changed.");
+            itemsTable.setToolTipText(notice);
+            dateField.setToolTipText(notice);
+            selectCustomerButton.setToolTipText(notice);
+        }
+    }
+
+    private boolean blockHistoricalCurrencyEdit() {
+        if(!historicalForeignCurrencyLocked) return false;
+        String message=!currencyCode().equals(SettingsPanel.getCurrencyCode())
+            ? I18n.tr("This historical invoice uses {OLD}. The current operating currency is {NEW}. Only its status can be changed.")
+                .replace("{OLD}",currencyCode()).replace("{NEW}",SettingsPanel.getCurrencyCode())
+            : I18n.tr("Issued, Paid and Canceled invoices are historical documents. Only their status can be changed.");
+        JOptionPane.showMessageDialog(this,message,
+            I18n.tr("Historical Invoice"),JOptionPane.INFORMATION_MESSAGE);
+        return true;
+    }
+
+    private void saveHistoricalStatusOnly() {
+        String newStatus=(String)statusCombo.getSelectedItem();
+        if("Draft".equals(newStatus)) {
+            JOptionPane.showMessageDialog(this,
+                I18n.tr("A finalized invoice cannot be returned to Draft."),
+                I18n.tr("Historical Invoice"),JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        try {
+            Connection conn=DatabaseManager.getInstance().getConnection();
+            DatabaseManager.beginTransaction(conn);
+            try(PreparedStatement p=conn.prepareStatement(
+                    "UPDATE invoices SET status=? WHERE id=? AND currency_code=?")) {
+                p.setString(1,newStatus);p.setInt(2,invoice.getId());p.setString(3,currencyCode());
+                if(p.executeUpdate()!=1) throw new SQLException("Invoice changed or no longer exists");
+                conn.commit();invoice.setStatus(newStatus);invoiceSaved=true;dispose();
+            } catch(Exception e) {
+                conn.rollback();throw e;
+            } finally {conn.setAutoCommit(true);}
+        } catch(Exception e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this,
+                I18n.tr("Error while saving the invoice")+": "+e.getMessage(),
+                I18n.tr("Error"),JOptionPane.ERROR_MESSAGE);
+        }
     }
 
     private synchronized void updateTotals() {
@@ -523,7 +612,7 @@ public class InvoiceDialog extends JDialog {
                     totalVat = Numbers.add(totalVat, vat);
 
                     String currentTotal = (String) itemsTableModel.getValueAt(i, 5);
-                    String newTotal = String.format("%.2f", subtotal);
+                    String newTotal = Numbers.moneyText(subtotal);
                     if (!newTotal.equals(currentTotal)) {
                         itemsTableModel.setValueAt(newTotal, i, 5);
                     }
@@ -539,9 +628,9 @@ public class InvoiceDialog extends JDialog {
             currentVat = totalVat;
             currentTotal = total;
 
-            taxableAmountLabel.setText("Taxable Amount: " + SettingsPanel.formatCurrency(taxableAmount));
-            vatLabel.setText("VAT: " + SettingsPanel.formatCurrency(totalVat));
-            totalLabel.setText("TOTAL: " + SettingsPanel.formatCurrency(total));
+            taxableAmountLabel.setText("Taxable Amount: " + SettingsPanel.formatCurrency(taxableAmount,currencyCode()));
+            vatLabel.setText("VAT: " + SettingsPanel.formatCurrency(totalVat,currencyCode()));
+            totalLabel.setText("TOTAL: " + SettingsPanel.formatCurrency(total,currencyCode()));
 
         } catch(IllegalArgumentException e) {
             taxableAmountLabel.setText("Invalid invoice row");vatLabel.setText("");totalLabel.setText("Correct quantity, price and VAT before saving");
@@ -579,6 +668,10 @@ public class InvoiceDialog extends JDialog {
     }
 
     private void saveInvoice() {
+        if(historicalForeignCurrencyLocked) {
+            saveHistoricalStatusOnly();
+            return;
+        }
         try {
             validateRows();
             // Validation

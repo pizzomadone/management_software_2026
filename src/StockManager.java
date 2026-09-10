@@ -496,6 +496,25 @@ public class StockManager {
         }
     }
 
+    /** Rebuild the cached reserved quantity from the active reservation ledger. */
+    public static void reconcileReservedStock(Connection conn) throws SQLException {
+        try (Statement s=conn.createStatement(); ResultSet r=s.executeQuery("""
+                SELECT product_id, SUM(reserved_quantity) AS reserved
+                FROM stock_reservations WHERE status='ACTIVE'
+                GROUP BY product_id HAVING SUM(reserved_quantity)>2147483647
+                """)) {
+            if (r.next()) throw new SQLException("Active reservations exceed the supported quantity for product " + r.getInt("product_id"));
+        }
+        try (Statement s=conn.createStatement()) {
+            s.executeUpdate("""
+                UPDATE products SET reserved_quantity=COALESCE((
+                    SELECT SUM(r.reserved_quantity) FROM stock_reservations r
+                    WHERE r.product_id=products.id AND r.status='ACTIVE'
+                ),0)
+                """);
+        }
+    }
+
     // Helper classes
 
     public static class StockItem {

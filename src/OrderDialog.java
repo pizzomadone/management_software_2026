@@ -305,7 +305,7 @@ public class OrderDialog extends JDialog {
         } else {
             paymentStatusCombo.setSelectedItem("Not Paid");
         }
-        paidAmountField.setText(String.format("%.2f", order.getPaidAmount()));
+        paidAmountField.setText(Numbers.moneyText(order.getPaidAmount()));
         updatePaymentAmountField();
 
         for (OrderItem item : order.getItems()) {
@@ -314,7 +314,7 @@ public class OrderDialog extends JDialog {
             row.add(item.getProductName());
             row.add(item.getQuantity());
             row.add(item.getUnitPrice());
-            row.add(String.format("%.2f", item.getTotal()));
+            row.add(Numbers.moneyText(item.getTotal()));
             itemsTableModel.addRow(row);
         }
 
@@ -375,7 +375,7 @@ public class OrderDialog extends JDialog {
             row.add(product.getName());
             row.add(quantity);
             row.add(product.getPrice());
-            row.add(String.format("%.2f", quantity * product.getPrice()));
+            row.add(Numbers.moneyText(Numbers.lineTotal(quantity, product.getPrice())));
             itemsTableModel.addRow(row);
             
             updateTotals();
@@ -409,7 +409,7 @@ public class OrderDialog extends JDialog {
         } else {
             paidAmountField.setEnabled(false);
             if ("Paid".equals(selectedPayment)) {
-                paidAmountField.setText(String.format("%.2f", currentTotal));
+                paidAmountField.setText(Numbers.moneyText(currentTotal));
             } else {
                 paidAmountField.setText("0.00");
             }
@@ -434,7 +434,7 @@ public class OrderDialog extends JDialog {
                 total = Numbers.add(total, itemTotal);
 
                 // Update row total
-                String newTotal = String.format("%.2f", itemTotal);
+                String newTotal = Numbers.moneyText(itemTotal);
                 String currentTotalStr = (String) itemsTableModel.getValueAt(i, 4);
                 if (!newTotal.equals(currentTotalStr)) {
                     itemsTableModel.setValueAt(newTotal, i, 4);
@@ -446,7 +446,7 @@ public class OrderDialog extends JDialog {
 
             // Update paid amount if payment status is "Paid"
             if ("Paid".equals(paymentStatusCombo.getSelectedItem())) {
-                paidAmountField.setText(String.format("%.2f", total));
+                paidAmountField.setText(Numbers.moneyText(total));
             }
 
         } catch (IllegalArgumentException e) {
@@ -506,13 +506,14 @@ public class OrderDialog extends JDialog {
             } else if ("Partially Paid".equals(paymentStatusUI)) {
                 paymentStatus = "PARTIALLY_PAID";
                 try {
-                    paidAmount = Numbers.nonNegative(paidAmountField.getText());
-                    if (paidAmount < 0) {
+                    java.math.BigDecimal enteredPaid=Numbers.decimal(paidAmountField.getText());
+                    if (enteredPaid.signum() < 0) {
                         JOptionPane.showMessageDialog(this,
                             "Paid amount cannot be negative",
                             "Error", JOptionPane.ERROR_MESSAGE);
                         return;
                     }
+                    paidAmount = Numbers.money(enteredPaid);
                     if (paidAmount > currentTotal) {
                         int choice = JOptionPane.showConfirmDialog(this,
                             I18n.tr("Paid amount exceeds order total. Continue?"),
@@ -522,7 +523,7 @@ public class OrderDialog extends JDialog {
                             return;
                         }
                     }
-                } catch (NumberFormatException ex) {
+                } catch (IllegalArgumentException ex) {
                     JOptionPane.showMessageDialog(this,
                         "Invalid paid amount. Please enter a valid number.",
                         "Error", JOptionPane.ERROR_MESSAGE);
@@ -545,6 +546,13 @@ public class OrderDialog extends JDialog {
             Connection conn = DatabaseManager.getInstance().getConnection();
             DatabaseManager.beginTransaction(conn);
             try {
+            if (order != null) {
+                try (PreparedStatement p=conn.prepareStatement("SELECT 1 FROM invoices WHERE order_id=? LIMIT 1")) {
+                    p.setInt(1,order.getId()); try (ResultSet r=p.executeQuery()) {
+                        if (r.next()) throw new SQLException(I18n.tr("This order already has an invoice and cannot be modified."));
+                    }
+                }
+            }
             // Check stock availability for New, In Progress and Completed states
             if ("New".equals(newStatus) || "In Progress".equals(newStatus) || "Completed".equals(newStatus)) {
                 Map<String, StockManager.StockAvailability> insufficient =

@@ -23,7 +23,7 @@ public class OrderItem {
     public String getProductName() { return productName; }
     public int getQuantity() { return quantity; }
     public double getUnitPrice() { return unitPrice; }
-    public double getTotal() { return quantity * unitPrice; }
+    public double getTotal() { return Numbers.lineTotal(quantity, unitPrice); }
 
     // Setters
     public void setId(int id) { this.id = id; }

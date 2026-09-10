@@ -152,7 +152,7 @@ public class OrdersPanel extends JPanel {
                     }
 
                     row.add(rs.getString("status"));
-                    row.add(String.format("%.2f", rs.getDouble("total")));
+                    row.add(Numbers.moneyText(rs.getDouble("total")));
 
                     // Add payment status
                     String paymentStatus = rs.getString("payment_status");
@@ -209,7 +209,7 @@ public class OrdersPanel extends JPanel {
                         }
 
                         row.add(rs.getString("status"));
-                        row.add(String.format("%.2f", rs.getDouble("total")));
+                        row.add(Numbers.moneyText(rs.getDouble("total")));
 
                         // Add payment status
                         String paymentStatus = rs.getString("payment_status");
@@ -256,6 +256,11 @@ public class OrdersPanel extends JPanel {
             int modelRow = ordersTable.convertRowIndexToModel(selectedRow);
             int orderId = (int)tableModel.getValueAt(modelRow, 0);
             try {
+                try (PreparedStatement p=DatabaseManager.getInstance().getConnection().prepareStatement("SELECT number FROM invoices WHERE order_id=? LIMIT 1")) {
+                    p.setInt(1,orderId); try (ResultSet r=p.executeQuery()) {
+                        if (r.next()) { JOptionPane.showMessageDialog(this,I18n.tr("This order already has an invoice and cannot be modified.")+"\n"+I18n.tr("Invoice")+": "+r.getString(1),I18n.tr("Invoice Already Exists"),JOptionPane.WARNING_MESSAGE); return; }
+                    }
+                }
                 Order order = loadOrderDetails(orderId);
                 if (order != null) {
                     showOrderDialog(order);
@@ -431,6 +436,10 @@ public class OrdersPanel extends JPanel {
         }
     }
 
+    static boolean canGenerateInvoice(String status) {
+        return "Completed".equals(status);
+    }
+
     private void generateInvoiceFromOrder() {
         int selectedRow = ordersTable.getSelectedRow();
         if (selectedRow == -1) return;
@@ -440,6 +449,13 @@ public class OrdersPanel extends JPanel {
         int orderId = (int)tableModel.getValueAt(modelRow, 0);
         String customer = (String)tableModel.getValueAt(modelRow, 1);
         String status = (String)tableModel.getValueAt(modelRow, 3);
+
+        if (!canGenerateInvoice(status)) {
+            JOptionPane.showMessageDialog(this,
+                I18n.tr("Only completed customer orders can be invoiced."),
+                I18n.tr("Generate Invoice"), JOptionPane.WARNING_MESSAGE);
+            return;
+        }
 
         try {
             Connection connection = DatabaseManager.getInstance().getConnection();

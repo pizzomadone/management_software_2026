@@ -6,6 +6,7 @@ import java.io.*;
 import java.text.NumberFormat;
 import java.util.Currency;
 import java.util.Locale;
+import java.math.BigDecimal;
 
 public class SettingsPanel extends JPanel {
     private static Properties settings = new Properties();
@@ -22,6 +23,8 @@ public class SettingsPanel extends JPanel {
     private JComboBox<String> currencyCombo;
     private JTextField defaultVatField;
     private JComboBox<String> languageCombo;
+    private boolean currencyChangedDuringUpdate;
+    private boolean currencyChangeDeferredForBackup;
 
     // Company Data fields
     private JTextField companyNameField;
@@ -404,10 +407,17 @@ public class SettingsPanel extends JPanel {
     private void applyAllSettings() {
         try {
             updateSettingsFromFields();
+            if (currencyChangeDeferredForBackup) {
+                currencyChangeDeferredForBackup = false;
+                return;
+            }
+            boolean currencyChanged = currencyChangedDuringUpdate;
             applySettings();
-            JOptionPane.showMessageDialog(this,
-                I18n.tr("Settings applied successfully!"),
-                I18n.tr("Settings"), JOptionPane.INFORMATION_MESSAGE);
+            if (!currencyChanged) {
+                JOptionPane.showMessageDialog(this,
+                    I18n.tr("Settings applied successfully!"),
+                    I18n.tr("Settings"), JOptionPane.INFORMATION_MESSAGE);
+            }
         } catch (IllegalArgumentException e) {
             JOptionPane.showMessageDialog(this, e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
@@ -419,6 +429,10 @@ public class SettingsPanel extends JPanel {
 
         try {
             saveAppSettings();
+            if (currencyChangeDeferredForBackup) {
+                currencyChangeDeferredForBackup = false;
+                return;
+            }
         } catch (Exception e) {
             success = false;
             JOptionPane.showMessageDialog(this,
@@ -443,6 +457,7 @@ public class SettingsPanel extends JPanel {
 
     private void saveAppSettings() {
         updateSettingsFromFields();
+        if (currencyChangeDeferredForBackup) return;
 
         try (OutputStreamWriter writer = new OutputStreamWriter(
                 new FileOutputStream(AppConstants.getSettingsPath().toFile()),
@@ -455,6 +470,8 @@ public class SettingsPanel extends JPanel {
 
     /** Copies every editable application option into the live settings. */
     private void updateSettingsFromFields() {
+        currencyChangedDuringUpdate = false;
+        currencyChangeDeferredForBackup = false;
         double vatRate;
         try {
             vatRate = Numbers.vat(defaultVatField.getText());
@@ -468,11 +485,150 @@ public class SettingsPanel extends JPanel {
         settings.setProperty("font_size", String.valueOf(fontSizeSlider.getValue()));
         settings.setProperty("theme", (String)themeCombo.getSelectedItem());
         settings.setProperty("pdf_default_directory", pdfDirectoryField.getText().trim());
-        try { DatabaseCurrency.change(DatabaseCurrency.codeFromSetting((String)currencyCombo.getSelectedItem())); }
-        catch (java.sql.SQLException e) {throw new IllegalArgumentException(e.getMessage(),e);}
-        settings.setProperty("currency", (String)currencyCombo.getSelectedItem());
+        String selectedCurrency=(String)currencyCombo.getSelectedItem();
+        String requestedCode=DatabaseCurrency.codeFromSetting(selectedCurrency);
+        String currentCode=getCurrencyCode();
+        if(!requestedCode.equals(currentCode)) {
+            selectedCurrency=performCurrencyChange(currentCode,requestedCode,selectedCurrency);
+        }
+        settings.setProperty("currency", selectedCurrency);
         settings.setProperty("default_vat", String.valueOf(vatRate));
         settings.setProperty("language", I18n.codeForName((String) languageCombo.getSelectedItem()));
+    }
+
+    private String performCurrencyChange(String oldCode,String newCode,String selectedCurrency) {
+        String warning=I18n.tr("Currency change: {OLD} → {NEW}")
+                .replace("{OLD}",oldCode).replace("{NEW}",newCode)+
+            "\n\n"+I18n.tr("Choose how existing operational values should be handled:")+
+            "\n• "+I18n.tr("Change currency only: numbers stay the same.")+
+            "\n  "+I18n.tr("For example, 100 {OLD} will become 100 {NEW}.")
+                .replace("{OLD}",oldCode).replace("{NEW}",newCode)+
+            "\n• "+I18n.tr("Convert values: monetary values are recalculated using a rate you enter.")+
+            "\n\n"+I18n.tr("Issued, Paid and Canceled invoices keep their original currency and amounts.");
+
+        JPanel warningPanel=new JPanel();
+        warningPanel.setLayout(new BoxLayout(warningPanel,BoxLayout.Y_AXIS));
+        JTextArea warningText=new JTextArea(warning);
+        warningText.setEditable(false);
+        warningText.setFocusable(false);
+        warningText.setOpaque(false);
+        warningText.setBorder(null);
+        warningText.setMargin(new Insets(0,0,0,0));
+        warningText.setFont(UIManager.getFont("Label.font"));
+        warningText.setAlignmentX(Component.LEFT_ALIGNMENT);
+        warningPanel.add(warningText);
+        warningPanel.add(Box.createVerticalStrut(10));
+        JLabel backupAdvice=new JLabel(I18n.tr("Before changing currency, we recommend creating a backup of your database."));
+        backupAdvice.setAlignmentX(Component.LEFT_ALIGNMENT);
+        warningPanel.add(backupAdvice);
+
+        boolean[] backupRequested={false};
+        JLabel backupLink=new JLabel("<html><a href='backup'>"+I18n.tr("Open Backup")+"</a></html>");
+        backupLink.setAlignmentX(Component.LEFT_ALIGNMENT);
+        backupLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+    backupLink.addMouseListener(new MouseAdapter() {
+        @Override public void mouseClicked(MouseEvent event) {
+            backupRequested[0]=true;
+            Window dialog=SwingUtilities.getWindowAncestor(backupLink);
+            if(dialog!=null) dialog.dispose();
+        }
+    });
+    warningPanel.add(backupLink);
+
+    Object[] options={
+        I18n.tr("Change currency only"),
+        I18n.tr("Convert values"),
+        I18n.tr("Cancel")
+    };
+    int choice=JOptionPane.showOptionDialog(this,warningPanel,I18n.tr("Change Currency"),
+        JOptionPane.DEFAULT_OPTION,JOptionPane.WARNING_MESSAGE,null,options,options[0]);
+
+    if(backupRequested[0]) {
+        currencyChangeDeferredForBackup=true;
+        restoreCurrencySelection(oldCode);
+        Window owner=SwingUtilities.getWindowAncestor(this);
+        if(owner instanceof MainWindow mainWindow) mainWindow.showPanelByName("BACKUP");
+        return (String)currencyCombo.getSelectedItem();
+    }
+    if(choice<0 || choice==2) {
+        restoreCurrencySelection(oldCode);
+        return (String)currencyCombo.getSelectedItem();
+    }
+
+        try {
+            if(choice==0) {
+                String relabel=I18n.tr("No amounts will be converted.")+"\n"+
+                    I18n.tr("For example, 100 {OLD} will become 100 {NEW}.")
+                        .replace("{OLD}",oldCode).replace("{NEW}",newCode)+"\n\n"+
+                    I18n.tr("Issued, Paid and Canceled invoices will not be changed.");
+                int confirm=JOptionPane.showConfirmDialog(this,relabel,I18n.tr("Confirm Currency Change"),
+                    JOptionPane.OK_CANCEL_OPTION,JOptionPane.WARNING_MESSAGE);
+                if(confirm!=JOptionPane.OK_OPTION) {
+                    restoreCurrencySelection(oldCode);
+                    return (String)currencyCombo.getSelectedItem();
+                }
+                DatabaseCurrency.change(newCode,DatabaseCurrency.ChangeMode.RELABEL,null);
+                currencyChangedDuringUpdate = true;
+                JOptionPane.showMessageDialog(this,
+                    I18n.tr("Currency changed successfully.")+"\n"+
+                    I18n.tr("No amounts were converted.")+"\n"+
+                    I18n.tr("Issued, Paid and Canceled invoices keep their original currency and amounts."),
+                    I18n.tr("Change Currency"),JOptionPane.INFORMATION_MESSAGE);
+            } else {
+                String input=JOptionPane.showInputDialog(this,
+                    I18n.tr("Enter the exchange rate: 1 {OLD} = ? {NEW}")
+                        .replace("{OLD}",oldCode).replace("{NEW}",newCode),
+                    "1.0");
+                if(input==null) {
+                    restoreCurrencySelection(oldCode);
+                    return (String)currencyCombo.getSelectedItem();
+                }
+                BigDecimal rate;
+                try {
+                    rate=new BigDecimal(input.trim().replace(',','.'));
+                } catch(NumberFormatException e) {
+                    throw new IllegalArgumentException(I18n.tr("Exchange rate must be a valid positive number."));
+                }
+                if(rate.signum()<=0) throw new IllegalArgumentException(I18n.tr("Exchange rate must be a valid positive number."));
+
+                String confirmation=I18n.tr("Existing operational monetary values will be converted using:")+"\n"+
+                    "1 "+oldCode+" = "+rate.stripTrailingZeros().toPlainString()+" "+newCode+"\n\n"+
+                    I18n.tr("Changing the operating currency affects products, costs, supplier price lists, customer orders, supplier orders and Draft invoices.")+
+                    "\n\n"+I18n.tr("Issued, Paid and Canceled invoices will not be changed.");
+                int confirm=JOptionPane.showConfirmDialog(this,confirmation,I18n.tr("Confirm Currency Conversion"),
+                    JOptionPane.OK_CANCEL_OPTION,JOptionPane.WARNING_MESSAGE);
+                if(confirm!=JOptionPane.OK_OPTION) {
+                    restoreCurrencySelection(oldCode);
+                    return (String)currencyCombo.getSelectedItem();
+                }
+                DatabaseCurrency.change(newCode,DatabaseCurrency.ChangeMode.CONVERT,rate);
+                currencyChangedDuringUpdate = true;
+                JOptionPane.showMessageDialog(this,
+                    I18n.tr("Currency changed successfully.")+"\n"+
+                    I18n.tr("Operational values were converted using the selected exchange rate.")+"\n"+
+                    I18n.tr("Issued, Paid and Canceled invoices keep their original currency and amounts."),
+                    I18n.tr("Change Currency"),JOptionPane.INFORMATION_MESSAGE);
+            }
+            Window owner=SwingUtilities.getWindowAncestor(this);
+            if(owner instanceof MainWindow mainWindow) mainWindow.refreshAfterCurrencyChange();
+            return selectedCurrency;
+        } catch(java.sql.SQLException e) {
+            restoreCurrencySelection(oldCode);
+            throw new IllegalArgumentException(e.getMessage(),e);
+        } catch(IllegalArgumentException e) {
+            restoreCurrencySelection(oldCode);
+            throw e;
+        }
+    }
+
+    private void restoreCurrencySelection(String code) {
+        for(int i=0;i<currencyCombo.getItemCount();i++) {
+            String item=currencyCombo.getItemAt(i);
+            if(item!=null && item.startsWith(code+" - ")) {
+                currencyCombo.setSelectedIndex(i);
+                return;
+            }
+        }
     }
 
     private void loadSettings() {
@@ -506,7 +662,11 @@ public class SettingsPanel extends JPanel {
         updateLookAndFeel(theme);
         I18n.setLanguage(getSetting("language", "it"));
         Window owner = SwingUtilities.getWindowAncestor(this);
-        if (owner instanceof MainWindow mainWindow) mainWindow.refreshLocalizedTitle();
+        if (owner instanceof MainWindow mainWindow) {
+            mainWindow.refreshLocalizedTitle();
+            if(currencyChangedDuringUpdate) mainWindow.refreshAfterCurrencyChange();
+        }
+        currencyChangedDuringUpdate = false;
     }
 
     private void updateGlobalFont(int size) {
@@ -610,7 +770,12 @@ public class SettingsPanel extends JPanel {
     }
 
     public static String getCurrencySymbol() {
-        return Currency.getInstance(getCurrencyCode()).getSymbol(Locale.getDefault());
+        return getCurrencySymbol(getCurrencyCode());
+    }
+
+    public static String getCurrencySymbol(String currencyCode) {
+        try { return Currency.getInstance(currencyCode).getSymbol(Locale.getDefault()); }
+        catch(IllegalArgumentException e) { return currencyCode; }
     }
 
     public static String getCurrencyCode() {
@@ -621,18 +786,21 @@ public class SettingsPanel extends JPanel {
     }
 
     public static String formatCurrency(double amount) {
+        return formatCurrency(amount,getCurrencyCode());
+    }
+
+    public static String formatCurrency(double amount,String currencyCode) {
+        if(currencyCode==null || currencyCode.isBlank()) currencyCode=getCurrencyCode();
         try {
             NumberFormat formatter = NumberFormat.getCurrencyInstance(Locale.getDefault());
-            Currency currency = Currency.getInstance(getCurrencyCode());
+            Currency currency = Currency.getInstance(currencyCode);
             formatter.setCurrency(currency);
-            int fractionDigits = 2;
-            if (fractionDigits >= 0) {
-                formatter.setMinimumFractionDigits(fractionDigits);
-                formatter.setMaximumFractionDigits(fractionDigits);
-            }
-            return formatter.format(amount);
+            formatter.setRoundingMode(java.math.RoundingMode.HALF_UP);
+            formatter.setMinimumFractionDigits(2);
+            formatter.setMaximumFractionDigits(2);
+            return formatter.format(java.math.BigDecimal.valueOf(amount));
         } catch (IllegalArgumentException e) {
-            return String.format("%s %.2f", getCurrencySymbol(), amount);
+            return String.format("%s %.2f", getCurrencySymbol(currencyCode), amount);
         }
     }
 

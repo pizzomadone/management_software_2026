@@ -127,7 +127,7 @@ public class InvoicesPanel extends JPanel {
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
-                SELECT i.id, i.number, i.date, i.customer_id, i.status,
+                SELECT i.id, i.number, i.date, i.customer_id, i.status, i.currency_code,
                        c.first_name || ' ' || c.last_name as customer_name
                 FROM invoices i
                 LEFT JOIN customers c ON i.customer_id = c.id
@@ -156,9 +156,10 @@ public class InvoicesPanel extends JPanel {
                     }
 
                     row.add(snapshotCustomerName(conn,rs.getInt("id")));
-                    row.add(SettingsPanel.formatCurrency(taxableAmount));
-                    row.add(SettingsPanel.formatCurrency(vat));
-                    row.add(SettingsPanel.formatCurrency(total));
+                    String currency=rs.getString("currency_code");
+                    row.add(SettingsPanel.formatCurrency(taxableAmount,currency));
+                    row.add(SettingsPanel.formatCurrency(vat,currency));
+                    row.add(SettingsPanel.formatCurrency(total,currency));
                     row.add(rs.getString("status"));
                     tableModel.addRow(row);
                 }
@@ -192,7 +193,7 @@ public class InvoicesPanel extends JPanel {
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
-                SELECT i.id, i.number, i.date, i.customer_id, i.status,
+                SELECT i.id, i.number, i.date, i.customer_id, i.status, i.currency_code,
                        c.first_name || ' ' || c.last_name as customer_name
                 FROM invoices i
                 LEFT JOIN customers c ON i.customer_id = c.id
@@ -223,9 +224,10 @@ public class InvoicesPanel extends JPanel {
                         }
 
                         row.add(snapshotCustomerName(conn,rs.getInt("id")));
-                        row.add(SettingsPanel.formatCurrency(totals[0]));
-                        row.add(SettingsPanel.formatCurrency(totals[1]));
-                        row.add(SettingsPanel.formatCurrency(totals[2]));
+                        String currency=rs.getString("currency_code");
+                        row.add(SettingsPanel.formatCurrency(totals[0],currency));
+                        row.add(SettingsPanel.formatCurrency(totals[1],currency));
+                        row.add(SettingsPanel.formatCurrency(totals[2],currency));
                         row.add(rs.getString("status"));
                         tableModel.addRow(row);
                     }
@@ -414,6 +416,11 @@ public class InvoicesPanel extends JPanel {
             String number = (String)tableModel.getValueAt(modelRow, 0);
             String customer = (String)tableModel.getValueAt(modelRow, 2);
             String status = (String)tableModel.getValueAt(modelRow, 6);
+        if (InvoiceDialog.isFinalizedStatus(status)) {
+            JOptionPane.showMessageDialog(this,I18n.tr("Issued, Paid and Canceled invoices are historical documents. Only their status can be changed."),I18n.tr("Historical Invoice"),JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
 
             int result = JOptionPane.showConfirmDialog(this,
                 "Are you sure you want to delete invoice " + number + " from customer " + customer + "?\n" +

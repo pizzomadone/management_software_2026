@@ -179,7 +179,7 @@ public class SalesReportPanel extends JPanel {
                     row.add(rs.getString("customer_name"));
                     row.add(rs.getString("status"));
                     double total = rs.getDouble("total");
-                    row.add(String.format("%.2f", total));
+                    row.add(Numbers.moneyText(total));
 
                     tableModel.addRow(row);
 
@@ -248,7 +248,7 @@ public class SalesReportPanel extends JPanel {
                 String query = """
                     SELECT COALESCE(p.name, 'Product N/A') as product_name,
                            d.quantity, d.unit_price,
-                           (d.quantity * d.unit_price) as total
+                           warestat_line_total(d.quantity,d.unit_price) as total
                     FROM order_details d
                     LEFT JOIN products p ON d.product_id = p.id
                     WHERE d.order_id = ?
@@ -260,8 +260,8 @@ public class SalesReportPanel extends JPanel {
                             Vector<Object> row = new Vector<>();
                             row.add(rs.getString("product_name"));
                             row.add(rs.getInt("quantity"));
-                            row.add(String.format("%.2f", rs.getDouble("unit_price")));
-                            row.add(String.format("%.2f", rs.getDouble("total")));
+                            row.add(Numbers.unitText(rs.getDouble("unit_price")));
+                            row.add(Numbers.moneyText(rs.getDouble("total")));
                             detailModel.addRow(row);
                         }
                     }

@@ -56,6 +56,22 @@ public final class Numbers {
         return money(BigDecimal.valueOf(quantity).multiply(BigDecimal.valueOf(price)));
     }
 
+    /** Monetary totals always use WareStat's accounting rule: two decimals, HALF_UP. */
+    public static String moneyText(double value) {
+        return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP).toPlainString();
+    }
+
+    /**
+     * Unit prices and costs may legitimately need more than two decimals.
+     * Keep their stored precision visible so quantity × displayed unit price can reconcile
+     * with a two-decimal line total.
+     */
+    public static String unitText(double value) {
+        BigDecimal decimal=BigDecimal.valueOf(nonNegative(value)).stripTrailingZeros();
+        if(decimal.scale()<2) decimal=decimal.setScale(2);
+        return decimal.toPlainString();
+    }
+
     /** Value physical stock on hand; shortages are reported separately, not netted against other stock. */
     public static double stockValue(int quantity, double unitValue) {
         return lineTotal(Math.max(0, quantity), nonNegative(unitValue));

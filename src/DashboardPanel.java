@@ -90,8 +90,25 @@ public class DashboardPanel extends JPanel {
         JScrollPane scrollPane = new JScrollPane(mainContainer);
         scrollPane.setBorder(null);
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        routeNestedMouseWheel(mainContainer, scrollPane);
 
         add(scrollPane, BorderLayout.CENTER);
+    }
+
+    private void routeNestedMouseWheel(Container root, JScrollPane dashboardScrollPane) {
+        for (Component component : root.getComponents()) {
+            if (component instanceof JScrollPane nestedScrollPane) {
+                nestedScrollPane.setWheelScrollingEnabled(false);
+                nestedScrollPane.addMouseWheelListener(event -> {
+                    JScrollBar bar = dashboardScrollPane.getVerticalScrollBar();
+                    int increment = Math.max(1, bar.getUnitIncrement(event.getWheelRotation()));
+                    bar.setValue(bar.getValue() + event.getUnitsToScroll() * increment);
+                    event.consume();
+                });
+            } else if (component instanceof Container container) {
+                routeNestedMouseWheel(container, dashboardScrollPane);
+            }
+        }
     }
 
     private JPanel createHeaderPanel() {
@@ -481,9 +498,7 @@ public class DashboardPanel extends JPanel {
             double monthlySales = sumMonthlyDocuments(conn,
                 "SELECT total FROM orders WHERE status='Completed' AND " +
                     DateUtils.sqlDate("order_date") + ">=? AND " + DateUtils.sqlDate("order_date") + "<?", start, end);
-            double monthlyInvoiced = sumMonthlyDocuments(conn,
-                "SELECT taxable_amount AS total FROM invoices WHERE status IN ('Issued','Paid') AND " +
-                    DateUtils.sqlDate("date") + ">=? AND " + DateUtils.sqlDate("date") + "<?", start, end);
+            String monthlyInvoiced = monthlyInvoiceSummary(conn,start,end);
 
             // Potential gross margin uses the same stock totals, weighted by their sale value.
             // It is undefined without a positive denominator; it is not historical sales profit.
@@ -513,7 +528,7 @@ public class DashboardPanel extends JPanel {
             lowStockCountLabel.setText(String.valueOf(lowStockCount));
             pendingOrdersLabel.setText(String.valueOf(pendingOrders));
             monthRevenueLabel.setText(SettingsPanel.formatCurrency(monthlySales));
-            monthInvoicedLabel.setText(SettingsPanel.formatCurrency(monthlyInvoiced));
+            monthInvoicedLabel.setText(monthlyInvoiced);
             avgMarginLabel.setText(margin);
             zeroStockLabel.setText(String.valueOf(zeroStockCount));
 
@@ -529,6 +544,30 @@ public class DashboardPanel extends JPanel {
                 "Error",
                 JOptionPane.ERROR_MESSAGE);
         }
+    }
+
+    private String monthlyInvoiceSummary(Connection conn,String start,String end) throws SQLException {
+        java.util.LinkedHashMap<String,Double> totals=new java.util.LinkedHashMap<>();
+        String query="SELECT currency_code,taxable_amount FROM invoices WHERE status IN ('Issued','Paid') AND " +
+            DateUtils.sqlDate("date") + ">=? AND " + DateUtils.sqlDate("date") + "<? ORDER BY currency_code,id";
+        try(PreparedStatement stmt=conn.prepareStatement(query)) {
+            stmt.setString(1,start);stmt.setString(2,end);
+            try(ResultSet rs=stmt.executeQuery()) {
+                while(rs.next()) {
+                    String code=rs.getString("currency_code");
+                    if(code==null || code.isBlank()) throw new SQLException("Invoice currency is missing");
+                    double amount=Numbers.nonNegative(rs.getObject("taxable_amount"));
+                    totals.put(code,Numbers.add(totals.getOrDefault(code,0.0),amount));
+                }
+            }
+        }
+        if(totals.isEmpty()) return SettingsPanel.formatCurrency(0);
+        StringBuilder result=new StringBuilder();
+        for(var entry:totals.entrySet()) {
+            if(result.length()>0)result.append(" + ");
+            result.append(SettingsPanel.formatCurrency(entry.getValue(),entry.getKey()));
+        }
+        return result.toString();
     }
 
     private double sumMonthlyDocuments(Connection conn, String query, String start, String end) throws SQLException {
@@ -745,7 +784,7 @@ public class DashboardPanel extends JPanel {
             String query = """
                 SELECT p.name,
                        SUM(od.quantity) as total_qty,
-                       SUM(ROUND(od.quantity * od.unit_price,2)) as total_revenue
+                       SUM(warestat_line_total(od.quantity,od.unit_price)) as total_revenue
                 FROM order_details od
                 JOIN products p ON od.product_id = p.id
                 JOIN orders o ON od.order_id = o.id
@@ -762,7 +801,7 @@ public class DashboardPanel extends JPanel {
                 while (rs.next()) {
                     String name = rs.getString("name");
                     long qty = rs.getLong("total_qty");
-                    double revenue = rs.getDouble("total_revenue");
+                    double revenue = Numbers.money(java.math.BigDecimal.valueOf(rs.getDouble("total_revenue")));
 
                     model.addRow(new Object[]{
                         rank++,
@@ -788,7 +827,7 @@ public class DashboardPanel extends JPanel {
             // Get all products with their revenue, sorted by revenue
             String query = """
                 SELECT p.id, p.name,
-                       COALESCE(SUM(CASE WHEN o.status='Completed' THEN ROUND(od.quantity * od.unit_price,2) ELSE 0 END), 0) as revenue
+                       COALESCE(SUM(CASE WHEN o.status='Completed' THEN warestat_line_total(od.quantity,od.unit_price) ELSE 0 END), 0) as revenue
                 FROM products p
                 LEFT JOIN order_details od ON p.id = od.product_id
                 LEFT JOIN orders o ON od.order_id = o.id AND o.status = 'Completed'
@@ -803,14 +842,14 @@ public class DashboardPanel extends JPanel {
             try (Statement stmt = conn.createStatement();
                  ResultSet rs = stmt.executeQuery(query)) {
                 while (rs.next()) {
-                    double revenue = rs.getDouble("revenue");
+                    double revenue = Numbers.money(java.math.BigDecimal.valueOf(rs.getDouble("revenue")));
                     products.add(new ProductRevenue(rs.getString("name"), revenue));
-                    totalRevenue += revenue;
+                    totalRevenue = Numbers.add(totalRevenue,revenue);
                 }
             }
 
             if (products.isEmpty() || totalRevenue == 0) {
-                model.addRow(new Object[]{"N/A", "0", "0%", SettingsPanel.formatCurrency(0), "0%", "No data available"});
+                model.addRow(new Object[]{"N/A", "0", "0%", SettingsPanel.formatCurrency(0), "0%", I18n.tr("No data available")});
                 return;
             }
 
@@ -822,17 +861,17 @@ public class DashboardPanel extends JPanel {
 
             for (ProductRevenue pr : products) {
                 double percentRevenue = cumulativeRevenue / totalRevenue;
-                cumulativeRevenue += pr.revenue;
+                cumulativeRevenue = Numbers.add(cumulativeRevenue,pr.revenue);
 
                 if (pr.revenue > 0 && percentRevenue < 0.80) {
                     classACount++;
-                    classARevenue += pr.revenue;
+                    classARevenue = Numbers.add(classARevenue,pr.revenue);
                 } else if (pr.revenue > 0 && percentRevenue < 0.95) {
                     classBCount++;
-                    classBRevenue += pr.revenue;
+                    classBRevenue = Numbers.add(classBRevenue,pr.revenue);
                 } else {
                     classCCount++;
-                    classCRevenue += pr.revenue;
+                    classCRevenue = Numbers.add(classCRevenue,pr.revenue);
                 }
             }
 
@@ -843,7 +882,7 @@ public class DashboardPanel extends JPanel {
                 String.format("%.1f%%", (classACount * 100.0 / totalProducts)),
                 SettingsPanel.formatCurrency(classARevenue),
                 String.format("%.1f%%", (classARevenue * 100.0 / totalRevenue)),
-                "High-value products - Priority focus"
+                I18n.tr("High-value products - Priority focus")
             });
 
             model.addRow(new Object[]{
@@ -852,7 +891,7 @@ public class DashboardPanel extends JPanel {
                 String.format("%.1f%%", (classBCount * 100.0 / totalProducts)),
                 SettingsPanel.formatCurrency(classBRevenue),
                 String.format("%.1f%%", (classBRevenue * 100.0 / totalRevenue)),
-                "Medium-value products - Monitor"
+                I18n.tr("Medium-value products - Monitor")
             });
 
             model.addRow(new Object[]{
@@ -861,7 +900,7 @@ public class DashboardPanel extends JPanel {
                 String.format("%.1f%%", (classCCount * 100.0 / totalProducts)),
                 SettingsPanel.formatCurrency(classCRevenue),
                 String.format("%.1f%%", (classCRevenue * 100.0 / totalRevenue)),
-                "Low-value products - Consider liquidation"
+                I18n.tr("Low-value products - Consider liquidation")
             });
 
         } catch (SQLException e) {

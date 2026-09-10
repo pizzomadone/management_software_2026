@@ -222,6 +222,10 @@ public class CustomersPanel extends JPanel {
                 // Check for existing dependencies
                 boolean hasOrders = hasCustomerOrders(conn, id);
                 boolean hasInvoices = hasCustomerInvoices(conn, id);
+                if (hasFinalizedCustomerInvoices(conn,id)) {
+                    JOptionPane.showMessageDialog(this,I18n.tr("Issued, Paid and Canceled invoices are historical documents. Only their status can be changed."),I18n.tr("Historical Invoice"),JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
 
                 if (hasOrders || hasInvoices) {
                     StringBuilder message = new StringBuilder();
@@ -395,6 +399,12 @@ public class CustomersPanel extends JPanel {
             pstmt.setInt(1, customerId);
             ResultSet rs = pstmt.executeQuery();
             return rs.next() && rs.getInt(1) > 0;
+        }
+    }
+
+    private boolean hasFinalizedCustomerInvoices(Connection conn,int customerId) throws SQLException {
+        try (PreparedStatement p=conn.prepareStatement("SELECT 1 FROM invoices WHERE customer_id=? AND status<>'Draft' LIMIT 1")) {
+            p.setInt(1,customerId); try (ResultSet r=p.executeQuery()) { return r.next(); }
         }
     }
 

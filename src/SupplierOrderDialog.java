@@ -248,7 +248,7 @@ public class SupplierOrderDialog extends JDialog {
             row.add(item.getProductName());
             row.add(item.getQuantity());
             row.add(item.getUnitPrice());
-            row.add(String.format("%.2f", item.getTotal()));
+            row.add(Numbers.moneyText(item.getTotal()));
             row.add(item.getNotes());
             row.add(item.getProductId());
             itemsTableModel.addRow(row);
@@ -335,7 +335,7 @@ public class SupplierOrderDialog extends JDialog {
             row.add(selectedProduct.getProduct().getName());
             row.add(quantity);
             row.add(quotedPrice);
-            row.add(String.format("%.2f", Numbers.lineTotal(quantity, quotedPrice)));
+            row.add(Numbers.moneyText(Numbers.lineTotal(quantity, quotedPrice)));
             row.add(note);
             row.add(selectedProduct.getProduct().getId());
             itemsTableModel.addRow(row);
@@ -402,7 +402,7 @@ public class SupplierOrderDialog extends JDialog {
             for(int i=0;i<itemsTableModel.getRowCount();i++) {
                 double line=Numbers.lineTotal(parseInteger(itemsTableModel.getValueAt(i,2)),parseDouble(itemsTableModel.getValueAt(i,3)));
                 total=Numbers.add(total,line);
-                itemsTableModel.setValueAt(String.format("%.2f",line),i,4);
+                itemsTableModel.setValueAt(Numbers.moneyText(line),i,4);
             }
             totalLabel.setText("Total: "+SettingsPanel.formatCurrency(total));
         } catch(IllegalArgumentException e) {totalLabel.setText("Invalid quantity or price");}
