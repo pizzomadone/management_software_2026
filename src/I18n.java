@@ -110,10 +110,32 @@ public final class I18n {
         if (separator > 0 && separator < 80) {
             String prefix = source.substring(0, separator);
             String translated = translations.get(prefix);
-            if (translated != null) return translated + ": " + source.substring(separator + 2);
+            if (translated == null) translated = translations.get(prefix + ":");
+            if (translated != null) return translated + (translated.endsWith(":") ? " " : ": ") + source.substring(separator + 2);
         }
 
-        return source;
+        String templated = translateTemplate(source);
+        return templated != null ? templated : source;
+    }
+
+    private static String translateTemplate(String source) {
+        for (Map.Entry<String,String> entry : translations.entrySet()) {
+            String key=entry.getKey();
+            if (!key.contains("{0}")) continue;
+            java.util.regex.Matcher pm=java.util.regex.Pattern.compile("\\{(\\d+)\\}").matcher(key);
+            StringBuilder re=new StringBuilder("^"); int last=0,group=1; Map<Integer,Integer> groups=new HashMap<>();
+            while(pm.find()) {
+                re.append(java.util.regex.Pattern.quote(key.substring(last,pm.start()))).append("(.*?)");
+                groups.put(Integer.parseInt(pm.group(1)),group++); last=pm.end();
+            }
+            re.append(java.util.regex.Pattern.quote(key.substring(last))).append("$");
+            java.util.regex.Matcher sm=java.util.regex.Pattern.compile(re.toString(),java.util.regex.Pattern.DOTALL).matcher(source);
+            if(!sm.matches()) continue;
+            String result=entry.getValue();
+            for(Map.Entry<Integer,Integer> g:groups.entrySet()) result=result.replace("{"+g.getKey()+"}",sm.group(g.getValue()));
+            return result;
+        }
+        return null;
     }
 
     private static String localized(Object owner, String current) {
