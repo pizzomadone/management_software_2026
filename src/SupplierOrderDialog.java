@@ -196,7 +196,7 @@ public class SupplierOrderDialog extends JDialog {
             numberField.setText(DocumentNumbers.nextSupplierNumber(conn, new Date()));
         } catch (SQLException e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error generating order number: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -225,7 +225,7 @@ public class SupplierOrderDialog extends JDialog {
             }
         } catch (SQLException e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error loading products: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -303,7 +303,7 @@ public class SupplierOrderDialog extends JDialog {
         addButton.addActionListener(e -> {
             ProductDisplay selectedProduct = (ProductDisplay)productCombo.getSelectedItem();
             if (selectedProduct == null) {
-                JOptionPane.showMessageDialog(dialog,
+                Dialogs.showMessageDialog(dialog,
                     "Please select a product",
                     "Warning", JOptionPane.WARNING_MESSAGE);
                 return;
@@ -315,14 +315,14 @@ public class SupplierOrderDialog extends JDialog {
                 quantity = Numbers.positiveQuantity(quantitySpinner.getValue());
                 quotedPrice = SupplierPricing.price(DatabaseManager.getInstance().getConnection(), supplierId,
                     selectedProduct.getProduct().getId(), quantity, DateUtils.parseDate(dateField.getText(), dateFormat));
-            } catch (Exception ex) { JOptionPane.showMessageDialog(dialog, ex.getMessage(), "Invalid product", JOptionPane.ERROR_MESSAGE); return; }
+            } catch (Exception ex) { Dialogs.showMessageDialog(dialog, ex.getMessage(), "Invalid product", JOptionPane.ERROR_MESSAGE); return; }
             String note = noteField.getText().trim();
 
             // Check if product is already present
             for (int i = 0; i < itemsTableModel.getRowCount(); i++) {
                 String code = (String)itemsTableModel.getValueAt(i, 0);
                 if (code.equals(selectedProduct.getProduct().getCode())) {
-                    JOptionPane.showMessageDialog(dialog,
+                    Dialogs.showMessageDialog(dialog,
                         "This product is already in the order",
                         "Warning", JOptionPane.WARNING_MESSAGE);
                     return;
@@ -384,14 +384,14 @@ public class SupplierOrderDialog extends JDialog {
     private void applyPriceList() {
         try {
             Numbers.commitEdits(itemsTable);
-            if(JOptionPane.showConfirmDialog(this,"Replace all entered unit prices with the current price list for this date and these quantities?","Apply Price List",JOptionPane.YES_NO_OPTION)!=JOptionPane.YES_OPTION)return;
+            if(Dialogs.showConfirmDialog(this,"Replace all entered unit prices with the current price list for this date and these quantities?","Apply Price List",JOptionPane.YES_NO_OPTION)!=JOptionPane.YES_OPTION)return;
             Date date=DateUtils.parseDate(dateField.getText(),dateFormat);
             Connection c=DatabaseManager.getInstance().getConnection();
             double[] prices=new double[itemsTableModel.getRowCount()];
             for(int i=0;i<prices.length;i++)prices[i]=SupplierPricing.price(c,supplierId,productIdForRow(c,i),parseInteger(itemsTableModel.getValueAt(i,2)),date);
             for(int i=0;i<prices.length;i++)itemsTableModel.setValueAt(prices[i],i,3);
             updateTotals();
-        } catch(Exception e) {JOptionPane.showMessageDialog(this,e.getMessage(),"Unable to apply prices",JOptionPane.ERROR_MESSAGE);}
+        } catch(Exception e) {Dialogs.showMessageDialog(this,e.getMessage(),"Unable to apply prices",JOptionPane.ERROR_MESSAGE);}
     }
 
     private void updateTotals() {
@@ -430,7 +430,7 @@ public class SupplierOrderDialog extends JDialog {
             Numbers.commitEdits(itemsTable);
             // Validation
             if (itemsTableModel.getRowCount() == 0) {
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Add at least one product to the order",
                     "Error", JOptionPane.ERROR_MESSAGE);
                 return;
@@ -446,14 +446,14 @@ public class SupplierOrderDialog extends JDialog {
                     deliveryDate = DateUtils.parseDate(deliveryDateText, dateFormat);
                 }
             } catch (Exception e) {
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Invalid date format. Use dd/MM/yyyy format",
                     "Error", JOptionPane.ERROR_MESSAGE);
                 return;
             }
 
             if (orderDate == null) {
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Please enter a valid order date",
                     "Error", JOptionPane.ERROR_MESSAGE);
                 return;
@@ -585,7 +585,7 @@ public class SupplierOrderDialog extends JDialog {
 
         } catch (Exception e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error saving the order: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }

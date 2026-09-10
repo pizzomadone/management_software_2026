@@ -379,7 +379,7 @@ public class WarehouseMovementDialog extends JDialog {
             quantitySpinner.commitEdit();
             // Validation
             if (selectedProduct == null) {
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Select a product",
                     "Error", JOptionPane.ERROR_MESSAGE);
                 return;
@@ -397,7 +397,7 @@ public class WarehouseMovementDialog extends JDialog {
             if ("OUTWARD".equals(type)) {
                 int availability = availableForOutward(conn,selectedProduct.getId());
                 if (quantity > availability) {
-                    int choice = JOptionPane.showConfirmDialog(this,
+                    int choice = Dialogs.showConfirmDialog(this,
                         String.format("Insufficient quantity. Current availability: %d\n" +
                                      "Requested: %d\n\n" +
                                      "Do you want to proceed anyway?\n" +
@@ -500,7 +500,7 @@ public class WarehouseMovementDialog extends JDialog {
                 conn.commit();
                 movementSaved = true;
 
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Movement saved successfully!",
                     "Success", JOptionPane.INFORMATION_MESSAGE);
 
@@ -515,7 +515,7 @@ public class WarehouseMovementDialog extends JDialog {
 
         } catch (Exception e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error saving movement: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }

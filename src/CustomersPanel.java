@@ -128,7 +128,7 @@ public class CustomersPanel extends JPanel {
                 }
             }
         } catch (SQLException e) {
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error while loading customers: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -171,7 +171,7 @@ public class CustomersPanel extends JPanel {
                 }
             }
         } catch (SQLException e) {
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error while searching for customers: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -223,7 +223,7 @@ public class CustomersPanel extends JPanel {
                 boolean hasOrders = hasCustomerOrders(conn, id);
                 boolean hasInvoices = hasCustomerInvoices(conn, id);
                 if (hasFinalizedCustomerInvoices(conn,id)) {
-                    JOptionPane.showMessageDialog(this,I18n.tr("Issued, Paid and Canceled invoices are historical documents. Only their status can be changed."),I18n.tr("Historical Invoice"),JOptionPane.WARNING_MESSAGE);
+                    Dialogs.showMessageDialog(this,I18n.tr("Issued, Paid and Canceled invoices are historical documents. Only their status can be changed."),I18n.tr("Historical Invoice"),JOptionPane.WARNING_MESSAGE);
                     return;
                 }
 
@@ -239,7 +239,7 @@ public class CustomersPanel extends JPanel {
                     message.append("- Delete all: orders and invoices are permanently deleted; completed stock is restored, active reservations are removed and related movements are deleted.");
 
                     String[] options = {"Keep Customer and Records", "Delete Customer and All Related Data"};
-                    int choice = JOptionPane.showOptionDialog(this,
+                    int choice = Dialogs.showOptionDialog(this,
                         message.toString(),
                         "Cannot Delete Customer",
                         JOptionPane.YES_NO_OPTION,
@@ -253,7 +253,7 @@ public class CustomersPanel extends JPanel {
                 }
 
                 // Safe to delete - no foreign key references
-                int result = JOptionPane.showConfirmDialog(this,
+                int result = Dialogs.showConfirmDialog(this,
                     "Are you sure you want to delete the customer '" + fullName + "'?",
                     "Confirm Deletion",
                     JOptionPane.YES_NO_OPTION,
@@ -266,7 +266,7 @@ public class CustomersPanel extends JPanel {
                         pstmt.executeUpdate();
                         loadCustomers();
 
-                        JOptionPane.showMessageDialog(this,
+                        Dialogs.showMessageDialog(this,
                             "Customer deleted successfully",
                             "Success",
                             JOptionPane.INFORMATION_MESSAGE);
@@ -274,7 +274,7 @@ public class CustomersPanel extends JPanel {
                 }
             } catch (SQLException e) {
                 e.printStackTrace();
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Error while deleting the customer: " + e.getMessage(),
                     "Error", JOptionPane.ERROR_MESSAGE);
             }
@@ -282,7 +282,7 @@ public class CustomersPanel extends JPanel {
     }
 
     private void performCascadeDelete(Connection conn, int id, String fullName) {
-        int confirmResult = JOptionPane.showConfirmDialog(this,
+        int confirmResult = Dialogs.showConfirmDialog(this,
             "WARNING: This will permanently delete customer '" + fullName + "' and ALL related data:\n" +
             "- All orders from this customer\n" +
             "- All invoices\n" +
@@ -373,7 +373,7 @@ public class CustomersPanel extends JPanel {
                 conn.commit();
                 loadCustomers();
 
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Customer '" + fullName + "' and all related records deleted successfully",
                     "Force Delete Completed",
                     JOptionPane.INFORMATION_MESSAGE);
@@ -387,7 +387,7 @@ public class CustomersPanel extends JPanel {
 
         } catch (SQLException e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error during force delete: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }

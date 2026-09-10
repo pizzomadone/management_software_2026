@@ -539,7 +539,7 @@ public class DashboardPanel extends JPanel {
                 label.setText("—");
             }
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error loading KPI data: " + e.getMessage(),
                 "Error",
                 JOptionPane.ERROR_MESSAGE);

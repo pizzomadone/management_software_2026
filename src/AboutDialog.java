@@ -158,7 +158,7 @@ public class AboutDialog extends JDialog {
         try {
             Desktop.getDesktop().browse(new URI("https://" + AppConstants.WEBSITE));
         } catch (Exception e) {
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Could not open browser. Please visit: " + AppConstants.WEBSITE,
                 "Information",
                 JOptionPane.INFORMATION_MESSAGE);
@@ -169,7 +169,7 @@ public class AboutDialog extends JDialog {
         try {
             Desktop.getDesktop().mail(new URI("mailto:" + AppConstants.CONTACT_EMAIL));
         } catch (Exception e) {
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Could not open email client. Please send email to: " + AppConstants.CONTACT_EMAIL,
                 "Information",
                 JOptionPane.INFORMATION_MESSAGE);
@@ -262,7 +262,7 @@ public class AboutDialog extends JDialog {
         }
 
         if (!file.exists()) {
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 fileName + " file not found in the application directory.",
                 "File Not Found",
                 JOptionPane.WARNING_MESSAGE);
@@ -284,7 +284,7 @@ public class AboutDialog extends JDialog {
             showTextDialog(title, content.toString());
 
         } catch (IOException e) {
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error reading " + fileName + ":\n" + e.getMessage(),
                 "Error",
                 JOptionPane.ERROR_MESSAGE);

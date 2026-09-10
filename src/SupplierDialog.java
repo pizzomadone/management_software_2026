@@ -170,7 +170,7 @@ public class SupplierDialog extends JDialog {
             }
         } catch (SQLException e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error loading supplier data: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -181,7 +181,7 @@ public class SupplierDialog extends JDialog {
         String vatNumber = vatNumberField.getText().trim();
 
         if (companyName.isEmpty() || vatNumber.isEmpty()) {
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Please fill in all required fields.",
                 "Error", JOptionPane.ERROR_MESSAGE);
             return;
@@ -254,7 +254,7 @@ public class SupplierDialog extends JDialog {
 
         } catch (SQLException e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error saving the supplier: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }

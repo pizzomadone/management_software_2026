@@ -153,7 +153,7 @@ public class MinimumStockDialog extends JDialog {
             }
         } catch (SQLException e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error loading suppliers: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -185,7 +185,7 @@ public class MinimumStockDialog extends JDialog {
         try {
             minQuantitySpinner.commitEdit();reorderQuantitySpinner.commitEdit();leadTimeSpinner.commitEdit();
             if (minStock == null) {
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "No product selected",
                     "Error", JOptionPane.ERROR_MESSAGE);
                 return;
@@ -195,14 +195,14 @@ public class MinimumStockDialog extends JDialog {
             int reorderQuantity = (Integer) reorderQuantitySpinner.getValue();
 
             if (minQuantity < 0 || reorderQuantity < 0) {
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Minimum quantity and reorder quantity cannot be negative",
                     "Error", JOptionPane.ERROR_MESSAGE);
                 return;
             }
 
             if (reorderQuantity < minQuantity) {
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Reorder quantity should be greater than or equal to minimum quantity",
                     "Warning", JOptionPane.WARNING_MESSAGE);
             }
@@ -277,7 +277,7 @@ public class MinimumStockDialog extends JDialog {
 
         } catch (Exception e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error saving minimum stock: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }

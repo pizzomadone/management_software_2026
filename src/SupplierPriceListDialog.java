@@ -201,7 +201,7 @@ public class SupplierPriceListDialog extends JDialog {
             }
         } catch (SQLException e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error loading products: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -266,7 +266,7 @@ public class SupplierPriceListDialog extends JDialog {
             }
         } catch (SQLException e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error loading price: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -276,7 +276,7 @@ public class SupplierPriceListDialog extends JDialog {
         try {
             // Validation
             if (productCombo.getSelectedItem() == null) {
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Select a product",
                     "Error", JOptionPane.ERROR_MESSAGE);
                 return;
@@ -284,7 +284,7 @@ public class SupplierPriceListDialog extends JDialog {
 
             String priceText = priceField.getText().trim().replace(",", ".");
             if (priceText.isEmpty()) {
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Enter a price",
                     "Error", JOptionPane.ERROR_MESSAGE);
                 return;
@@ -295,7 +295,7 @@ public class SupplierPriceListDialog extends JDialog {
                 price = Numbers.nonNegative(priceText);
                 if (price <= 0) throw new NumberFormatException();
             } catch (IllegalArgumentException e) {
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Price must be a positive number",
                     "Error", JOptionPane.ERROR_MESSAGE);
                 return;
@@ -307,7 +307,7 @@ public class SupplierPriceListDialog extends JDialog {
             try {
                 startDate = DateUtils.parseDate(startDateField.getText(), dateFormat);
                 if (startDate == null) {
-                    JOptionPane.showMessageDialog(this,
+                    Dialogs.showMessageDialog(this,
                         "Please enter a valid start date (dd/MM/yyyy)",
                         "Error", JOptionPane.ERROR_MESSAGE);
                     return;
@@ -317,21 +317,21 @@ public class SupplierPriceListDialog extends JDialog {
                 if (!endDateText.isEmpty()) {
                     endDate = DateUtils.parseDate(endDateText, dateFormat);
                     if (endDate == null) {
-                        JOptionPane.showMessageDialog(this,
+                        Dialogs.showMessageDialog(this,
                             "Invalid end date format. Use dd/MM/yyyy",
                             "Error", JOptionPane.ERROR_MESSAGE);
                         return;
                     }
 
                     if (endDate.before(startDate)) {
-                        JOptionPane.showMessageDialog(this,
+                        Dialogs.showMessageDialog(this,
                             "The end validity date must be after the start date",
                             "Error", JOptionPane.ERROR_MESSAGE);
                         return;
                     }
                 }
             } catch (Exception e) {
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Invalid date format. Use dd/MM/yyyy format",
                     "Error", JOptionPane.ERROR_MESSAGE);
                 return;
@@ -409,7 +409,7 @@ public class SupplierPriceListDialog extends JDialog {
 
         } catch (Exception e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error saving price: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }

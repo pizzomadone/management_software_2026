@@ -89,6 +89,18 @@ public final class I18n {
         String exact = translations.get(source);
         if (exact != null) return exact;
 
+        // JOptionPane messages are often assembled from several lines. Translate each
+        // line independently so dynamic values can still use registered templates.
+        if (source.indexOf('\n') >= 0) {
+            String[] lines = source.split("\\n", -1);
+            StringBuilder translatedLines = new StringBuilder();
+            for (int i = 0; i < lines.length; i++) {
+                if (i > 0) translatedLines.append('\n');
+                translatedLines.append(tr(lines[i]));
+            }
+            return translatedLines.toString();
+        }
+
         // Preserve UI punctuation while allowing catalogs to store reusable label keys.
         if (source.startsWith("* ")) {
             String translated = tr(source.substring(2));
@@ -116,6 +128,14 @@ public final class I18n {
 
         String templated = translateTemplate(source);
         return templated != null ? templated : source;
+    }
+
+    public static String format(String source, Object... values) {
+        String result = tr(source);
+        for (int i = 0; i < values.length; i++) {
+            result = result.replace("{" + i + "}", String.valueOf(values[i]));
+        }
+        return result;
     }
 
     private static String translateTemplate(String source) {

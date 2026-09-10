@@ -126,7 +126,7 @@ public class CustomerDialog extends JDialog {
             String address = addressArea.getText().trim();
 
             if (firstName.isEmpty() || lastName.isEmpty()) {
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "First Name and Last Name fields are required",
                     "Error", JOptionPane.ERROR_MESSAGE);
                 return;
@@ -167,7 +167,7 @@ public class CustomerDialog extends JDialog {
             dispose();
 
         } catch (SQLException e) {
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error while saving customer: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }

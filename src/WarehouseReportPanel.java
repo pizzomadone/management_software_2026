@@ -240,7 +240,7 @@ public class WarehouseReportPanel extends JPanel {
         } catch (Exception e) {
             productsModel.setRowCount(0);
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error loading data: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -360,7 +360,7 @@ public class WarehouseReportPanel extends JPanel {
             movementsValid=true;
         } catch (Exception e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error loading movements: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -422,14 +422,14 @@ public class WarehouseReportPanel extends JPanel {
                 }
 
                 Csv.finish(writer);
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Report exported successfully",
                     "Export Completed",
                     JOptionPane.INFORMATION_MESSAGE);
 
             } catch (IOException e) {
                 e.printStackTrace();
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Error during export: " + e.getMessage(),
                     "Error", JOptionPane.ERROR_MESSAGE);
             }
@@ -465,14 +465,14 @@ public class WarehouseReportPanel extends JPanel {
                 }
 
                 Csv.finish(writer);
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Movements report exported successfully",
                     "Export Completed",
                     JOptionPane.INFORMATION_MESSAGE);
 
             } catch (IOException e) {
                 e.printStackTrace();
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Error during export: " + e.getMessage(),
                     "Error", JOptionPane.ERROR_MESSAGE);
             }

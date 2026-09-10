@@ -123,7 +123,7 @@ public class SupplierPriceListWindow extends JDialog {
             }
         } catch (SQLException e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error loading price list: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -151,7 +151,7 @@ public class SupplierPriceListWindow extends JDialog {
                 }
             } catch (SQLException e) {
                 e.printStackTrace();
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Error loading price: " + e.getMessage(),
                     "Error", JOptionPane.ERROR_MESSAGE);
             }
@@ -197,7 +197,7 @@ public class SupplierPriceListWindow extends JDialog {
             String productName = (String)tableModel.getValueAt(selectedRow, 0);
             String supplierCode = (String)tableModel.getValueAt(selectedRow, 1);
 
-            int result = JOptionPane.showConfirmDialog(this,
+            int result = Dialogs.showConfirmDialog(this,
                 "Are you sure you want to delete the price for product " + productName + "?",
                 "Confirm Deletion",
                 JOptionPane.YES_NO_OPTION,
@@ -220,7 +220,7 @@ public class SupplierPriceListWindow extends JDialog {
                     }
                 } catch (SQLException e) {
                     e.printStackTrace();
-                    JOptionPane.showMessageDialog(this,
+                    Dialogs.showMessageDialog(this,
                         "Error deleting price: " + e.getMessage(),
                         "Error", JOptionPane.ERROR_MESSAGE);
                 }

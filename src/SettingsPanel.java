@@ -375,7 +375,7 @@ public class SettingsPanel extends JPanel {
 
     private boolean saveCompanyData() {
         if (companyNameField.getText().trim().isEmpty()) {
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Company name is required.",
                 "Validation Error", JOptionPane.ERROR_MESSAGE);
             return false;
@@ -414,12 +414,12 @@ public class SettingsPanel extends JPanel {
             boolean currencyChanged = currencyChangedDuringUpdate;
             applySettings();
             if (!currencyChanged) {
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     I18n.tr("Settings applied successfully!"),
                     I18n.tr("Settings"), JOptionPane.INFORMATION_MESSAGE);
             }
         } catch (IllegalArgumentException e) {
-            JOptionPane.showMessageDialog(this, e.getMessage(),
+            Dialogs.showMessageDialog(this, e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
@@ -435,21 +435,21 @@ public class SettingsPanel extends JPanel {
             }
         } catch (Exception e) {
             success = false;
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error saving application settings: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
 
         if (!saveCompanyData()) {
             success = false;
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error saving company data",
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
 
         if (success) {
             applySettings();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 I18n.tr("Settings saved successfully!"),
                 I18n.tr("Settings"), JOptionPane.INFORMATION_MESSAGE);
         }
@@ -540,7 +540,7 @@ public class SettingsPanel extends JPanel {
         I18n.tr("Convert values"),
         I18n.tr("Cancel")
     };
-    int choice=JOptionPane.showOptionDialog(this,warningPanel,I18n.tr("Change Currency"),
+    int choice=Dialogs.showOptionDialog(this,warningPanel,I18n.tr("Change Currency"),
         JOptionPane.DEFAULT_OPTION,JOptionPane.WARNING_MESSAGE,null,options,options[0]);
 
     if(backupRequested[0]) {
@@ -561,7 +561,7 @@ public class SettingsPanel extends JPanel {
                     I18n.tr("For example, 100 {OLD} will become 100 {NEW}.")
                         .replace("{OLD}",oldCode).replace("{NEW}",newCode)+"\n\n"+
                     I18n.tr("Issued, Paid and Canceled invoices will not be changed.");
-                int confirm=JOptionPane.showConfirmDialog(this,relabel,I18n.tr("Confirm Currency Change"),
+                int confirm=Dialogs.showConfirmDialog(this,relabel,I18n.tr("Confirm Currency Change"),
                     JOptionPane.OK_CANCEL_OPTION,JOptionPane.WARNING_MESSAGE);
                 if(confirm!=JOptionPane.OK_OPTION) {
                     restoreCurrencySelection(oldCode);
@@ -569,13 +569,13 @@ public class SettingsPanel extends JPanel {
                 }
                 DatabaseCurrency.change(newCode,DatabaseCurrency.ChangeMode.RELABEL,null);
                 currencyChangedDuringUpdate = true;
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     I18n.tr("Currency changed successfully.")+"\n"+
                     I18n.tr("No amounts were converted.")+"\n"+
                     I18n.tr("Issued, Paid and Canceled invoices keep their original currency and amounts."),
                     I18n.tr("Change Currency"),JOptionPane.INFORMATION_MESSAGE);
             } else {
-                String input=JOptionPane.showInputDialog(this,
+                String input=Dialogs.showInputDialog(this,
                     I18n.tr("Enter the exchange rate: 1 {OLD} = ? {NEW}")
                         .replace("{OLD}",oldCode).replace("{NEW}",newCode),
                     "1.0");
@@ -595,7 +595,7 @@ public class SettingsPanel extends JPanel {
                     "1 "+oldCode+" = "+rate.stripTrailingZeros().toPlainString()+" "+newCode+"\n\n"+
                     I18n.tr("Changing the operating currency affects products, costs, supplier price lists, customer orders, supplier orders and Draft invoices.")+
                     "\n\n"+I18n.tr("Issued, Paid and Canceled invoices will not be changed.");
-                int confirm=JOptionPane.showConfirmDialog(this,confirmation,I18n.tr("Confirm Currency Conversion"),
+                int confirm=Dialogs.showConfirmDialog(this,confirmation,I18n.tr("Confirm Currency Conversion"),
                     JOptionPane.OK_CANCEL_OPTION,JOptionPane.WARNING_MESSAGE);
                 if(confirm!=JOptionPane.OK_OPTION) {
                     restoreCurrencySelection(oldCode);
@@ -603,7 +603,7 @@ public class SettingsPanel extends JPanel {
                 }
                 DatabaseCurrency.change(newCode,DatabaseCurrency.ChangeMode.CONVERT,rate);
                 currencyChangedDuringUpdate = true;
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     I18n.tr("Currency changed successfully.")+"\n"+
                     I18n.tr("Operational values were converted using the selected exchange rate.")+"\n"+
                     I18n.tr("Issued, Paid and Canceled invoices keep their original currency and amounts."),

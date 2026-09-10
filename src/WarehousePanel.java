@@ -273,7 +273,7 @@ public class WarehousePanel extends JPanel {
             }
         } catch (SQLException e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error loading warehouse data: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -323,7 +323,7 @@ public class WarehousePanel extends JPanel {
             }
         } catch (SQLException e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error loading movements: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -363,7 +363,7 @@ public class WarehousePanel extends JPanel {
             }
         } catch (SQLException e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error loading notifications: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -407,7 +407,7 @@ public class WarehousePanel extends JPanel {
             }
         } catch (SQLException e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error checking minimum stock: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -487,7 +487,7 @@ public class WarehousePanel extends JPanel {
             }
         } catch (SQLException e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error searching for movements: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -527,7 +527,7 @@ public class WarehousePanel extends JPanel {
             }
         } catch (Exception e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error updating notifications: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -556,7 +556,7 @@ public class WarehousePanel extends JPanel {
     private void showMinStockDialog() {
         int selectedRow = stockTable.getSelectedRow();
         if (selectedRow == -1) {
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Select a product to set the minimum stock",
                 "Warning", JOptionPane.WARNING_MESSAGE);
             return;
@@ -582,7 +582,7 @@ public class WarehousePanel extends JPanel {
             }
         } catch (SQLException e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error loading minimum stock data: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -662,7 +662,7 @@ public class WarehousePanel extends JPanel {
                 }
             } catch (SQLException e) {
                 e.printStackTrace();
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Error loading movement: " + e.getMessage(),
                     "Error", JOptionPane.ERROR_MESSAGE);
             }
@@ -679,7 +679,7 @@ public class WarehousePanel extends JPanel {
             String type = (String)movementsModel.getValueAt(modelRow, 3);
             int quantity = (int)movementsModel.getValueAt(modelRow, 4);
 
-            int result = JOptionPane.showConfirmDialog(this,
+            int result = Dialogs.showConfirmDialog(this,
                 "Are you sure you want to delete this movement?\n\n" +
                 "Product: " + product + "\n" +
                 "Type: " + type + "\n" +
@@ -734,7 +734,7 @@ public class WarehousePanel extends JPanel {
                         loadMovementsData();
                         loadStockData();
 
-                        JOptionPane.showMessageDialog(this,
+                        Dialogs.showMessageDialog(this,
                             "Movement deleted successfully!\nStock has been adjusted.",
                             "Success", JOptionPane.INFORMATION_MESSAGE);
 
@@ -746,7 +746,7 @@ public class WarehousePanel extends JPanel {
                     }
                 } catch (SQLException e) {
                     e.printStackTrace();
-                    JOptionPane.showMessageDialog(this,
+                    Dialogs.showMessageDialog(this,
                         "Error deleting movement: " + e.getMessage(),
                         "Error", JOptionPane.ERROR_MESSAGE);
                 }

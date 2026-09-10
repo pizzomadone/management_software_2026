@@ -160,7 +160,7 @@ public class ProductsPanel extends JPanel {
                 }
             }
         } catch (SQLException e) {
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error loading products: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -231,7 +231,7 @@ public class ProductsPanel extends JPanel {
                 }
             }
         } catch (SQLException e) {
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error searching for products: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -309,7 +309,7 @@ public class ProductsPanel extends JPanel {
                     }
                 }
             } catch (SQLException e) {
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Error loading product: " + e.getMessage(),
                     "Error", JOptionPane.ERROR_MESSAGE);
             }
@@ -351,7 +351,7 @@ public class ProductsPanel extends JPanel {
                     if (hasReservations) message.append("- Active or historical stock reservations\n");
                     message.append("\nDeleting it would alter orders, invoices or stock history. " +
                         "Set the product as inactive instead.");
-                    JOptionPane.showMessageDialog(this,
+                    Dialogs.showMessageDialog(this,
                         message.toString(),
                         "Product Cannot Be Deleted", JOptionPane.WARNING_MESSAGE);
                     return;
@@ -361,7 +361,7 @@ public class ProductsPanel extends JPanel {
                     String details = (hasPriceLists ? "- Price list entries\n" : "") +
                         (hasMinStock ? "- Minimum stock settings\n" : "") +
                         (hasNotifications ? "- Warehouse notifications\n" : "");
-                    int cleanup = JOptionPane.showConfirmDialog(this,
+                    int cleanup = Dialogs.showConfirmDialog(this,
                         "Product '" + name + "' has only non-critical configuration data:\n" + details +
                         "\nThese records will also be deleted. Continue?",
                         "Confirm Product Cleanup", JOptionPane.YES_NO_OPTION,
@@ -374,7 +374,7 @@ public class ProductsPanel extends JPanel {
                 }
 
                 // Safe to delete - no foreign key references
-                int result = JOptionPane.showConfirmDialog(this,
+                int result = Dialogs.showConfirmDialog(this,
                     "Are you sure you want to delete the product '" + name + "'?",
                     "Confirm Deletion",
                     JOptionPane.YES_NO_OPTION,
@@ -387,7 +387,7 @@ public class ProductsPanel extends JPanel {
                         pstmt.executeUpdate();
                         loadProducts();
                         
-                        JOptionPane.showMessageDialog(this,
+                        Dialogs.showMessageDialog(this,
                             "Product deleted successfully",
                             "Success",
                             JOptionPane.INFORMATION_MESSAGE);
@@ -395,7 +395,7 @@ public class ProductsPanel extends JPanel {
                 }
             } catch (SQLException e) {
                 e.printStackTrace();
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Error deleting the product: " + e.getMessage(),
                     "Error", JOptionPane.ERROR_MESSAGE);
             }
@@ -572,7 +572,7 @@ public class ProductsPanel extends JPanel {
         }
 
         // If we get here, the product was not found
-        JOptionPane.showMessageDialog(this,
+        Dialogs.showMessageDialog(this,
             "Product with code '" + productCode + "' not found in the list.",
             "Product Not Found",
             JOptionPane.INFORMATION_MESSAGE);

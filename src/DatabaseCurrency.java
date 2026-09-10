@@ -361,7 +361,7 @@ public final class DatabaseCurrency {
         try(Connection c=DriverManager.getConnection("jdbc:sqlite:"+file.toAbsolutePath(),settings.toProperties())) {
             String code=read(c);if(code!=null)return code;
         }
-        String chosen=JOptionPane.showInputDialog(parent,
+        String chosen=Dialogs.showInputDialog(parent,
             "This older database does not record its currency. Enter its ORIGINAL ISO currency code (for example EUR or USD). Amounts will not be converted.",
             SettingsPanel.getCurrencyCode());
         if(chosen==null) return null;

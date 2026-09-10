@@ -69,7 +69,7 @@ public class MainWindow extends JFrame {
         SettingsPanel.loadGlobalSettings();
         String language = SettingsPanel.getGlobalSetting("language", "");
         if (language.isBlank()) {
-            String selected = (String) JOptionPane.showInputDialog(null,
+            String selected = (String) Dialogs.showInputDialog(null,
                 "Lingua / Idioma / Langue / Sprache / Język",
                 "WareStat - Language", JOptionPane.QUESTION_MESSAGE, null,
                 I18n.languageNames(), I18n.nameForCode("it"));
@@ -566,12 +566,12 @@ public class MainWindow extends JFrame {
     private void performQuickBackup() {
         try {
             BackupManager.getInstance().performBackup();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Backup completed successfully!",
                 "Backup",
                 JOptionPane.INFORMATION_MESSAGE);
         } catch (Exception e) {
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error during backup: " + e.getMessage(),
                 "Backup Error",
                 JOptionPane.ERROR_MESSAGE);
@@ -625,7 +625,7 @@ public class MainWindow extends JFrame {
         JScrollPane scrollPane = new JScrollPane(textArea);
         scrollPane.setPreferredSize(new Dimension(400, 300));
         
-        JOptionPane.showMessageDialog(this,
+        Dialogs.showMessageDialog(this,
             scrollPane,
             "Keyboard Shortcuts",
             JOptionPane.INFORMATION_MESSAGE);
@@ -683,7 +683,7 @@ public class MainWindow extends JFrame {
 
         } catch (Exception e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error opening " + panelName + ": " + e.getMessage(),
                 AppConstants.SOFTWARE_NAME + " - Error",
                 JOptionPane.ERROR_MESSAGE);
@@ -853,7 +853,7 @@ public class MainWindow extends JFrame {
             I18n.tr("Continue Without Exporting"),
             I18n.tr("Cancel")
         };
-        int choice = JOptionPane.showOptionDialog(this, warning, I18n.tr("Import Database"),
+        int choice = Dialogs.showOptionDialog(this, warning, I18n.tr("Import Database"),
                 JOptionPane.DEFAULT_OPTION, JOptionPane.WARNING_MESSAGE, null, options, options[0]);
         if (choice == 0 && !exportDatabase()) return;
         if (choice != 0 && choice != 1) return;
@@ -862,7 +862,7 @@ public class MainWindow extends JFrame {
             String currency = DatabaseCurrency.confirmLegacyCurrency(this, source);
             if (currency == null) return;
             BackupManager.getInstance().importDatabase(source, currency);
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                     I18n.tr("Database imported successfully.") + "\n"
                     + I18n.tr("WareStat will now close. Reopen it to use the imported database."),
                     I18n.tr("Import Database"), JOptionPane.INFORMATION_MESSAGE);
@@ -880,7 +880,7 @@ public class MainWindow extends JFrame {
             destination = destination.resolveSibling(destination.getFileName() + ".db");
         }
         if (Files.exists(destination)) {
-            int answer = JOptionPane.showConfirmDialog(this,
+            int answer = Dialogs.showConfirmDialog(this,
                     I18n.tr("A file with this name already exists. Replace it?"),
                     I18n.tr("Confirm Replacement"), JOptionPane.YES_NO_OPTION,
                     JOptionPane.WARNING_MESSAGE);
@@ -888,7 +888,7 @@ public class MainWindow extends JFrame {
         }
         try {
             Path exported = BackupManager.getInstance().exportDatabase(destination);
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                     I18n.tr("Database exported successfully.") + "\n" + exported,
                     I18n.tr("Export Database"), JOptionPane.INFORMATION_MESSAGE);
             return true;
@@ -918,7 +918,7 @@ public class MainWindow extends JFrame {
     }
 
     private void showDatabaseError(String message, Exception exception) {
-        JOptionPane.showMessageDialog(this, I18n.tr(message) + ":\n" + exception.getMessage(),
+        Dialogs.showMessageDialog(this, I18n.tr(message) + ":\n" + exception.getMessage(),
                 I18n.tr("Database Error"), JOptionPane.ERROR_MESSAGE);
     }
 
@@ -946,6 +946,11 @@ public class MainWindow extends JFrame {
         }
         // Also refresh dashboard as stock changes affect KPIs
         refreshDashboard();
+    }
+
+    public void openInvoice(String invoiceNumber) {
+        showPanel("INVOICES");
+        if (invoicesPanel != null) invoicesPanel.selectInvoiceByNumber(invoiceNumber);
     }
 
     /**
@@ -1022,7 +1027,7 @@ public class MainWindow extends JFrame {
                 MainWindow mainWindow = new MainWindow();
                 mainWindow.setVisible(true);
             } catch (RuntimeException error) {
-                JOptionPane.showMessageDialog(null,error.getMessage(),"WareStat",JOptionPane.ERROR_MESSAGE);
+                Dialogs.showMessageDialog(null,error.getMessage(),"WareStat",JOptionPane.ERROR_MESSAGE);
                 System.exit(1);
             }
         });

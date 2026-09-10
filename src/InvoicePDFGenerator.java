@@ -101,12 +101,12 @@ public class InvoicePDFGenerator {
 
             try {
                 generatePDF(file);
-                JOptionPane.showMessageDialog(parent,
+                Dialogs.showMessageDialog(parent,
                     I18n.tr("Invoice PDF generated successfully!") + "\n" + I18n.tr("Saved to") + ": " + file.getAbsolutePath(),
                     I18n.tr("PDF Generated"),
                     JOptionPane.INFORMATION_MESSAGE);
 
-                int choice = JOptionPane.showConfirmDialog(parent,
+                int choice = Dialogs.showConfirmDialog(parent,
                     I18n.tr("Would you like to open the PDF file?"),
                     I18n.tr("Open PDF"),
                     JOptionPane.YES_NO_OPTION);
@@ -115,7 +115,7 @@ public class InvoicePDFGenerator {
                     try {
                         Desktop.getDesktop().open(file);
                     } catch (Exception e) {
-                        JOptionPane.showMessageDialog(parent,
+                        Dialogs.showMessageDialog(parent,
                             I18n.tr("Cannot open PDF automatically. File saved to") + ":\n" + file.getAbsolutePath(),
                             I18n.tr("Information"),
                             JOptionPane.INFORMATION_MESSAGE);
@@ -124,7 +124,7 @@ public class InvoicePDFGenerator {
 
             } catch (IOException e) {
                 e.printStackTrace();
-                JOptionPane.showMessageDialog(parent,
+                Dialogs.showMessageDialog(parent,
                     I18n.tr("Error generating PDF") + ": " + e.getMessage(),
                     I18n.tr("Error"),
                     JOptionPane.ERROR_MESSAGE);
