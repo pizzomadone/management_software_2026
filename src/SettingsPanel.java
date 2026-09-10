@@ -507,20 +507,25 @@ public class SettingsPanel extends JPanel {
             "\n\n"+I18n.tr("Issued, Paid and Canceled invoices keep their original currency and amounts.");
 
         JPanel warningPanel=new JPanel();
-    warningPanel.setLayout(new BoxLayout(warningPanel,BoxLayout.Y_AXIS));
-    JTextArea warningText=new JTextArea(warning);
-    warningText.setEditable(false);
-    warningText.setFocusable(false);
-    warningText.setOpaque(false);
-    warningText.setBorder(null);
-    warningText.setFont(UIManager.getFont("Label.font"));
-    warningPanel.add(warningText);
-    warningPanel.add(Box.createVerticalStrut(10));
-    warningPanel.add(new JLabel(I18n.tr("Before changing currency, we recommend creating a backup of your database.")));
+        warningPanel.setLayout(new BoxLayout(warningPanel,BoxLayout.Y_AXIS));
+        JTextArea warningText=new JTextArea(warning);
+        warningText.setEditable(false);
+        warningText.setFocusable(false);
+        warningText.setOpaque(false);
+        warningText.setBorder(null);
+        warningText.setMargin(new Insets(0,0,0,0));
+        warningText.setFont(UIManager.getFont("Label.font"));
+        warningText.setAlignmentX(Component.LEFT_ALIGNMENT);
+        warningPanel.add(warningText);
+        warningPanel.add(Box.createVerticalStrut(10));
+        JLabel backupAdvice=new JLabel(I18n.tr("Before changing currency, we recommend creating a backup of your database."));
+        backupAdvice.setAlignmentX(Component.LEFT_ALIGNMENT);
+        warningPanel.add(backupAdvice);
 
-    boolean[] backupRequested={false};
-    JLabel backupLink=new JLabel("<html><a href='backup'>"+I18n.tr("Open Backup")+"</a></html>");
-    backupLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        boolean[] backupRequested={false};
+        JLabel backupLink=new JLabel("<html><a href='backup'>"+I18n.tr("Open Backup")+"</a></html>");
+        backupLink.setAlignmentX(Component.LEFT_ALIGNMENT);
+        backupLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
     backupLink.addMouseListener(new MouseAdapter() {
         @Override public void mouseClicked(MouseEvent event) {
             backupRequested[0]=true;
