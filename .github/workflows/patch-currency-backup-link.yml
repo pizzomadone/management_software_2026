@@ -28,103 +28,150 @@ jobs:
         run: |
           from pathlib import Path
 
-          p = Path('src/SettingsPanel.java')
-          s = p.read_text(encoding='utf-8')
-          old = '''        Object[] options={
-              I18n.tr("Change currency only"),
-              I18n.tr("Convert values"),
-              I18n.tr("Cancel")
-          };
-          int choice=JOptionPane.showOptionDialog(this,warning,I18n.tr("Change Currency"),
-              JOptionPane.DEFAULT_OPTION,JOptionPane.WARNING_MESSAGE,null,options,options[0]);
+          p=Path('src/SettingsPanel.java')
+          s=p.read_text(encoding='utf-8')
 
-          if(choice<0 || choice==2) {
-              restoreCurrencySelection(oldCode);
-              return (String)currencyCombo.getSelectedItem();
-          }
-          '''
-          new = '''        JPanel warningPanel=new JPanel();
-          warningPanel.setLayout(new BoxLayout(warningPanel,BoxLayout.Y_AXIS));
-          JTextArea warningText=new JTextArea(warning);
-          warningText.setEditable(false);
-          warningText.setFocusable(false);
-          warningText.setOpaque(false);
-          warningText.setBorder(null);
-          warningText.setFont(UIManager.getFont("Label.font"));
-          warningPanel.add(warningText);
-          warningPanel.add(Box.createVerticalStrut(10));
-          warningPanel.add(new JLabel(I18n.tr("Before changing currency, we recommend creating a backup of your database.")));
+          if 'private boolean currencyChangeDeferredForBackup;' not in s:
+              marker='    private boolean currencyChangedDuringUpdate;\n'
+              if marker not in s: raise SystemExit('currency state field not found')
+              s=s.replace(marker,marker+'    private boolean currencyChangeDeferredForBackup;\n',1)
 
-          boolean[] backupRequested={false};
-          JLabel backupLink=new JLabel("<html><a href='backup'>"+I18n.tr("Open Backup")+"</a></html>");
-          backupLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-          backupLink.addMouseListener(new MouseAdapter() {
-              @Override public void mouseClicked(MouseEvent event) {
-                  backupRequested[0]=true;
-                  Window dialog=SwingUtilities.getWindowAncestor(backupLink);
-                  if(dialog!=null) dialog.dispose();
+          apply_marker='''            updateSettingsFromFields();
+              boolean currencyChanged = currencyChangedDuringUpdate;'''
+          apply_repl='''            updateSettingsFromFields();
+              if (currencyChangeDeferredForBackup) {
+                  currencyChangeDeferredForBackup = false;
+                  return;
               }
-          });
-          warningPanel.add(backupLink);
+              boolean currencyChanged = currencyChangedDuringUpdate;'''
+          if apply_marker in s:
+              s=s.replace(apply_marker,apply_repl,1)
+          elif 'currencyChangeDeferredForBackup = false;\n                return;' not in s:
+              raise SystemExit('apply settings insertion point not found')
 
-          Object[] options={
-              I18n.tr("Change currency only"),
-              I18n.tr("Convert values"),
-              I18n.tr("Cancel")
-          };
-          int choice=JOptionPane.showOptionDialog(this,warningPanel,I18n.tr("Change Currency"),
-              JOptionPane.DEFAULT_OPTION,JOptionPane.WARNING_MESSAGE,null,options,options[0]);
+          save_marker='''        try {
+              saveAppSettings();
+          } catch (Exception e) {'''
+          save_repl='''        try {
+              saveAppSettings();
+              if (currencyChangeDeferredForBackup) {
+                  currencyChangeDeferredForBackup = false;
+                  return;
+              }
+          } catch (Exception e) {'''
+          if save_marker in s:
+              s=s.replace(save_marker,save_repl,1)
+          elif 'saveAppSettings();\n            if (currencyChangeDeferredForBackup)' not in s:
+              raise SystemExit('save settings insertion point not found')
 
-          if(backupRequested[0]) {
-              restoreCurrencySelection(oldCode);
-              Window owner=SwingUtilities.getWindowAncestor(this);
-              if(owner instanceof MainWindow mainWindow) mainWindow.showPanelByName("BACKUP");
-              return (String)currencyCombo.getSelectedItem();
-          }
-          if(choice<0 || choice==2) {
-              restoreCurrencySelection(oldCode);
-              return (String)currencyCombo.getSelectedItem();
-          }
+          persist_marker='''    private void saveAppSettings() {
+              updateSettingsFromFields();
+
+              try (OutputStreamWriter writer'''
+          persist_repl='''    private void saveAppSettings() {
+              updateSettingsFromFields();
+              if (currencyChangeDeferredForBackup) return;
+
+              try (OutputStreamWriter writer'''
+          if persist_marker in s:
+              s=s.replace(persist_marker,persist_repl,1)
+          elif 'if (currencyChangeDeferredForBackup) return;' not in s:
+              raise SystemExit('save file guard insertion point not found')
+
+          reset_marker='''    private void updateSettingsFromFields() {
+              currencyChangedDuringUpdate = false;'''
+          reset_repl='''    private void updateSettingsFromFields() {
+              currencyChangedDuringUpdate = false;
+              currencyChangeDeferredForBackup = false;'''
+          if reset_marker in s:
+              s=s.replace(reset_marker,reset_repl,1)
+
+          method=s.index('    private String performCurrencyChange(')
+          start=s.index('        Object[] options={',method)
+          end=s.index('        try {',start)
+          original=s[start:end]
+          if 'warningPanel' not in original:
+              new='''        JPanel warningPanel=new JPanel();
+              warningPanel.setLayout(new BoxLayout(warningPanel,BoxLayout.Y_AXIS));
+              JTextArea warningText=new JTextArea(warning);
+              warningText.setEditable(false);
+              warningText.setFocusable(false);
+              warningText.setOpaque(false);
+              warningText.setBorder(null);
+              warningText.setFont(UIManager.getFont("Label.font"));
+              warningPanel.add(warningText);
+              warningPanel.add(Box.createVerticalStrut(10));
+              warningPanel.add(new JLabel(I18n.tr("Before changing currency, we recommend creating a backup of your database.")));
+
+              boolean[] backupRequested={false};
+              JLabel backupLink=new JLabel("<html><a href='backup'>"+I18n.tr("Open Backup")+"</a></html>");
+              backupLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+              backupLink.addMouseListener(new MouseAdapter() {
+                  @Override public void mouseClicked(MouseEvent event) {
+                      backupRequested[0]=true;
+                      Window dialog=SwingUtilities.getWindowAncestor(backupLink);
+                      if(dialog!=null) dialog.dispose();
+                  }
+              });
+              warningPanel.add(backupLink);
+
+              Object[] options={
+                  I18n.tr("Change currency only"),
+                  I18n.tr("Convert values"),
+                  I18n.tr("Cancel")
+              };
+              int choice=JOptionPane.showOptionDialog(this,warningPanel,I18n.tr("Change Currency"),
+                  JOptionPane.DEFAULT_OPTION,JOptionPane.WARNING_MESSAGE,null,options,options[0]);
+
+              if(backupRequested[0]) {
+                  currencyChangeDeferredForBackup=true;
+                  restoreCurrencySelection(oldCode);
+                  Window owner=SwingUtilities.getWindowAncestor(this);
+                  if(owner instanceof MainWindow mainWindow) mainWindow.showPanelByName("BACKUP");
+                  return (String)currencyCombo.getSelectedItem();
+              }
+              if(choice<0 || choice==2) {
+                  restoreCurrencySelection(oldCode);
+                  return (String)currencyCombo.getSelectedItem();
+              }
+
           '''
-          if old not in s:
-              raise SystemExit('SettingsPanel currency warning block not found')
-          p.write_text(s.replace(old,new,1),encoding='utf-8')
+              s=s[:start]+new+s[end:]
 
-          translations = {
-            'en': ('Before changing currency, we recommend creating a backup of your database.', 'Open Backup'),
-            'it': ('Prima di cambiare valuta, è consigliato creare un backup del database.', 'Apri Backup'),
-            'es': ('Antes de cambiar la moneda, recomendamos crear una copia de seguridad de la base de datos.', 'Abrir Copia de seguridad'),
-            'fr': ('Avant de changer de devise, nous vous recommandons de créer une sauvegarde de la base de données.', 'Ouvrir Sauvegarde'),
-            'de': ('Vor dem Währungswechsel empfehlen wir, eine Sicherung der Datenbank zu erstellen.', 'Backup öffnen'),
-            'pl': ('Przed zmianą waluty zalecamy utworzenie kopii zapasowej bazy danych.', 'Otwórz Kopię zapasową'),
-            'pt_BR': ('Antes de alterar a moeda, recomendamos criar um backup do banco de dados.', 'Abrir Backup'),
+          p.write_text(s,encoding='utf-8')
+
+          translations={
+            'en':('Before changing currency, we recommend creating a backup of your database.','Open Backup'),
+            'it':('Prima di cambiare valuta, è consigliato creare un backup del database.','Apri Backup'),
+            'es':('Antes de cambiar la moneda, recomendamos crear una copia de seguridad de la base de datos.','Abrir Copia de seguridad'),
+            'fr':('Avant de changer de devise, nous vous recommandons de créer une sauvegarde de la base de données.','Ouvrir Sauvegarde'),
+            'de':('Vor dem Währungswechsel empfehlen wir, eine Sicherung der Datenbank zu erstellen.','Backup öffnen'),
+            'pl':('Przed zmianą waluty zalecamy utworzenie kopii zapasowej bazy danych.','Otwórz Kopię zapasową'),
+            'pt_BR':('Antes de alterar a moeda, recomendamos criar um backup do banco de dados.','Abrir Backup'),
           }
-          source1='Before changing currency, we recommend creating a backup of your database.'
-          source2='Open Backup'
-          def key(text):
-              return text.replace('\\','\\\\').replace(' ', '\\ ').replace(':','\\:').replace('=','\\=')
-          for lang,(v1,v2) in translations.items():
+          sources=('Before changing currency, we recommend creating a backup of your database.','Open Backup')
+          def propkey(text):
+              return text.replace('\\','\\\\').replace(' ','\\ ').replace(':','\\:').replace('=','\\=')
+          for lang,values in translations.items():
               path=Path(f'resources/i18n/messages_{lang}.properties')
               text=path.read_text(encoding='utf-8')
               additions=[]
-              for k,v in ((source1,v1),(source2,v2)):
-                  ek=key(k)
-                  if not any(line.startswith(ek+'=') for line in text.splitlines()):
-                      additions.append(f'{ek}={v}')
+              for source,value in zip(sources,values):
+                  key=propkey(source)
+                  if not any(line.startswith(key+'=') for line in text.splitlines()):
+                      additions.append(f'{key}={value}')
               if additions:
                   path.write_text(text.rstrip()+"\n\n# Currency backup recommendation\n"+'\n'.join(additions)+'\n',encoding='utf-8')
 
           test=Path('tests/ExtendedRegressionTest.java')
           ts=test.read_text(encoding='utf-8')
-          needle='''                "A finalized invoice cannot be returned to Draft."
-          };'''
-          repl='''                "A finalized invoice cannot be returned to Draft.",
-                  "Before changing currency, we recommend creating a backup of your database.",
-                  "Open Backup"
-          };'''
-          if needle not in ts:
-              raise SystemExit('Translation test insertion point not found')
-          test.write_text(ts.replace(needle,repl,1),encoding='utf-8')
+          section=ts.index('test("currency change explanations translate in every supported language"')
+          needle='                "A finalized invoice cannot be returned to Draft."'
+          pos=ts.index(needle,section)
+          if '"Open Backup"' not in ts[section:pos+1200]:
+              replacement=needle[:-1]+',\n                "Before changing currency, we recommend creating a backup of your database.",\n                "Open Backup"'
+              ts=ts[:pos]+ts[pos:].replace(needle,replacement,1)
+              test.write_text(ts,encoding='utf-8')
       - name: Run regression suite
         run: ant test
       - name: Commit patch and remove temporary workflow
