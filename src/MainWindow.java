@@ -422,6 +422,12 @@ public class MainWindow extends JFrame {
         button.setToolTipText(tooltip);
         int buttonWidth = Math.max(80, textLabel.getFontMetrics(textLabel.getFont()).stringWidth(text) + 20);
         button.setPreferredSize(new Dimension(buttonWidth, 60));
+        textLabel.addPropertyChangeListener("text", event -> {
+            int translatedWidth = Math.max(80,
+                textLabel.getFontMetrics(textLabel.getFont()).stringWidth(textLabel.getText()) + 20);
+            button.setPreferredSize(new Dimension(translatedWidth, 60));
+            if (toolBar != null) toolBar.revalidate();
+        });
         button.setFocusPainted(false);
         button.setBorderPainted(false);
         button.setContentAreaFilled(false);
