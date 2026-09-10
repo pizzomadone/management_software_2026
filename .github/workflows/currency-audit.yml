@@ -63,8 +63,6 @@ jobs:
         run: |
           git config user.name "WareStat audit"
           git config user.email "actions@github.com"
-          git show HEAD~2:.github/workflows/currency-audit.yml > .github/workflows/currency-audit.yml
-          git rm -f .github/workflows/fix-dashboard-scroll.yml
-          git add src/DashboardPanel.java .github/workflows/currency-audit.yml
+          git add src/DashboardPanel.java
           git commit -m "Keep dashboard scrolling across nested panels"
           git push origin HEAD:fix/macos-filechooser-i18n
