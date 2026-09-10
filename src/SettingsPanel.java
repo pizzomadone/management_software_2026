@@ -406,10 +406,13 @@ public class SettingsPanel extends JPanel {
     private void applyAllSettings() {
         try {
             updateSettingsFromFields();
+            boolean currencyChanged = currencyChangedDuringUpdate;
             applySettings();
-            JOptionPane.showMessageDialog(this,
-                I18n.tr("Settings applied successfully!"),
-                I18n.tr("Settings"), JOptionPane.INFORMATION_MESSAGE);
+            if (!currencyChanged) {
+                JOptionPane.showMessageDialog(this,
+                    I18n.tr("Settings applied successfully!"),
+                    I18n.tr("Settings"), JOptionPane.INFORMATION_MESSAGE);
+            }
         } catch (IllegalArgumentException e) {
             JOptionPane.showMessageDialog(this, e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
