@@ -1,0 +1,220 @@
+name: Fix dynamic messagebox localization
+on:
+  push:
+    branches: [fix/macos-filechooser-i18n]
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/macos-filechooser-i18n
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install Ant
+        run: sudo apt-get update && sudo apt-get install -y ant
+      - name: Add parameterized dialog translations
+        shell: python
+        run: |
+          from pathlib import Path
+
+          p=Path('src/I18n.java')
+          s=p.read_text(encoding='utf-8')
+          field='    private static Map<String, String> translations = Map.of();\n'
+          if 'private static List<MessageTemplate> messageTemplates' not in s:
+              if field not in s: raise SystemExit('translations field not found')
+              s=s.replace(field,field+'    private static List<MessageTemplate> messageTemplates = List.of();\n',1)
+
+          assign='        translations = loaded;\n'
+          build='''        translations = loaded;
+        List<MessageTemplate> templates = new ArrayList<>();
+        for (Map.Entry<String, String> entry : loaded.entrySet()) {
+            if (entry.getKey().matches(".*\\\\{\\\\d+\\\\}.*")) {
+                templates.add(new MessageTemplate(entry.getKey(), entry.getValue()));
+            }
+        }
+        messageTemplates = List.copyOf(templates);
+'''
+          if 'messageTemplates = List.copyOf(templates);' not in s:
+              if assign not in s: raise SystemExit('translation assignment not found')
+              s=s.replace(assign,build,1)
+
+          old='''        int separator = source.indexOf(": ");
+        if (separator > 0 && separator < 80) {
+            String prefix = source.substring(0, separator);
+            String translated = translations.get(prefix);
+            if (translated != null) return translated + ": " + source.substring(separator + 2);
+        }
+
+        return source;
+'''
+          new='''        int separator = source.indexOf(": ");
+        if (separator > 0 && separator < 120) {
+            String prefix = source.substring(0, separator);
+            String translated = translations.get(prefix);
+            if (translated == null) translated = translations.get(prefix + ":");
+            if (translated != null) {
+                String remainder = source.substring(separator + 2);
+                String localizedRemainder = translations.getOrDefault(remainder, remainder);
+                return translated + (translated.endsWith(":") ? " " : ": ") + localizedRemainder;
+            }
+        }
+
+        for (MessageTemplate template : messageTemplates) {
+            String translated = template.translate(source);
+            if (translated != null) return translated;
+        }
+
+        return source;
+'''
+          if 'for (MessageTemplate template : messageTemplates)' not in s:
+              if old not in s: raise SystemExit('tr fallback block not found')
+              s=s.replace(old,new,1)
+
+          marker='''    private static String localized(Object owner, String current) {
+'''
+          helper='''    private static final class MessageTemplate {
+        private final java.util.regex.Pattern pattern;
+        private final String translatedTemplate;
+        private final Map<Integer, Integer> placeholderGroups = new HashMap<>();
+
+        private MessageTemplate(String sourceTemplate, String translatedTemplate) {
+            this.translatedTemplate = translatedTemplate;
+            java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("\\\\{(\\\\d+)\\\\}").matcher(sourceTemplate);
+            StringBuilder regex = new StringBuilder("^");
+            int last = 0;
+            int group = 1;
+            while (matcher.find()) {
+                regex.append(java.util.regex.Pattern.quote(sourceTemplate.substring(last, matcher.start())));
+                regex.append("(.*?)");
+                placeholderGroups.put(Integer.parseInt(matcher.group(1)), group++);
+                last = matcher.end();
+            }
+            regex.append(java.util.regex.Pattern.quote(sourceTemplate.substring(last))).append("$");
+            pattern = java.util.regex.Pattern.compile(regex.toString(), java.util.regex.Pattern.DOTALL);
+        }
+
+        private String translate(String source) {
+            java.util.regex.Matcher matcher = pattern.matcher(source);
+            if (!matcher.matches()) return null;
+            String result = translatedTemplate;
+            for (Map.Entry<Integer, Integer> entry : placeholderGroups.entrySet()) {
+                result = result.replace("{" + entry.getKey() + "}", matcher.group(entry.getValue()));
+            }
+            return result;
+        }
+    }
+
+'''
+          if 'private static final class MessageTemplate' not in s:
+              if marker not in s: raise SystemExit('localized method marker not found')
+              s=s.replace(marker,helper+marker,1)
+          p.write_text(s,encoding='utf-8')
+
+          templates = {
+            "This order has already been invoiced as {0}.": {
+              "en":"This order has already been invoiced as {0}.",
+              "it":"Questo ordine è già stato fatturato con la fattura {0}.",
+              "es":"Este pedido ya ha sido facturado con la factura {0}.",
+              "pt_BR":"Este pedido já foi faturado com a fatura {0}.",
+              "fr":"Cette commande a déjà été facturée avec la facture {0}.",
+              "de":"Dieser Auftrag wurde bereits mit Rechnung {0} fakturiert.",
+              "pl":"To zamówienie zostało już zafakturowane fakturą {0}."},
+            "Order cannot be deleted because invoice {0} was generated from it. Delete the invoice first.": {
+              "en":"Order cannot be deleted because invoice {0} was generated from it. Delete the invoice first.",
+              "it":"L'ordine non può essere eliminato perché da esso è stata generata la fattura {0}. Elimina prima la fattura.",
+              "es":"El pedido no se puede eliminar porque se generó la factura {0} a partir de él. Elimina primero la factura.",
+              "pt_BR":"O pedido não pode ser excluído porque a fatura {0} foi gerada a partir dele. Exclua primeiro a fatura.",
+              "fr":"La commande ne peut pas être supprimée car la facture {0} en a été générée. Supprimez d'abord la facture.",
+              "de":"Der Auftrag kann nicht gelöscht werden, da daraus die Rechnung {0} erstellt wurde. Löschen Sie zuerst die Rechnung.",
+              "pl":"Nie można usunąć zamówienia, ponieważ na jego podstawie utworzono fakturę {0}. Najpierw usuń fakturę."},
+            "Are you sure you want to delete the customer '{0}'?": {
+              "en":"Are you sure you want to delete the customer '{0}'?","it":"Eliminare il cliente '{0}'?","es":"¿Eliminar el cliente '{0}'?","pt_BR":"Excluir o cliente '{0}'?","fr":"Supprimer le client '{0}' ?","de":"Kunden '{0}' löschen?","pl":"Usunąć klienta '{0}'?"},
+            "WARNING: This will permanently delete customer '{0}' and ALL related data:": {
+              "en":"WARNING: This will permanently delete customer '{0}' and ALL related data:","it":"ATTENZIONE: verranno eliminati definitivamente il cliente '{0}' e TUTTI i dati collegati:","es":"ADVERTENCIA: se eliminarán permanentemente el cliente '{0}' y TODOS los datos relacionados:","pt_BR":"ATENÇÃO: o cliente '{0}' e TODOS os dados relacionados serão excluídos permanentemente:","fr":"ATTENTION : le client '{0}' et TOUTES les données associées seront définitivement supprimés :","de":"WARNUNG: Kunde '{0}' und ALLE zugehörigen Daten werden dauerhaft gelöscht:","pl":"OSTRZEŻENIE: klient '{0}' i WSZYSTKIE powiązane dane zostaną trwale usunięte:"},
+            "Customer '{0}' and all related records deleted successfully": {
+              "en":"Customer '{0}' and all related records deleted successfully","it":"Cliente '{0}' e tutti i dati collegati eliminati correttamente","es":"Cliente '{0}' y todos los registros relacionados eliminados correctamente","pt_BR":"Cliente '{0}' e todos os registros relacionados excluídos com sucesso","fr":"Client '{0}' et tous les enregistrements associés supprimés avec succès","de":"Kunde '{0}' und alle zugehörigen Datensätze wurden erfolgreich gelöscht","pl":"Klient '{0}' i wszystkie powiązane rekordy zostały pomyślnie usunięte"},
+            "Enter new quantity for {0}:": {"en":"Enter new quantity for {0}:","it":"Inserisci la nuova quantità per {0}:","es":"Introduce la nueva cantidad para {0}:","pt_BR":"Informe a nova quantidade para {0}:","fr":"Saisissez la nouvelle quantité pour {0} :","de":"Neue Menge für {0} eingeben:","pl":"Wprowadź nową ilość dla {0}:"},
+            "Are you sure you want to remove {0} from the invoice?": {"en":"Are you sure you want to remove {0} from the invoice?","it":"Rimuovere {0} dalla fattura?","es":"¿Quitar {0} de la factura?","pt_BR":"Remover {0} da fatura?","fr":"Retirer {0} de la facture ?","de":"{0} aus der Rechnung entfernen?","pl":"Usunąć {0} z faktury?"},
+            "Are you sure you want to remove {0} from the order?": {"en":"Are you sure you want to remove {0} from the order?","it":"Rimuovere {0} dall'ordine?","es":"¿Quitar {0} del pedido?","pt_BR":"Remover {0} do pedido?","fr":"Retirer {0} de la commande ?","de":"{0} aus dem Auftrag entfernen?","pl":"Usunąć {0} z zamówienia?"},
+            "Are you sure you want to delete invoice {0} from customer {1}?": {"en":"Are you sure you want to delete invoice {0} from customer {1}?","it":"Eliminare la fattura {0} del cliente {1}?","es":"¿Eliminar la factura {0} del cliente {1}?","pt_BR":"Excluir a fatura {0} do cliente {1}?","fr":"Supprimer la facture {0} du client {1} ?","de":"Rechnung {0} des Kunden {1} löschen?","pl":"Usunąć fakturę {0} klienta {1}?"},
+            "Are you sure you want to delete the order from customer '{0}'?": {"en":"Are you sure you want to delete the order from customer '{0}'?","it":"Eliminare l'ordine del cliente '{0}'?","es":"¿Eliminar el pedido del cliente '{0}'?","pt_BR":"Excluir o pedido do cliente '{0}'?","fr":"Supprimer la commande du client '{0}' ?","de":"Auftrag des Kunden '{0}' löschen?","pl":"Usunąć zamówienie klienta '{0}'?"},
+            "Invoice {0} generated successfully!": {"en":"Invoice {0} generated successfully!","it":"Fattura {0} generata correttamente!","es":"¡Factura {0} generada correctamente!","pt_BR":"Fatura {0} gerada com sucesso!","fr":"Facture {0} générée avec succès !","de":"Rechnung {0} wurde erfolgreich erstellt!","pl":"Faktura {0} została pomyślnie wygenerowana!"},
+            "Order #{0} not found in the list.": {"en":"Order #{0} not found in the list.","it":"Ordine cliente n. {0} non trovato nell'elenco.","es":"Pedido n.º {0} no encontrado en la lista.","pt_BR":"Pedido nº {0} não encontrado na lista.","fr":"Commande n° {0} introuvable dans la liste.","de":"Auftrag Nr. {0} wurde in der Liste nicht gefunden.","pl":"Nie znaleziono zamówienia nr {0} na liście."},
+            "Product '{0}' has only non-critical configuration data:": {"en":"Product '{0}' has only non-critical configuration data:","it":"Il prodotto '{0}' contiene solo dati di configurazione non critici:","es":"El producto '{0}' solo contiene datos de configuración no críticos:","pt_BR":"O produto '{0}' contém apenas dados de configuração não críticos:","fr":"Le produit '{0}' ne contient que des données de configuration non critiques :","de":"Produkt '{0}' enthält nur unkritische Konfigurationsdaten:","pl":"Produkt '{0}' zawiera tylko niekrytyczne dane konfiguracyjne:"},
+            "Are you sure you want to delete the product '{0}'?": {"en":"Are you sure you want to delete the product '{0}'?","it":"Eliminare il prodotto '{0}'?","es":"¿Eliminar el producto '{0}'?","pt_BR":"Excluir o produto '{0}'?","fr":"Supprimer le produit '{0}' ?","de":"Produkt '{0}' löschen?","pl":"Usunąć produkt '{0}'?"},
+            "Product with code '{0}' not found in the list.": {"en":"Product with code '{0}' not found in the list.","it":"Prodotto con codice '{0}' non trovato nell'elenco.","es":"Producto con código '{0}' no encontrado en la lista.","pt_BR":"Produto com código '{0}' não encontrado na lista.","fr":"Produit avec le code '{0}' introuvable dans la liste.","de":"Produkt mit Code '{0}' wurde in der Liste nicht gefunden.","pl":"Nie znaleziono na liście produktu o kodzie '{0}'."},
+            "Are you sure you want to delete order {0}?": {"en":"Are you sure you want to delete order {0}?","it":"Eliminare l'ordine {0}?","es":"¿Eliminar el pedido {0}?","pt_BR":"Excluir o pedido {0}?","fr":"Supprimer la commande {0} ?","de":"Auftrag {0} löschen?","pl":"Usunąć zamówienie {0}?"},
+            "Are you sure you want to delete the price for product {0}?": {"en":"Are you sure you want to delete the price for product {0}?","it":"Eliminare il prezzo del prodotto {0}?","es":"¿Eliminar el precio del producto {0}?","pt_BR":"Excluir o preço do produto {0}?","fr":"Supprimer le prix du produit {0} ?","de":"Preis für Produkt {0} löschen?","pl":"Usunąć cenę produktu {0}?"},
+            "Are you sure you want to delete supplier '{0}'?": {"en":"Are you sure you want to delete supplier '{0}'?","it":"Eliminare il fornitore '{0}'?","es":"¿Eliminar el proveedor '{0}'?","pt_BR":"Excluir o fornecedor '{0}'?","fr":"Supprimer le fournisseur '{0}' ?","de":"Lieferanten '{0}' löschen?","pl":"Usunąć dostawcę '{0}'?"},
+            "WARNING: This will permanently delete supplier '{0}' and ALL related data:": {"en":"WARNING: This will permanently delete supplier '{0}' and ALL related data:","it":"ATTENZIONE: verranno eliminati definitivamente il fornitore '{0}' e TUTTI i dati collegati:","es":"ADVERTENCIA: se eliminarán permanentemente el proveedor '{0}' y TODOS los datos relacionados:","pt_BR":"ATENÇÃO: o fornecedor '{0}' e TODOS os dados relacionados serão excluídos permanentemente:","fr":"ATTENTION : le fournisseur '{0}' et TOUTES les données associées seront définitivement supprimés :","de":"WARNUNG: Lieferant '{0}' und ALLE zugehörigen Daten werden dauerhaft gelöscht:","pl":"OSTRZEŻENIE: dostawca '{0}' i WSZYSTKIE powiązane dane zostaną trwale usunięte:"},
+            "Supplier '{0}' and all related records deleted successfully": {"en":"Supplier '{0}' and all related records deleted successfully","it":"Fornitore '{0}' e tutti i dati collegati eliminati correttamente","es":"Proveedor '{0}' y todos los registros relacionados eliminados correctamente","pt_BR":"Fornecedor '{0}' e todos os registros relacionados excluídos com sucesso","fr":"Fournisseur '{0}' et tous les enregistrements associés supprimés avec succès","de":"Lieferant '{0}' und alle zugehörigen Datensätze wurden erfolgreich gelöscht","pl":"Dostawca '{0}' i wszystkie powiązane rekordy zostały pomyślnie usunięte"},
+            "Insufficient quantity. Current availability: {0}": {"en":"Insufficient quantity. Current availability: {0}","it":"Quantità insufficiente. Disponibilità attuale: {0}","es":"Cantidad insuficiente. Disponibilidad actual: {0}","pt_BR":"Quantidade insuficiente. Disponibilidade atual: {0}","fr":"Quantité insuffisante. Disponibilité actuelle : {0}","de":"Unzureichende Menge. Aktuelle Verfügbarkeit: {0}","pl":"Niewystarczająca ilość. Aktualna dostępność: {0}"},
+            "Requested: {0}": {"en":"Requested: {0}","it":"Richiesta: {0}","es":"Solicitada: {0}","pt_BR":"Solicitada: {0}","fr":"Demandée : {0}","de":"Angefordert: {0}","pl":"Żądana: {0}"},
+            "{0} file not found in the application directory.": {"en":"{0} file not found in the application directory.","it":"File {0} non trovato nella cartella dell'applicazione.","es":"Archivo {0} no encontrado en la carpeta de la aplicación.","pt_BR":"Arquivo {0} não encontrado na pasta do aplicativo.","fr":"Fichier {0} introuvable dans le dossier de l'application.","de":"Datei {0} wurde im Anwendungsordner nicht gefunden.","pl":"Nie znaleziono pliku {0} w folderze aplikacji."},
+            "Error reading {0}:": {"en":"Error reading {0}:","it":"Errore durante la lettura di {0}:","es":"Error al leer {0}:","pt_BR":"Erro ao ler {0}:","fr":"Erreur lors de la lecture de {0} :","de":"Fehler beim Lesen von {0}:","pl":"Błąd podczas odczytu {0}:"},
+            "Error opening {0}: {1}": {"en":"Error opening {0}: {1}","it":"Errore durante l'apertura di {0}: {1}","es":"Error al abrir {0}: {1}","pt_BR":"Erro ao abrir {0}: {1}","fr":"Erreur lors de l'ouverture de {0} : {1}","de":"Fehler beim Öffnen von {0}: {1}","pl":"Błąd podczas otwierania {0}: {1}"}
+          }
+
+          exact = {
+            "This action CANNOT be undone!": {"it":"Questa operazione NON può essere annullata!","es":"¡Esta acción NO se puede deshacer!","pt_BR":"Esta ação NÃO pode ser desfeita!","fr":"Cette action est IRRÉVERSIBLE !","de":"Diese Aktion kann NICHT rückgängig gemacht werden!","pl":"Tej operacji NIE można cofnąć!"},
+            "Stock will be restored.": {"it":"La giacenza verrà ripristinata.","es":"Se restaurará el stock.","pt_BR":"O estoque será restaurado.","fr":"Le stock sera restauré.","de":"Der Bestand wird wiederhergestellt.","pl":"Stan magazynowy zostanie przywrócony."},
+            "Reservations will be cancelled.": {"it":"Le prenotazioni verranno annullate.","es":"Se cancelarán las reservas.","pt_BR":"As reservas serão canceladas.","fr":"Les réservations seront annulées.","de":"Die Reservierungen werden storniert.","pl":"Rezerwacje zostaną anulowane."},
+            "Stock has been restored.": {"it":"La giacenza è stata ripristinata.","es":"El stock se ha restaurado.","pt_BR":"O estoque foi restaurado.","fr":"Le stock a été restauré.","de":"Der Bestand wurde wiederhergestellt.","pl":"Stan magazynowy został przywrócony."},
+            "Reservations have been cancelled.": {"it":"Le prenotazioni sono state annullate.","es":"Las reservas se han cancelado.","pt_BR":"As reservas foram canceladas.","fr":"Les réservations ont été annulées.","de":"Die Reservierungen wurden storniert.","pl":"Rezerwacje zostały anulowane."},
+            "Stock will be adjusted accordingly.": {"it":"La giacenza verrà aggiornata di conseguenza.","es":"El stock se ajustará en consecuencia.","pt_BR":"O estoque será ajustado de acordo.","fr":"Le stock sera ajusté en conséquence.","de":"Der Bestand wird entsprechend angepasst.","pl":"Stan magazynowy zostanie odpowiednio skorygowany."},
+            "Stock has been adjusted.": {"it":"La giacenza è stata aggiornata.","es":"El stock se ha ajustado.","pt_BR":"O estoque foi ajustado.","fr":"Le stock a été ajusté.","de":"Der Bestand wurde angepasst.","pl":"Stan magazynowy został skorygowany."},
+            "Stock received from completed supplier orders will be removed before deletion.": {"it":"La giacenza ricevuta dagli ordini fornitore completati verrà rimossa prima dell'eliminazione.","es":"El stock recibido de pedidos de proveedor completados se retirará antes de la eliminación.","pt_BR":"O estoque recebido de pedidos de fornecedor concluídos será removido antes da exclusão.","fr":"Le stock reçu des commandes fournisseur terminées sera retiré avant la suppression.","de":"Der aus abgeschlossenen Lieferantenbestellungen erhaltene Bestand wird vor dem Löschen entfernt.","pl":"Stan przyjęty z zakończonych zamówień do dostawców zostanie usunięty przed skasowaniem."},
+            "These records will also be deleted. Continue?": {"it":"Anche questi dati verranno eliminati. Continuare?","es":"Estos registros también se eliminarán. ¿Continuar?","pt_BR":"Esses registros também serão excluídos. Continuar?","fr":"Ces enregistrements seront également supprimés. Continuer ?","de":"Diese Datensätze werden ebenfalls gelöscht. Fortfahren?","pl":"Te rekordy również zostaną usunięte. Kontynuować?"},
+            "Minimum quantity and reorder quantity cannot be negative": {"it":"La quantità minima e la quantità di riordino non possono essere negative","es":"La cantidad mínima y la cantidad de reposición no pueden ser negativas","pt_BR":"A quantidade mínima e a quantidade de reposição não podem ser negativas","fr":"La quantité minimale et la quantité de réapprovisionnement ne peuvent pas être négatives","de":"Mindestmenge und Nachbestellmenge dürfen nicht negativ sein","pl":"Minimalna ilość i ilość ponownego zamówienia nie mogą być ujemne"},
+            "Please enter a valid positive integer for quantity": {"it":"Inserisci un numero intero positivo valido per la quantità","es":"Introduce un número entero positivo válido para la cantidad","pt_BR":"Informe um número inteiro positivo válido para a quantidade","fr":"Saisissez un entier positif valide pour la quantité","de":"Geben Sie eine gültige positive Ganzzahl für die Menge ein","pl":"Wprowadź prawidłową dodatnią liczbę całkowitą jako ilość"},
+            "Paid amount exceeds order total. Continue?": {"it":"L'importo pagato supera il totale dell'ordine. Continuare?","es":"El importe pagado supera el total del pedido. ¿Continuar?","pt_BR":"O valor pago excede o total do pedido. Continuar?","fr":"Le montant payé dépasse le total de la commande. Continuer ?","de":"Der bezahlte Betrag übersteigt die Auftragssumme. Fortfahren?","pl":"Zapłacona kwota przekracza wartość zamówienia. Kontynuować?"},
+            "Insufficient stock for the following products:": {"it":"Scorta insufficiente per i seguenti prodotti:","es":"Stock insuficiente para los siguientes productos:","pt_BR":"Estoque insuficiente para os seguintes produtos:","fr":"Stock insuffisant pour les produits suivants :","de":"Unzureichender Bestand für folgende Produkte:","pl":"Niewystarczający stan magazynowy dla następujących produktów:"}
+          }
+
+          def esc_key(k):
+              out=''
+              for i,ch in enumerate(k):
+                  if ch in '\\:= #!' or (i==0 and ch in '#!'):
+                      out+='\\'+ch
+                  else: out+=ch
+              return out
+          def esc_val(v):
+              return v.replace('\\','\\\\').replace('\n','\\n').replace('\r','\\r')
+
+          langs=['en','it','es','pt_BR','fr','de','pl']
+          for lang in langs:
+              path=Path(f'resources/i18n/messages_{lang}.properties')
+              text=path.read_text(encoding='utf-8')
+              additions=[]
+              for key,vals in templates.items():
+                  ek=esc_key(key)
+                  if not any(line.startswith(ek+'=') for line in text.splitlines()):
+                      additions.append(ek+'='+esc_val(vals[lang]))
+              for key,vals in exact.items():
+                  ek=esc_key(key)
+                  if not any(line.startswith(ek+'=') for line in text.splitlines()):
+                      additions.append(ek+'='+esc_val(key if lang=='en' else vals[lang]))
+              if additions:
+                  text=text.rstrip()+"\n\n# Dynamic message-box localization\n"+'\n'.join(additions)+'\n'
+                  path.write_text(text,encoding='utf-8')
+      - name: Run regression suite
+        run: ant test
+      - name: Verify dynamic template implementation
+        run: |
+          grep -q 'private static final class MessageTemplate' src/I18n.java
+          grep -q 'This\\ order\\ has\\ already\\ been\\ invoiced\\ as\\ {0}' resources/i18n/messages_it.properties
+          grep -q 'Questo ordine è già stato fatturato' resources/i18n/messages_it.properties
+      - name: Commit tested localization fix
+        run: |
+          git config user.name "WareStat audit"
+          git config user.email "actions@github.com"
+          git add src/I18n.java resources/i18n/messages_*.properties
+          git commit -m "Translate dynamic message boxes"
+          git push origin HEAD:fix/macos-filechooser-i18n
