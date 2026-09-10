@@ -29,25 +29,19 @@ jobs:
           from pathlib import Path
           p = Path('src/MainWindow.java')
           s = p.read_text(encoding='utf-8')
-          old = '''        button.setToolTipText(tooltip);
-          int buttonWidth = Math.max(80, textLabel.getFontMetrics(textLabel.getFont()).stringWidth(text) + 20);
-          button.setPreferredSize(new Dimension(buttonWidth, 60));
-          '''
-          new = '''        button.setToolTipText(tooltip);
-          Runnable updateButtonWidth = () -> {
-              int buttonWidth = Math.max(80,
+          needle = '        button.setPreferredSize(new Dimension(buttonWidth, 60));\n'
+          addition = '''        textLabel.addPropertyChangeListener("text", event -> {
+              int translatedWidth = Math.max(80,
                   textLabel.getFontMetrics(textLabel.getFont()).stringWidth(textLabel.getText()) + 20);
-              button.setPreferredSize(new Dimension(buttonWidth, 60));
-          };
-          updateButtonWidth.run();
-          textLabel.addPropertyChangeListener("text", event -> {
-              updateButtonWidth.run();
+              button.setPreferredSize(new Dimension(translatedWidth, 60));
               if (toolBar != null) toolBar.revalidate();
           });
-          '''
-          if old not in s:
-              raise SystemExit('Toolbar width block not found')
-          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+'''
+          if addition not in s:
+              if s.count(needle) != 1:
+                  raise SystemExit('Toolbar preferred-size line not unique')
+              s = s.replace(needle, needle + addition, 1)
+          p.write_text(s, encoding='utf-8')
           PY
       - name: Run regression suite
         run: ant test
@@ -55,7 +49,7 @@ jobs:
         run: |
           git config user.name "WareStat audit"
           git config user.email "actions@github.com"
-          git checkout HEAD^ -- .github/workflows/currency-audit.yml
+          git show HEAD~2:.github/workflows/currency-audit.yml > .github/workflows/currency-audit.yml
           git rm -f .github/workflows/fix-toolbar-translated-width.yml
           git add src/MainWindow.java .github/workflows/currency-audit.yml
           git commit -m "Resize toolbar buttons after translation"
