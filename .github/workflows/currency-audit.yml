@@ -35,23 +35,23 @@ jobs:
                   raise SystemExit('Main dashboard scroll marker not found')
               s = s.replace(marker, marker + '        routeNestedMouseWheel(mainContainer, scrollPane);\n', 1)
           method_marker = '    private JPanel createHeaderPanel() {\n'
-          helper = '''    private void routeNestedMouseWheel(Container root, JScrollPane dashboardScrollPane) {
-              for (Component component : root.getComponents()) {
-                  if (component instanceof JScrollPane nestedScrollPane) {
-                      nestedScrollPane.setWheelScrollingEnabled(false);
-                      nestedScrollPane.addMouseWheelListener(event -> {
-                          JScrollBar bar = dashboardScrollPane.getVerticalScrollBar();
-                          int increment = Math.max(1, bar.getUnitIncrement(event.getWheelRotation()));
-                          bar.setValue(bar.getValue() + event.getUnitsToScroll() * increment);
-                          event.consume();
-                      });
-                  } else if (component instanceof Container container) {
-                      routeNestedMouseWheel(container, dashboardScrollPane);
-                  }
-              }
-          }
-
-'''
+          helper = (
+              '    private void routeNestedMouseWheel(Container root, JScrollPane dashboardScrollPane) {\n'
+              '        for (Component component : root.getComponents()) {\n'
+              '            if (component instanceof JScrollPane nestedScrollPane) {\n'
+              '                nestedScrollPane.setWheelScrollingEnabled(false);\n'
+              '                nestedScrollPane.addMouseWheelListener(event -> {\n'
+              '                    JScrollBar bar = dashboardScrollPane.getVerticalScrollBar();\n'
+              '                    int increment = Math.max(1, bar.getUnitIncrement(event.getWheelRotation()));\n'
+              '                    bar.setValue(bar.getValue() + event.getUnitsToScroll() * increment);\n'
+              '                    event.consume();\n'
+              '                });\n'
+              '            } else if (component instanceof Container container) {\n'
+              '                routeNestedMouseWheel(container, dashboardScrollPane);\n'
+              '            }\n'
+              '        }\n'
+              '    }\n\n'
+          )
           if 'private void routeNestedMouseWheel(' not in s:
               if method_marker not in s:
                   raise SystemExit('Dashboard helper insertion marker not found')
@@ -63,7 +63,7 @@ jobs:
         run: |
           git config user.name "WareStat audit"
           git config user.email "actions@github.com"
-          git show HEAD^:.github/workflows/currency-audit.yml > .github/workflows/currency-audit.yml
+          git show HEAD~2:.github/workflows/currency-audit.yml > .github/workflows/currency-audit.yml
           git rm -f .github/workflows/fix-dashboard-scroll.yml
           git add src/DashboardPanel.java .github/workflows/currency-audit.yml
           git commit -m "Keep dashboard scrolling across nested panels"
