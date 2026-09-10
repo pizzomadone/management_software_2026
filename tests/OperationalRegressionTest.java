@@ -47,8 +47,11 @@ public class OperationalRegressionTest extends RegressionTest {
             require(qty()==7 && "30.0|3".equals(value("SELECT total||'|'||(SELECT quantity FROM order_details WHERE order_id=1) FROM orders WHERE id=1")),"Invoiced order diverged from invoice");
             CustomersPanel customers=new CustomersPanel();require((Boolean)call(customers,"hasFinalizedCustomerInvoices",new Class<?>[]{Connection.class,int.class},db,1),"Finalized customer history was not detected");
         });
-        test("non-completed orders cannot be invoiced",()->{
-            for(String status:java.util.List.of("New","In Progress","Cancelled")) { fresh();sql("INSERT INTO orders(id,customer_id,order_date,status,total) VALUES(10,1,0,'"+status+"',10)");sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(10,1,1,10)");OrdersPanel p=new OrdersPanel();JTable t=(JTable)get(p,"ordersTable");t.setRowSelectionInterval(0,0);try{call(p,"generateInvoiceFromOrder");}catch(java.awt.HeadlessException expected){}require("0".equals(value("SELECT COUNT(*) FROM invoices")),"Non-completed order was invoiced: "+status); }
+        test("only completed customer orders are invoice eligible",()->{
+            require(OrdersPanel.canGenerateInvoice("Completed"),"Completed order cannot be invoiced");
+            for(String status:java.util.List.of("New","In Progress","Cancelled"))
+                require(!OrdersPanel.canGenerateInvoice(status),"Non-completed order is invoice eligible: "+status);
+            require(!OrdersPanel.canGenerateInvoice(null),"Missing status is invoice eligible");
         });
         test("inventory correction records only the physical delta",()->{
             fresh();call(productEditor(15),"saveProduct");require(qty()==15,"Stock count not saved");

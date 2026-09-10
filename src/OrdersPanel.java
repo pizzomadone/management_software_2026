@@ -350,11 +350,6 @@ public class OrdersPanel extends JPanel {
             int id = (int)tableModel.getValueAt(modelRow, 0);
             String customer = (String)tableModel.getValueAt(modelRow, 1);
             String status = (String)tableModel.getValueAt(modelRow, 3);
-        if (!"Completed".equals(status)) {
-            JOptionPane.showMessageDialog(this,I18n.tr("Only completed customer orders can be invoiced."),I18n.tr("Generate Invoice"),JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-
 
             try {
                 Connection connection = DatabaseManager.getInstance().getConnection();
@@ -441,6 +436,10 @@ public class OrdersPanel extends JPanel {
         }
     }
 
+    static boolean canGenerateInvoice(String status) {
+        return "Completed".equals(status);
+    }
+
     private void generateInvoiceFromOrder() {
         int selectedRow = ordersTable.getSelectedRow();
         if (selectedRow == -1) return;
@@ -450,6 +449,13 @@ public class OrdersPanel extends JPanel {
         int orderId = (int)tableModel.getValueAt(modelRow, 0);
         String customer = (String)tableModel.getValueAt(modelRow, 1);
         String status = (String)tableModel.getValueAt(modelRow, 3);
+
+        if (!canGenerateInvoice(status)) {
+            JOptionPane.showMessageDialog(this,
+                I18n.tr("Only completed customer orders can be invoiced."),
+                I18n.tr("Generate Invoice"), JOptionPane.WARNING_MESSAGE);
+            return;
+        }
 
         try {
             Connection connection = DatabaseManager.getInstance().getConnection();
