@@ -72,8 +72,9 @@ jobs:
           '''
           new='''        test("only completed customer orders are invoice eligible",()->{
                       require(OrdersPanel.canGenerateInvoice("Completed"),"Completed order cannot be invoiced");
-                      for(String status:java.util.List.of("New","In Progress","Cancelled",null))
+                      for(String status:java.util.List.of("New","In Progress","Cancelled"))
                           require(!OrdersPanel.canGenerateInvoice(status),"Non-completed order is invoice eligible: "+status);
+                      require(!OrdersPanel.canGenerateInvoice(null),"Missing status is invoice eligible");
                   });
           '''
           if old not in t:
