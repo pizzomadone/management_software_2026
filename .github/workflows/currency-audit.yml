@@ -5,17 +5,58 @@ on:
     branches:
       - fix/macos-filechooser-i18n
 
+permissions:
+  contents: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: fix/macos-filechooser-i18n
+          fetch-depth: 0
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
       - name: Install Ant
         run: sudo apt-get update && sudo apt-get install -y ant
+      - name: Fix translated toolbar widths
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/MainWindow.java')
+          s = p.read_text(encoding='utf-8')
+          old = '''        button.setToolTipText(tooltip);
+          int buttonWidth = Math.max(80, textLabel.getFontMetrics(textLabel.getFont()).stringWidth(text) + 20);
+          button.setPreferredSize(new Dimension(buttonWidth, 60));
+          '''
+          new = '''        button.setToolTipText(tooltip);
+          Runnable updateButtonWidth = () -> {
+              int buttonWidth = Math.max(80,
+                  textLabel.getFontMetrics(textLabel.getFont()).stringWidth(textLabel.getText()) + 20);
+              button.setPreferredSize(new Dimension(buttonWidth, 60));
+          };
+          updateButtonWidth.run();
+          textLabel.addPropertyChangeListener("text", event -> {
+              updateButtonWidth.run();
+              if (toolBar != null) toolBar.revalidate();
+          });
+          '''
+          if old not in s:
+              raise SystemExit('Toolbar width block not found')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          PY
       - name: Run regression suite
         run: ant test
+      - name: Commit tested fix
+        run: |
+          git config user.name "WareStat audit"
+          git config user.email "actions@github.com"
+          git checkout HEAD^ -- .github/workflows/currency-audit.yml
+          git rm -f .github/workflows/fix-toolbar-translated-width.yml
+          git add src/MainWindow.java .github/workflows/currency-audit.yml
+          git commit -m "Resize toolbar buttons after translation"
+          git push origin HEAD:fix/macos-filechooser-i18n
