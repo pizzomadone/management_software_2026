@@ -1,0 +1,79 @@
+name: Fix invoice footer placement
+
+on:
+  push:
+    branches:
+      - fix/macos-filechooser-i18n
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/macos-filechooser-i18n
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install Ant
+        run: sudo apt-get update && sudo apt-get install -y ant
+      - name: Move WareStat message into invoice footer
+        shell: python
+        run: |
+          from pathlib import Path
+
+          p = Path('src/PdfWriter.java')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace('    private final String pageLabel;\n', '    private final String pageLabel;\n    private final String footerPrefix;\n', 1)
+          old = '''    public PdfWriter(String title, boolean landscape, String pageLabel) throws IOException {
+              this.title=Objects.toString(title,"");
+              this.pageLabel=Objects.toString(pageLabel,"Page").isBlank()?"Page":pageLabel;
+              paper=landscape?new PDRectangle(PDRectangle.A4.getHeight(),PDRectangle.A4.getWidth()):PDRectangle.A4;
+          '''
+          new = '''    public PdfWriter(String title, boolean landscape, String pageLabel) throws IOException {
+              this(title,landscape,pageLabel,"WareStat");
+          }
+
+          public PdfWriter(String title, boolean landscape, String pageLabel, String footerPrefix) throws IOException {
+              this.title=Objects.toString(title,"");
+              this.pageLabel=Objects.toString(pageLabel,"Page").isBlank()?"Page":pageLabel;
+              this.footerPrefix=Objects.toString(footerPrefix,"").trim();
+              paper=landscape?new PDRectangle(PDRectangle.A4.getHeight(),PDRectangle.A4.getWidth()):PDRectangle.A4;
+          '''
+          if old not in s:
+              raise SystemExit('PdfWriter constructor marker not found')
+          s = s.replace(old,new,1)
+          old_footer='        text("WareStat | "+pageLabel+" "+document.getNumberOfPages(),MARGIN,28,regular,8);\n'
+          new_footer='        String footer=(footerPrefix.isBlank()?"":footerPrefix+" | ")+pageLabel+" "+document.getNumberOfPages();\n        text(footer,MARGIN,28,regular,8);\n'
+          if old_footer not in s:
+              raise SystemExit('PdfWriter footer marker not found')
+          s=s.replace(old_footer,new_footer,1)
+          p.write_text(s,encoding='utf-8')
+
+          p = Path('src/InvoicePDFGenerator.java')
+          s = p.read_text(encoding='utf-8')
+          old_ctor='            try(PdfWriter pdf=new PdfWriter("",false,I18n.tr("Page"))) {\n'
+          new_ctor='            try(PdfWriter pdf=new PdfWriter("",false,I18n.tr("Page"),"Documento generato con WareStat")) {\n'
+          if old_ctor not in s:
+              raise SystemExit('Invoice PdfWriter marker not found')
+          s=s.replace(old_ctor,new_ctor,1)
+          old_note='                pdf.note("Documento generato con WareStat");\n'
+          if old_note not in s:
+              raise SystemExit('Invoice body WareStat note not found')
+          s=s.replace(old_note,'',1)
+          p.write_text(s,encoding='utf-8')
+      - name: Run regression suite
+        run: ant test
+      - name: Commit tested fix
+        run: |
+          git config user.name "WareStat audit"
+          git config user.email "actions@github.com"
+          git add src/PdfWriter.java src/InvoicePDFGenerator.java
+          git commit -m "Place WareStat invoice message in page footer"
+          git push origin HEAD:fix/macos-filechooser-i18n
