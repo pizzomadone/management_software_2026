@@ -20,8 +20,8 @@ jobs:
       - name: Install Ant
         run: sudo apt-get update && sudo apt-get install -y ant
       - name: Inject dashboard KPI verification
-        shell: python
         run: |
+          python3 - <<'PY'
           from pathlib import Path
           p=Path('tests/ExtendedRegressionTest.java')
           s=p.read_text(encoding='utf-8')
@@ -76,7 +76,8 @@ jobs:
               require("1".equals(((JLabel)get(d,"zeroCostCountLabel")).getText()),"Zero-cost supporting count is wrong");
               require("1".equals(((JLabel)get(d,"negativeStockCountLabel")).getText()),"Negative-stock supporting count is wrong");
           });
-'''
+          '''
           p.write_text(s.replace(marker,test+marker,1),encoding='utf-8')
+          PY
       - name: Run full regression suite with KPI audit
         run: ant test
