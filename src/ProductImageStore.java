@@ -319,7 +319,12 @@ public final class ProductImageStore {
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir, "thumb_*")) {
             for (Path file : stream) Files.deleteIfExists(file);
         }
-        Set<String> referenced = referencedFilenames();
+        Set<String> referenced;
+        try {
+            referenced = referencedFilenames();
+        } catch (SQLException e) {
+            throw new IOException("Unable to read product image references", e);
+        }
         for (String name : referenced) if (Files.isRegularFile(imagePath(name))) ensureThumbnail(name);
     }
 
