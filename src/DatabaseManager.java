@@ -133,6 +133,17 @@ public class DatabaseManager {
             )
         """;
 
+        String createProductImagesTable = """
+            CREATE TABLE IF NOT EXISTS product_images (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                product_id INTEGER NOT NULL,
+                filename TEXT NOT NULL,
+                is_primary INTEGER NOT NULL DEFAULT 0 CHECK(is_primary IN (0,1)),
+                sort_order INTEGER NOT NULL DEFAULT 0 CHECK(sort_order >= 0),
+                FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE CASCADE
+            )
+        """;
+
         // Orders Table - FIXED: Changed to DATETIME
         String createOrdersTable = """
             CREATE TABLE IF NOT EXISTS orders (
@@ -341,6 +352,7 @@ public class DatabaseManager {
             stmt.execute(createCustomersTable);
             stmt.execute(createSuppliersTable); // Create suppliers table first
             stmt.execute(createProductsTable);
+            stmt.execute(createProductImagesTable);
             stmt.execute(createOrdersTable);
             stmt.execute(createOrderDetailsTable);
             stmt.execute(createInvoicesTable);
