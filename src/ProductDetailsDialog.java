@@ -32,12 +32,16 @@ public final class ProductDetailsDialog extends JDialog {
             if (images.isEmpty()) {
                 photos.add(new JLabel("No photos"));
             } else {
-                for (ProductImageStore.ProductImage image : images) {
+                for (int i = 0; i < images.size(); i++) {
+                    ProductImageStore.ProductImage image = images.get(i);
+                    int startIndex = i;
                     ImageIcon icon = ProductImageStore.getInstance().icon(image.filename(), 120);
                     JButton button = new JButton(icon);
                     button.setPreferredSize(new Dimension(132, 132));
                     button.setToolTipText(image.primary() ? I18n.tr("Primary photo") : I18n.tr("Open photo"));
-                    button.addActionListener(e -> showLarge(image.filename(), product.getName()));
+                    button.addActionListener(e ->
+                        new ProductPhotoGalleryDialog(this, product.getName(), images, startIndex)
+                            .setVisible(true));
                     photos.add(button);
                 }
             }
@@ -77,6 +81,7 @@ public final class ProductDetailsDialog extends JDialog {
 
         setSize(620, 620);
         setLocationRelativeTo(getOwner());
+        I18n.localize(this);
     }
 
     private static void addLine(JPanel panel, GridBagConstraints g, String label, String value) {
@@ -88,21 +93,6 @@ public final class ProductDetailsDialog extends JDialog {
         panel.add(new JLabel(value == null || value.isBlank() ? I18n.tr("Not set") : value), g);
         g.fill = GridBagConstraints.NONE;
         g.gridy++;
-    }
-
-    private void showLarge(String filename, String title) {
-        ImageIcon icon = ProductImageStore.getInstance().icon(filename, 700);
-        if (icon == null) {
-            Dialogs.showMessageDialog(this, I18n.tr("Unable to load product photo"),
-                I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
-            return;
-        }
-        JLabel image = new JLabel(icon);
-        JScrollPane pane = new JScrollPane(image);
-        pane.setPreferredSize(new Dimension(
-            Math.min(760, Math.max(300, icon.getIconWidth() + 30)),
-            Math.min(760, Math.max(300, icon.getIconHeight() + 30))));
-        Dialogs.showMessageDialog(this, pane, title, JOptionPane.PLAIN_MESSAGE);
     }
 
     public boolean isEditRequested() { return editRequested; }

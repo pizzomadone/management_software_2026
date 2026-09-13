@@ -1,4 +1,5 @@
 import javax.swing.*;
+import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.awt.event.*;
@@ -48,11 +49,25 @@ public class ProductsPanel extends JPanel {
             }
         };
         productsTable = new JTable(tableModel);
-        productsTable.setRowHeight(60);
+        productsTable.setRowHeight(54);
         int photoViewColumn = productsTable.convertColumnIndexToView(16);
         productsTable.moveColumn(photoViewColumn, 0);
-        productsTable.getColumnModel().getColumn(0).setPreferredWidth(68);
-        productsTable.getColumnModel().getColumn(0).setMaxWidth(76);
+        productsTable.getColumnModel().getColumn(0).setMinWidth(54);
+        productsTable.getColumnModel().getColumn(0).setPreferredWidth(56);
+        productsTable.getColumnModel().getColumn(0).setMaxWidth(60);
+        productsTable.getColumnModel().getColumn(0).setCellRenderer(new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value,
+                    boolean selected, boolean focus, int row, int column) {
+                JLabel label = (JLabel) super.getTableCellRendererComponent(
+                    table, "", selected, focus, row, column);
+                label.setIcon(value instanceof Icon ? (Icon)value : null);
+                label.setHorizontalAlignment(SwingConstants.CENTER);
+                label.setVerticalAlignment(SwingConstants.CENTER);
+                label.setBorder(BorderFactory.createEmptyBorder(1, 1, 1, 1));
+                return label;
+            }
+        });
         productsTable.getSelectionModel().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         productsTable.getSelectionModel().addListSelectionListener(e -> updateButtonStates());
 
@@ -76,11 +91,23 @@ public class ProductsPanel extends JPanel {
         productsTable.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override
             public void mouseClicked(java.awt.event.MouseEvent evt) {
-                if (evt.getClickCount() == 2 && SwingUtilities.isLeftMouseButton(evt)) {
-                    int selectedRow = productsTable.getSelectedRow();
-                    if (selectedRow != -1) {
-                        viewSelectedProduct();
+                if (!SwingUtilities.isLeftMouseButton(evt)) return;
+
+                int viewRow = productsTable.rowAtPoint(evt.getPoint());
+                int viewColumn = productsTable.columnAtPoint(evt.getPoint());
+                if (viewRow < 0 || viewColumn < 0) return;
+
+                int modelColumn = productsTable.convertColumnIndexToModel(viewColumn);
+                if (evt.getClickCount() == 1 && modelColumn == 16) {
+                    int modelRow = productsTable.convertRowIndexToModel(viewRow);
+                    if (tableModel.getValueAt(modelRow, 16) instanceof ImageIcon) {
+                        showPhotoGallery(modelRow);
                     }
+                    return;
+                }
+
+                if (evt.getClickCount() == 2) {
+                    viewSelectedProduct();
                 }
             }
         });
@@ -168,7 +195,7 @@ public class ProductsPanel extends JPanel {
                     row.add(rs.getString("supplier_name") != null ? rs.getString("supplier_name") : "");
                     row.add(rs.getString("warehouse_position") != null ? rs.getString("warehouse_position") : "");
                     row.add(rs.getDouble("vat_rate"));
-                    row.add(ProductImageStore.getInstance().icon(rs.getString("primary_image"), 52));
+                    row.add(ProductImageStore.getInstance().icon(rs.getString("primary_image"), 50));
                     tableModel.addRow(row);
                 }
             }
@@ -240,7 +267,7 @@ public class ProductsPanel extends JPanel {
                         row.add(rs.getString("supplier_name") != null ? rs.getString("supplier_name") : "");
                         row.add(rs.getString("warehouse_position") != null ? rs.getString("warehouse_position") : "");
                         row.add(rs.getDouble("vat_rate"));
-                        row.add(ProductImageStore.getInstance().icon(rs.getString("primary_image"), 52));
+                        row.add(ProductImageStore.getInstance().icon(rs.getString("primary_image"), 50));
                         tableModel.addRow(row);
                     }
                 }
@@ -269,6 +296,31 @@ public class ProductsPanel extends JPanel {
         }
     }
     
+    private void showPhotoGallery(int modelRow) {
+        int productId = (int)tableModel.getValueAt(modelRow, 0);
+        String productName = String.valueOf(tableModel.getValueAt(modelRow, 2));
+        try {
+            java.util.List<ProductImageStore.ProductImage> images =
+                ProductImageStore.getInstance().list(productId);
+            if (images.isEmpty()) return;
+
+            int primaryIndex = 0;
+            for (int i = 0; i < images.size(); i++) {
+                if (images.get(i).primary()) {
+                    primaryIndex = i;
+                    break;
+                }
+            }
+
+            Window owner = SwingUtilities.getWindowAncestor(this);
+            new ProductPhotoGalleryDialog(owner, productName, images, primaryIndex).setVisible(true);
+        } catch (SQLException e) {
+            Dialogs.showMessageDialog(this,
+                I18n.tr("Unable to load product photos") + ": " + e.getMessage(),
+                I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
     private void viewSelectedProduct() {
         int selectedRow = productsTable.getSelectedRow();
         if (selectedRow < 0) return;
