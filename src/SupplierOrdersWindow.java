@@ -134,7 +134,7 @@ public class SupplierOrdersWindow extends JDialog {
             }
         } catch (SQLException e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error loading orders: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -159,7 +159,7 @@ public class SupplierOrdersWindow extends JDialog {
                 }
             } catch (SQLException e) {
                 e.printStackTrace();
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Error loading order: " + e.getMessage(),
                     "Error", JOptionPane.ERROR_MESSAGE);
             }
@@ -239,7 +239,7 @@ public class SupplierOrdersWindow extends JDialog {
         if (selectedRow != -1) {
             String number = (String)tableModel.getValueAt(selectedRow, 0);
 
-            int result = JOptionPane.showConfirmDialog(this,
+            int result = Dialogs.showConfirmDialog(this,
                 "Are you sure you want to delete order " + number + "?",
                 "Confirm Deletion",
                 JOptionPane.YES_NO_OPTION,
@@ -316,7 +316,7 @@ public class SupplierOrdersWindow extends JDialog {
 
                 } catch (SQLException e) {
                     e.printStackTrace();
-                    JOptionPane.showMessageDialog(this,
+                    Dialogs.showMessageDialog(this,
                         "Error deleting order: " + e.getMessage(),
                         "Error", JOptionPane.ERROR_MESSAGE);
                 }

@@ -165,7 +165,7 @@ public class OrdersPanel extends JPanel {
             }
         } catch (SQLException e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error while loading orders: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -223,7 +223,7 @@ public class OrdersPanel extends JPanel {
             }
         } catch (SQLException e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error while searching orders: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -258,7 +258,7 @@ public class OrdersPanel extends JPanel {
             try {
                 try (PreparedStatement p=DatabaseManager.getInstance().getConnection().prepareStatement("SELECT number FROM invoices WHERE order_id=? LIMIT 1")) {
                     p.setInt(1,orderId); try (ResultSet r=p.executeQuery()) {
-                        if (r.next()) { JOptionPane.showMessageDialog(this,I18n.tr("This order already has an invoice and cannot be modified.")+"\n"+I18n.tr("Invoice")+": "+r.getString(1),I18n.tr("Invoice Already Exists"),JOptionPane.WARNING_MESSAGE); return; }
+                        if (r.next()) { Dialogs.showMessageDialog(this,I18n.tr("This order already has an invoice and cannot be modified.")+"\n"+I18n.tr("Invoice")+": "+r.getString(1),I18n.tr("Invoice Already Exists"),JOptionPane.WARNING_MESSAGE); return; }
                     }
                 }
                 Order order = loadOrderDetails(orderId);
@@ -267,7 +267,7 @@ public class OrdersPanel extends JPanel {
                 }
             } catch (SQLException e) {
                 e.printStackTrace();
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Error while loading the order: " + e.getMessage(),
                     "Error", JOptionPane.ERROR_MESSAGE);
             }
@@ -358,7 +358,7 @@ public class OrdersPanel extends JPanel {
                     pstmt.setInt(1, id);
                     try (ResultSet rs = pstmt.executeQuery()) {
                         if (rs.next()) {
-                            JOptionPane.showMessageDialog(this,
+                            Dialogs.showMessageDialog(this,
                                 "Order cannot be deleted because invoice " + rs.getString("number") +
                                 " was generated from it. Delete the invoice first.",
                                 "Order Cannot Be Deleted", JOptionPane.WARNING_MESSAGE);
@@ -367,12 +367,12 @@ public class OrdersPanel extends JPanel {
                     }
                 }
             } catch (SQLException e) {
-                JOptionPane.showMessageDialog(this, "Unable to verify linked invoices: " + e.getMessage(),
+                Dialogs.showMessageDialog(this, "Unable to verify linked invoices: " + e.getMessage(),
                     "Error", JOptionPane.ERROR_MESSAGE);
                 return;
             }
 
-            int result = JOptionPane.showConfirmDialog(this,
+            int result = Dialogs.showConfirmDialog(this,
                 "Are you sure you want to delete the order from customer '" + customer + "'?\n" +
                 "Status: " + status + "\n" +
                 (status.equals("Completed") ? "Stock will be restored." :
@@ -414,7 +414,7 @@ public class OrdersPanel extends JPanel {
                             ((MainWindow) parentWindow).refreshProductsPanel();
                         }
 
-                        JOptionPane.showMessageDialog(this,
+                        Dialogs.showMessageDialog(this,
                             "Order deleted successfully!" +
                             (status.equals("Completed") ? "\nStock has been restored." :
                              (status.equals("New") || status.equals("In Progress")) ? "\nReservations have been cancelled." : ""),
@@ -428,7 +428,7 @@ public class OrdersPanel extends JPanel {
                     }
                 } catch (SQLException e) {
                     e.printStackTrace();
-                    JOptionPane.showMessageDialog(this,
+                    Dialogs.showMessageDialog(this,
                         "Error while deleting the order: " + e.getMessage(),
                         "Error", JOptionPane.ERROR_MESSAGE);
                 }
@@ -451,7 +451,7 @@ public class OrdersPanel extends JPanel {
         String status = (String)tableModel.getValueAt(modelRow, 3);
 
         if (!canGenerateInvoice(status)) {
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 I18n.tr("Only completed customer orders can be invoiced."),
                 I18n.tr("Generate Invoice"), JOptionPane.WARNING_MESSAGE);
             return;
@@ -464,7 +464,7 @@ public class OrdersPanel extends JPanel {
                 check.setInt(1, orderId);
                 try (ResultSet rs = check.executeQuery()) {
                     if (rs.next()) {
-                        JOptionPane.showMessageDialog(this,
+                        Dialogs.showMessageDialog(this,
                             "This order has already been invoiced as " + rs.getString("number") + ".",
                             "Invoice Already Exists", JOptionPane.WARNING_MESSAGE);
                         return;
@@ -472,13 +472,13 @@ public class OrdersPanel extends JPanel {
                 }
             }
         } catch (SQLException e) {
-            JOptionPane.showMessageDialog(this, "Unable to verify existing invoices: " + e.getMessage(),
+            Dialogs.showMessageDialog(this, "Unable to verify existing invoices: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
             return;
         }
 
         // Confirm with user
-        int result = JOptionPane.showConfirmDialog(this,
+        int result = Dialogs.showConfirmDialog(this,
             "Generate invoice for order from customer: " + customer + "?\n" +
             "Order status: " + status,
             "Confirm Invoice Generation",
@@ -490,14 +490,14 @@ public class OrdersPanel extends JPanel {
         try {
             Order order = loadOrderDetails(orderId);
             if (order == null) {
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Error loading order details",
                     "Error", JOptionPane.ERROR_MESSAGE);
                 return;
             }
 
             if (order.getItems().isEmpty()) {
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Cannot generate invoice: order has no items",
                     "Error", JOptionPane.ERROR_MESSAGE);
                 return;
@@ -594,15 +594,17 @@ public class OrdersPanel extends JPanel {
                     conn.commit();
                 }
 
-                JOptionPane.showMessageDialog(this,
-                    "Invoice " + invoiceNumber + " generated successfully!\n" +
-                    "You can find it in the Invoices panel.",
-                    "Success", JOptionPane.INFORMATION_MESSAGE);
+                Object[] invoiceOptions = { I18n.tr("Go to Invoice"), I18n.tr("Close") };
+                int invoiceAction = Dialogs.showOptionDialog(this,
+                    I18n.format("Invoice {0} generated successfully!", invoiceNumber) + "\n" +
+                    I18n.tr("You can find it in the Invoices panel."),
+                    I18n.tr("Invoice Generated"), JOptionPane.DEFAULT_OPTION,
+                    JOptionPane.INFORMATION_MESSAGE, null, invoiceOptions, invoiceOptions[0]);
 
-                // Refresh invoices panel if available
-                parentWindow = SwingUtilities.getWindowAncestor(this);
-                if (parentWindow instanceof MainWindow) {
-                    ((MainWindow) parentWindow).refreshInvoicesPanel();
+                Window invoiceParentWindow = SwingUtilities.getWindowAncestor(this);
+                if (invoiceParentWindow instanceof MainWindow mainWindow) {
+                    mainWindow.refreshInvoicesPanel();
+                    if (invoiceAction == 0) mainWindow.openInvoice(invoiceNumber);
                 }
 
             } catch (Exception e) {
@@ -624,7 +626,7 @@ public class OrdersPanel extends JPanel {
 
         } catch (Exception e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error generating invoice: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -669,7 +671,7 @@ public class OrdersPanel extends JPanel {
         }
 
         // If we get here, the order was not found
-        JOptionPane.showMessageDialog(this,
+        Dialogs.showMessageDialog(this,
             "Order #" + orderId + " not found in the list.",
             "Order Not Found",
             JOptionPane.INFORMATION_MESSAGE);

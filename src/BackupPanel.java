@@ -183,7 +183,7 @@ public class BackupPanel extends JPanel {
     private int selectedModelRow() {
         int selected = backupsTable.getSelectedRow();
         if (selected < 0) {
-            JOptionPane.showMessageDialog(this, I18n.tr("Please select a backup"),
+            Dialogs.showMessageDialog(this, I18n.tr("Please select a backup"),
                 I18n.tr("No Selection"), JOptionPane.WARNING_MESSAGE);
             return -1;
         }
@@ -195,7 +195,7 @@ public class BackupPanel extends JPanel {
             saveConfigurationValues();
             Path path = backupManager.performBackup();
             loadBackupsList();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 I18n.tr("Backup performed successfully") + "\n" + I18n.tr("Path") + ": " + path,
                 I18n.tr("Backup"), JOptionPane.INFORMATION_MESSAGE);
         } catch (Exception exception) {
@@ -211,7 +211,7 @@ public class BackupPanel extends JPanel {
             if (currency == null) return;
             backupManager.importBackup(selected.toPath(), currency);
             loadBackupsList();
-            JOptionPane.showMessageDialog(this, I18n.tr("Backup imported successfully"),
+            Dialogs.showMessageDialog(this, I18n.tr("Backup imported successfully"),
                 I18n.tr("Import Backup"), JOptionPane.INFORMATION_MESSAGE);
         } catch (Exception exception) {
             showError("Unable to import backup", exception);
@@ -223,11 +223,11 @@ public class BackupPanel extends JPanel {
         if (row < 0) return;
         Path path = Path.of((String) tableModel.getValueAt(row, 4));
         if (!Files.isRegularFile(path)) {
-            JOptionPane.showMessageDialog(this, I18n.tr("Backup file not found"),
+            Dialogs.showMessageDialog(this, I18n.tr("Backup file not found"),
                 I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
             return;
         }
-        if (JOptionPane.showConfirmDialog(this,
+        if (Dialogs.showConfirmDialog(this,
                 I18n.tr("Restoring this backup will replace the current data. " +
                     "All changes made after the backup was created will be lost. Continue?"),
                 I18n.tr("Confirm Restore"), JOptionPane.YES_NO_OPTION,
@@ -236,7 +236,7 @@ public class BackupPanel extends JPanel {
             String currency = DatabaseCurrency.confirmLegacyCurrency(this, path);
             if (currency == null) return;
             backupManager.restoreBackup(path.toString(), currency);
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 I18n.tr("Backup restored successfully.") + "\n" + I18n.tr("WareStat will now close. Reopen it to use the restored database."),
                 I18n.tr("Restore Completed"), JOptionPane.INFORMATION_MESSAGE);
             System.exit(0);
@@ -250,13 +250,13 @@ public class BackupPanel extends JPanel {
         if (row < 0) return;
         String id = (String) tableModel.getValueAt(row, 0);
         Path path = Path.of((String) tableModel.getValueAt(row, 4));
-        if (JOptionPane.showConfirmDialog(this, I18n.tr("Delete the selected backup file and its history entry?"),
+        if (Dialogs.showConfirmDialog(this, I18n.tr("Delete the selected backup file and its history entry?"),
                 I18n.tr("Confirm Deletion"), JOptionPane.YES_NO_OPTION,
                 JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) return;
         try {
             backupManager.deleteBackup(id);
             loadBackupsList();
-            JOptionPane.showMessageDialog(this, I18n.tr("Backup deleted successfully"),
+            Dialogs.showMessageDialog(this, I18n.tr("Backup deleted successfully"),
                 I18n.tr("Success"), JOptionPane.INFORMATION_MESSAGE);
         } catch (Exception exception) {
             showError("Error deleting backup", exception);
@@ -266,7 +266,7 @@ public class BackupPanel extends JPanel {
     private void removeSelectedFromHistory() {
         int row = selectedModelRow();
         if (row < 0) return;
-        if (JOptionPane.showConfirmDialog(this,
+        if (Dialogs.showConfirmDialog(this,
                 I18n.tr("Remove the selected backup from history? " +
                     "The backup file will remain saved at its current path."),
                 I18n.tr("Confirm Removal"), JOptionPane.YES_NO_OPTION,
@@ -287,7 +287,7 @@ public class BackupPanel extends JPanel {
     private void saveConfiguration() {
         try {
             saveConfigurationValues();
-            JOptionPane.showMessageDialog(this, I18n.tr("Configuration saved successfully"),
+            Dialogs.showMessageDialog(this, I18n.tr("Configuration saved successfully"),
                 I18n.tr("Configuration"), JOptionPane.INFORMATION_MESSAGE);
         } catch (Exception exception) {
             showError("Error saving configuration", exception);
@@ -295,7 +295,7 @@ public class BackupPanel extends JPanel {
     }
 
     private void showError(String message, Exception exception) {
-        JOptionPane.showMessageDialog(this, I18n.tr(message) + ": " + exception.getMessage(),
+        Dialogs.showMessageDialog(this, I18n.tr(message) + ": " + exception.getMessage(),
             I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
     }
 

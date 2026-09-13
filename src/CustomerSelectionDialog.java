@@ -169,7 +169,7 @@ public class CustomerSelectionDialog extends JDialog {
             }
         } catch (SQLException e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error loading customers: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -222,7 +222,7 @@ public class CustomerSelectionDialog extends JDialog {
             }
         } catch (SQLException e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error searching customers: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -265,7 +265,7 @@ public class CustomerSelectionDialog extends JDialog {
             customerSelected = true;
             dispose();
         } else {
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Please select a customer from the list",
                 "No Selection", JOptionPane.WARNING_MESSAGE);
         }

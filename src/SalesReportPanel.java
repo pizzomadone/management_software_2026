@@ -198,7 +198,7 @@ public class SalesReportPanel extends JPanel {
 
         } catch (Exception e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error loading the report: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -268,7 +268,7 @@ public class SalesReportPanel extends JPanel {
                 }
             } catch (SQLException e) {
                 e.printStackTrace();
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Error loading the details: " + e.getMessage(),
                     "Error", JOptionPane.ERROR_MESSAGE);
             }
@@ -336,13 +336,13 @@ public class SalesReportPanel extends JPanel {
                 writer.println("Average per Order," + Csv.cell(averageOrderLabel.getText().replace("Average per Order: ", "")));
 
                 Csv.finish(writer);
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Report exported successfully",
                     "Export complete", JOptionPane.INFORMATION_MESSAGE);
 
             } catch (IOException e) {
                 e.printStackTrace();
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Error during export: " + e.getMessage(),
                     "Error", JOptionPane.ERROR_MESSAGE);
             }

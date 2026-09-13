@@ -266,7 +266,7 @@ public class ProductSelectionDialog extends JDialog {
             }
         } catch (SQLException e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error loading products: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -316,7 +316,7 @@ public class ProductSelectionDialog extends JDialog {
             }
         } catch (SQLException e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error searching products: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -447,7 +447,7 @@ public class ProductSelectionDialog extends JDialog {
                     throw new NumberFormatException("VAT rate out of range");
                 }
             } catch (Exception e) {
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     e.getMessage(),
                     "Invalid VAT Rate", JOptionPane.WARNING_MESSAGE);
                 vatRateField.requestFocus();
@@ -457,7 +457,7 @@ public class ProductSelectionDialog extends JDialog {
 
             // Verify availability
             if (selectedProduct.getQuantity() < selectedQuantity) {
-                int result = JOptionPane.showConfirmDialog(this,
+                int result = Dialogs.showConfirmDialog(this,
                     String.format("Warning: Requested quantity (%d) exceeds available stock (%d).\n" +
                                  "Do you want to continue anyway?",
                                  selectedQuantity, selectedProduct.getQuantity()),
@@ -473,7 +473,7 @@ public class ProductSelectionDialog extends JDialog {
             productSelected = true;
             dispose();
         } else {
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Please select a product from the list",
                 "No Selection", JOptionPane.WARNING_MESSAGE);
         }

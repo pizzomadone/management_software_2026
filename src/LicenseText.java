@@ -291,7 +291,7 @@ public class LicenseText {
             textArea.selectAll();
             textArea.copy();
             textArea.setCaretPosition(0);
-            javax.swing.JOptionPane.showMessageDialog(frame,
+            Dialogs.showMessageDialog(frame,
                 "License text copied to clipboard!",
                 "Copied",
                 javax.swing.JOptionPane.INFORMATION_MESSAGE);

@@ -246,7 +246,7 @@ public class OrderDialog extends JDialog {
         CustomerDialog dialog = new CustomerDialog(this, null);
         dialog.setVisible(true);
         if (dialog.isCustomerSaved()) {
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Customer created successfully. Please select it from the list.",
                 "Success", JOptionPane.INFORMATION_MESSAGE);
         }
@@ -272,7 +272,7 @@ public class OrderDialog extends JDialog {
             }
         } catch (SQLException e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error loading products: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -354,7 +354,7 @@ public class OrderDialog extends JDialog {
             for (int i = 0; i < itemsTableModel.getRowCount(); i++) {
                 int existingId = (int) itemsTableModel.getValueAt(i, 0);
                 if (existingId == product.getId()) {
-                    int choice = JOptionPane.showConfirmDialog(this,
+                    int choice = Dialogs.showConfirmDialog(this,
                         "This product is already in the order.\n" +
                         "Do you want to increase the quantity instead?",
                         "Product Already Added",
@@ -386,7 +386,7 @@ public class OrderDialog extends JDialog {
         int selectedRow = itemsTable.getSelectedRow();
         if (selectedRow != -1) {
             String productName = (String) itemsTableModel.getValueAt(selectedRow, 1);
-            int result = JOptionPane.showConfirmDialog(this,
+            int result = Dialogs.showConfirmDialog(this,
                 "Are you sure you want to remove " + productName + " from the order?",
                 "Confirm Removal",
                 JOptionPane.YES_NO_OPTION);
@@ -396,7 +396,7 @@ public class OrderDialog extends JDialog {
                 updateTotals();
             }
         } else {
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Please select a product to remove",
                 "No Selection", JOptionPane.WARNING_MESSAGE);
         }
@@ -479,14 +479,14 @@ public class OrderDialog extends JDialog {
         try {
             validateRows();
             if (selectedCustomer == null) {
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Please select a customer",
                     "Error", JOptionPane.ERROR_MESSAGE);
                 return;
             }
 
             if (itemsTableModel.getRowCount() == 0) {
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Add at least one product to the order",
                     "Error", JOptionPane.ERROR_MESSAGE);
                 return;
@@ -508,14 +508,14 @@ public class OrderDialog extends JDialog {
                 try {
                     java.math.BigDecimal enteredPaid=Numbers.decimal(paidAmountField.getText());
                     if (enteredPaid.signum() < 0) {
-                        JOptionPane.showMessageDialog(this,
+                        Dialogs.showMessageDialog(this,
                             "Paid amount cannot be negative",
                             "Error", JOptionPane.ERROR_MESSAGE);
                         return;
                     }
                     paidAmount = Numbers.money(enteredPaid);
                     if (paidAmount > currentTotal) {
-                        int choice = JOptionPane.showConfirmDialog(this,
+                        int choice = Dialogs.showConfirmDialog(this,
                             I18n.tr("Paid amount exceeds order total. Continue?"),
                             "Warning", JOptionPane.YES_NO_OPTION,
                             JOptionPane.WARNING_MESSAGE);
@@ -524,7 +524,7 @@ public class OrderDialog extends JDialog {
                         }
                     }
                 } catch (IllegalArgumentException ex) {
-                    JOptionPane.showMessageDialog(this,
+                    Dialogs.showMessageDialog(this,
                         "Invalid paid amount. Please enter a valid number.",
                         "Error", JOptionPane.ERROR_MESSAGE);
                     return;
@@ -571,7 +571,7 @@ public class OrderDialog extends JDialog {
                     }
                     message.append("\n").append(I18n.tr("Do you want to proceed anyway?")).append("\n").append(I18n.tr("This will result in negative stock."));
 
-                    int choice = JOptionPane.showConfirmDialog(this,
+                    int choice = Dialogs.showConfirmDialog(this,
                         message.toString(),
                         "Insufficient Stock",
                         JOptionPane.YES_NO_OPTION,
@@ -664,7 +664,7 @@ public class OrderDialog extends JDialog {
 
         } catch (Exception e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error saving the order: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }

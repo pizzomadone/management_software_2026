@@ -162,7 +162,7 @@ public class MultiSupplierOrderDialog extends JDialog {
     private void applyPriceList() {
         try {
             Numbers.commitEdits(table);
-            if(JOptionPane.showConfirmDialog(this,"Replace all entered unit prices with the current price list for this date and these quantities?","Apply Price List",JOptionPane.YES_NO_OPTION)!=JOptionPane.YES_OPTION)return;
+            if(Dialogs.showConfirmDialog(this,"Replace all entered unit prices with the current price list for this date and these quantities?","Apply Price List",JOptionPane.YES_NO_OPTION)!=JOptionPane.YES_OPTION)return;
             java.util.Date date=DateUtils.parseDate(orderDate.getText(),dateFormat);
             Connection c=DatabaseManager.getInstance().getConnection();double[] prices=new double[model.getRowCount()];
             for(int i=0;i<prices.length;i++)prices[i]=SupplierPricing.price(c,((Number)model.getValueAt(i,3)).intValue(),((Number)model.getValueAt(i,0)).intValue(),Numbers.positiveQuantity(model.getValueAt(i,5)),date);
@@ -225,7 +225,7 @@ public class MultiSupplierOrderDialog extends JDialog {
         }
         summary.append("Grand total: ").append(SettingsPanel.formatCurrency(grandTotal));
         JTextArea area = new JTextArea(summary.toString(), 12, 48); area.setEditable(false); area.setOpaque(false);
-        int answer = JOptionPane.showConfirmDialog(this, new JScrollPane(area), "Confirm Supplier Order Split", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
+        int answer = Dialogs.showConfirmDialog(this, new JScrollPane(area), "Confirm Supplier Order Split", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
         if (answer != JOptionPane.OK_OPTION) return;
         saveGroups(groups, date, expected);
     }
@@ -272,7 +272,7 @@ public class MultiSupplierOrderDialog extends JDialog {
 
     private int parseInt(Object value) { return Numbers.positiveQuantity(value); }
     private double parseDouble(Object value) { return Numbers.nonNegative(value); }
-    private void showWarning(Component parent, String message) { JOptionPane.showMessageDialog(parent, message, "Warning", JOptionPane.WARNING_MESSAGE); }
-    private void showError(Component parent, String message) { JOptionPane.showMessageDialog(parent, message, "Error", JOptionPane.ERROR_MESSAGE); }
+    private void showWarning(Component parent, String message) { Dialogs.showMessageDialog(parent, message, "Warning", JOptionPane.WARNING_MESSAGE); }
+    private void showError(Component parent, String message) { Dialogs.showMessageDialog(parent, message, "Error", JOptionPane.ERROR_MESSAGE); }
     public boolean isSaved() { return saved; }
 }

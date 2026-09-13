@@ -319,7 +319,7 @@ public class ProductDialog extends JDialog {
         SupplierDialog dialog = new SupplierDialog(this, null);
         dialog.setVisible(true);
         if (dialog.isSupplierSaved()) {
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Supplier created successfully. Please select it from the list.",
                 "Success", JOptionPane.INFORMATION_MESSAGE);
         }
@@ -350,7 +350,7 @@ public class ProductDialog extends JDialog {
             double vatRate = Numbers.vat(vatRateField.getText());
 
             if (code.isEmpty() || name.isEmpty()) {
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Code and Name fields are required",
                     "Error", JOptionPane.ERROR_MESSAGE);
                 return;
@@ -459,11 +459,11 @@ public class ProductDialog extends JDialog {
             dispose();
 
         } catch (IllegalArgumentException | java.text.ParseException e) {
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         } catch (Exception e) {
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error while saving product: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }

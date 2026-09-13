@@ -166,7 +166,7 @@ public class InvoicesPanel extends JPanel {
             }
         } catch (Exception e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error while loading invoices: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -235,7 +235,7 @@ public class InvoicesPanel extends JPanel {
             }
         } catch (Exception e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error while searching for invoices: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -258,7 +258,7 @@ public class InvoicesPanel extends JPanel {
             }
         } catch (Exception e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error while creating the invoice: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -289,7 +289,7 @@ public class InvoicesPanel extends JPanel {
                 }
             } catch (Exception e) {
                 e.printStackTrace();
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Error while modifying the invoice: " + e.getMessage(),
                     "Error", JOptionPane.ERROR_MESSAGE);
             }
@@ -319,14 +319,14 @@ public class InvoicesPanel extends JPanel {
                     }
 
                 } else {
-                    JOptionPane.showMessageDialog(this,
+                    Dialogs.showMessageDialog(this,
                         "Unable to load invoice or customer data",
                         "Error", JOptionPane.ERROR_MESSAGE);
                 }
             } catch (Exception e) {
                 e.printStackTrace();
                 setCursor(Cursor.getDefaultCursor());
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Error generating PDF: " + e.getMessage(),
                     "Error", JOptionPane.ERROR_MESSAGE);
             }
@@ -417,12 +417,12 @@ public class InvoicesPanel extends JPanel {
             String customer = (String)tableModel.getValueAt(modelRow, 2);
             String status = (String)tableModel.getValueAt(modelRow, 6);
         if (InvoiceDialog.isFinalizedStatus(status)) {
-            JOptionPane.showMessageDialog(this,I18n.tr("Issued, Paid and Canceled invoices are historical documents. Only their status can be changed."),I18n.tr("Historical Invoice"),JOptionPane.WARNING_MESSAGE);
+            Dialogs.showMessageDialog(this,I18n.tr("Issued, Paid and Canceled invoices are historical documents. Only their status can be changed."),I18n.tr("Historical Invoice"),JOptionPane.WARNING_MESSAGE);
             return;
         }
 
 
-            int result = JOptionPane.showConfirmDialog(this,
+            int result = Dialogs.showConfirmDialog(this,
                 "Are you sure you want to delete invoice " + number + " from customer " + customer + "?\n" +
                 "Status: " + status,
                 "Confirm Deletion",
@@ -465,7 +465,7 @@ public class InvoicesPanel extends JPanel {
                         conn.commit();
                         loadInvoices();
 
-                        JOptionPane.showMessageDialog(this,
+                        Dialogs.showMessageDialog(this,
                             "Invoice deleted successfully!",
                             "Success", JOptionPane.INFORMATION_MESSAGE);
 
@@ -478,13 +478,26 @@ public class InvoicesPanel extends JPanel {
 
                 } catch (SQLException e) {
                     e.printStackTrace();
-                    JOptionPane.showMessageDialog(this,
+                    Dialogs.showMessageDialog(this,
                         "Error while deleting the invoice: " + e.getMessage(),
                         "Error", JOptionPane.ERROR_MESSAGE);
                 }
             }
         }
     }
+    public void selectInvoiceByNumber(String number) {
+        if (number == null) return;
+        for (int modelRow = 0; modelRow < tableModel.getRowCount(); modelRow++) {
+            if (!number.equals(String.valueOf(tableModel.getValueAt(modelRow, 0)))) continue;
+            int viewRow = invoicesTable.convertRowIndexToView(modelRow);
+            if (viewRow >= 0) {
+                invoicesTable.setRowSelectionInterval(viewRow, viewRow);
+                invoicesTable.scrollRectToVisible(invoicesTable.getCellRect(viewRow, 0, true));
+            }
+            return;
+        }
+    }
+
     private String snapshotCustomerName(Connection c,int invoiceId) throws SQLException {
         try(PreparedStatement p=c.prepareStatement("SELECT customer_snapshot FROM invoices WHERE id=?")) {
             p.setInt(1,invoiceId);try(ResultSet r=p.executeQuery()) {

@@ -264,7 +264,7 @@ public class BackupManager {
                     try { get(); }
                     catch (Exception e) {
                         retryAfter = System.currentTimeMillis() + 3600000L;
-                        JOptionPane.showMessageDialog(null, I18n.tr("Automatic backup failed") + ": " + e.getMessage(),
+                        Dialogs.showMessageDialog(null, I18n.tr("Automatic backup failed") + ": " + e.getMessage(),
                             I18n.tr("Backup"), JOptionPane.ERROR_MESSAGE);
                     }
                 }

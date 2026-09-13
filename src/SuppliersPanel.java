@@ -142,7 +142,7 @@ public class SuppliersPanel extends JPanel {
             }
         } catch (SQLException e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error loading suppliers: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -187,7 +187,7 @@ public class SuppliersPanel extends JPanel {
             }
         } catch (SQLException e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error searching for suppliers: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -265,7 +265,7 @@ public class SuppliersPanel extends JPanel {
                     message.append("- Delete all: supplier orders and price lists are permanently deleted; stock received from completed orders is reversed and related movements are deleted.");
 
                     String[] options = {"Keep Supplier and Records", "Delete Supplier and All Related Data"};
-                    int choice = JOptionPane.showOptionDialog(this,
+                    int choice = Dialogs.showOptionDialog(this,
                         message.toString(),
                         "Cannot Delete Supplier",
                         JOptionPane.YES_NO_OPTION,
@@ -279,7 +279,7 @@ public class SuppliersPanel extends JPanel {
                 }
 
                 // Safe to delete - no foreign key references
-                int result = JOptionPane.showConfirmDialog(this,
+                int result = Dialogs.showConfirmDialog(this,
                     "Are you sure you want to delete supplier '" + name + "'?",
                     "Confirm Deletion",
                     JOptionPane.YES_NO_OPTION,
@@ -292,7 +292,7 @@ public class SuppliersPanel extends JPanel {
                         pstmt.executeUpdate();
                         loadSuppliers();
 
-                        JOptionPane.showMessageDialog(this,
+                        Dialogs.showMessageDialog(this,
                             "Supplier deleted successfully",
                             "Success",
                             JOptionPane.INFORMATION_MESSAGE);
@@ -300,7 +300,7 @@ public class SuppliersPanel extends JPanel {
                 }
             } catch (SQLException e) {
                 e.printStackTrace();
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Error deleting supplier: " + e.getMessage(),
                     "Error", JOptionPane.ERROR_MESSAGE);
             }
@@ -308,7 +308,7 @@ public class SuppliersPanel extends JPanel {
     }
 
     private void performCascadeDelete(Connection conn, int id, String name) {
-        int confirmResult = JOptionPane.showConfirmDialog(this,
+        int confirmResult = Dialogs.showConfirmDialog(this,
             "WARNING: This will permanently delete supplier '" + name + "' and ALL related data:\n" +
             "- All orders from this supplier\n" +
             "- All price list entries\n" +
@@ -397,7 +397,7 @@ public class SuppliersPanel extends JPanel {
                 conn.commit();
                 loadSuppliers();
 
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Supplier '" + name + "' and all related records deleted successfully",
                     "Force Delete Completed",
                     JOptionPane.INFORMATION_MESSAGE);
@@ -411,7 +411,7 @@ public class SuppliersPanel extends JPanel {
 
         } catch (SQLException e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error during force delete: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }

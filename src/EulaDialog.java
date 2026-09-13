@@ -85,7 +85,7 @@ public class EulaDialog extends JDialog {
         declineButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                int result = JOptionPane.showConfirmDialog(
+                int result = Dialogs.showConfirmDialog(
                     EulaDialog.this,
                     "You must accept the license agreement to use this software.\n" +
                     "Do you want to exit the application?",

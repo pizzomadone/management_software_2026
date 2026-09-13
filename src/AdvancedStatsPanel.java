@@ -136,7 +136,7 @@ public class AdvancedStatsPanel extends JPanel {
 
         } catch (SQLException e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error loading sales data: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -294,7 +294,7 @@ public class AdvancedStatsPanel extends JPanel {
 
         } catch (SQLException e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error loading product data: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }

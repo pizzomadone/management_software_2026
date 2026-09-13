@@ -1,6 +1,8 @@
 import ca.weblite.webview.swing.WebViewComponent;
 import javax.swing.*;
 import java.awt.*;
+import java.util.ArrayList;
+import java.util.List;
 
 /** Swing wrapper around the native WebView supplied by webview-1.0.10. */
 public final class SwingWebView extends JPanel {
@@ -8,12 +10,18 @@ public final class SwingWebView extends JPanel {
         void changed(boolean canGoBack, boolean canGoForward, boolean loading);
     }
 
+    private enum NavigationDirection { NONE, BACK, FORWARD }
+
     private final WebViewComponent webView;
     private final NavigationListener navigationListener;
     private final Timer stateTimer;
     private final Timer loadingTimeoutTimer;
+    private final List<String> history = new ArrayList<>();
     private boolean stateRequestPending;
     private int statePollAttempts;
+    private int historyIndex = -1;
+    private NavigationDirection pendingNavigation = NavigationDirection.NONE;
+    private int pendingNavigationPolls;
 
     public SwingWebView(String url, String userAgent, NavigationListener navigationListener,
             java.util.function.Consumer<String> failureListener) {
@@ -26,10 +34,8 @@ public final class SwingWebView extends JPanel {
         webView.eval("window.wareStatUserAgent = " + javascriptString(userAgent) + ";");
         webView.setUrl(url);
         stateTimer = new Timer(350, event -> pollDocumentState(failureListener));
-        loadingTimeoutTimer = new Timer(8_000, event -> {
-            navigationListener.changed(false, false, false);
-            stateTimer.stop();
-        });
+        loadingTimeoutTimer = new Timer(8_000, event ->
+            navigationListener.changed(canGoBack(), canGoForward(), false));
         loadingTimeoutTimer.setRepeats(false);
         stateTimer.start();
         loadingTimeoutTimer.start();
@@ -40,30 +46,63 @@ public final class SwingWebView extends JPanel {
         // This also prevents background cards from producing false startup errors.
         if (!webView.isShowing() || stateRequestPending) return;
         stateRequestPending = true;
-        webView.evalAsync("document.readyState + '|' + (window.navigation ? navigation.canGoBack : false) + '|' + (window.navigation ? navigation.canGoForward : false)").whenComplete((state, error) ->
+        webView.evalAsync("return document.readyState + '|' + location.href;").whenComplete((state, error) ->
             SwingUtilities.invokeLater(() -> {
                 stateRequestPending = false;
                 if (error == null) {
-                    String[] parts = state == null ? new String[0] : state.replace("\"", "").split("\\|");
+                    String[] parts = state == null ? new String[0] : state.replace("\"", "").split("\\|", 2);
                     boolean loading = parts.length == 0 || !isDocumentReady(parts[0]);
-                    navigationListener.changed(parts.length > 1 && Boolean.parseBoolean(parts[1]),
-                        parts.length > 2 && Boolean.parseBoolean(parts[2]), loading);
-                    if (!loading) {
-                        loadingTimeoutTimer.stop();
-                    }
+                    if (parts.length > 1) updateHistory(parts[1]);
+                    navigationListener.changed(canGoBack(), canGoForward(), loading);
+                    if (!loading) loadingTimeoutTimer.stop();
                 } else if (webView.isShowing() && !isNotDisplayedError(error)) {
                     failureListener.accept("SwingWebView error: " + error.getMessage());
                 }
                 statePollAttempts++;
                 // A remote page may keep document.readyState incomplete because
-                // of a slow third-party resource. Do not leave a permanent
-                // "Loading..." message once the page has had time to render.
+                // of a slow third-party resource. Clear the loading indication,
+                // but keep polling so browser history remains functional.
                 if (statePollAttempts >= 30 && loadingTimeoutTimer.isRunning()) {
-                    navigationListener.changed(false, false, false);
-                    stateTimer.stop();
+                    navigationListener.changed(canGoBack(), canGoForward(), false);
                     loadingTimeoutTimer.stop();
                 }
             }));
+    }
+
+    private void updateHistory(String currentUrl) {
+        if (currentUrl == null || currentUrl.isBlank()) return;
+
+        if (historyIndex >= 0 && currentUrl.equals(history.get(historyIndex))) {
+            if (pendingNavigation != NavigationDirection.NONE && ++pendingNavigationPolls >= 20) {
+                pendingNavigation = NavigationDirection.NONE;
+                pendingNavigationPolls = 0;
+            }
+            return;
+        }
+
+        if (pendingNavigation == NavigationDirection.BACK && historyIndex > 0) {
+            historyIndex--;
+            if (!currentUrl.equals(history.get(historyIndex))) history.set(historyIndex, currentUrl);
+        } else if (pendingNavigation == NavigationDirection.FORWARD &&
+                historyIndex >= 0 && historyIndex < history.size() - 1) {
+            historyIndex++;
+            if (!currentUrl.equals(history.get(historyIndex))) history.set(historyIndex, currentUrl);
+        } else {
+            while (history.size() > historyIndex + 1) history.remove(history.size() - 1);
+            history.add(currentUrl);
+            historyIndex = history.size() - 1;
+        }
+
+        pendingNavigation = NavigationDirection.NONE;
+        pendingNavigationPolls = 0;
+    }
+
+    private boolean canGoBack() {
+        return historyIndex > 0;
+    }
+
+    private boolean canGoForward() {
+        return historyIndex >= 0 && historyIndex < history.size() - 1;
     }
 
     private static boolean isNotDisplayedError(Throwable error) {
@@ -74,11 +113,31 @@ public final class SwingWebView extends JPanel {
         return false;
     }
 
-    public void goBack() { webView.eval("if (window.navigation && navigation.canGoBack) navigation.back()"); }
-    public void goForward() { webView.eval("if (window.navigation && navigation.canGoForward) navigation.forward()"); }
+    public void goBack() {
+        if (!canGoBack()) return;
+        pendingNavigation = NavigationDirection.BACK;
+        pendingNavigationPolls = 0;
+        statePollAttempts = 0;
+        navigationListener.changed(canGoBack(), canGoForward(), true);
+        webView.eval("history.back()");
+        stateTimer.restart();
+        loadingTimeoutTimer.restart();
+    }
+
+    public void goForward() {
+        if (!canGoForward()) return;
+        pendingNavigation = NavigationDirection.FORWARD;
+        pendingNavigationPolls = 0;
+        statePollAttempts = 0;
+        navigationListener.changed(canGoBack(), canGoForward(), true);
+        webView.eval("history.forward()");
+        stateTimer.restart();
+        loadingTimeoutTimer.restart();
+    }
+
     public void reload() {
         statePollAttempts = 0;
-        navigationListener.changed(false, false, true);
+        navigationListener.changed(canGoBack(), canGoForward(), true);
         webView.eval("location.reload()");
         stateTimer.restart();
         loadingTimeoutTimer.restart();

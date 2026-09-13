@@ -300,7 +300,7 @@ public class InvoiceDialog extends JDialog {
                 } catch (NumberFormatException e) {
                     super.setValueAt(value, row, col);
                     SwingUtilities.invokeLater(() -> {
-                        JOptionPane.showMessageDialog(InvoiceDialog.this,
+                        Dialogs.showMessageDialog(InvoiceDialog.this,
                             "Invalid quantity. Please enter a positive integer.",
                             "Invalid Input", JOptionPane.WARNING_MESSAGE);
                     });
@@ -323,7 +323,7 @@ public class InvoiceDialog extends JDialog {
                     }
                     return super.stopCellEditing();
                 } catch (NumberFormatException e) {
-                    JOptionPane.showMessageDialog(InvoiceDialog.this,
+                    Dialogs.showMessageDialog(InvoiceDialog.this,
                         "Please enter a valid positive integer for quantity",
                         "Invalid Input", JOptionPane.ERROR_MESSAGE);
                     return false;
@@ -363,7 +363,7 @@ public class InvoiceDialog extends JDialog {
         CustomerDialog dialog = new CustomerDialog(this, null);
         dialog.setVisible(true);
         if (dialog.isCustomerSaved()) {
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Customer created successfully. Please select it from the list.",
                 "Success", JOptionPane.INFORMATION_MESSAGE);
         }
@@ -383,7 +383,7 @@ public class InvoiceDialog extends JDialog {
             for (int i = 0; i < itemsTableModel.getRowCount(); i++) {
                 String existingCode = (String) itemsTableModel.getValueAt(i, 0);
                 if (existingCode.equals(product.getCode())) {
-                    int choice = JOptionPane.showConfirmDialog(this,
+                    int choice = Dialogs.showConfirmDialog(this,
                         "This product is already in the invoice.\n" +
                         "Do you want to increase the quantity instead?",
                         "Product Already Added",
@@ -417,7 +417,7 @@ public class InvoiceDialog extends JDialog {
         if(blockHistoricalCurrencyEdit()) return;
         int selectedRow = itemsTable.getSelectedRow();
         if (selectedRow == -1) {
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Please select a product to edit",
                 "No Selection", JOptionPane.WARNING_MESSAGE);
             return;
@@ -426,7 +426,7 @@ public class InvoiceDialog extends JDialog {
         String productName = (String) itemsTableModel.getValueAt(selectedRow, 1);
         int currentQuantity = parseInteger(itemsTableModel.getValueAt(selectedRow, 2));
 
-        String input = JOptionPane.showInputDialog(this,
+        String input = Dialogs.showInputDialog(this,
             "Enter new quantity for " + productName + ":",
             "Edit Quantity",
             JOptionPane.QUESTION_MESSAGE);
@@ -435,7 +435,7 @@ public class InvoiceDialog extends JDialog {
             try {
                 int newQuantity = Integer.parseInt(input.trim());
                 if (newQuantity <= 0) {
-                    JOptionPane.showMessageDialog(this,
+                    Dialogs.showMessageDialog(this,
                         "Quantity must be greater than zero",
                         "Invalid Input", JOptionPane.ERROR_MESSAGE);
                     return;
@@ -445,7 +445,7 @@ public class InvoiceDialog extends JDialog {
                 updateTotals();
 
             } catch (NumberFormatException e) {
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Please enter a valid number",
                     "Invalid Input", JOptionPane.ERROR_MESSAGE);
             }
@@ -457,7 +457,7 @@ public class InvoiceDialog extends JDialog {
         int selectedRow = itemsTable.getSelectedRow();
         if (selectedRow != -1) {
             String productName = (String) itemsTableModel.getValueAt(selectedRow, 1);
-            int result = JOptionPane.showConfirmDialog(this,
+            int result = Dialogs.showConfirmDialog(this,
                 "Are you sure you want to remove " + productName + " from the invoice?",
                 "Confirm Removal",
                 JOptionPane.YES_NO_OPTION);
@@ -467,7 +467,7 @@ public class InvoiceDialog extends JDialog {
                 updateTotals();
             }
         } else {
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Please select a product to remove",
                 "No Selection", JOptionPane.WARNING_MESSAGE);
         }
@@ -493,7 +493,7 @@ public class InvoiceDialog extends JDialog {
             }
         } catch (SQLException e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error while loading products: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -555,7 +555,7 @@ public class InvoiceDialog extends JDialog {
             ? I18n.tr("This historical invoice uses {OLD}. The current operating currency is {NEW}. Only its status can be changed.")
                 .replace("{OLD}",currencyCode()).replace("{NEW}",SettingsPanel.getCurrencyCode())
             : I18n.tr("Issued, Paid and Canceled invoices are historical documents. Only their status can be changed.");
-        JOptionPane.showMessageDialog(this,message,
+        Dialogs.showMessageDialog(this,message,
             I18n.tr("Historical Invoice"),JOptionPane.INFORMATION_MESSAGE);
         return true;
     }
@@ -563,7 +563,7 @@ public class InvoiceDialog extends JDialog {
     private void saveHistoricalStatusOnly() {
         String newStatus=(String)statusCombo.getSelectedItem();
         if("Draft".equals(newStatus)) {
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 I18n.tr("A finalized invoice cannot be returned to Draft."),
                 I18n.tr("Historical Invoice"),JOptionPane.WARNING_MESSAGE);
             return;
@@ -581,7 +581,7 @@ public class InvoiceDialog extends JDialog {
             } finally {conn.setAutoCommit(true);}
         } catch(Exception e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 I18n.tr("Error while saving the invoice")+": "+e.getMessage(),
                 I18n.tr("Error"),JOptionPane.ERROR_MESSAGE);
         }
@@ -676,14 +676,14 @@ public class InvoiceDialog extends JDialog {
             validateRows();
             // Validation
             if (selectedCustomer == null) {
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Please select a customer",
                     "Error", JOptionPane.ERROR_MESSAGE);
                 return;
             }
 
             if (itemsTableModel.getRowCount() == 0) {
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Please add at least one product to the invoice",
                     "Error", JOptionPane.ERROR_MESSAGE);
                 return;
@@ -694,7 +694,7 @@ public class InvoiceDialog extends JDialog {
                 invoiceDate = DateUtils.parseDate(dateField.getText(), dateFormat);
                 if (invoiceDate == null) throw new ParseException("Date is required",0);
             } catch (ParseException e) {
-                JOptionPane.showMessageDialog(this,
+                Dialogs.showMessageDialog(this,
                     "Invalid date format. Use dd/MM/yyyy",
                     "Error", JOptionPane.ERROR_MESSAGE);
                 return;
@@ -793,7 +793,7 @@ public class InvoiceDialog extends JDialog {
 
         } catch (Exception e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
+            Dialogs.showMessageDialog(this,
                 "Error while saving the invoice: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
         }
