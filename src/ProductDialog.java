@@ -266,7 +266,7 @@ public class ProductDialog extends JDialog {
         order.add(left); order.add(right);
         controls.add(order);
 
-        JButton delete = new JButton("Delete Photo");
+        JButton delete = new JButton(I18n.tr("Delete Photo"));
         delete.addActionListener(e -> runPhotoAction(() ->
             ProductImageStore.getInstance().deleteImage(image.productId(), image.id())));
         controls.add(delete);
@@ -306,7 +306,7 @@ public class ProductDialog extends JDialog {
         order.add(left); order.add(right);
         controls.add(order);
 
-        JButton delete = new JButton("Delete Photo");
+        JButton delete = new JButton(I18n.tr("Delete Photo"));
         delete.addActionListener(e -> {
             pendingPhotos().remove(filename);
             ProductImageStore.getInstance().deleteFiles(filename);
