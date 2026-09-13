@@ -1,11 +1,9 @@
 name: Currency and regression audit
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - fix/macos-filechooser-i18n
-      - feature/product-images-backup
 
 jobs:
   test:
