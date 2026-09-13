@@ -1,6 +1,7 @@
 name: Currency and regression audit
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - fix/macos-filechooser-i18n
