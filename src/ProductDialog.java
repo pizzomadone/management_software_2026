@@ -178,7 +178,7 @@ public class ProductDialog extends JDialog {
         gbc.gridx = 0; gbc.gridy = 15; gbc.gridwidth = 3; gbc.weightx = 1;
         photosPanel = new JPanel();
         photosPanel.setLayout(new BoxLayout(photosPanel, BoxLayout.Y_AXIS));
-        photosPanel.setBorder(BorderFactory.createTitledBorder("Photos"));
+        photosPanel.setBorder(BorderFactory.createTitledBorder(I18n.tr("Photos")));
         formPanel.add(photosPanel, gbc);
         gbc.gridwidth = 1;
 
@@ -217,20 +217,21 @@ public class ProductDialog extends JDialog {
                 gallery.add(pendingPhotoCard(pending.get(i), i, pending.size()));
             }
 
-            if (existing.isEmpty() && pending.isEmpty()) gallery.add(new JLabel("No photos"));
+            if (existing.isEmpty() && pending.isEmpty()) gallery.add(new JLabel(I18n.tr("No photos")));
             photosPanel.add(gallery);
 
             int count = existing.size() + pending.size();
             JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT));
-            JButton addPhoto = new JButton("Add Photo");
+            JButton addPhoto = new JButton(I18n.tr("Add Photo"));
             addPhoto.setEnabled(count < ProductImageStore.MAX_IMAGES_PER_PRODUCT);
             addPhoto.addActionListener(e -> addPhoto());
             actions.add(addPhoto);
             actions.add(new JLabel(count + "/" + ProductImageStore.MAX_IMAGES_PER_PRODUCT));
             photosPanel.add(actions);
         } catch (Exception e) {
-            photosPanel.add(new JLabel("Unable to load product photos"));
+            photosPanel.add(new JLabel(I18n.tr("Unable to load product photos")));
         }
+        I18n.localize(photosPanel);
         photosPanel.revalidate();
         photosPanel.repaint();
     }
@@ -245,7 +246,7 @@ public class ProductDialog extends JDialog {
         card.add(preview, BorderLayout.CENTER);
 
         JPanel controls = new JPanel(new GridLayout(0, 1, 2, 2));
-        JButton primary = new JButton(image.primary() ? "Primary" : "Set as Primary");
+        JButton primary = new JButton(I18n.tr(image.primary() ? "Primary" : "Set as Primary"));
         primary.setEnabled(!image.primary());
         primary.addActionListener(e -> runPhotoAction(() ->
             ProductImageStore.getInstance().setPrimary(image.productId(), image.id())));
@@ -254,8 +255,8 @@ public class ProductDialog extends JDialog {
         JPanel order = new JPanel(new FlowLayout(FlowLayout.CENTER, 2, 0));
         JButton left = new JButton("←");
         JButton right = new JButton("→");
-        left.setToolTipText("Move Left");
-        right.setToolTipText("Move Right");
+        left.setToolTipText(I18n.tr("Move Left"));
+        right.setToolTipText(I18n.tr("Move Right"));
         left.setEnabled(index > 0);
         right.setEnabled(index < total - 1);
         left.addActionListener(e -> runPhotoAction(() ->
@@ -285,7 +286,7 @@ public class ProductDialog extends JDialog {
         JPanel controls = new JPanel(new GridLayout(0, 1, 2, 2));
         boolean primary = filename.equals(pendingPrimaryFilename) ||
             (pendingPrimaryFilename == null && index == 0);
-        JButton makePrimary = new JButton(primary ? "Primary" : "Set as Primary");
+        JButton makePrimary = new JButton(I18n.tr(primary ? "Primary" : "Set as Primary"));
         makePrimary.setEnabled(!primary);
         makePrimary.addActionListener(e -> {
             pendingPrimaryFilename = filename;

@@ -66,7 +66,7 @@ public class BackupPanel extends JPanel {
         configPanel.add(retentionSpinner, gbc);
 
         gbc.gridx = 0; gbc.gridy = 4; gbc.gridwidth = 3; gbc.fill = GridBagConstraints.HORIZONTAL;
-        JLabel autoInfo = new JLabel("Automatic backups include the database and product photos.");
+        JLabel autoInfo = new JLabel(I18n.tr("Automatic backups include the database and product photos."));
         autoInfo.setFont(autoInfo.getFont().deriveFont(Font.PLAIN, autoInfo.getFont().getSize2D() - 1f));
         configPanel.add(autoInfo, gbc);
         gbc.gridwidth = 1;
@@ -207,10 +207,10 @@ public class BackupPanel extends JPanel {
             I18n.tr("Database only"),
             I18n.tr("Cancel")
         };
-        int choice = JOptionPane.showOptionDialog(
+        int choice = Dialogs.showOptionDialog(
             this,
-            I18n.tr("Choose what to include in this backup."),
-            I18n.tr("Backup type"),
+            "Choose what to include in this backup.",
+            "Backup type",
             JOptionPane.DEFAULT_OPTION,
             JOptionPane.QUESTION_MESSAGE,
             null,
@@ -329,7 +329,9 @@ public class BackupPanel extends JPanel {
     }
 
     private void showError(String message, Exception exception) {
-        Dialogs.showMessageDialog(this, I18n.tr(message) + ": " + exception.getMessage(),
+        String detail = exception.getMessage() == null ? "" : I18n.tr(exception.getMessage());
+        Dialogs.showMessageDialog(this,
+            I18n.tr(message) + (detail.isBlank() ? "" : ": " + detail),
             I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
     }
 
