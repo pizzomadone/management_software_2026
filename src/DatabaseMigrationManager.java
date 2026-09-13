@@ -30,7 +30,9 @@ public final class DatabaseMigrationManager {
             DatabaseMigrationManager::migrateInvoiceSnapshots),
         new Migration("009", "Validate numeric domains consistently in every module", DatabaseIntegrity::installGuards),
         new Migration("010", "Store minimum quantity only with warehouse reorder settings",
-            DatabaseMigrationManager::normalizeStockThresholds)
+            DatabaseMigrationManager::normalizeStockThresholds),
+        new Migration("011", "Add product image metadata and constraints",
+            DatabaseMigrationManager::migrateProductImages)
     );
 
     private DatabaseMigrationManager() {}
@@ -182,6 +184,37 @@ public final class DatabaseMigrationManager {
                 WHERE NOT EXISTS (SELECT 1 FROM minimum_stock sm WHERE sm.product_id=p.id)
                 """);
             s.execute("ALTER TABLE products DROP COLUMN minimum_quantity");
+        }
+    }
+
+    private static void migrateProductImages(Connection c) throws SQLException {
+        try (Statement s = c.createStatement()) {
+            s.execute("""
+                CREATE TABLE IF NOT EXISTS product_images (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    product_id INTEGER NOT NULL,
+                    filename TEXT NOT NULL,
+                    is_primary INTEGER NOT NULL DEFAULT 0 CHECK(is_primary IN (0,1)),
+                    sort_order INTEGER NOT NULL DEFAULT 0 CHECK(sort_order >= 0),
+                    FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE CASCADE
+                )
+            """);
+            s.execute("CREATE INDEX IF NOT EXISTS idx_product_images_product_id ON product_images(product_id)");
+            s.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_product_images_one_primary " +
+                "ON product_images(product_id) WHERE is_primary=1");
+            s.execute("""
+                CREATE TRIGGER IF NOT EXISTS product_images_max_three
+                BEFORE INSERT ON product_images
+                WHEN (SELECT COUNT(*) FROM product_images WHERE product_id=NEW.product_id) >= 3
+                BEGIN SELECT RAISE(ABORT,'Maximum three product images'); END
+            """);
+            s.execute("""
+                CREATE TRIGGER IF NOT EXISTS product_images_max_three_update
+                BEFORE UPDATE OF product_id ON product_images
+                WHEN NEW.product_id<>OLD.product_id
+                 AND (SELECT COUNT(*) FROM product_images WHERE product_id=NEW.product_id) >= 3
+                BEGIN SELECT RAISE(ABORT,'Maximum three product images'); END
+            """);
         }
     }
 
