@@ -65,6 +65,12 @@ public class BackupPanel extends JPanel {
         configureCompactSpinner(retentionSpinner);
         configPanel.add(retentionSpinner, gbc);
 
+        gbc.gridx = 0; gbc.gridy = 4; gbc.gridwidth = 3; gbc.fill = GridBagConstraints.HORIZONTAL;
+        JLabel autoInfo = new JLabel("Automatic backups include the database and product photos.");
+        autoInfo.setFont(autoInfo.getFont().deriveFont(Font.PLAIN, autoInfo.getFont().getSize2D() - 1f));
+        configPanel.add(autoInfo, gbc);
+        gbc.gridwidth = 1;
+
         String[] columns = {"Registry ID", "Date", "File Name", "Size", "Path", "Status"};
         tableModel = new DefaultTableModel(columns, 0) {
             @Override public boolean isCellEditable(int row, int column) { return false; }
@@ -145,7 +151,10 @@ public class BackupPanel extends JPanel {
     private File chooseBackupFile() {
         if (isMac()) {
             FileDialog dialog = new FileDialog(ownerFrame(), I18n.tr("Import Backup"), FileDialog.LOAD);
-            dialog.setFilenameFilter((directory, name) -> name.toLowerCase().endsWith(".db"));
+            dialog.setFilenameFilter((directory, name) -> {
+                String lower = name.toLowerCase(java.util.Locale.ROOT);
+                return lower.endsWith(".db") || lower.endsWith(".wsbu");
+            });
             dialog.setVisible(true);
             try {
                 return dialog.getFile() == null ? null : new File(dialog.getDirectory(), dialog.getFile());
@@ -153,7 +162,9 @@ public class BackupPanel extends JPanel {
         }
         JFileChooser chooser = new JFileChooser();
         chooser.setDialogTitle(I18n.tr("Import Backup"));
-        chooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("SQLite (*.db)", "db"));
+        chooser.setAcceptAllFileFilterUsed(false);
+        chooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
+            I18n.tr("WareStat backups (*.wsbu, *.db)"), "wsbu", "db"));
         return chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION ? chooser.getSelectedFile() : null;
     }
 
@@ -191,9 +202,26 @@ public class BackupPanel extends JPanel {
     }
 
     private void performBackup() {
+        Object[] options = {
+            I18n.tr("Complete backup"),
+            I18n.tr("Database only"),
+            I18n.tr("Cancel")
+        };
+        int choice = JOptionPane.showOptionDialog(
+            this,
+            I18n.tr("Choose what to include in this backup."),
+            I18n.tr("Backup type"),
+            JOptionPane.DEFAULT_OPTION,
+            JOptionPane.QUESTION_MESSAGE,
+            null,
+            options,
+            options[0]
+        );
+        if (choice != 0 && choice != 1) return;
+
         try {
             saveConfigurationValues();
-            Path path = backupManager.performBackup();
+            Path path = backupManager.performBackup(choice == 0);
             loadBackupsList();
             Dialogs.showMessageDialog(this,
                 I18n.tr("Backup performed successfully") + "\n" + I18n.tr("Path") + ": " + path,
@@ -207,8 +235,11 @@ public class BackupPanel extends JPanel {
         File selected = chooseBackupFile();
         if (selected == null) return;
         try {
-            String currency = DatabaseCurrency.confirmLegacyCurrency(this, selected.toPath());
-            if (currency == null) return;
+            String currency = null;
+            if (!BackupManager.isArchive(selected.toPath())) {
+                currency = DatabaseCurrency.confirmLegacyCurrency(this, selected.toPath());
+                if (currency == null) return;
+            }
             backupManager.importBackup(selected.toPath(), currency);
             loadBackupsList();
             Dialogs.showMessageDialog(this, I18n.tr("Backup imported successfully"),
@@ -233,8 +264,11 @@ public class BackupPanel extends JPanel {
                 I18n.tr("Confirm Restore"), JOptionPane.YES_NO_OPTION,
                 JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) return;
         try {
-            String currency = DatabaseCurrency.confirmLegacyCurrency(this, path);
-            if (currency == null) return;
+            String currency = null;
+            if (!BackupManager.isArchive(path)) {
+                currency = DatabaseCurrency.confirmLegacyCurrency(this, path);
+                if (currency == null) return;
+            }
             backupManager.restoreBackup(path.toString(), currency);
             Dialogs.showMessageDialog(this,
                 I18n.tr("Backup restored successfully.") + "\n" + I18n.tr("WareStat will now close. Reopen it to use the restored database."),
