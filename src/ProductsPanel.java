@@ -10,6 +10,7 @@ public class ProductsPanel extends JPanel {
     private DefaultTableModel tableModel;
     private JTextField searchField;
     private JButton addButton;
+    private JButton detailsButton;
     private JButton editButton;
     private JButton deleteButton;
     private JButton refreshButton;
@@ -39,14 +40,19 @@ public class ProductsPanel extends JPanel {
         searchPanel.add(searchButton);
         
         // Products table
-        String[] columns = {"ID", "Code", "Name", "Description", "Price", "Physical", "Reserved", "Available", "On Order", "Category", "Unit", "Min Qty", "Active", "Supplier", "Warehouse Pos", "VAT %"};
+        String[] columns = {"ID", "Code", "Name", "Description", "Price", "Physical", "Reserved", "Available", "On Order", "Category", "Unit", "Min Qty", "Active", "Supplier", "Warehouse Pos", "VAT %", "Photo"};
         tableModel = new DefaultTableModel(columns, 0) {
-            @Override
-            public boolean isCellEditable(int row, int column) {
-                return false;
+            @Override public boolean isCellEditable(int row, int column) { return false; }
+            @Override public Class<?> getColumnClass(int columnIndex) {
+                return columnIndex == 16 ? ImageIcon.class : Object.class;
             }
         };
         productsTable = new JTable(tableModel);
+        productsTable.setRowHeight(60);
+        int photoViewColumn = productsTable.convertColumnIndexToView(16);
+        productsTable.moveColumn(photoViewColumn, 0);
+        productsTable.getColumnModel().getColumn(0).setPreferredWidth(68);
+        productsTable.getColumnModel().getColumn(0).setMaxWidth(76);
         productsTable.getSelectionModel().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         productsTable.getSelectionModel().addListSelectionListener(e -> updateButtonStates());
 
@@ -59,6 +65,7 @@ public class ProductsPanel extends JPanel {
         // Add context menu
         TableInteractionUtil.addContextMenu(productsTable,
             new TableInteractionUtil.TableAction("Add Product", () -> showProductDialog(null), false),
+            new TableInteractionUtil.TableAction("View Details", this::viewSelectedProduct),
             new TableInteractionUtil.TableAction("Edit", this::editSelectedProduct),
             new TableInteractionUtil.TableAction("Delete", this::deleteSelectedProduct),
             null, // Separator
@@ -72,7 +79,7 @@ public class ProductsPanel extends JPanel {
                 if (evt.getClickCount() == 2 && SwingUtilities.isLeftMouseButton(evt)) {
                     int selectedRow = productsTable.getSelectedRow();
                     if (selectedRow != -1) {
-                        editSelectedProduct();
+                        viewSelectedProduct();
                     }
                 }
             }
@@ -81,16 +88,19 @@ public class ProductsPanel extends JPanel {
         // Buttons panel
         JPanel buttonPanel = new JPanel(new FlowLayout());
         addButton = new JButton("Add");
+        detailsButton = new JButton("View Details");
         editButton = new JButton("Edit");
         deleteButton = new JButton("Delete");
         refreshButton = new JButton("Refresh");
         
         addButton.addActionListener(e -> showProductDialog(null));
+        detailsButton.addActionListener(e -> viewSelectedProduct());
         editButton.addActionListener(e -> editSelectedProduct());
         deleteButton.addActionListener(e -> deleteSelectedProduct());
         refreshButton.addActionListener(e -> loadProducts());
         
         buttonPanel.add(addButton);
+        buttonPanel.add(detailsButton);
         buttonPanel.add(editButton);
         buttonPanel.add(deleteButton);
         buttonPanel.add(refreshButton);
@@ -105,6 +115,7 @@ public class ProductsPanel extends JPanel {
     
     private void updateButtonStates() {
         boolean isRowSelected = productsTable.getSelectedRow() != -1;
+        detailsButton.setEnabled(isRowSelected);
         editButton.setEnabled(isRowSelected);
         deleteButton.setEnabled(isRowSelected);
     }
@@ -116,6 +127,7 @@ public class ProductsPanel extends JPanel {
             String query = """
                 SELECT p.*, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity,
                        f.company_name as supplier_name,
+                       (SELECT filename FROM product_images pi WHERE pi.product_id=p.id ORDER BY pi.is_primary DESC,pi.sort_order,pi.id LIMIT 1) AS primary_image,
                        COALESCE(SUM(CASE
                            WHEN so.status IN ('Draft', 'Confirmed', 'In Transit')
                            THEN sod.quantity
@@ -156,6 +168,7 @@ public class ProductsPanel extends JPanel {
                     row.add(rs.getString("supplier_name") != null ? rs.getString("supplier_name") : "");
                     row.add(rs.getString("warehouse_position") != null ? rs.getString("warehouse_position") : "");
                     row.add(rs.getDouble("vat_rate"));
+                    row.add(ProductImageStore.getInstance().icon(rs.getString("primary_image"), 52));
                     tableModel.addRow(row);
                 }
             }
@@ -179,6 +192,7 @@ public class ProductsPanel extends JPanel {
             String query = """
                 SELECT p.*, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity,
                        f.company_name as supplier_name,
+                       (SELECT filename FROM product_images pi WHERE pi.product_id=p.id ORDER BY pi.is_primary DESC,pi.sort_order,pi.id LIMIT 1) AS primary_image,
                        COALESCE(SUM(CASE
                            WHEN so.status IN ('Draft', 'Confirmed', 'In Transit')
                            THEN sod.quantity
@@ -226,6 +240,7 @@ public class ProductsPanel extends JPanel {
                         row.add(rs.getString("supplier_name") != null ? rs.getString("supplier_name") : "");
                         row.add(rs.getString("warehouse_position") != null ? rs.getString("warehouse_position") : "");
                         row.add(rs.getDouble("vat_rate"));
+                        row.add(ProductImageStore.getInstance().icon(rs.getString("primary_image"), 52));
                         tableModel.addRow(row);
                     }
                 }
@@ -254,6 +269,58 @@ public class ProductsPanel extends JPanel {
         }
     }
     
+    private void viewSelectedProduct() {
+        int selectedRow = productsTable.getSelectedRow();
+        if (selectedRow < 0) return;
+        int modelRow = productsTable.convertRowIndexToModel(selectedRow);
+        int productId = (int)tableModel.getValueAt(modelRow, 0);
+        try {
+            Product product = loadProduct(productId);
+            if (product == null) return;
+            Window owner = SwingUtilities.getWindowAncestor(this);
+            ProductDetailsDialog details = new ProductDetailsDialog(owner, product);
+            details.setVisible(true);
+            if (details.isEditRequested()) showProductDialog(product);
+        } catch (SQLException e) {
+            Dialogs.showMessageDialog(this, "Error loading product: " + e.getMessage(),
+                "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private Product loadProduct(int productId) throws SQLException {
+        Connection conn = DatabaseManager.getInstance().getConnection();
+        String query = """
+            SELECT p.*, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity, f.company_name as supplier_name
+            FROM products p
+            LEFT JOIN minimum_stock sm ON sm.product_id = p.id
+            LEFT JOIN suppliers f ON p.supplier_id = f.id
+            WHERE p.id = ?
+        """;
+        try (PreparedStatement pstmt = conn.prepareStatement(query)) {
+            pstmt.setInt(1, productId);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (!rs.next()) return null;
+                Integer supplierId = getIntegerFromResultSet(rs, "supplier_id");
+                return new Product(
+                    rs.getInt("id"), rs.getString("code"), rs.getString("name"),
+                    rs.getString("description"), rs.getDouble("price"),
+                    getIntegerFromResultSet(rs, "quantity", 0),
+                    rs.getString("category") != null ? rs.getString("category") : "",
+                    rs.getString("alternative_sku") != null ? rs.getString("alternative_sku") : "",
+                    getDoubleFromResultSet(rs, "weight", 0.0),
+                    rs.getString("unit_of_measure") != null ? rs.getString("unit_of_measure") : "pcs",
+                    getIntegerFromResultSet(rs, "minimum_quantity", 0),
+                    getDoubleFromResultSet(rs, "acquisition_cost", 0.0),
+                    getIntegerFromResultSet(rs, "active", 1) == 1,
+                    supplierId,
+                    rs.getString("supplier_name") != null ? rs.getString("supplier_name") : "",
+                    rs.getString("warehouse_position") != null ? rs.getString("warehouse_position") : "",
+                    getDoubleFromResultSet(rs, "vat_rate", 0.0)
+                );
+            }
+        }
+    }
+
     private void editSelectedProduct() {
         int selectedRow = productsTable.getSelectedRow();
         if (selectedRow != -1) {
@@ -381,10 +448,12 @@ public class ProductsPanel extends JPanel {
                     JOptionPane.WARNING_MESSAGE);
                     
                 if (result == JOptionPane.YES_OPTION) {
+                    java.util.List<String> imageFiles = ProductImageStore.getInstance().filenamesForProduct(conn, id);
                     String query = "DELETE FROM products WHERE id = ?";
                     try (PreparedStatement pstmt = conn.prepareStatement(query)) {
                         pstmt.setInt(1, id);
                         pstmt.executeUpdate();
+                        ProductImageStore.getInstance().deleteNamedFiles(imageFiles);
                         loadProducts();
                         
                         Dialogs.showMessageDialog(this,
@@ -403,6 +472,7 @@ public class ProductsPanel extends JPanel {
     }
 
     private void deleteProductAndNonCriticalData(Connection conn, int productId) throws SQLException {
+        java.util.List<String> imageFiles = ProductImageStore.getInstance().filenamesForProduct(conn, productId);
         DatabaseManager.beginTransaction(conn);
         try {
             String[] statements = {
@@ -418,6 +488,7 @@ public class ProductsPanel extends JPanel {
                 }
             }
             conn.commit();
+            ProductImageStore.getInstance().deleteNamedFiles(imageFiles);
         } catch (SQLException e) {
             conn.rollback();
             throw e;
