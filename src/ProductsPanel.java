@@ -193,7 +193,7 @@ public class ProductsPanel extends JPanel {
         TableCellRenderer centeredRenderer =
             new AdaptiveProductCellRenderer(SwingConstants.CENTER);
         TableCellRenderer textRenderer =
-            new AdaptiveProductCellRenderer(SwingConstants.LEFT);
+            new AdaptiveWrappedProductRenderer();
 
         int[] numericModelColumns = {0, 4, 5, 6, 7, 8, 11, 15};
         for (int modelColumn : numericModelColumns) {
@@ -254,6 +254,101 @@ public class ProductsPanel extends JPanel {
             label.setFont(candidate);
             label.setToolTipText(null);
             return label;
+        }
+    }
+
+    private static final class AdaptiveWrappedProductRenderer extends JTextArea
+            implements TableCellRenderer {
+        private AdaptiveWrappedProductRenderer() {
+            setLineWrap(true);
+            setWrapStyleWord(true);
+            setOpaque(true);
+            setEditable(false);
+            setFocusable(false);
+        }
+
+        @Override
+        public Component getTableCellRendererComponent(JTable table, Object value,
+                boolean selected, boolean focus, int row, int column) {
+            String text = value == null ? "" :
+                I18n.tr(value.toString().trim());
+            setText(text);
+
+            if (selected) {
+                setBackground(table.getSelectionBackground());
+                setForeground(table.getSelectionForeground());
+            } else {
+                setBackground(table.getBackground());
+                setForeground(table.getForeground());
+            }
+
+            int availableWidth = Math.max(12,
+                table.getColumnModel().getColumn(column).getWidth() - 4);
+            Font base = table.getFont();
+            float baseSize = base.getSize2D();
+            float minSize = Math.max(10.5f, baseSize - 2.0f);
+            float size = baseSize;
+            Font candidate = base;
+            int lines = wrappedLineCount(text,
+                getFontMetrics(candidate), availableWidth);
+
+            while (lines > 2 && size > minSize) {
+                size = Math.max(minSize, size - 0.5f);
+                candidate = base.deriveFont(size);
+                lines = wrappedLineCount(text,
+                    getFontMetrics(candidate), availableWidth);
+            }
+
+            setFont(candidate);
+            FontMetrics metrics = getFontMetrics(candidate);
+            int visibleLines = Math.min(2, Math.max(1, lines));
+            int textHeight = visibleLines * metrics.getHeight();
+            int verticalInset = Math.max(0,
+                (table.getRowHeight() - textHeight) / 2);
+            setBorder(BorderFactory.createEmptyBorder(
+                verticalInset, 2, verticalInset, 2));
+
+            // Never increase row height: text may use at most the space already
+            // available beside the product thumbnail.
+            setSize(availableWidth, table.getRowHeight());
+            setToolTipText(lines > 2 ? text : null);
+            return this;
+        }
+
+        private static int wrappedLineCount(String text, FontMetrics metrics,
+                int availableWidth) {
+            if (text == null || text.isBlank()) return 1;
+            int lines = 1;
+            int lineWidth = 0;
+            String[] words = text.trim().split("\\s+");
+
+            for (String word : words) {
+                int wordWidth = metrics.stringWidth(word);
+                int spacer = lineWidth == 0 ? 0 : metrics.charWidth(' ');
+
+                if (wordWidth <= availableWidth) {
+                    if (lineWidth + spacer + wordWidth <= availableWidth) {
+                        lineWidth += spacer + wordWidth;
+                    } else {
+                        lines++;
+                        lineWidth = wordWidth;
+                    }
+                    continue;
+                }
+
+                // Very long codes/words without spaces: estimate character wrapping.
+                if (lineWidth > 0) {
+                    lines++;
+                    lineWidth = 0;
+                }
+                int remainingWidth = wordWidth;
+                int chunks = Math.max(1,
+                    (int)Math.ceil(remainingWidth / (double)availableWidth));
+                lines += chunks - 1;
+                lineWidth = wordWidth % availableWidth;
+                if (lineWidth == 0) lineWidth = Math.min(wordWidth, availableWidth);
+            }
+            return lines;
         }
     }
 
