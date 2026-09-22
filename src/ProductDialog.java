@@ -56,21 +56,21 @@ public class ProductDialog extends JDialog {
         JPanel content = new JPanel(new BorderLayout(10, 10));
         content.setBorder(BorderFactory.createEmptyBorder(10, 12, 8, 12));
 
-        JPanel formsPanel = new JPanel(new GridLayout(1, 2, 14, 0));
+        JPanel formsPanel = new JPanel(new GridLayout(1, 2, 10, 0));
 
         JPanel productPanel = new JPanel(new GridBagLayout());
         productPanel.setBorder(BorderFactory.createTitledBorder(I18n.tr("Product")));
         JPanel stockPanel = new JPanel(new GridBagLayout());
         stockPanel.setBorder(BorderFactory.createTitledBorder(I18n.tr("Inventory & Pricing")));
 
-        codeField = new JTextField(16);
-        nameField = new JTextField(16);
+        codeField = new JTextField(16);\n        setFieldWidth(codeField, 190);
+        nameField = new JTextField(16);\n        setFieldWidth(nameField, 315);
 
         descriptionArea = new JTextArea(2, 16);
         descriptionArea.setLineWrap(true);
         descriptionArea.setWrapStyleWord(true);
         JScrollPane descriptionScroll = new JScrollPane(descriptionArea);
-        descriptionScroll.setPreferredSize(new Dimension(240, 52));
+        descriptionScroll.setPreferredSize(new Dimension(315, 52));
 
         String[] categories = {"", "Electronics", "Computers & Accessories", "Smartphones & Tablets",
             "Furniture", "Office Furniture", "Home Furniture", "Clothing", "Men's Clothing",
@@ -84,17 +84,17 @@ public class ProductDialog extends JDialog {
             "Pet Food", "Pet Accessories", "Industrial & Scientific", "Industrial Equipment",
             "Lab Supplies", "Other"};
         categoryComboBox = new JComboBox<>(categories);
-        categoryComboBox.setEditable(true);
+        categoryComboBox.setEditable(true);\n        setFieldWidth(categoryComboBox, 260);
 
-        alternativeSkuField = new JTextField(16);
+        alternativeSkuField = new JTextField(16);\n        setFieldWidth(alternativeSkuField, 190);
 
         String[] units = {"pcs", "kg", "m", "liters", "box", "pack"};
         unitOfMeasureComboBox = new JComboBox<>(units);
-        unitOfMeasureComboBox.setEditable(true);
+        unitOfMeasureComboBox.setEditable(true);\n        setFieldWidth(unitOfMeasureComboBox, 135);
 
         selectSupplierButton = new JButton("Click to select supplier...");
         selectSupplierButton.putClientProperty("i18n.literal", true);
-        selectSupplierButton.setHorizontalAlignment(SwingConstants.LEFT);
+        selectSupplierButton.setHorizontalAlignment(SwingConstants.LEFT);\n        setFieldWidth(selectSupplierButton, 260);
         selectSupplierButton.addActionListener(e -> showSupplierSelectionDialog());
 
         JButton newSupplierButton = new JButton("+");
@@ -102,7 +102,7 @@ public class ProductDialog extends JDialog {
         newSupplierButton.setMargin(new Insets(2, 9, 2, 9));
         newSupplierButton.addActionListener(e -> createNewSupplier());
 
-        JPanel supplierPanel = new JPanel(new BorderLayout(5, 0));
+        JPanel supplierPanel = new JPanel(new BorderLayout(5, 0));\n        setFieldWidth(supplierPanel, 310);
         supplierPanel.add(selectSupplierButton, BorderLayout.CENTER);
         supplierPanel.add(newSupplierButton, BorderLayout.EAST);
 
@@ -115,15 +115,15 @@ public class ProductDialog extends JDialog {
         addFormRow(productPanel, 6, "Supplier:", supplierPanel);
         addFormFiller(productPanel, 7);
 
-        priceField = new JTextField(16);
-        acquisitionCostField = new JTextField(16);
+        priceField = new JTextField(10);\n        setFieldWidth(priceField, 115);
+        acquisitionCostField = new JTextField(10);\n        setFieldWidth(acquisitionCostField, 115);
         acquisitionCostField.setText("0.0");
-        quantitySpinner = new JSpinner(new SpinnerNumberModel(0, 0, 999999, 1));
-        minimumQuantitySpinner = new JSpinner(new SpinnerNumberModel(0, 0, 999999, 1));
-        weightField = new JTextField(16);
+        quantitySpinner = new JSpinner(new SpinnerNumberModel(0, 0, 999999, 1));\n        setFieldWidth(quantitySpinner, 110);
+        minimumQuantitySpinner = new JSpinner(new SpinnerNumberModel(0, 0, 999999, 1));\n        setFieldWidth(minimumQuantitySpinner, 110);
+        weightField = new JTextField(9);\n        setFieldWidth(weightField, 105);
         weightField.setText("0.0");
-        warehousePositionField = new JTextField(16);
-        vatRateField = new JTextField(16);
+        warehousePositionField = new JTextField(12);\n        setFieldWidth(warehousePositionField, 155);
+        vatRateField = new JTextField(8);\n        setFieldWidth(vatRateField, 90);
         vatRateField.setText(String.valueOf(SettingsPanel.getDefaultVatRate()));
         activeCheckBox = new JCheckBox("", true);
 
@@ -143,7 +143,7 @@ public class ProductDialog extends JDialog {
 
         photosPanel = new JPanel(new BorderLayout(0, 4));
         photosPanel.setBorder(BorderFactory.createTitledBorder(I18n.tr("Photos")));
-        photosPanel.setPreferredSize(new Dimension(820, 185));
+        photosPanel.setPreferredSize(new Dimension(760, 185));
         content.add(photosPanel, BorderLayout.CENTER);
 
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 6));
@@ -165,13 +165,13 @@ public class ProductDialog extends JDialog {
 
         Rectangle usable = GraphicsEnvironment.getLocalGraphicsEnvironment()
             .getMaximumWindowBounds();
-        int width = Math.min(900, Math.max(720, usable.width - 80));
+        int width = Math.min(820, Math.max(700, usable.width - 80));
         int height = Math.min(620, Math.max(500, usable.height - 80));
         setPreferredSize(new Dimension(width, height));
         pack();
         setSize(width, height);
         setMinimumSize(new Dimension(
-            Math.min(760, width), Math.min(520, height)));
+            Math.min(700, width), Math.min(520, height)));
         setLocationRelativeTo(getOwner());
         I18n.localize(this);
     }
@@ -188,9 +188,15 @@ public class ProductDialog extends JDialog {
         field.gridx = 1;
         field.gridy = row;
         field.weightx = 1.0;
-        field.fill = GridBagConstraints.HORIZONTAL;
+        field.anchor = GridBagConstraints.WEST;
+        field.fill = GridBagConstraints.NONE;
         field.insets = new Insets(4, 0, 4, 6);
         panel.add(component, field);
+    }
+
+    private void setFieldWidth(JComponent component, int width) {
+        Dimension preferred = component.getPreferredSize();
+        component.setPreferredSize(new Dimension(width, preferred.height));
     }
 
     private void addFormFiller(JPanel panel, int row) {
@@ -351,13 +357,13 @@ public class ProductDialog extends JDialog {
         card.setBorder(BorderFactory.createCompoundBorder(
             BorderFactory.createEtchedBorder(),
             BorderFactory.createEmptyBorder(4, 4, 3, 4)));
-        card.setPreferredSize(new Dimension(245, 125));
+        card.setPreferredSize(new Dimension(225, 125));
         return card;
     }
 
     private JLabel createPhotoPreview(ImageIcon icon) {
         JLabel preview = new JLabel(icon);
-        preview.setPreferredSize(new Dimension(225, 82));
+        preview.setPreferredSize(new Dimension(205, 82));
         preview.setHorizontalAlignment(SwingConstants.CENTER);
         preview.setVerticalAlignment(SwingConstants.CENTER);
         return preview;
