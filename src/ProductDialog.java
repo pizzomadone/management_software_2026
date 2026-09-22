@@ -53,46 +53,25 @@ public class ProductDialog extends JDialog {
     }
 
     private void initComponents() {
-        JPanel formPanel = new JPanel(new GridBagLayout());
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(3, 5, 3, 5);
-        gbc.fill = GridBagConstraints.HORIZONTAL;
+        JPanel content = new JPanel(new BorderLayout(10, 10));
+        content.setBorder(BorderFactory.createEmptyBorder(10, 12, 8, 12));
 
-        gbc.gridx = 0; gbc.gridy = 0;
-        formPanel.add(new JLabel("Code:"), gbc);
-        gbc.gridx = 1;
-        codeField = new JTextField(12);
-        formPanel.add(codeField, gbc);
+        JPanel formsPanel = new JPanel(new GridLayout(1, 2, 14, 0));
 
-        gbc.gridx = 0; gbc.gridy = 1;
-        formPanel.add(new JLabel("Name:"), gbc);
-        gbc.gridx = 1;
-        nameField = new JTextField(12);
-        formPanel.add(nameField, gbc);
+        JPanel productPanel = new JPanel(new GridBagLayout());
+        productPanel.setBorder(BorderFactory.createTitledBorder(I18n.tr("Product")));
+        JPanel stockPanel = new JPanel(new GridBagLayout());
+        stockPanel.setBorder(BorderFactory.createTitledBorder(I18n.tr("Inventory & Pricing")));
 
-        gbc.gridx = 0; gbc.gridy = 2;
-        formPanel.add(new JLabel("Description:"), gbc);
-        gbc.gridx = 1;
-        descriptionArea = new JTextArea(3, 12);
+        codeField = new JTextField(16);
+        nameField = new JTextField(16);
+
+        descriptionArea = new JTextArea(2, 16);
         descriptionArea.setLineWrap(true);
         descriptionArea.setWrapStyleWord(true);
-        formPanel.add(new JScrollPane(descriptionArea), gbc);
+        JScrollPane descriptionScroll = new JScrollPane(descriptionArea);
+        descriptionScroll.setPreferredSize(new Dimension(240, 52));
 
-        gbc.gridx = 0; gbc.gridy = 3;
-        formPanel.add(new JLabel("Price:"), gbc);
-        gbc.gridx = 1;
-        priceField = new JTextField(12);
-        formPanel.add(priceField, gbc);
-
-        gbc.gridx = 0; gbc.gridy = 4;
-        formPanel.add(new JLabel("Quantity:"), gbc);
-        gbc.gridx = 1;
-        quantitySpinner = new JSpinner(new SpinnerNumberModel(0, 0, 999999, 1));
-        formPanel.add(quantitySpinner, gbc);
-
-        gbc.gridx = 0; gbc.gridy = 5;
-        formPanel.add(new JLabel("Category:"), gbc);
-        gbc.gridx = 1;
         String[] categories = {"", "Electronics", "Computers & Accessories", "Smartphones & Tablets",
             "Furniture", "Office Furniture", "Home Furniture", "Clothing", "Men's Clothing",
             "Women's Clothing", "Children's Clothing", "Food & Beverages", "Fresh Food",
@@ -106,83 +85,68 @@ public class ProductDialog extends JDialog {
             "Lab Supplies", "Other"};
         categoryComboBox = new JComboBox<>(categories);
         categoryComboBox.setEditable(true);
-        formPanel.add(categoryComboBox, gbc);
 
-        gbc.gridx = 0; gbc.gridy = 6;
-        formPanel.add(new JLabel("Alternative SKU:"), gbc);
-        gbc.gridx = 1;
-        alternativeSkuField = new JTextField(12);
-        formPanel.add(alternativeSkuField, gbc);
+        alternativeSkuField = new JTextField(16);
 
-        gbc.gridx = 0; gbc.gridy = 7;
-        formPanel.add(new JLabel("Weight (kg):"), gbc);
-        gbc.gridx = 1;
-        weightField = new JTextField(12);
-        weightField.setText("0.0");
-        formPanel.add(weightField, gbc);
-
-        gbc.gridx = 0; gbc.gridy = 8;
-        formPanel.add(new JLabel("Unit of Measure:"), gbc);
-        gbc.gridx = 1;
         String[] units = {"pcs", "kg", "m", "liters", "box", "pack"};
         unitOfMeasureComboBox = new JComboBox<>(units);
         unitOfMeasureComboBox.setEditable(true);
-        formPanel.add(unitOfMeasureComboBox, gbc);
 
-        gbc.gridx = 0; gbc.gridy = 9;
-        formPanel.add(new JLabel("Minimum Quantity:"), gbc);
-        gbc.gridx = 1;
-        minimumQuantitySpinner = new JSpinner(new SpinnerNumberModel(0, 0, 999999, 1));
-        formPanel.add(minimumQuantitySpinner, gbc);
-
-        gbc.gridx = 0; gbc.gridy = 10;
-        formPanel.add(new JLabel("Acquisition Cost:"), gbc);
-        gbc.gridx = 1;
-        acquisitionCostField = new JTextField(12);
-        acquisitionCostField.setText("0.0");
-        formPanel.add(acquisitionCostField, gbc);
-
-        gbc.gridx = 0; gbc.gridy = 11;
-        formPanel.add(new JLabel("Active:"), gbc);
-        gbc.gridx = 1;
-        activeCheckBox = new JCheckBox("", true);
-        formPanel.add(activeCheckBox, gbc);
-
-        gbc.gridx = 0; gbc.gridy = 12;
-        formPanel.add(new JLabel("Supplier:"), gbc);
-        gbc.gridx = 1;
         selectSupplierButton = new JButton("Click to select supplier...");
         selectSupplierButton.putClientProperty("i18n.literal", true);
-        selectSupplierButton.setPreferredSize(new Dimension(250, 35));
         selectSupplierButton.setHorizontalAlignment(SwingConstants.LEFT);
         selectSupplierButton.addActionListener(e -> showSupplierSelectionDialog());
-        formPanel.add(selectSupplierButton, gbc);
-        gbc.gridx = 2;
-        JButton newSupplierButton = new JButton("New Supplier");
+
+        JButton newSupplierButton = new JButton("+");
+        newSupplierButton.setToolTipText(I18n.tr("New Supplier"));
+        newSupplierButton.setMargin(new Insets(2, 9, 2, 9));
         newSupplierButton.addActionListener(e -> createNewSupplier());
-        formPanel.add(newSupplierButton, gbc);
 
-        gbc.gridx = 0; gbc.gridy = 13;
-        formPanel.add(new JLabel("Warehouse Position:"), gbc);
-        gbc.gridx = 1;
-        warehousePositionField = new JTextField(12);
-        formPanel.add(warehousePositionField, gbc);
+        JPanel supplierPanel = new JPanel(new BorderLayout(5, 0));
+        supplierPanel.add(selectSupplierButton, BorderLayout.CENTER);
+        supplierPanel.add(newSupplierButton, BorderLayout.EAST);
 
-        gbc.gridx = 0; gbc.gridy = 14;
-        formPanel.add(new JLabel("VAT Rate (%):"), gbc);
-        gbc.gridx = 1;
-        vatRateField = new JTextField(12);
+        addFormRow(productPanel, 0, "Code:", codeField);
+        addFormRow(productPanel, 1, "Name:", nameField);
+        addFormRow(productPanel, 2, "Description:", descriptionScroll);
+        addFormRow(productPanel, 3, "Category:", categoryComboBox);
+        addFormRow(productPanel, 4, "Alternative SKU:", alternativeSkuField);
+        addFormRow(productPanel, 5, "Unit of Measure:", unitOfMeasureComboBox);
+        addFormRow(productPanel, 6, "Supplier:", supplierPanel);
+        addFormFiller(productPanel, 7);
+
+        priceField = new JTextField(16);
+        acquisitionCostField = new JTextField(16);
+        acquisitionCostField.setText("0.0");
+        quantitySpinner = new JSpinner(new SpinnerNumberModel(0, 0, 999999, 1));
+        minimumQuantitySpinner = new JSpinner(new SpinnerNumberModel(0, 0, 999999, 1));
+        weightField = new JTextField(16);
+        weightField.setText("0.0");
+        warehousePositionField = new JTextField(16);
+        vatRateField = new JTextField(16);
         vatRateField.setText(String.valueOf(SettingsPanel.getDefaultVatRate()));
-        formPanel.add(vatRateField, gbc);
+        activeCheckBox = new JCheckBox("", true);
 
-        gbc.gridx = 0; gbc.gridy = 15; gbc.gridwidth = 3; gbc.weightx = 1;
-        photosPanel = new JPanel();
-        photosPanel.setLayout(new BoxLayout(photosPanel, BoxLayout.Y_AXIS));
+        addFormRow(stockPanel, 0, "Price:", priceField);
+        addFormRow(stockPanel, 1, "Acquisition Cost:", acquisitionCostField);
+        addFormRow(stockPanel, 2, "Quantity:", quantitySpinner);
+        addFormRow(stockPanel, 3, "Minimum Quantity:", minimumQuantitySpinner);
+        addFormRow(stockPanel, 4, "Weight (kg):", weightField);
+        addFormRow(stockPanel, 5, "Warehouse Position:", warehousePositionField);
+        addFormRow(stockPanel, 6, "VAT Rate (%):", vatRateField);
+        addFormRow(stockPanel, 7, "Active:", activeCheckBox);
+        addFormFiller(stockPanel, 8);
+
+        formsPanel.add(productPanel);
+        formsPanel.add(stockPanel);
+        content.add(formsPanel, BorderLayout.NORTH);
+
+        photosPanel = new JPanel(new BorderLayout(0, 4));
         photosPanel.setBorder(BorderFactory.createTitledBorder(I18n.tr("Photos")));
-        formPanel.add(photosPanel, gbc);
-        gbc.gridwidth = 1;
+        photosPanel.setPreferredSize(new Dimension(820, 185));
+        content.add(photosPanel, BorderLayout.CENTER);
 
-        JPanel buttonPanel = new JPanel();
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 6));
         JButton saveButton = new JButton("Save");
         JButton cancelButton = new JButton("Cancel");
         saveButton.addActionListener(e -> saveProduct());
@@ -190,14 +154,53 @@ public class ProductDialog extends JDialog {
         buttonPanel.add(saveButton);
         buttonPanel.add(cancelButton);
 
-        JScrollPane scroll = new JScrollPane(formPanel);
+        JScrollPane scroll = new JScrollPane(content,
+            JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
+            JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         scroll.setBorder(null);
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
+
         add(scroll, BorderLayout.CENTER);
         add(buttonPanel, BorderLayout.SOUTH);
 
-        setPreferredSize(new Dimension(720, 780));
+        Rectangle usable = GraphicsEnvironment.getLocalGraphicsEnvironment()
+            .getMaximumWindowBounds();
+        int width = Math.min(900, Math.max(720, usable.width - 80));
+        int height = Math.min(620, Math.max(500, usable.height - 80));
+        setPreferredSize(new Dimension(width, height));
         pack();
-        setLocationRelativeTo(null);
+        setSize(width, height);
+        setMinimumSize(new Dimension(
+            Math.min(760, width), Math.min(520, height)));
+        setLocationRelativeTo(getOwner());
+        I18n.localize(this);
+    }
+
+    private void addFormRow(JPanel panel, int row, String labelText, Component component) {
+        GridBagConstraints label = new GridBagConstraints();
+        label.gridx = 0;
+        label.gridy = row;
+        label.anchor = GridBagConstraints.WEST;
+        label.insets = new Insets(4, 6, 4, 8);
+        panel.add(new JLabel(labelText), label);
+
+        GridBagConstraints field = new GridBagConstraints();
+        field.gridx = 1;
+        field.gridy = row;
+        field.weightx = 1.0;
+        field.fill = GridBagConstraints.HORIZONTAL;
+        field.insets = new Insets(4, 0, 4, 6);
+        panel.add(component, field);
+    }
+
+    private void addFormFiller(JPanel panel, int row) {
+        GridBagConstraints filler = new GridBagConstraints();
+        filler.gridx = 0;
+        filler.gridy = row;
+        filler.gridwidth = 2;
+        filler.weighty = 1.0;
+        filler.fill = GridBagConstraints.VERTICAL;
+        panel.add(Box.createVerticalGlue(), filler);
     }
 
     private void refreshPhotosPanel() {
