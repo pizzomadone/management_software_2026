@@ -10,6 +10,7 @@ import java.util.Vector;
 
 public class ProductsPanel extends JPanel {
     private JTable productsTable;
+    private JScrollPane productsScrollPane;
     private DefaultTableModel tableModel;
     private JTextField searchField;
     private JButton addButton;
@@ -20,7 +21,6 @@ public class ProductsPanel extends JPanel {
     private Timer photoPreviewTimer;
     private JWindow photoPreviewWindow;
     private boolean photoPreviewVisible;
-    private boolean suppressPhotoClick;
     
     public ProductsPanel() {
         setupPanel();
@@ -56,11 +56,12 @@ public class ProductsPanel extends JPanel {
             }
         };
         productsTable = new JTable(tableModel);
-        productsTable.setRowHeight(44);
+        productsTable.setRowHeight(34);
+        productsTable.setRowMargin(0);
         int photoViewColumn = productsTable.convertColumnIndexToView(16);
         productsTable.moveColumn(photoViewColumn, 0);
-        productsTable.getColumnModel().getColumn(0).setMinWidth(32);
-        productsTable.getColumnModel().getColumn(0).setPreferredWidth(44);
+        productsTable.getColumnModel().getColumn(0).setMinWidth(52);
+        productsTable.getColumnModel().getColumn(0).setPreferredWidth(52);
         productsTable.getColumnModel().getColumn(0).setMaxWidth(Integer.MAX_VALUE);
         productsTable.getColumnModel().getColumn(0).setCellRenderer(new DefaultTableCellRenderer() {
             @Override
@@ -71,9 +72,9 @@ public class ProductsPanel extends JPanel {
                 label.setIcon(value instanceof Icon ? (Icon)value : null);
                 label.setHorizontalAlignment(SwingConstants.CENTER);
                 label.setVerticalAlignment(SwingConstants.CENTER);
-                label.setBorder(BorderFactory.createEmptyBorder(2, 2, 2, 2));
+                label.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
                 label.setToolTipText(value instanceof Icon
-                    ? I18n.tr("Hold to preview - Click to open gallery") : null);
+                    ? I18n.tr("Hold to preview") : null);
                 return label;
             }
         });
@@ -97,7 +98,8 @@ public class ProductsPanel extends JPanel {
             new TableInteractionUtil.TableAction("Refresh", this::loadProducts, false)
         );
 
-        // Photo thumbnail: click opens the gallery; press-and-hold shows a temporary preview.
+        // Photo thumbnail: press-and-hold shows a temporary preview.
+        // A normal click on the photo does not open another window.
         productsTable.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override
             public void mousePressed(java.awt.event.MouseEvent evt) {
@@ -116,23 +118,7 @@ public class ProductsPanel extends JPanel {
 
             @Override
             public void mouseClicked(java.awt.event.MouseEvent evt) {
-                if (!SwingUtilities.isLeftMouseButton(evt)) return;
-
-                int viewRow = productsTable.rowAtPoint(evt.getPoint());
-                int viewColumn = productsTable.columnAtPoint(evt.getPoint());
-                if (viewRow < 0 || viewColumn < 0) return;
-
-                int modelColumn = productsTable.convertColumnIndexToModel(viewColumn);
-                if (evt.getClickCount() == 1 && modelColumn == 16) {
-                    if (suppressPhotoClick) return;
-                    int modelRow = productsTable.convertRowIndexToModel(viewRow);
-                    if (tableModel.getValueAt(modelRow, 16) instanceof ImageIcon) {
-                        showPhotoGallery(modelRow);
-                    }
-                    return;
-                }
-
-                if (evt.getClickCount() == 2) {
+                if (evt.getClickCount() == 2 && SwingUtilities.isLeftMouseButton(evt)) {
                     viewSelectedProduct();
                 }
             }
@@ -160,7 +146,16 @@ public class ProductsPanel extends JPanel {
         
         // Main layout
         add(searchPanel, BorderLayout.NORTH);
-        add(new JScrollPane(productsTable), BorderLayout.CENTER);
+        productsScrollPane = new JScrollPane(productsTable);
+        productsScrollPane.setHorizontalScrollBarPolicy(
+            JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        productsScrollPane.getViewport().addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentResized(ComponentEvent e) {
+                scheduleProductColumnFit();
+            }
+        });
+        add(productsScrollPane, BorderLayout.CENTER);
         add(buttonPanel, BorderLayout.SOUTH);
         
         fitProductColumns();
@@ -168,73 +163,111 @@ public class ProductsPanel extends JPanel {
     }
     
     private void configureProductTablePresentation() {
-        productsTable.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+        productsTable.setAutoResizeMode(JTable.AUTO_RESIZE_SUBSEQUENT_COLUMNS);
+
         TableCellRenderer headerDelegate = productsTable.getTableHeader().getDefaultRenderer();
         productsTable.getTableHeader().setDefaultRenderer((table, value, selected, focus, row, column) -> {
             Component component = headerDelegate.getTableCellRendererComponent(
                 table, value, selected, focus, row, column);
             if (component instanceof JLabel label) {
+                String text = value == null ? "" : value.toString().trim();
+                label.setText(text);
                 label.setHorizontalAlignment(SwingConstants.CENTER);
-                label.setText(value == null ? "" : value.toString().trim());
+
+                Font base = table.getTableHeader().getFont();
+                float size = base.getSize2D();
+                float minSize = Math.max(9.5f, size - 2.5f);
+                int available = Math.max(12,
+                    table.getColumnModel().getColumn(column).getWidth() - 6);
+                Font candidate = base;
+                while (size > minSize &&
+                        label.getFontMetrics(candidate).stringWidth(text) > available) {
+                    size -= 0.5f;
+                    candidate = base.deriveFont(size);
+                }
+                label.setFont(candidate);
             }
             return component;
         });
 
-        DefaultTableCellRenderer numericRenderer = new DefaultTableCellRenderer();
-        numericRenderer.setHorizontalAlignment(SwingConstants.CENTER);
+        TableCellRenderer centeredRenderer =
+            new AdaptiveProductCellRenderer(SwingConstants.CENTER);
+        TableCellRenderer textRenderer =
+            new AdaptiveProductCellRenderer(SwingConstants.LEFT);
+
         int[] numericModelColumns = {0, 4, 5, 6, 7, 8, 11, 15};
         for (int modelColumn : numericModelColumns) {
             int viewColumn = productsTable.convertColumnIndexToView(modelColumn);
             if (viewColumn >= 0) {
-                productsTable.getColumnModel().getColumn(viewColumn).setCellRenderer(numericRenderer);
+                productsTable.getColumnModel().getColumn(viewColumn)
+                    .setCellRenderer(centeredRenderer);
             }
         }
 
-        TableCellRenderer wrappedTextRenderer = new WrappedProductTextRenderer();
-        int[] wrappedTextModelColumns = {1, 2, 3, 9, 10, 12, 13, 14};
-        for (int modelColumn : wrappedTextModelColumns) {
+        int[] textModelColumns = {1, 2, 3, 9, 10, 12, 13, 14};
+        for (int modelColumn : textModelColumns) {
             int viewColumn = productsTable.convertColumnIndexToView(modelColumn);
             if (viewColumn >= 0) {
                 productsTable.getColumnModel().getColumn(viewColumn)
-                    .setCellRenderer(wrappedTextRenderer);
+                    .setCellRenderer(textRenderer);
             }
         }
     }
 
-    private static final class WrappedProductTextRenderer extends JTextArea
-            implements TableCellRenderer {
-        private WrappedProductTextRenderer() {
-            setLineWrap(true);
-            setWrapStyleWord(true);
-            setOpaque(true);
-            setEditable(false);
-            setFocusable(false);
-            setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
+    private static final class AdaptiveProductCellRenderer
+            extends DefaultTableCellRenderer {
+        private final int alignment;
+
+        private AdaptiveProductCellRenderer(int alignment) {
+            this.alignment = alignment;
+            setBorder(BorderFactory.createEmptyBorder(0, 2, 0, 2));
         }
 
         @Override
         public Component getTableCellRendererComponent(JTable table, Object value,
                 boolean selected, boolean focus, int row, int column) {
-            String text = value == null ? "" : value.toString().trim();
-            setText(I18n.tr(text));
-            setFont(table.getFont());
-            if (selected) {
-                setBackground(table.getSelectionBackground());
-                setForeground(table.getSelectionForeground());
+            String text;
+            if (value == null) {
+                text = "";
+            } else if (value instanceof String stringValue) {
+                text = I18n.tr(stringValue.trim());
             } else {
-                setBackground(table.getBackground());
-                setForeground(table.getForeground());
+                text = String.valueOf(value).trim();
             }
-            return this;
+
+            JLabel label = (JLabel)super.getTableCellRendererComponent(
+                table, text, selected, focus, row, column);
+            label.setHorizontalAlignment(alignment);
+            label.setBorder(BorderFactory.createEmptyBorder(0, 2, 0, 2));
+
+            Font base = table.getFont();
+            float size = base.getSize2D();
+            float minSize = Math.max(9.5f, size - 2.5f);
+            int available = Math.max(8,
+                table.getColumnModel().getColumn(column).getWidth() - 6);
+            Font candidate = base;
+            while (size > minSize &&
+                    label.getFontMetrics(candidate).stringWidth(text) > available) {
+                size -= 0.5f;
+                candidate = base.deriveFont(size);
+            }
+            label.setFont(candidate);
+            label.setToolTipText(null);
+            return label;
         }
     }
 
     private void fitProductColumns() {
-        // Products is intentionally compact: each column uses only the space it needs.
-        // Long text columns stop growing at a sensible limit and the table scrolls
-        // horizontally instead of stealing space from useful columns.
-        int[] minWidths = {36, 62, 70, 82, 54, 54, 60, 66, 60, 68, 44, 58, 48, 68, 58, 50, 40};
-        int[] maxWidths = {46, 135, 180, 230, 82, 78, 86, 94, 88, 150, 70, 82, 70, 170, 110, 70, 44};
+        // Compact starting widths. JTable keeps the complete Products table inside
+        // the viewport; manual resizing redistributes space among following columns.
+        int[] minWidths = {
+            30, 54, 60, 68, 44, 42, 46, 50, 46,
+            54, 36, 48, 40, 54, 48, 44, 52
+        };
+        int[] initialCaps = {
+            38, 105, 145, 175, 64, 60, 66, 74, 68,
+            120, 56, 68, 58, 140, 88, 58, 52
+        };
 
         FontMetrics cellMetrics = productsTable.getFontMetrics(productsTable.getFont());
         FontMetrics headerMetrics = productsTable.getTableHeader()
@@ -246,15 +279,16 @@ public class ProductsPanel extends JPanel {
 
             TableColumn column = productsTable.getColumnModel().getColumn(viewColumn);
             column.setResizable(true);
+
             if (modelColumn == 16) {
-                column.setMinWidth(32);
-                column.setPreferredWidth(44);
-                column.setMaxWidth(Integer.MAX_VALUE);
+                column.setMinWidth(52);
+                column.setPreferredWidth(52);
+                column.setMaxWidth(52);
                 continue;
             }
 
             String header = I18n.tr(tableModel.getColumnName(modelColumn)).trim();
-            int width = headerMetrics.stringWidth(header) + 12;
+            int width = headerMetrics.stringWidth(header) + 8;
 
             for (int row = 0; row < tableModel.getRowCount(); row++) {
                 Object value = tableModel.getValueAt(row, modelColumn);
@@ -262,14 +296,25 @@ public class ProductsPanel extends JPanel {
                 String text = value instanceof String
                     ? I18n.tr(((String)value).trim())
                     : String.valueOf(value).trim();
-                width = Math.max(width, cellMetrics.stringWidth(text) + 12);
+                width = Math.max(width, cellMetrics.stringWidth(text) + 8);
             }
 
             width = Math.max(minWidths[modelColumn],
-                Math.min(maxWidths[modelColumn], width));
+                Math.min(initialCaps[modelColumn], width));
             column.setMinWidth(minWidths[modelColumn]);
             column.setPreferredWidth(width);
-            column.setMaxWidth(Integer.MAX_VALUE);
+            // Temporary cap guides the initial layout only.
+            column.setMaxWidth(initialCaps[modelColumn]);
+        }
+
+        productsTable.doLayout();
+
+        // Restore unrestricted manual expansion after the compact initial layout.
+        for (int viewColumn = 0;
+                viewColumn < productsTable.getColumnModel().getColumnCount();
+                viewColumn++) {
+            productsTable.getColumnModel().getColumn(viewColumn)
+                .setMaxWidth(Integer.MAX_VALUE);
         }
     }
 
@@ -342,12 +387,7 @@ public class ProductsPanel extends JPanel {
 
     private void endPhotoPreview() {
         cancelPhotoPreviewTimer();
-        boolean wasVisible = photoPreviewVisible;
         closePhotoPreviewWindow();
-        if (wasVisible) {
-            suppressPhotoClick = true;
-            SwingUtilities.invokeLater(() -> suppressPhotoClick = false);
-        }
     }
 
     private void cancelPhotoPreviewTimer() {
@@ -421,7 +461,7 @@ public class ProductsPanel extends JPanel {
                     row.add(trimCellText(rs.getString("supplier_name")));
                     row.add(trimCellText(rs.getString("warehouse_position")));
                     row.add(rs.getDouble("vat_rate"));
-                    row.add(ProductImageStore.getInstance().icon(rs.getString("primary_image"), 40));
+                    row.add(ProductImageStore.getInstance().iconCover(rs.getString("primary_image"), 48, 30));
                     tableModel.addRow(row);
                 }
             }
@@ -494,7 +534,7 @@ public class ProductsPanel extends JPanel {
                         row.add(trimCellText(rs.getString("supplier_name")));
                         row.add(trimCellText(rs.getString("warehouse_position")));
                         row.add(rs.getDouble("vat_rate"));
-                        row.add(ProductImageStore.getInstance().icon(rs.getString("primary_image"), 40));
+                        row.add(ProductImageStore.getInstance().iconCover(rs.getString("primary_image"), 48, 30));
                         tableModel.addRow(row);
                     }
                 }
@@ -524,120 +564,6 @@ public class ProductsPanel extends JPanel {
         }
     }
     
-    private void showPhotoGallery(int modelRow) {
-        int productId = (int)tableModel.getValueAt(modelRow, 0);
-        String productName = String.valueOf(tableModel.getValueAt(modelRow, 2));
-        try {
-            java.util.List<ProductImageStore.ProductImage> images =
-                ProductImageStore.getInstance().list(productId);
-            if (images.isEmpty()) return;
-
-            int primaryIndex = 0;
-            for (int i = 0; i < images.size(); i++) {
-                if (images.get(i).primary()) {
-                    primaryIndex = i;
-                    break;
-                }
-            }
-
-            Window owner = SwingUtilities.getWindowAncestor(this);
-            JDialog gallery = new JDialog(owner, I18n.tr("Product Photos"),
-                Dialog.ModalityType.APPLICATION_MODAL);
-            gallery.setLayout(new BorderLayout(8, 8));
-            ((JComponent)gallery.getContentPane()).setBorder(
-                BorderFactory.createEmptyBorder(10, 10, 10, 10));
-
-            JLabel title = new JLabel(productName, SwingConstants.CENTER);
-            title.setFont(title.getFont().deriveFont(
-                Font.BOLD, title.getFont().getSize2D() + 2f));
-            gallery.add(title, BorderLayout.NORTH);
-
-            JLabel imageLabel = new JLabel("", SwingConstants.CENTER);
-            imageLabel.setHorizontalAlignment(SwingConstants.CENTER);
-            imageLabel.setVerticalAlignment(SwingConstants.CENTER);
-
-            JPanel imageCanvas = new JPanel(new GridBagLayout());
-            imageCanvas.add(imageLabel);
-            JScrollPane imageScroll = new JScrollPane(imageCanvas);
-            imageScroll.setBorder(BorderFactory.createEmptyBorder());
-            imageScroll.getViewport().setBackground(imageCanvas.getBackground());
-            gallery.add(imageScroll, BorderLayout.CENTER);
-
-            JLabel counterLabel = new JLabel("", SwingConstants.CENTER);
-            JButton previousButton = new JButton(I18n.tr("Previous"));
-            JButton nextButton = new JButton(I18n.tr("Next"));
-            JButton closeButton = new JButton(I18n.tr("Close"));
-            int[] currentIndex = {primaryIndex};
-
-            Runnable refreshImage = () -> {
-                ProductImageStore.ProductImage image = images.get(currentIndex[0]);
-                ImageIcon icon = ProductImageStore.getInstance().icon(image.filename(), 700);
-                if (icon == null) {
-                    imageLabel.setIcon(null);
-                    imageLabel.setText(I18n.tr("Unable to load product photo"));
-                } else {
-                    imageLabel.setText("");
-                    imageLabel.setIcon(icon);
-                }
-                counterLabel.setText((currentIndex[0] + 1) + "/" + images.size());
-                previousButton.setEnabled(currentIndex[0] > 0);
-                nextButton.setEnabled(currentIndex[0] < images.size() - 1);
-            };
-
-            previousButton.addActionListener(e -> {
-                if (currentIndex[0] > 0) {
-                    currentIndex[0]--;
-                    refreshImage.run();
-                }
-            });
-            nextButton.addActionListener(e -> {
-                if (currentIndex[0] < images.size() - 1) {
-                    currentIndex[0]++;
-                    refreshImage.run();
-                }
-            });
-            closeButton.addActionListener(e -> gallery.dispose());
-
-            JPanel navigation = new JPanel(new BorderLayout(8, 0));
-            navigation.add(previousButton, BorderLayout.WEST);
-            navigation.add(counterLabel, BorderLayout.CENTER);
-            navigation.add(nextButton, BorderLayout.EAST);
-
-            JPanel closePanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
-            closePanel.add(closeButton);
-            JPanel bottom = new JPanel(new BorderLayout(8, 8));
-            bottom.add(navigation, BorderLayout.CENTER);
-            bottom.add(closePanel, BorderLayout.SOUTH);
-            gallery.add(bottom, BorderLayout.SOUTH);
-
-            gallery.getRootPane().registerKeyboardAction(e -> {
-                if (currentIndex[0] > 0) {
-                    currentIndex[0]--;
-                    refreshImage.run();
-                }
-            }, KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, 0),
-                JComponent.WHEN_IN_FOCUSED_WINDOW);
-            gallery.getRootPane().registerKeyboardAction(e -> {
-                if (currentIndex[0] < images.size() - 1) {
-                    currentIndex[0]++;
-                    refreshImage.run();
-                }
-            }, KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, 0),
-                JComponent.WHEN_IN_FOCUSED_WINDOW);
-
-            gallery.setSize(820, 720);
-            gallery.setMinimumSize(new Dimension(520, 460));
-            refreshImage.run();
-            gallery.setLocationRelativeTo(owner);
-            I18n.localize(gallery);
-            gallery.setVisible(true);
-        } catch (SQLException e) {
-            Dialogs.showMessageDialog(this,
-                I18n.tr("Unable to load product photos") + ": " + e.getMessage(),
-                I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
-        }
-    }
-
     private void viewSelectedProduct() {
         int selectedRow = productsTable.getSelectedRow();
         if (selectedRow < 0) return;
