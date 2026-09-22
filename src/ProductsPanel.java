@@ -193,7 +193,7 @@ public class ProductsPanel extends JPanel {
         TableCellRenderer centeredRenderer =
             new AdaptiveProductCellRenderer(SwingConstants.CENTER);
         TableCellRenderer textRenderer =
-            new AdaptiveWrappedProductRenderer();
+            new AdaptiveProductCellRenderer(SwingConstants.LEFT);
 
         int[] numericModelColumns = {0, 4, 5, 6, 7, 8, 11, 15};
         for (int modelColumn : numericModelColumns) {
@@ -226,129 +226,66 @@ public class ProductsPanel extends JPanel {
         @Override
         public Component getTableCellRendererComponent(JTable table, Object value,
                 boolean selected, boolean focus, int row, int column) {
-            String text;
+            String fullText;
             if (value == null) {
-                text = "";
+                fullText = "";
             } else if (value instanceof String stringValue) {
-                text = I18n.tr(stringValue.trim());
+                fullText = I18n.tr(stringValue.trim());
             } else {
-                text = String.valueOf(value).trim();
+                fullText = String.valueOf(value).trim();
             }
 
             JLabel label = (JLabel)super.getTableCellRendererComponent(
-                table, text, selected, focus, row, column);
+                table, fullText, selected, focus, row, column);
             label.setHorizontalAlignment(alignment);
+            label.setVerticalAlignment(SwingConstants.CENTER);
             label.setBorder(BorderFactory.createEmptyBorder(0, 2, 0, 2));
 
             Font base = table.getFont();
             float size = base.getSize2D();
-            float minSize = Math.max(9.5f, size - 2.5f);
+            float minSize = Math.max(10.5f, size - 2.0f);
             int available = Math.max(8,
                 table.getColumnModel().getColumn(column).getWidth() - 6);
+
             Font candidate = base;
+            FontMetrics metrics = label.getFontMetrics(candidate);
             while (size > minSize &&
-                    label.getFontMetrics(candidate).stringWidth(text) > available) {
-                size -= 0.5f;
-                candidate = base.deriveFont(size);
-            }
-            label.setFont(candidate);
-            label.setToolTipText(null);
-            return label;
-        }
-    }
-
-    private static final class AdaptiveWrappedProductRenderer extends JTextArea
-            implements TableCellRenderer {
-        private AdaptiveWrappedProductRenderer() {
-            setLineWrap(true);
-            setWrapStyleWord(true);
-            setOpaque(true);
-            setEditable(false);
-            setFocusable(false);
-        }
-
-        @Override
-        public Component getTableCellRendererComponent(JTable table, Object value,
-                boolean selected, boolean focus, int row, int column) {
-            String text = value == null ? "" :
-                I18n.tr(value.toString().trim());
-            setText(text);
-
-            if (selected) {
-                setBackground(table.getSelectionBackground());
-                setForeground(table.getSelectionForeground());
-            } else {
-                setBackground(table.getBackground());
-                setForeground(table.getForeground());
-            }
-
-            int availableWidth = Math.max(12,
-                table.getColumnModel().getColumn(column).getWidth() - 4);
-            Font base = table.getFont();
-            float baseSize = base.getSize2D();
-            float minSize = Math.max(10.5f, baseSize - 2.0f);
-            float size = baseSize;
-            Font candidate = base;
-            int lines = wrappedLineCount(text,
-                getFontMetrics(candidate), availableWidth);
-
-            while (lines > 2 && size > minSize) {
+                    metrics.stringWidth(fullText) > available) {
                 size = Math.max(minSize, size - 0.5f);
                 candidate = base.deriveFont(size);
-                lines = wrappedLineCount(text,
-                    getFontMetrics(candidate), availableWidth);
+                metrics = label.getFontMetrics(candidate);
             }
 
-            setFont(candidate);
-            FontMetrics metrics = getFontMetrics(candidate);
-            int visibleLines = Math.min(2, Math.max(1, lines));
-            int textHeight = visibleLines * metrics.getHeight();
-            int verticalInset = Math.max(0,
-                (table.getRowHeight() - textHeight) / 2);
-            setBorder(BorderFactory.createEmptyBorder(
-                verticalInset, 2, verticalInset, 2));
-
-            // Never increase row height: text may use at most the space already
-            // available beside the product thumbnail.
-            setSize(availableWidth, table.getRowHeight());
-            setToolTipText(lines > 2 ? text : null);
-            return this;
+            label.setFont(candidate);
+            String displayText = ellipsize(fullText, metrics, available);
+            label.setText(displayText);
+            label.setToolTipText(displayText.equals(fullText) ? null : fullText);
+            return label;
         }
 
-        private static int wrappedLineCount(String text, FontMetrics metrics,
+        private static String ellipsize(String text, FontMetrics metrics,
                 int availableWidth) {
-            if (text == null || text.isBlank()) return 1;
-            int lines = 1;
-            int lineWidth = 0;
-            String[] words = text.trim().split("\\s+");
-
-            for (String word : words) {
-                int wordWidth = metrics.stringWidth(word);
-                int spacer = lineWidth == 0 ? 0 : metrics.charWidth(' ');
-
-                if (wordWidth <= availableWidth) {
-                    if (lineWidth + spacer + wordWidth <= availableWidth) {
-                        lineWidth += spacer + wordWidth;
-                    } else {
-                        lines++;
-                        lineWidth = wordWidth;
-                    }
-                    continue;
-                }
-
-                // Very long codes/words without spaces: estimate character wrapping.
-                if (lineWidth > 0) {
-                    lines++;
-                    lineWidth = 0;
-                }
-                int remainingWidth = wordWidth;
-                int chunks = Math.max(1,
-                    (int)Math.ceil(remainingWidth / (double)availableWidth));
-                lines += chunks - 1;
-                lineWidth = wordWidth % availableWidth;
-                if (lineWidth == 0) lineWidth = Math.min(wordWidth, availableWidth);
+            if (text == null || text.isEmpty() ||
+                    metrics.stringWidth(text) <= availableWidth) {
+                return text == null ? "" : text;
             }
-            return lines;
+
+            String suffix = "...";
+            int suffixWidth = metrics.stringWidth(suffix);
+            if (suffixWidth >= availableWidth) return suffix;
+
+            int low = 0;
+            int high = text.length();
+            while (low < high) {
+                int mid = (low + high + 1) >>> 1;
+                String candidate = text.substring(0, mid).stripTrailing() + suffix;
+                if (metrics.stringWidth(candidate) <= availableWidth) {
+                    low = mid;
+                } else {
+                    high = mid - 1;
+                }
+            }
+            return text.substring(0, low).stripTrailing() + suffix;
         }
     }
 
