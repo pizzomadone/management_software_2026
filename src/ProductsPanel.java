@@ -9,6 +9,22 @@ import java.sql.*;
 import java.util.Vector;
 
 public class ProductsPanel extends JPanel {
+    private static final String PRODUCT_COLUMN_WIDTHS_SETTING =
+        "products.column_widths";
+    private static final String[] PRODUCT_COLUMN_KEYS = {
+        "id", "code", "name", "description", "price", "physical",
+        "reserved", "available", "on_order", "category", "unit",
+        "min_qty", "active", "supplier", "position", "vat", "photo"
+    };
+    private static final int[] PRODUCT_COLUMN_MIN_WIDTHS = {
+        30, 54, 60, 68, 44, 42, 46, 50, 46,
+        54, 36, 48, 40, 54, 48, 44, 52
+    };
+    private static final int[] PRODUCT_COLUMN_INITIAL_CAPS = {
+        38, 105, 145, 175, 64, 60, 66, 74, 68,
+        120, 56, 68, 58, 140, 88, 58, 52
+    };
+
     private JTable productsTable;
     private JScrollPane productsScrollPane;
     private DefaultTableModel tableModel;
@@ -212,6 +228,15 @@ public class ProductsPanel extends JPanel {
                     .setCellRenderer(textRenderer);
             }
         }
+
+        productsTable.getTableHeader().addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                if (SwingUtilities.isLeftMouseButton(e)) {
+                    SwingUtilities.invokeLater(() -> saveProductColumnWidths());
+                }
+            }
+        });
     }
 
     private static final class AdaptiveProductCellRenderer
@@ -290,20 +315,12 @@ public class ProductsPanel extends JPanel {
     }
 
     private void fitProductColumns() {
-        // Compact starting widths. JTable keeps the complete Products table inside
-        // the viewport; manual resizing redistributes space among following columns.
-        int[] minWidths = {
-            30, 54, 60, 68, 44, 42, 46, 50, 46,
-            54, 36, 48, 40, 54, 48, 44, 52
-        };
-        int[] initialCaps = {
-            38, 105, 145, 175, 64, 60, 66, 74, 68,
-            120, 56, 68, 58, 140, 88, 58, 52
-        };
+        int[] requested = loadSavedProductColumnWidths();
+        if (requested == null) requested = calculateDefaultProductColumnWidths();
 
-        FontMetrics cellMetrics = productsTable.getFontMetrics(productsTable.getFont());
-        FontMetrics headerMetrics = productsTable.getTableHeader()
-            .getFontMetrics(productsTable.getTableHeader().getFont());
+        int viewportWidth = productsScrollPane == null
+            ? 0 : productsScrollPane.getViewport().getExtentSize().width;
+        int[] fitted = fitWidthsToViewport(requested, viewportWidth);
 
         for (int modelColumn = 0; modelColumn < tableModel.getColumnCount(); modelColumn++) {
             int viewColumn = productsTable.convertColumnIndexToView(modelColumn);
@@ -311,11 +328,24 @@ public class ProductsPanel extends JPanel {
 
             TableColumn column = productsTable.getColumnModel().getColumn(viewColumn);
             column.setResizable(true);
+            column.setMinWidth(PRODUCT_COLUMN_MIN_WIDTHS[modelColumn]);
+            column.setMaxWidth(Integer.MAX_VALUE);
+            column.setPreferredWidth(fitted[modelColumn]);
+            column.setWidth(fitted[modelColumn]);
+        }
 
+        productsTable.doLayout();
+    }
+
+    private int[] calculateDefaultProductColumnWidths() {
+        int[] widths = PRODUCT_COLUMN_MIN_WIDTHS.clone();
+        FontMetrics cellMetrics = productsTable.getFontMetrics(productsTable.getFont());
+        FontMetrics headerMetrics = productsTable.getTableHeader()
+            .getFontMetrics(productsTable.getTableHeader().getFont());
+
+        for (int modelColumn = 0; modelColumn < tableModel.getColumnCount(); modelColumn++) {
             if (modelColumn == 16) {
-                column.setMinWidth(52);
-                column.setPreferredWidth(52);
-                column.setMaxWidth(52);
+                widths[modelColumn] = 52;
                 continue;
             }
 
@@ -331,23 +361,100 @@ public class ProductsPanel extends JPanel {
                 width = Math.max(width, cellMetrics.stringWidth(text) + 8);
             }
 
-            width = Math.max(minWidths[modelColumn],
-                Math.min(initialCaps[modelColumn], width));
-            column.setMinWidth(minWidths[modelColumn]);
-            column.setPreferredWidth(width);
-            // Temporary cap guides the initial layout only.
-            column.setMaxWidth(initialCaps[modelColumn]);
+            widths[modelColumn] = Math.max(PRODUCT_COLUMN_MIN_WIDTHS[modelColumn],
+                Math.min(PRODUCT_COLUMN_INITIAL_CAPS[modelColumn], width));
+        }
+        return widths;
+    }
+
+    private int[] loadSavedProductColumnWidths() {
+        String raw = SettingsPanel.getGlobalSetting(
+            PRODUCT_COLUMN_WIDTHS_SETTING, "").trim();
+        if (raw.isEmpty()) return null;
+
+        int[] widths = new int[PRODUCT_COLUMN_KEYS.length];
+        boolean[] found = new boolean[PRODUCT_COLUMN_KEYS.length];
+
+        try {
+            for (String entry : raw.split(";")) {
+                int separator = entry.indexOf('=');
+                if (separator <= 0 || separator >= entry.length() - 1) continue;
+                String key = entry.substring(0, separator).trim();
+                int value = Integer.parseInt(entry.substring(separator + 1).trim());
+
+                for (int i = 0; i < PRODUCT_COLUMN_KEYS.length; i++) {
+                    if (PRODUCT_COLUMN_KEYS[i].equals(key)) {
+                        widths[i] = Math.max(PRODUCT_COLUMN_MIN_WIDTHS[i], value);
+                        found[i] = true;
+                        break;
+                    }
+                }
+            }
+        } catch (NumberFormatException e) {
+            return null;
         }
 
-        productsTable.doLayout();
+        for (boolean present : found) if (!present) return null;
+        return widths;
+    }
 
-        // Restore unrestricted manual expansion after the compact initial layout.
-        for (int viewColumn = 0;
-                viewColumn < productsTable.getColumnModel().getColumnCount();
-                viewColumn++) {
-            productsTable.getColumnModel().getColumn(viewColumn)
-                .setMaxWidth(Integer.MAX_VALUE);
+    private void saveProductColumnWidths() {
+        if (productsTable == null || tableModel == null) return;
+
+        StringBuilder value = new StringBuilder();
+        for (int modelColumn = 0; modelColumn < PRODUCT_COLUMN_KEYS.length; modelColumn++) {
+            int viewColumn = productsTable.convertColumnIndexToView(modelColumn);
+            if (viewColumn < 0) continue;
+            if (value.length() > 0) value.append(';');
+            value.append(PRODUCT_COLUMN_KEYS[modelColumn]).append('=')
+                .append(productsTable.getColumnModel().getColumn(viewColumn).getWidth());
         }
+
+        SettingsPanel.setGlobalSetting(PRODUCT_COLUMN_WIDTHS_SETTING,
+            value.toString());
+    }
+
+    private int[] fitWidthsToViewport(int[] requested, int viewportWidth) {
+        int[] result = requested.clone();
+        if (viewportWidth <= 0) return result;
+
+        int requestedTotal = 0;
+        for (int width : requested) requestedTotal += width;
+        if (requestedTotal <= 0) return result;
+
+        double scale = viewportWidth / (double)requestedTotal;
+        int total = 0;
+        for (int i = 0; i < result.length; i++) {
+            result[i] = Math.max(PRODUCT_COLUMN_MIN_WIDTHS[i],
+                (int)Math.round(requested[i] * scale));
+            total += result[i];
+        }
+
+        // If minimum widths pushed the total beyond the viewport, shrink only
+        // columns that still have room above their minimum.
+        while (total > viewportWidth) {
+            boolean changed = false;
+            for (int i = 0; i < result.length && total > viewportWidth; i++) {
+                if (result[i] > PRODUCT_COLUMN_MIN_WIDTHS[i]) {
+                    result[i]--;
+                    total--;
+                    changed = true;
+                }
+            }
+            if (!changed) break;
+        }
+
+        // Give any remaining pixels to useful text columns first instead of
+        // inflating ID, VAT or other naturally small columns.
+        int[] growOrder = {3, 2, 13, 9, 1, 14, 8, 7, 6, 5, 4, 12, 10, 11, 15, 0, 16};
+        int growIndex = 0;
+        while (total < viewportWidth && growOrder.length > 0) {
+            result[growOrder[growIndex % growOrder.length]]++;
+            total++;
+            growIndex++;
+        }
+
+        return result;
     }
 
     private void scheduleProductColumnFit() {
