@@ -30,7 +30,7 @@ public class ProductDialog extends JDialog {
     private Product product;
 
     public ProductDialog(JFrame parent, Product product) {
-        super(parent, product == null ? "New Product" : "Edit Product", true);
+        super(parent, I18n.tr(product == null ? "New Product" : "Edit Product"), true);
         this.product = product;
         setupDialog();
         initComponents();
@@ -56,7 +56,7 @@ public class ProductDialog extends JDialog {
         JPanel content = new JPanel(new BorderLayout(10, 10));
         content.setBorder(BorderFactory.createEmptyBorder(10, 12, 8, 12));
 
-        JPanel formsPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 0));
+        JPanel formsPanel = new JPanel(new GridBagLayout());
 
         JPanel productPanel = new JPanel(new GridBagLayout());
         productPanel.setBorder(BorderFactory.createTitledBorder(I18n.tr("Product")));
@@ -66,13 +66,13 @@ public class ProductDialog extends JDialog {
         codeField = new JTextField(16);
         setFieldWidth(codeField, 190);
         nameField = new JTextField(16);
-        setFieldWidth(nameField, 315);
+        setFieldWidth(nameField, 285);
 
         descriptionArea = new JTextArea(2, 16);
         descriptionArea.setLineWrap(true);
         descriptionArea.setWrapStyleWord(true);
         JScrollPane descriptionScroll = new JScrollPane(descriptionArea);
-        descriptionScroll.setPreferredSize(new Dimension(315, 52));
+        descriptionScroll.setPreferredSize(new Dimension(285, 52));
 
         String[] categories = {"", "Electronics", "Computers & Accessories", "Smartphones & Tablets",
             "Furniture", "Office Furniture", "Home Furniture", "Clothing", "Men's Clothing",
@@ -87,7 +87,7 @@ public class ProductDialog extends JDialog {
             "Lab Supplies", "Other"};
         categoryComboBox = new JComboBox<>(categories);
         categoryComboBox.setEditable(true);
-        setFieldWidth(categoryComboBox, 260);
+        setFieldWidth(categoryComboBox, 235);
 
         alternativeSkuField = new JTextField(16);
         setFieldWidth(alternativeSkuField, 190);
@@ -100,7 +100,7 @@ public class ProductDialog extends JDialog {
         selectSupplierButton = new JButton("Click to select supplier...");
         selectSupplierButton.putClientProperty("i18n.literal", true);
         selectSupplierButton.setHorizontalAlignment(SwingConstants.LEFT);
-        setFieldWidth(selectSupplierButton, 260);
+        setFieldWidth(selectSupplierButton, 235);
         selectSupplierButton.addActionListener(e -> showSupplierSelectionDialog());
 
         JButton newSupplierButton = new JButton("+");
@@ -111,7 +111,7 @@ public class ProductDialog extends JDialog {
         JPanel supplierPanel = new JPanel(new BorderLayout(5, 0));
         supplierPanel.add(selectSupplierButton, BorderLayout.CENTER);
         supplierPanel.add(newSupplierButton, BorderLayout.EAST);
-        setFieldWidth(supplierPanel, 310);
+        setFieldWidth(supplierPanel, 285);
 
         addFormRow(productPanel, 0, "Code:", codeField);
         addFormRow(productPanel, 1, "Name:", nameField);
@@ -151,8 +151,29 @@ public class ProductDialog extends JDialog {
         addFormRow(stockPanel, 7, "Active:", activeCheckBox);
         addFormFiller(stockPanel, 8);
 
-        formsPanel.add(productPanel);
-        formsPanel.add(stockPanel);
+        GridBagConstraints leftSection = new GridBagConstraints();
+        leftSection.gridx = 0;
+        leftSection.gridy = 0;
+        leftSection.weightx = 0.62;
+        leftSection.weighty = 1.0;
+        leftSection.fill = GridBagConstraints.BOTH;
+        leftSection.insets = new Insets(0, 0, 0, 5);
+        formsPanel.add(productPanel, leftSection);
+
+        GridBagConstraints rightSection = new GridBagConstraints();
+        rightSection.gridx = 1;
+        rightSection.gridy = 0;
+        rightSection.weightx = 0.38;
+        rightSection.weighty = 1.0;
+        rightSection.fill = GridBagConstraints.BOTH;
+        rightSection.insets = new Insets(0, 5, 0, 0);
+        formsPanel.add(stockPanel, rightSection);
+
+        // Allow both sections to shrink with the dialog instead of clipping the
+        // right side when their preferred widths are larger than the viewport.
+        productPanel.setMinimumSize(new Dimension(390, productPanel.getMinimumSize().height));
+        stockPanel.setMinimumSize(new Dimension(280, stockPanel.getMinimumSize().height));
+
         content.add(formsPanel, BorderLayout.NORTH);
 
         photosPanel = new JPanel(new BorderLayout(0, 4));
@@ -179,13 +200,13 @@ public class ProductDialog extends JDialog {
 
         Rectangle usable = GraphicsEnvironment.getLocalGraphicsEnvironment()
             .getMaximumWindowBounds();
-        int width = Math.min(800, Math.max(700, usable.width - 80));
+        int width = Math.min(840, Math.max(720, usable.width - 80));
         int height = Math.min(620, Math.max(500, usable.height - 80));
         setPreferredSize(new Dimension(width, height));
         pack();
         setSize(width, height);
         setMinimumSize(new Dimension(
-            Math.min(700, width), Math.min(520, height)));
+            Math.min(720, width), Math.min(520, height)));
         setLocationRelativeTo(getOwner());
         I18n.localize(this);
     }
