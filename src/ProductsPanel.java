@@ -382,7 +382,7 @@ public class ProductsPanel extends JPanel {
                     row.add(trimCellText(rs.getString("supplier_name")));
                     row.add(trimCellText(rs.getString("warehouse_position")));
                     row.add(rs.getDouble("vat_rate"));
-                    row.add(ProductImageStore.getInstance().icon(rs.getString("primary_image"), 50));
+                    row.add(ProductImageStore.getInstance().icon(rs.getString("primary_image"), 36));
                     tableModel.addRow(row);
                 }
             }
@@ -455,7 +455,7 @@ public class ProductsPanel extends JPanel {
                         row.add(trimCellText(rs.getString("supplier_name")));
                         row.add(trimCellText(rs.getString("warehouse_position")));
                         row.add(rs.getDouble("vat_rate"));
-                        row.add(ProductImageStore.getInstance().icon(rs.getString("primary_image"), 50));
+                        row.add(ProductImageStore.getInstance().icon(rs.getString("primary_image"), 36));
                         tableModel.addRow(row);
                     }
                 }
