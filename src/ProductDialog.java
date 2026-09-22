@@ -39,7 +39,7 @@ public class ProductDialog extends JDialog {
     }
 
     public ProductDialog(JDialog parent, Product product) {
-        super(parent, product == null ? "New Product" : "Edit Product", true);
+        super(parent, I18n.tr(product == null ? "New Product" : "Edit Product"), true);
         this.product = product;
         setupDialog();
         initComponents();
