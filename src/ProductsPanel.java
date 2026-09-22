@@ -41,7 +41,7 @@ public class ProductsPanel extends JPanel {
         searchPanel.add(searchButton);
         
         // Products table
-        String[] columns = {"ID", "Code", "Name", "Description", "Price", "Physical", "Reserved", "Available", "On Order", "Category", "Unit", "Min Qty", "Active", "Supplier", "Warehouse Pos", "VAT %", "Photo"};
+        String[] columns = {"ID", "Code", "Name", "Description", "Price", "Physical", "Reserved", "Available", "On Order", "Category", "Unit", "Min Qty", "Active", "Supplier", "Position", "VAT %", "Photo"};\n        for (int i = 0; i < columns.length; i++) columns[i] = columns[i].trim();
         tableModel = new DefaultTableModel(columns, 0) {
             @Override public boolean isCellEditable(int row, int column) { return false; }
             @Override public Class<?> getColumnClass(int columnIndex) {
@@ -68,7 +68,7 @@ public class ProductsPanel extends JPanel {
                 return label;
             }
         });
-        productsTable.getSelectionModel().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        configureProductTablePresentation();\n        productsTable.getSelectionModel().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         productsTable.getSelectionModel().addListSelectionListener(e -> updateButtonStates());
 
         // Enable column sorting
@@ -87,8 +87,23 @@ public class ProductsPanel extends JPanel {
             new TableInteractionUtil.TableAction("Refresh", this::loadProducts, false)
         );
 
-        // Add mouse listener for double click
+        // Photo thumbnail: click opens the gallery; press-and-hold shows a temporary preview.
         productsTable.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mousePressed(java.awt.event.MouseEvent evt) {
+                startPhotoPreview(evt);
+            }
+
+            @Override
+            public void mouseReleased(java.awt.event.MouseEvent evt) {
+                endPhotoPreview();
+            }
+
+            @Override
+            public void mouseExited(java.awt.event.MouseEvent evt) {
+                endPhotoPreview();
+            }
+
             @Override
             public void mouseClicked(java.awt.event.MouseEvent evt) {
                 if (!SwingUtilities.isLeftMouseButton(evt)) return;
@@ -99,6 +114,7 @@ public class ProductsPanel extends JPanel {
 
                 int modelColumn = productsTable.convertColumnIndexToModel(viewColumn);
                 if (evt.getClickCount() == 1 && modelColumn == 16) {
+                    if (suppressPhotoClick) return;
                     int modelRow = productsTable.convertRowIndexToModel(viewRow);
                     if (tableModel.getValueAt(modelRow, 16) instanceof ImageIcon) {
                         showPhotoGallery(modelRow);
@@ -140,6 +156,118 @@ public class ProductsPanel extends JPanel {
         updateButtonStates();
     }
     
+    private void configureProductTablePresentation() {
+        TableCellRenderer headerDelegate = productsTable.getTableHeader().getDefaultRenderer();
+        productsTable.getTableHeader().setDefaultRenderer((table, value, selected, focus, row, column) -> {
+            Component component = headerDelegate.getTableCellRendererComponent(
+                table, value, selected, focus, row, column);
+            if (component instanceof JLabel label) {
+                label.setHorizontalAlignment(SwingConstants.CENTER);
+                label.setText(value == null ? "" : value.toString().trim());
+            }
+            return component;
+        });
+
+        DefaultTableCellRenderer numericRenderer = new DefaultTableCellRenderer();
+        numericRenderer.setHorizontalAlignment(SwingConstants.CENTER);
+        int[] numericModelColumns = {0, 4, 5, 6, 7, 8, 11, 15};
+        for (int modelColumn : numericModelColumns) {
+            int viewColumn = productsTable.convertColumnIndexToView(modelColumn);
+            if (viewColumn >= 0) {
+                productsTable.getColumnModel().getColumn(viewColumn).setCellRenderer(numericRenderer);
+            }
+        }
+    }
+
+    private static String trimCellText(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    private void startPhotoPreview(MouseEvent evt) {
+        cancelPhotoPreviewTimer();
+        if (!SwingUtilities.isLeftMouseButton(evt)) return;
+
+        int viewRow = productsTable.rowAtPoint(evt.getPoint());
+        int viewColumn = productsTable.columnAtPoint(evt.getPoint());
+        if (viewRow < 0 || viewColumn < 0 ||
+                productsTable.convertColumnIndexToModel(viewColumn) != 16) return;
+
+        int modelRow = productsTable.convertRowIndexToModel(viewRow);
+        if (!(tableModel.getValueAt(modelRow, 16) instanceof ImageIcon)) return;
+
+        Point screenPoint = evt.getLocationOnScreen();
+        photoPreviewTimer = new Timer(225, e -> showPhotoPreview(modelRow, screenPoint));
+        photoPreviewTimer.setRepeats(false);
+        photoPreviewTimer.start();
+    }
+
+    private void showPhotoPreview(int modelRow, Point screenPoint) {
+        try {
+            int productId = (int)tableModel.getValueAt(modelRow, 0);
+            String filename = ProductImageStore.getInstance().primaryFilename(productId);
+            if (filename == null || filename.isBlank()) return;
+
+            ImageIcon preview = ProductImageStore.getInstance().icon(filename, 480);
+            if (preview == null) return;
+
+            closePhotoPreviewWindow();
+            Window owner = SwingUtilities.getWindowAncestor(this);
+            photoPreviewWindow = owner == null ? new JWindow() : new JWindow(owner);
+            photoPreviewWindow.setFocusableWindowState(false);
+
+            JLabel imageLabel = new JLabel(preview);
+            imageLabel.setHorizontalAlignment(SwingConstants.CENTER);
+            imageLabel.setVerticalAlignment(SwingConstants.CENTER);
+            imageLabel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createEtchedBorder(),
+                BorderFactory.createEmptyBorder(6, 6, 6, 6)));
+            photoPreviewWindow.add(imageLabel);
+            photoPreviewWindow.pack();
+
+            GraphicsConfiguration gc = productsTable.getGraphicsConfiguration();
+            Rectangle bounds = gc.getBounds();
+            Insets insets = Toolkit.getDefaultToolkit().getScreenInsets(gc);
+            int minX = bounds.x + insets.left;
+            int minY = bounds.y + insets.top;
+            int maxX = bounds.x + bounds.width - insets.right - photoPreviewWindow.getWidth();
+            int maxY = bounds.y + bounds.height - insets.bottom - photoPreviewWindow.getHeight();
+            int x = Math.max(minX, Math.min(screenPoint.x + 14, maxX));
+            int y = Math.max(minY, Math.min(screenPoint.y + 14, maxY));
+
+            photoPreviewWindow.setLocation(x, y);
+            photoPreviewWindow.setVisible(true);
+            photoPreviewVisible = true;
+        } catch (SQLException ignored) {
+            closePhotoPreviewWindow();
+        }
+    }
+
+    private void endPhotoPreview() {
+        cancelPhotoPreviewTimer();
+        boolean wasVisible = photoPreviewVisible;
+        closePhotoPreviewWindow();
+        if (wasVisible) {
+            suppressPhotoClick = true;
+            SwingUtilities.invokeLater(() -> suppressPhotoClick = false);
+        }
+    }
+
+    private void cancelPhotoPreviewTimer() {
+        if (photoPreviewTimer != null) {
+            photoPreviewTimer.stop();
+            photoPreviewTimer = null;
+        }
+    }
+
+    private void closePhotoPreviewWindow() {
+        if (photoPreviewWindow != null) {
+            photoPreviewWindow.setVisible(false);
+            photoPreviewWindow.dispose();
+            photoPreviewWindow = null;
+        }
+        photoPreviewVisible = false;
+    }
+
     private void updateButtonStates() {
         boolean isRowSelected = productsTable.getSelectedRow() != -1;
         detailsButton.setEnabled(isRowSelected);
@@ -173,9 +301,9 @@ public class ProductsPanel extends JPanel {
                 while (rs.next()) {
                     Vector<Object> row = new Vector<>();
                     row.add(rs.getInt("id"));
-                    row.add(rs.getString("code"));
-                    row.add(rs.getString("name"));
-                    row.add(rs.getString("description"));
+                    row.add(trimCellText(rs.getString("code")));
+                    row.add(trimCellText(rs.getString("name")));
+                    row.add(trimCellText(rs.getString("description")));
                     row.add(rs.getDouble("price"));
 
                     int physicalStock = rs.getInt("quantity");
@@ -188,12 +316,12 @@ public class ProductsPanel extends JPanel {
                     row.add(availableStock);
                     row.add(onOrderQuantity);
 
-                    row.add(rs.getString("category"));
-                    row.add(rs.getString("unit_of_measure"));
+                    row.add(trimCellText(rs.getString("category")));
+                    row.add(trimCellText(rs.getString("unit_of_measure")));
                     row.add(rs.getInt("minimum_quantity"));
                     row.add(rs.getInt("active") == 1 ? "Yes" : "No");
-                    row.add(rs.getString("supplier_name") != null ? rs.getString("supplier_name") : "");
-                    row.add(rs.getString("warehouse_position") != null ? rs.getString("warehouse_position") : "");
+                    row.add(trimCellText(rs.getString("supplier_name")));
+                    row.add(trimCellText(rs.getString("warehouse_position")));
                     row.add(rs.getDouble("vat_rate"));
                     row.add(ProductImageStore.getInstance().icon(rs.getString("primary_image"), 50));
                     tableModel.addRow(row);
@@ -245,9 +373,9 @@ public class ProductsPanel extends JPanel {
                     while (rs.next()) {
                         Vector<Object> row = new Vector<>();
                         row.add(rs.getInt("id"));
-                        row.add(rs.getString("code"));
-                        row.add(rs.getString("name"));
-                        row.add(rs.getString("description"));
+                        row.add(trimCellText(rs.getString("code")));
+                        row.add(trimCellText(rs.getString("name")));
+                        row.add(trimCellText(rs.getString("description")));
                         row.add(rs.getDouble("price"));
 
                         int physicalStock = rs.getInt("quantity");
@@ -260,12 +388,12 @@ public class ProductsPanel extends JPanel {
                         row.add(availableStock);
                         row.add(onOrderQuantity);
 
-                        row.add(rs.getString("category"));
-                        row.add(rs.getString("unit_of_measure"));
+                        row.add(trimCellText(rs.getString("category")));
+                        row.add(trimCellText(rs.getString("unit_of_measure")));
                         row.add(rs.getInt("minimum_quantity"));
                         row.add(rs.getInt("active") == 1 ? "Yes" : "No");
-                        row.add(rs.getString("supplier_name") != null ? rs.getString("supplier_name") : "");
-                        row.add(rs.getString("warehouse_position") != null ? rs.getString("warehouse_position") : "");
+                        row.add(trimCellText(rs.getString("supplier_name")));
+                        row.add(trimCellText(rs.getString("warehouse_position")));
                         row.add(rs.getDouble("vat_rate"));
                         row.add(ProductImageStore.getInstance().icon(rs.getString("primary_image"), 50));
                         tableModel.addRow(row);
