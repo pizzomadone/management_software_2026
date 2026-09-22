@@ -450,7 +450,96 @@ public class ProductsPanel extends JPanel {
             }
 
             Window owner = SwingUtilities.getWindowAncestor(this);
-            new ProductPhotoGalleryDialog(owner, productName, images, primaryIndex).setVisible(true);
+            JDialog gallery = new JDialog(owner, I18n.tr("Product Photos"),
+                Dialog.ModalityType.APPLICATION_MODAL);
+            gallery.setLayout(new BorderLayout(8, 8));
+            ((JComponent)gallery.getContentPane()).setBorder(
+                BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+            JLabel title = new JLabel(productName, SwingConstants.CENTER);
+            title.setFont(title.getFont().deriveFont(
+                Font.BOLD, title.getFont().getSize2D() + 2f));
+            gallery.add(title, BorderLayout.NORTH);
+
+            JLabel imageLabel = new JLabel("", SwingConstants.CENTER);
+            imageLabel.setHorizontalAlignment(SwingConstants.CENTER);
+            imageLabel.setVerticalAlignment(SwingConstants.CENTER);
+
+            JPanel imageCanvas = new JPanel(new GridBagLayout());
+            imageCanvas.add(imageLabel);
+            JScrollPane imageScroll = new JScrollPane(imageCanvas);
+            imageScroll.setBorder(BorderFactory.createEmptyBorder());
+            imageScroll.getViewport().setBackground(imageCanvas.getBackground());
+            gallery.add(imageScroll, BorderLayout.CENTER);
+
+            JLabel counterLabel = new JLabel("", SwingConstants.CENTER);
+            JButton previousButton = new JButton(I18n.tr("Previous"));
+            JButton nextButton = new JButton(I18n.tr("Next"));
+            JButton closeButton = new JButton(I18n.tr("Close"));
+            int[] currentIndex = {primaryIndex};
+
+            Runnable refreshImage = () -> {
+                ProductImageStore.ProductImage image = images.get(currentIndex[0]);
+                ImageIcon icon = ProductImageStore.getInstance().icon(image.filename(), 700);
+                if (icon == null) {
+                    imageLabel.setIcon(null);
+                    imageLabel.setText(I18n.tr("Unable to load product photo"));
+                } else {
+                    imageLabel.setText("");
+                    imageLabel.setIcon(icon);
+                }
+                counterLabel.setText((currentIndex[0] + 1) + "/" + images.size());
+                previousButton.setEnabled(currentIndex[0] > 0);
+                nextButton.setEnabled(currentIndex[0] < images.size() - 1);
+            };
+
+            previousButton.addActionListener(e -> {
+                if (currentIndex[0] > 0) {
+                    currentIndex[0]--;
+                    refreshImage.run();
+                }
+            });
+            nextButton.addActionListener(e -> {
+                if (currentIndex[0] < images.size() - 1) {
+                    currentIndex[0]++;
+                    refreshImage.run();
+                }
+            });
+            closeButton.addActionListener(e -> gallery.dispose());
+
+            JPanel navigation = new JPanel(new BorderLayout(8, 0));
+            navigation.add(previousButton, BorderLayout.WEST);
+            navigation.add(counterLabel, BorderLayout.CENTER);
+            navigation.add(nextButton, BorderLayout.EAST);
+
+            JPanel closePanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+            closePanel.add(closeButton);
+            JPanel bottom = new JPanel(new BorderLayout(8, 8));
+            bottom.add(navigation, BorderLayout.CENTER);
+            bottom.add(closePanel, BorderLayout.SOUTH);
+            gallery.add(bottom, BorderLayout.SOUTH);
+
+            gallery.getRootPane().registerKeyboardAction(e -> {
+                if (currentIndex[0] > 0) {
+                    currentIndex[0]--;
+                    refreshImage.run();
+                }
+            }, KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, 0),
+                JComponent.WHEN_IN_FOCUSED_WINDOW);
+            gallery.getRootPane().registerKeyboardAction(e -> {
+                if (currentIndex[0] < images.size() - 1) {
+                    currentIndex[0]++;
+                    refreshImage.run();
+                }
+            }, KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, 0),
+                JComponent.WHEN_IN_FOCUSED_WINDOW);
+
+            gallery.setSize(820, 720);
+            gallery.setMinimumSize(new Dimension(520, 460));
+            refreshImage.run();
+            gallery.setLocationRelativeTo(owner);
+            I18n.localize(gallery);
+            gallery.setVisible(true);
         } catch (SQLException e) {
             Dialogs.showMessageDialog(this,
                 I18n.tr("Unable to load product photos") + ": " + e.getMessage(),
