@@ -306,6 +306,57 @@ public final class ProductImageStore {
         }
     }
 
+    public ImageIcon iconCover(String filename, int width, int height) {
+        if (filename == null || filename.isBlank() || width <= 0 || height <= 0) return null;
+        try {
+            Path preferred = thumbnailPath(filename);
+            if (!Files.isRegularFile(preferred)) {
+                ensureThumbnail(filename);
+            }
+            if (!Files.isRegularFile(preferred)) preferred = imagePath(filename);
+            if (!Files.isRegularFile(preferred)) return null;
+
+            BufferedImage source = ImageIO.read(preferred.toFile());
+            if (source == null) return null;
+
+            double scale = Math.max(width / (double) source.getWidth(),
+                                    height / (double) source.getHeight());
+            int scaledWidth = Math.max(width, (int)Math.ceil(source.getWidth() * scale));
+            int scaledHeight = Math.max(height, (int)Math.ceil(source.getHeight() * scale));
+
+            BufferedImage scaled = new BufferedImage(
+                scaledWidth, scaledHeight,
+                source.getColorModel().hasAlpha()
+                    ? BufferedImage.TYPE_INT_ARGB : BufferedImage.TYPE_INT_RGB);
+            Graphics2D sg = scaled.createGraphics();
+            try {
+                sg.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
+                    RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+                sg.setRenderingHint(RenderingHints.KEY_RENDERING,
+                    RenderingHints.VALUE_RENDER_QUALITY);
+                sg.drawImage(source, 0, 0, scaledWidth, scaledHeight, null);
+            } finally {
+                sg.dispose();
+            }
+
+            int x = Math.max(0, (scaledWidth - width) / 2);
+            int y = Math.max(0, (scaledHeight - height) / 2);
+            BufferedImage cropped = new BufferedImage(
+                width, height,
+                scaled.getColorModel().hasAlpha()
+                    ? BufferedImage.TYPE_INT_ARGB : BufferedImage.TYPE_INT_RGB);
+            Graphics2D cg = cropped.createGraphics();
+            try {
+                cg.drawImage(scaled, -x, -y, null);
+            } finally {
+                cg.dispose();
+            }
+            return new ImageIcon(cropped);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     public void ensureThumbnail(String filename) throws IOException {
         Path thumb = thumbnailPath(filename);
         if (Files.isRegularFile(thumb)) return;
