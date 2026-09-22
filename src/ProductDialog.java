@@ -63,8 +63,10 @@ public class ProductDialog extends JDialog {
         JPanel stockPanel = new JPanel(new GridBagLayout());
         stockPanel.setBorder(BorderFactory.createTitledBorder(I18n.tr("Inventory & Pricing")));
 
-        codeField = new JTextField(16);\n        setFieldWidth(codeField, 190);
-        nameField = new JTextField(16);\n        setFieldWidth(nameField, 315);
+        codeField = new JTextField(16);
+        setFieldWidth(codeField, 190);
+        nameField = new JTextField(16);
+        setFieldWidth(nameField, 315);
 
         descriptionArea = new JTextArea(2, 16);
         descriptionArea.setLineWrap(true);
@@ -84,17 +86,21 @@ public class ProductDialog extends JDialog {
             "Pet Food", "Pet Accessories", "Industrial & Scientific", "Industrial Equipment",
             "Lab Supplies", "Other"};
         categoryComboBox = new JComboBox<>(categories);
-        categoryComboBox.setEditable(true);\n        setFieldWidth(categoryComboBox, 260);
+        categoryComboBox.setEditable(true);
+        setFieldWidth(categoryComboBox, 260);
 
-        alternativeSkuField = new JTextField(16);\n        setFieldWidth(alternativeSkuField, 190);
+        alternativeSkuField = new JTextField(16);
+        setFieldWidth(alternativeSkuField, 190);
 
         String[] units = {"pcs", "kg", "m", "liters", "box", "pack"};
         unitOfMeasureComboBox = new JComboBox<>(units);
-        unitOfMeasureComboBox.setEditable(true);\n        setFieldWidth(unitOfMeasureComboBox, 135);
+        unitOfMeasureComboBox.setEditable(true);
+        setFieldWidth(unitOfMeasureComboBox, 135);
 
         selectSupplierButton = new JButton("Click to select supplier...");
         selectSupplierButton.putClientProperty("i18n.literal", true);
-        selectSupplierButton.setHorizontalAlignment(SwingConstants.LEFT);\n        setFieldWidth(selectSupplierButton, 260);
+        selectSupplierButton.setHorizontalAlignment(SwingConstants.LEFT);
+        setFieldWidth(selectSupplierButton, 260);
         selectSupplierButton.addActionListener(e -> showSupplierSelectionDialog());
 
         JButton newSupplierButton = new JButton("+");
@@ -102,9 +108,10 @@ public class ProductDialog extends JDialog {
         newSupplierButton.setMargin(new Insets(2, 9, 2, 9));
         newSupplierButton.addActionListener(e -> createNewSupplier());
 
-        JPanel supplierPanel = new JPanel(new BorderLayout(5, 0));\n        setFieldWidth(supplierPanel, 310);
+        JPanel supplierPanel = new JPanel(new BorderLayout(5, 0));
         supplierPanel.add(selectSupplierButton, BorderLayout.CENTER);
         supplierPanel.add(newSupplierButton, BorderLayout.EAST);
+        setFieldWidth(supplierPanel, 310);
 
         addFormRow(productPanel, 0, "Code:", codeField);
         addFormRow(productPanel, 1, "Name:", nameField);
@@ -115,15 +122,22 @@ public class ProductDialog extends JDialog {
         addFormRow(productPanel, 6, "Supplier:", supplierPanel);
         addFormFiller(productPanel, 7);
 
-        priceField = new JTextField(10);\n        setFieldWidth(priceField, 115);
-        acquisitionCostField = new JTextField(10);\n        setFieldWidth(acquisitionCostField, 115);
+        priceField = new JTextField(10);
+        setFieldWidth(priceField, 115);
+        acquisitionCostField = new JTextField(10);
+        setFieldWidth(acquisitionCostField, 115);
         acquisitionCostField.setText("0.0");
-        quantitySpinner = new JSpinner(new SpinnerNumberModel(0, 0, 999999, 1));\n        setFieldWidth(quantitySpinner, 110);
-        minimumQuantitySpinner = new JSpinner(new SpinnerNumberModel(0, 0, 999999, 1));\n        setFieldWidth(minimumQuantitySpinner, 110);
-        weightField = new JTextField(9);\n        setFieldWidth(weightField, 105);
+        quantitySpinner = new JSpinner(new SpinnerNumberModel(0, 0, 999999, 1));
+        setFieldWidth(quantitySpinner, 110);
+        minimumQuantitySpinner = new JSpinner(new SpinnerNumberModel(0, 0, 999999, 1));
+        setFieldWidth(minimumQuantitySpinner, 110);
+        weightField = new JTextField(9);
+        setFieldWidth(weightField, 105);
         weightField.setText("0.0");
-        warehousePositionField = new JTextField(12);\n        setFieldWidth(warehousePositionField, 155);
-        vatRateField = new JTextField(8);\n        setFieldWidth(vatRateField, 90);
+        warehousePositionField = new JTextField(12);
+        setFieldWidth(warehousePositionField, 155);
+        vatRateField = new JTextField(8);
+        setFieldWidth(vatRateField, 90);
         vatRateField.setText(String.valueOf(SettingsPanel.getDefaultVatRate()));
         activeCheckBox = new JCheckBox("", true);
 
