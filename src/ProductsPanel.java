@@ -2,6 +2,7 @@ import javax.swing.*;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableCellRenderer;
+import javax.swing.table.TableColumn;
 import java.awt.*;
 import java.awt.event.*;
 import java.sql.*;
@@ -55,12 +56,12 @@ public class ProductsPanel extends JPanel {
             }
         };
         productsTable = new JTable(tableModel);
-        productsTable.setRowHeight(54);
+        productsTable.setRowHeight(40);
         int photoViewColumn = productsTable.convertColumnIndexToView(16);
         productsTable.moveColumn(photoViewColumn, 0);
-        productsTable.getColumnModel().getColumn(0).setMinWidth(54);
-        productsTable.getColumnModel().getColumn(0).setPreferredWidth(56);
-        productsTable.getColumnModel().getColumn(0).setMaxWidth(60);
+        productsTable.getColumnModel().getColumn(0).setMinWidth(40);
+        productsTable.getColumnModel().getColumn(0).setPreferredWidth(42);
+        productsTable.getColumnModel().getColumn(0).setMaxWidth(44);
         productsTable.getColumnModel().getColumn(0).setCellRenderer(new DefaultTableCellRenderer() {
             @Override
             public Component getTableCellRendererComponent(JTable table, Object value,
@@ -162,10 +163,12 @@ public class ProductsPanel extends JPanel {
         add(new JScrollPane(productsTable), BorderLayout.CENTER);
         add(buttonPanel, BorderLayout.SOUTH);
         
+        fitProductColumns();
         updateButtonStates();
     }
     
     private void configureProductTablePresentation() {
+        productsTable.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
         TableCellRenderer headerDelegate = productsTable.getTableHeader().getDefaultRenderer();
         productsTable.getTableHeader().setDefaultRenderer((table, value, selected, focus, row, column) -> {
             Component component = headerDelegate.getTableCellRendererComponent(
@@ -186,6 +189,53 @@ public class ProductsPanel extends JPanel {
                 productsTable.getColumnModel().getColumn(viewColumn).setCellRenderer(numericRenderer);
             }
         }
+    }
+
+    private void fitProductColumns() {
+        // Products is intentionally compact: each column uses only the space it needs.
+        // Long text columns stop growing at a sensible limit and the table scrolls
+        // horizontally instead of stealing space from useful columns.
+        int[] minWidths = {36, 62, 70, 82, 54, 54, 60, 66, 60, 68, 44, 58, 48, 68, 58, 50, 40};
+        int[] maxWidths = {46, 135, 180, 230, 82, 78, 86, 94, 88, 150, 70, 82, 70, 170, 110, 70, 44};
+
+        FontMetrics cellMetrics = productsTable.getFontMetrics(productsTable.getFont());
+        FontMetrics headerMetrics = productsTable.getTableHeader()
+            .getFontMetrics(productsTable.getTableHeader().getFont());
+
+        for (int modelColumn = 0; modelColumn < tableModel.getColumnCount(); modelColumn++) {
+            int viewColumn = productsTable.convertColumnIndexToView(modelColumn);
+            if (viewColumn < 0) continue;
+
+            TableColumn column = productsTable.getColumnModel().getColumn(viewColumn);
+            if (modelColumn == 16) {
+                column.setMinWidth(40);
+                column.setPreferredWidth(42);
+                column.setMaxWidth(44);
+                continue;
+            }
+
+            String header = I18n.tr(tableModel.getColumnName(modelColumn)).trim();
+            int width = headerMetrics.stringWidth(header) + 12;
+
+            for (int row = 0; row < tableModel.getRowCount(); row++) {
+                Object value = tableModel.getValueAt(row, modelColumn);
+                if (value == null) continue;
+                String text = value instanceof String
+                    ? I18n.tr(((String)value).trim())
+                    : String.valueOf(value).trim();
+                width = Math.max(width, cellMetrics.stringWidth(text) + 12);
+            }
+
+            width = Math.max(minWidths[modelColumn],
+                Math.min(maxWidths[modelColumn], width));
+            column.setMinWidth(minWidths[modelColumn]);
+            column.setPreferredWidth(width);
+            column.setMaxWidth(maxWidths[modelColumn]);
+        }
+    }
+
+    private void scheduleProductColumnFit() {
+        SwingUtilities.invokeLater(this::fitProductColumns);
     }
 
     private static String trimCellText(String value) {
@@ -336,6 +386,7 @@ public class ProductsPanel extends JPanel {
                     tableModel.addRow(row);
                 }
             }
+            scheduleProductColumnFit();
         } catch (SQLException e) {
             Dialogs.showMessageDialog(this,
                 "Error loading products: " + e.getMessage(),
@@ -409,6 +460,7 @@ public class ProductsPanel extends JPanel {
                     }
                 }
             }
+            scheduleProductColumnFit();
         } catch (SQLException e) {
             Dialogs.showMessageDialog(this,
                 "Error searching for products: " + e.getMessage(),
