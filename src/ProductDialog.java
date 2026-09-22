@@ -277,24 +277,23 @@ public class ProductDialog extends JDialog {
         JLabel preview = createPhotoPreview(icon);
         card.add(preview, BorderLayout.CENTER);
 
-        JPanel controls = new JPanel(new FlowLayout(FlowLayout.CENTER, 3, 2));
+        JPanel controls = new JPanel(new FlowLayout(FlowLayout.CENTER, 4, 2));
         controls.setOpaque(false);
 
         if (image.primary()) {
-            JLabel primaryLabel = new JLabel(I18n.tr("Primary"));
-            primaryLabel.setFont(primaryLabel.getFont().deriveFont(Font.BOLD));
-            controls.add(primaryLabel);
+            JLabel primary = new JLabel("★");
+            primary.setToolTipText(I18n.tr("Primary"));
+            primary.setFont(primary.getFont().deriveFont(Font.BOLD));
+            controls.add(primary);
         } else {
-            JButton primary = compactButton(I18n.tr("Set as Primary"));
+            JButton primary = photoActionButton("☆", I18n.tr("Set as Primary"));
             primary.addActionListener(e -> runPhotoAction(() ->
                 ProductImageStore.getInstance().setPrimary(image.productId(), image.id())));
             controls.add(primary);
         }
 
-        JButton left = compactButton("←");
-        JButton right = compactButton("→");
-        left.setToolTipText(I18n.tr("Move Left"));
-        right.setToolTipText(I18n.tr("Move Right"));
+        JButton left = photoActionButton("←", I18n.tr("Move Left"));
+        JButton right = photoActionButton("→", I18n.tr("Move Right"));
         left.setEnabled(index > 0);
         right.setEnabled(index < total - 1);
         left.addActionListener(e -> runPhotoAction(() ->
@@ -304,8 +303,8 @@ public class ProductDialog extends JDialog {
         controls.add(left);
         controls.add(right);
 
-        JButton delete = compactButton(I18n.tr("Delete"));
-        delete.setToolTipText(I18n.tr("Delete Photo"));
+        JButton delete = photoActionButton("×", I18n.tr("Delete Photo"));
+        delete.getAccessibleContext().setAccessibleName(I18n.tr("Delete Photo"));
         delete.addActionListener(e -> runPhotoAction(() ->
             ProductImageStore.getInstance().deleteImage(image.productId(), image.id())));
         controls.add(delete);
@@ -320,17 +319,18 @@ public class ProductDialog extends JDialog {
         JLabel preview = createPhotoPreview(icon);
         card.add(preview, BorderLayout.CENTER);
 
-        JPanel controls = new JPanel(new FlowLayout(FlowLayout.CENTER, 3, 2));
+        JPanel controls = new JPanel(new FlowLayout(FlowLayout.CENTER, 4, 2));
         controls.setOpaque(false);
 
         boolean primary = filename.equals(pendingPrimaryFilename) ||
             (pendingPrimaryFilename == null && index == 0);
         if (primary) {
-            JLabel primaryLabel = new JLabel(I18n.tr("Primary"));
+            JLabel primaryLabel = new JLabel("★");
+            primaryLabel.setToolTipText(I18n.tr("Primary"));
             primaryLabel.setFont(primaryLabel.getFont().deriveFont(Font.BOLD));
             controls.add(primaryLabel);
         } else {
-            JButton makePrimary = compactButton(I18n.tr("Set as Primary"));
+            JButton makePrimary = photoActionButton("☆", I18n.tr("Set as Primary"));
             makePrimary.addActionListener(e -> {
                 pendingPrimaryFilename = filename;
                 refreshPhotosPanel();
@@ -338,10 +338,8 @@ public class ProductDialog extends JDialog {
             controls.add(makePrimary);
         }
 
-        JButton left = compactButton("←");
-        JButton right = compactButton("→");
-        left.setToolTipText(I18n.tr("Move Left"));
-        right.setToolTipText(I18n.tr("Move Right"));
+        JButton left = photoActionButton("←", I18n.tr("Move Left"));
+        JButton right = photoActionButton("→", I18n.tr("Move Right"));
         left.setEnabled(index > 0);
         right.setEnabled(index < total - 1);
         left.addActionListener(e -> movePending(index, -1));
@@ -349,8 +347,8 @@ public class ProductDialog extends JDialog {
         controls.add(left);
         controls.add(right);
 
-        JButton delete = compactButton(I18n.tr("Delete"));
-        delete.setToolTipText(I18n.tr("Delete Photo"));
+        JButton delete = photoActionButton("×", I18n.tr("Delete Photo"));
+        delete.getAccessibleContext().setAccessibleName(I18n.tr("Delete Photo"));
         delete.addActionListener(e -> {
             pendingPhotos().remove(filename);
             ProductImageStore.getInstance().deleteFiles(filename);
@@ -381,6 +379,16 @@ public class ProductDialog extends JDialog {
         preview.setHorizontalAlignment(SwingConstants.CENTER);
         preview.setVerticalAlignment(SwingConstants.CENTER);
         return preview;
+    }
+
+    private JButton photoActionButton(String symbol, String tooltip) {
+        JButton button = new JButton(symbol);
+        button.setToolTipText(tooltip);
+        button.setMargin(new Insets(0, 0, 0, 0));
+        button.setPreferredSize(new Dimension(30, 24));
+        button.setMinimumSize(new Dimension(30, 24));
+        button.setMaximumSize(new Dimension(30, 24));
+        return button;
     }
 
     private JButton compactButton(String text) {
