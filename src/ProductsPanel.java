@@ -1,6 +1,7 @@
 import javax.swing.*;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableCellRenderer;
 import java.awt.*;
 import java.awt.event.*;
 import java.sql.*;
@@ -15,6 +16,10 @@ public class ProductsPanel extends JPanel {
     private JButton editButton;
     private JButton deleteButton;
     private JButton refreshButton;
+    private Timer photoPreviewTimer;
+    private JWindow photoPreviewWindow;
+    private boolean photoPreviewVisible;
+    private boolean suppressPhotoClick;
     
     public ProductsPanel() {
         setupPanel();
@@ -41,7 +46,8 @@ public class ProductsPanel extends JPanel {
         searchPanel.add(searchButton);
         
         // Products table
-        String[] columns = {"ID", "Code", "Name", "Description", "Price", "Physical", "Reserved", "Available", "On Order", "Category", "Unit", "Min Qty", "Active", "Supplier", "Position", "VAT %", "Photo"};\n        for (int i = 0; i < columns.length; i++) columns[i] = columns[i].trim();
+        String[] columns = {"ID", "Code", "Name", "Description", "Price", "Physical", "Reserved", "Available", "On Order", "Category", "Unit", "Min Qty", "Active", "Supplier", "Position", "VAT %", "Photo"};
+        for (int i = 0; i < columns.length; i++) columns[i] = columns[i].trim();
         tableModel = new DefaultTableModel(columns, 0) {
             @Override public boolean isCellEditable(int row, int column) { return false; }
             @Override public Class<?> getColumnClass(int columnIndex) {
@@ -65,10 +71,13 @@ public class ProductsPanel extends JPanel {
                 label.setHorizontalAlignment(SwingConstants.CENTER);
                 label.setVerticalAlignment(SwingConstants.CENTER);
                 label.setBorder(BorderFactory.createEmptyBorder(1, 1, 1, 1));
+                label.setToolTipText(value instanceof Icon
+                    ? I18n.tr("Hold to preview - Click to open gallery") : null);
                 return label;
             }
         });
-        configureProductTablePresentation();\n        productsTable.getSelectionModel().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        configureProductTablePresentation();
+        productsTable.getSelectionModel().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         productsTable.getSelectionModel().addListSelectionListener(e -> updateButtonStates());
 
         // Enable column sorting
