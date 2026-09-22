@@ -209,30 +209,42 @@ public class ProductDialog extends JDialog {
         try {
             List<ProductImageStore.ProductImage> existing =
                 product == null ? List.of() : ProductImageStore.getInstance().list(product.getId());
+            List<String> pending = pendingPhotos();
 
-            JPanel gallery = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 5));
+            JPanel gallery = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
+            gallery.setOpaque(false);
+
             for (int i = 0; i < existing.size(); i++) {
                 ProductImageStore.ProductImage image = existing.get(i);
                 gallery.add(existingPhotoCard(image, i, existing.size()));
             }
-            List<String> pending = pendingPhotos();
             for (int i = 0; i < pending.size(); i++) {
                 gallery.add(pendingPhotoCard(pending.get(i), i, pending.size()));
             }
 
-            if (existing.isEmpty() && pending.isEmpty()) gallery.add(new JLabel(I18n.tr("No photos")));
-            photosPanel.add(gallery);
+            if (existing.isEmpty() && pending.isEmpty()) {
+                JLabel empty = new JLabel(I18n.tr("No photos"));
+                empty.setBorder(BorderFactory.createEmptyBorder(12, 8, 12, 8));
+                gallery.add(empty);
+            }
+
+            JPanel galleryHolder = new JPanel(new BorderLayout());
+            galleryHolder.setOpaque(false);
+            galleryHolder.add(gallery, BorderLayout.WEST);
+            photosPanel.add(galleryHolder, BorderLayout.CENTER);
 
             int count = existing.size() + pending.size();
-            JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT));
+            JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 2));
+            actions.setOpaque(false);
             JButton addPhoto = new JButton(I18n.tr("Add Photo"));
             addPhoto.setEnabled(count < ProductImageStore.MAX_IMAGES_PER_PRODUCT);
             addPhoto.addActionListener(e -> addPhoto());
             actions.add(addPhoto);
             actions.add(new JLabel(count + "/" + ProductImageStore.MAX_IMAGES_PER_PRODUCT));
-            photosPanel.add(actions);
+            photosPanel.add(actions, BorderLayout.SOUTH);
         } catch (Exception e) {
-            photosPanel.add(new JLabel(I18n.tr("Unable to load product photos")));
+            photosPanel.add(new JLabel(I18n.tr("Unable to load product photos")),
+                BorderLayout.CENTER);
         }
         I18n.localize(photosPanel);
         photosPanel.revalidate();
@@ -240,24 +252,27 @@ public class ProductDialog extends JDialog {
     }
 
     private JPanel existingPhotoCard(ProductImageStore.ProductImage image, int index, int total) {
-        JPanel card = new JPanel(new BorderLayout(4, 4));
-        card.setBorder(BorderFactory.createEtchedBorder());
-        ImageIcon icon = ProductImageStore.getInstance().icon(image.filename(), 120);
-        JLabel preview = new JLabel(icon);
-        preview.setPreferredSize(new Dimension(130, 100));
-        preview.setHorizontalAlignment(SwingConstants.CENTER);
+        JPanel card = createPhotoCardShell();
+        ImageIcon icon = ProductImageStore.getInstance().icon(image.filename(), 95);
+        JLabel preview = createPhotoPreview(icon);
         card.add(preview, BorderLayout.CENTER);
 
-        JPanel controls = new JPanel(new GridLayout(0, 1, 2, 2));
-        JButton primary = new JButton(I18n.tr(image.primary() ? "Primary" : "Set as Primary"));
-        primary.setEnabled(!image.primary());
-        primary.addActionListener(e -> runPhotoAction(() ->
-            ProductImageStore.getInstance().setPrimary(image.productId(), image.id())));
-        controls.add(primary);
+        JPanel controls = new JPanel(new FlowLayout(FlowLayout.CENTER, 3, 2));
+        controls.setOpaque(false);
 
-        JPanel order = new JPanel(new FlowLayout(FlowLayout.CENTER, 2, 0));
-        JButton left = new JButton("←");
-        JButton right = new JButton("→");
+        if (image.primary()) {
+            JLabel primaryLabel = new JLabel(I18n.tr("Primary"));
+            primaryLabel.setFont(primaryLabel.getFont().deriveFont(Font.BOLD));
+            controls.add(primaryLabel);
+        } else {
+            JButton primary = compactButton(I18n.tr("Set as Primary"));
+            primary.addActionListener(e -> runPhotoAction(() ->
+                ProductImageStore.getInstance().setPrimary(image.productId(), image.id())));
+            controls.add(primary);
+        }
+
+        JButton left = compactButton("←");
+        JButton right = compactButton("→");
         left.setToolTipText(I18n.tr("Move Left"));
         right.setToolTipText(I18n.tr("Move Right"));
         left.setEnabled(index > 0);
@@ -266,60 +281,92 @@ public class ProductDialog extends JDialog {
             ProductImageStore.getInstance().move(image.productId(), image.id(), -1)));
         right.addActionListener(e -> runPhotoAction(() ->
             ProductImageStore.getInstance().move(image.productId(), image.id(), 1)));
-        order.add(left); order.add(right);
-        controls.add(order);
+        controls.add(left);
+        controls.add(right);
 
-        JButton delete = new JButton(I18n.tr("Delete Photo"));
+        JButton delete = compactButton(I18n.tr("Delete"));
+        delete.setToolTipText(I18n.tr("Delete Photo"));
         delete.addActionListener(e -> runPhotoAction(() ->
             ProductImageStore.getInstance().deleteImage(image.productId(), image.id())));
         controls.add(delete);
+
         card.add(controls, BorderLayout.SOUTH);
         return card;
     }
 
     private JPanel pendingPhotoCard(String filename, int index, int total) {
-        JPanel card = new JPanel(new BorderLayout(4, 4));
-        card.setBorder(BorderFactory.createEtchedBorder());
-        ImageIcon icon = ProductImageStore.getInstance().icon(filename, 120);
-        JLabel preview = new JLabel(icon);
-        preview.setPreferredSize(new Dimension(130, 100));
-        preview.setHorizontalAlignment(SwingConstants.CENTER);
+        JPanel card = createPhotoCardShell();
+        ImageIcon icon = ProductImageStore.getInstance().icon(filename, 95);
+        JLabel preview = createPhotoPreview(icon);
         card.add(preview, BorderLayout.CENTER);
 
-        JPanel controls = new JPanel(new GridLayout(0, 1, 2, 2));
+        JPanel controls = new JPanel(new FlowLayout(FlowLayout.CENTER, 3, 2));
+        controls.setOpaque(false);
+
         boolean primary = filename.equals(pendingPrimaryFilename) ||
             (pendingPrimaryFilename == null && index == 0);
-        JButton makePrimary = new JButton(I18n.tr(primary ? "Primary" : "Set as Primary"));
-        makePrimary.setEnabled(!primary);
-        makePrimary.addActionListener(e -> {
-            pendingPrimaryFilename = filename;
-            refreshPhotosPanel();
-        });
-        controls.add(makePrimary);
+        if (primary) {
+            JLabel primaryLabel = new JLabel(I18n.tr("Primary"));
+            primaryLabel.setFont(primaryLabel.getFont().deriveFont(Font.BOLD));
+            controls.add(primaryLabel);
+        } else {
+            JButton makePrimary = compactButton(I18n.tr("Set as Primary"));
+            makePrimary.addActionListener(e -> {
+                pendingPrimaryFilename = filename;
+                refreshPhotosPanel();
+            });
+            controls.add(makePrimary);
+        }
 
-        JPanel order = new JPanel(new FlowLayout(FlowLayout.CENTER, 2, 0));
-        JButton left = new JButton("←");
-        JButton right = new JButton("→");
-        left.setToolTipText("Move Left");
-        right.setToolTipText("Move Right");
+        JButton left = compactButton("←");
+        JButton right = compactButton("→");
+        left.setToolTipText(I18n.tr("Move Left"));
+        right.setToolTipText(I18n.tr("Move Right"));
         left.setEnabled(index > 0);
         right.setEnabled(index < total - 1);
         left.addActionListener(e -> movePending(index, -1));
         right.addActionListener(e -> movePending(index, 1));
-        order.add(left); order.add(right);
-        controls.add(order);
+        controls.add(left);
+        controls.add(right);
 
-        JButton delete = new JButton(I18n.tr("Delete Photo"));
+        JButton delete = compactButton(I18n.tr("Delete"));
+        delete.setToolTipText(I18n.tr("Delete Photo"));
         delete.addActionListener(e -> {
             pendingPhotos().remove(filename);
             ProductImageStore.getInstance().deleteFiles(filename);
-            if (filename.equals(pendingPrimaryFilename)) pendingPrimaryFilename =
-                pendingPhotos().isEmpty() ? null : pendingPhotos().get(0);
+            if (filename.equals(pendingPrimaryFilename)) {
+                pendingPrimaryFilename = pendingPhotos().isEmpty()
+                    ? null : pendingPhotos().get(0);
+            }
             refreshPhotosPanel();
         });
         controls.add(delete);
+
         card.add(controls, BorderLayout.SOUTH);
         return card;
+    }
+
+    private JPanel createPhotoCardShell() {
+        JPanel card = new JPanel(new BorderLayout(3, 3));
+        card.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createEtchedBorder(),
+            BorderFactory.createEmptyBorder(4, 4, 3, 4)));
+        card.setPreferredSize(new Dimension(245, 125));
+        return card;
+    }
+
+    private JLabel createPhotoPreview(ImageIcon icon) {
+        JLabel preview = new JLabel(icon);
+        preview.setPreferredSize(new Dimension(225, 82));
+        preview.setHorizontalAlignment(SwingConstants.CENTER);
+        preview.setVerticalAlignment(SwingConstants.CENTER);
+        return preview;
+    }
+
+    private JButton compactButton(String text) {
+        JButton button = new JButton(text);
+        button.setMargin(new Insets(2, 6, 2, 6));
+        return button;
     }
 
     private void movePending(int index, int direction) {
