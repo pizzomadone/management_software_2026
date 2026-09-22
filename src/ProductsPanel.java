@@ -56,12 +56,12 @@ public class ProductsPanel extends JPanel {
             }
         };
         productsTable = new JTable(tableModel);
-        productsTable.setRowHeight(40);
+        productsTable.setRowHeight(44);
         int photoViewColumn = productsTable.convertColumnIndexToView(16);
         productsTable.moveColumn(photoViewColumn, 0);
-        productsTable.getColumnModel().getColumn(0).setMinWidth(40);
-        productsTable.getColumnModel().getColumn(0).setPreferredWidth(42);
-        productsTable.getColumnModel().getColumn(0).setMaxWidth(44);
+        productsTable.getColumnModel().getColumn(0).setMinWidth(32);
+        productsTable.getColumnModel().getColumn(0).setPreferredWidth(44);
+        productsTable.getColumnModel().getColumn(0).setMaxWidth(Integer.MAX_VALUE);
         productsTable.getColumnModel().getColumn(0).setCellRenderer(new DefaultTableCellRenderer() {
             @Override
             public Component getTableCellRendererComponent(JTable table, Object value,
@@ -71,7 +71,7 @@ public class ProductsPanel extends JPanel {
                 label.setIcon(value instanceof Icon ? (Icon)value : null);
                 label.setHorizontalAlignment(SwingConstants.CENTER);
                 label.setVerticalAlignment(SwingConstants.CENTER);
-                label.setBorder(BorderFactory.createEmptyBorder(1, 1, 1, 1));
+                label.setBorder(BorderFactory.createEmptyBorder(2, 2, 2, 2));
                 label.setToolTipText(value instanceof Icon
                     ? I18n.tr("Hold to preview - Click to open gallery") : null);
                 return label;
@@ -189,6 +189,44 @@ public class ProductsPanel extends JPanel {
                 productsTable.getColumnModel().getColumn(viewColumn).setCellRenderer(numericRenderer);
             }
         }
+
+        TableCellRenderer wrappedTextRenderer = new WrappedProductTextRenderer();
+        int[] wrappedTextModelColumns = {1, 2, 3, 9, 10, 12, 13, 14};
+        for (int modelColumn : wrappedTextModelColumns) {
+            int viewColumn = productsTable.convertColumnIndexToView(modelColumn);
+            if (viewColumn >= 0) {
+                productsTable.getColumnModel().getColumn(viewColumn)
+                    .setCellRenderer(wrappedTextRenderer);
+            }
+        }
+    }
+
+    private static final class WrappedProductTextRenderer extends JTextArea
+            implements TableCellRenderer {
+        private WrappedProductTextRenderer() {
+            setLineWrap(true);
+            setWrapStyleWord(true);
+            setOpaque(true);
+            setEditable(false);
+            setFocusable(false);
+            setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
+        }
+
+        @Override
+        public Component getTableCellRendererComponent(JTable table, Object value,
+                boolean selected, boolean focus, int row, int column) {
+            String text = value == null ? "" : value.toString().trim();
+            setText(I18n.tr(text));
+            setFont(table.getFont());
+            if (selected) {
+                setBackground(table.getSelectionBackground());
+                setForeground(table.getSelectionForeground());
+            } else {
+                setBackground(table.getBackground());
+                setForeground(table.getForeground());
+            }
+            return this;
+        }
     }
 
     private void fitProductColumns() {
@@ -207,10 +245,11 @@ public class ProductsPanel extends JPanel {
             if (viewColumn < 0) continue;
 
             TableColumn column = productsTable.getColumnModel().getColumn(viewColumn);
+            column.setResizable(true);
             if (modelColumn == 16) {
-                column.setMinWidth(40);
-                column.setPreferredWidth(42);
-                column.setMaxWidth(44);
+                column.setMinWidth(32);
+                column.setPreferredWidth(44);
+                column.setMaxWidth(Integer.MAX_VALUE);
                 continue;
             }
 
@@ -230,7 +269,7 @@ public class ProductsPanel extends JPanel {
                 Math.min(maxWidths[modelColumn], width));
             column.setMinWidth(minWidths[modelColumn]);
             column.setPreferredWidth(width);
-            column.setMaxWidth(maxWidths[modelColumn]);
+            column.setMaxWidth(Integer.MAX_VALUE);
         }
     }
 
@@ -382,7 +421,7 @@ public class ProductsPanel extends JPanel {
                     row.add(trimCellText(rs.getString("supplier_name")));
                     row.add(trimCellText(rs.getString("warehouse_position")));
                     row.add(rs.getDouble("vat_rate"));
-                    row.add(ProductImageStore.getInstance().icon(rs.getString("primary_image"), 36));
+                    row.add(ProductImageStore.getInstance().icon(rs.getString("primary_image"), 40));
                     tableModel.addRow(row);
                 }
             }
@@ -455,7 +494,7 @@ public class ProductsPanel extends JPanel {
                         row.add(trimCellText(rs.getString("supplier_name")));
                         row.add(trimCellText(rs.getString("warehouse_position")));
                         row.add(rs.getDouble("vat_rate"));
-                        row.add(ProductImageStore.getInstance().icon(rs.getString("primary_image"), 36));
+                        row.add(ProductImageStore.getInstance().icon(rs.getString("primary_image"), 40));
                         tableModel.addRow(row);
                     }
                 }
