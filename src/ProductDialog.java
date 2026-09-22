@@ -56,7 +56,7 @@ public class ProductDialog extends JDialog {
         JPanel content = new JPanel(new BorderLayout(10, 10));
         content.setBorder(BorderFactory.createEmptyBorder(10, 12, 8, 12));
 
-        JPanel formsPanel = new JPanel(new GridLayout(1, 2, 10, 0));
+        JPanel formsPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 0));
 
         JPanel productPanel = new JPanel(new GridBagLayout());
         productPanel.setBorder(BorderFactory.createTitledBorder(I18n.tr("Product")));
@@ -165,7 +165,7 @@ public class ProductDialog extends JDialog {
 
         Rectangle usable = GraphicsEnvironment.getLocalGraphicsEnvironment()
             .getMaximumWindowBounds();
-        int width = Math.min(820, Math.max(700, usable.width - 80));
+        int width = Math.min(800, Math.max(700, usable.width - 80));
         int height = Math.min(620, Math.max(500, usable.height - 80));
         setPreferredSize(new Dimension(width, height));
         pack();
