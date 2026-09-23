@@ -100,7 +100,7 @@ public class WarehousePanel extends JPanel {
         JButton searchButton = new JButton("Search");
 
         filterPanel.add(new JLabel("Search:"));
-        filterPanel.add(searchField);
+        filterPanel.add(SearchFieldUtil.withClearButton(searchField, () -> searchMovements("")));
         filterPanel.add(searchButton);
 
         // Movements table (ID hidden in column 0)
