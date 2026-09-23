@@ -39,6 +39,8 @@ public class BackupPanel extends JPanel {
         configPanel.add(backupDirField, gbc);
         gbc.gridx = 2; gbc.weightx = 0;
         JButton browseButton = new JButton("Browse");
+        browseButton.setToolTipText(I18n.tr(
+            "Choose the folder where new backup files will be saved."));
         browseButton.addActionListener(event -> selectBackupDirectory());
         configPanel.add(browseButton, gbc);
 
@@ -92,13 +94,27 @@ public class BackupPanel extends JPanel {
             new TableInteractionUtil.TableAction("Save Configuration", this::saveConfiguration, false));
 
         JPanel buttons = new JPanel(new FlowLayout());
-        addButton(buttons, "Perform Backup", this::performBackup);
-        addButton(buttons, "Import Backup", this::importBackup);
-        addButton(buttons, "Restore Backup", this::restoreBackup);
-        addButton(buttons, "Delete Backup", this::deleteSelectedBackup);
-        addButton(buttons, "Remove from History", this::removeSelectedFromHistory);
-        addButton(buttons, "Refresh", this::loadBackupsList);
-        addButton(buttons, "Save Configuration", this::saveConfiguration);
+        addButton(buttons, "Perform Backup",
+            "Create a new backup now. You can include the database and product photos, or the database only.",
+            this::performBackup);
+        addButton(buttons, "Import Backup",
+            "Add an existing WareStat backup to the backup history without replacing the current data.",
+            this::importBackup);
+        addButton(buttons, "Restore Backup",
+            "Replace the current WareStat data with the selected backup. WareStat will close after the restore.",
+            this::restoreBackup);
+        addButton(buttons, "Delete Backup",
+            "Permanently delete the selected backup file and remove its entry from the backup history.",
+            this::deleteSelectedBackup);
+        addButton(buttons, "Remove from History",
+            "Remove the selected entry from backup history without deleting the backup file from disk.",
+            this::removeSelectedFromHistory);
+        addButton(buttons, "Refresh",
+            "Reload the backup history and update whether each backup file is currently available.",
+            this::loadBackupsList);
+        addButton(buttons, "Save Configuration",
+            "Save the backup folder, automatic backup setting, interval and retention period.",
+            this::saveConfiguration);
 
         add(configPanel, BorderLayout.NORTH);
         add(new JScrollPane(backupsTable), BorderLayout.CENTER);
@@ -114,8 +130,9 @@ public class BackupPanel extends JPanel {
         spinner.setMinimumSize(spinner.getPreferredSize());
     }
 
-    private void addButton(JPanel panel, String text, Runnable action) {
+    private void addButton(JPanel panel, String text, String tooltip, Runnable action) {
         JButton button = new JButton(text);
+        button.setToolTipText(I18n.tr(tooltip));
         button.addActionListener(event -> action.run());
         panel.add(button);
     }
