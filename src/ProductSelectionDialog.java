@@ -49,7 +49,6 @@ public class ProductSelectionDialog extends JDialog {
         searchField.setToolTipText("Search by code, name or description");
         
         JButton searchButton = new JButton("Search");
-        JButton clearButton = new JButton("Clear");
         JButton newProductButton = new JButton("New Product");
 
         // Real-time search with delay
@@ -73,16 +72,11 @@ public class ProductSelectionDialog extends JDialog {
         });
         
         searchButton.addActionListener(e -> performSearch());
-        clearButton.addActionListener(e -> {
-            searchField.setText("");
-            loadAllProducts();
-        });
         newProductButton.addActionListener(e -> createNewProduct());
         
         searchInputPanel.add(new JLabel("Search:"));
-        searchInputPanel.add(searchField);
+        searchInputPanel.add(SearchFieldUtil.withClearButton(searchField, null));
         searchInputPanel.add(searchButton);
-        searchInputPanel.add(clearButton);
         searchInputPanel.add(newProductButton);
 
 
