@@ -4,8 +4,12 @@
 -- IMPORTANT
 -- 1) Start WareStat at least once so that the database and all migrations are created.
 -- 2) Close WareStat before running this script.
--- 3) This script REPLACES the operational/demo data in the current database.
---    It preserves schema_migrations and the database currency in application_metadata.
+-- 3) EVERY RUN IS A FULL TEST-DATA RESET.
+--    All previous operational/test data is deleted first, AUTOINCREMENT counters
+--    are reset, and the dataset is rebuilt from zero.
+--    Only schema_migrations and the database currency in application_metadata
+--    are preserved because they describe the database structure/configuration,
+--    not test records.
 -- 4) Product image rows are intentionally left empty because SQL cannot create the
 --    corresponding JPEG files in WareStat/product_images. Add a few photos from the UI
 --    when testing the image/backup workflow.
@@ -28,6 +32,8 @@ BEGIN IMMEDIATE;
 
 -- ---------------------------------------------------------------------------
 -- RESET OPERATIONAL DATA
+-- FULL RESET: running this script twice must never append to the previous dataset.
+-- The DELETE order follows foreign-key dependencies; ids are reset below.
 -- ---------------------------------------------------------------------------
 -- Reconcile reservation counters before changing reservation states so the
 -- application's stock-reservation triggers cannot drive values below zero.
