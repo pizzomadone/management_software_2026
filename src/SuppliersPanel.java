@@ -36,7 +36,7 @@ public class SuppliersPanel extends JPanel {
         searchButton.addActionListener(e -> searchSuppliers());
 
         searchPanel.add(new JLabel("Search: "));
-        searchPanel.add(searchField);
+        searchPanel.add(SearchFieldUtil.withClearButton(searchField, this::searchSuppliers));
         searchPanel.add(searchButton);
 
         // Suppliers table
