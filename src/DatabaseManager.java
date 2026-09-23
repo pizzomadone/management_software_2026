@@ -42,7 +42,10 @@ public class DatabaseManager {
             boolean existing = java.nio.file.Files.exists(AppConstants.getDatabasePath());
             closeConnection();
             connection = openConnection(DB_URL);
-            if (existing) DatabaseIntegrity.validate(connection, true);
+            if (existing) {
+                repairOrphanedProductImageReferences(connection);
+                DatabaseIntegrity.validate(connection, true);
+            }
 
             // Enable foreign keys and set SQLite optimizations
             try (Statement stmt = connection.createStatement()) {
@@ -62,6 +65,29 @@ public class DatabaseManager {
         } catch (Exception e) {
             closeConnection();
             throw new IllegalStateException("Error during database initialization: " + e.getMessage(), e);
+        }
+    }
+
+    private static void repairOrphanedProductImageReferences(Connection c) throws SQLException {
+        boolean hasProducts = false;
+        boolean hasProductImages = false;
+        try (PreparedStatement p = c.prepareStatement(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('products','product_images')");
+             ResultSet r = p.executeQuery()) {
+            while (r.next()) {
+                if ("products".equals(r.getString(1))) hasProducts = true;
+                if ("product_images".equals(r.getString(1))) hasProductImages = true;
+            }
+        }
+        if (!hasProducts || !hasProductImages) return;
+
+        try (PreparedStatement p = c.prepareStatement(
+                "DELETE FROM product_images WHERE product_id NOT IN (SELECT id FROM products)")) {
+            int removed = p.executeUpdate();
+            if (removed > 0) {
+                System.out.println("Removed " + removed +
+                    " orphaned product image database reference(s).");
+            }
         }
     }
 
