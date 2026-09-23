@@ -42,7 +42,7 @@ public class OrdersPanel extends JPanel {
         searchButton.addActionListener(e -> searchOrders());
 
         searchPanel.add(new JLabel("Search: "));
-        searchPanel.add(SearchFieldUtil.withClearButton(searchField, this::searchOrders));
+        searchPanel.add(TableInteractionUtil.withClearButton(searchField, this::searchOrders));
         searchPanel.add(searchButton);
 
         // Orders table
