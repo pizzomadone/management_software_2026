@@ -35,7 +35,7 @@ public class CustomersPanel extends JPanel {
         searchButton.addActionListener(e -> searchCustomers());
 
         searchPanel.add(new JLabel("Search: "));
-        searchPanel.add(searchField);
+        searchPanel.add(SearchFieldUtil.withClearButton(searchField, this::searchCustomers));
         searchPanel.add(searchButton);
 
         // Customers table
