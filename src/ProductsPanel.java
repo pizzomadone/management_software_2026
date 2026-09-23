@@ -59,7 +59,7 @@ public class ProductsPanel extends JPanel {
         searchButton.addActionListener(e -> searchProducts());
         
         searchPanel.add(new JLabel("Search: "));
-        searchPanel.add(SearchFieldUtil.withClearButton(searchField, this::searchProducts));
+        searchPanel.add(TableInteractionUtil.withClearButton(searchField, this::searchProducts));
         searchPanel.add(searchButton);
         
         // Products table
