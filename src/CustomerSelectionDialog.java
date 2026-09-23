@@ -40,7 +40,6 @@ public class CustomerSelectionDialog extends JDialog {
         searchField.setToolTipText("Search by name, surname, email, phone or address");
 
         JButton searchButton = new JButton("Search");
-        JButton clearButton = new JButton("Clear");
         JButton newCustomerButton = new JButton("New Customer");
 
         // Real-time search as you type
@@ -64,16 +63,11 @@ public class CustomerSelectionDialog extends JDialog {
         });
 
         searchButton.addActionListener(e -> performSearch());
-        clearButton.addActionListener(e -> {
-            searchField.setText("");
-            loadAllCustomers();
-        });
         newCustomerButton.addActionListener(e -> createNewCustomer());
 
         searchInputPanel.add(new JLabel("Search:"));
-        searchInputPanel.add(searchField);
+        searchInputPanel.add(SearchFieldUtil.withClearButton(searchField, null));
         searchInputPanel.add(searchButton);
-        searchInputPanel.add(clearButton);
         searchInputPanel.add(newCustomerButton);
 
         searchPanel.add(searchInputPanel, BorderLayout.CENTER);
