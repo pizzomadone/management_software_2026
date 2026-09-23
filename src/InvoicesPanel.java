@@ -39,7 +39,7 @@ public class InvoicesPanel extends JPanel {
         searchButton.addActionListener(e -> searchInvoices());
 
         searchPanel.add(new JLabel("Search: "));
-        searchPanel.add(searchField);
+        searchPanel.add(SearchFieldUtil.withClearButton(searchField, this::searchInvoices));
         searchPanel.add(searchButton);
 
         // Invoices table
