@@ -75,7 +75,7 @@ public class ProductSelectionDialog extends JDialog {
         newProductButton.addActionListener(e -> createNewProduct());
         
         searchInputPanel.add(new JLabel("Search:"));
-        searchInputPanel.add(SearchFieldUtil.withClearButton(searchField, null));
+        searchInputPanel.add(TableInteractionUtil.withClearButton(searchField, null));
         searchInputPanel.add(searchButton);
         searchInputPanel.add(newProductButton);
 
