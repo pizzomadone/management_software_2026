@@ -66,7 +66,7 @@ public class CustomerSelectionDialog extends JDialog {
         newCustomerButton.addActionListener(e -> createNewCustomer());
 
         searchInputPanel.add(new JLabel("Search:"));
-        searchInputPanel.add(SearchFieldUtil.withClearButton(searchField, null));
+        searchInputPanel.add(TableInteractionUtil.withClearButton(searchField, null));
         searchInputPanel.add(searchButton);
         searchInputPanel.add(newCustomerButton);
 
