@@ -21,7 +21,7 @@ public class SupplierOrdersPanel extends JPanel {
         searchPanel.setBorder(BorderFactory.createTitledBorder("Search Supplier Orders"));
         JButton searchButton = new JButton("Search"); searchButton.addActionListener(e -> loadOrders());
         search.addActionListener(e -> loadOrders());
-        searchPanel.add(new JLabel("Search:")); searchPanel.add(SearchFieldUtil.withClearButton(search, this::loadOrders)); searchPanel.add(searchButton);
+        searchPanel.add(new JLabel("Search:")); searchPanel.add(TableInteractionUtil.withClearButton(search, this::loadOrders)); searchPanel.add(searchButton);
         model = new DefaultTableModel(new String[]{"ID", "Number", "Supplier", "Date", "Delivery Date", "Status", "Total " + SettingsPanel.getCurrencySymbol(), "Notes"}, 0) {
             @Override public boolean isCellEditable(int r, int c) { return false; }
         };
