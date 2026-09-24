@@ -177,7 +177,7 @@ public class SupplierPriceListDialog extends JDialog {
         add(buttonPanel, BorderLayout.SOUTH);
 
         pack();
-        setLocationRelativeTo(null);
+        Dialogs.centerWindow(this);
     }
 
     private void loadProducts() {
