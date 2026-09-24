@@ -135,9 +135,23 @@ public class DatePickerField extends JTextField {
         chooser.add(months);
         chooser.add(new JLabel(I18n.tr("Year")));
         chooser.add(year);
-        int result = Dialogs.showConfirmDialog(this, chooser, I18n.tr("Choose month and year"),
-            JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
-        if (result == JOptionPane.OK_OPTION) {
+        I18n.localize(chooser);
+        JOptionPane pane = new JOptionPane(
+            chooser,
+            JOptionPane.PLAIN_MESSAGE,
+            JOptionPane.OK_CANCEL_OPTION);
+        Window owner = SwingUtilities.getWindowAncestor(this);
+        JDialog dialog = pane.createDialog(
+            owner != null && owner.isShowing() ? owner : this,
+            I18n.tr("Choose month and year"));
+        dialog.setModal(true);
+        dialog.pack();
+        dialog.setLocationRelativeTo(owner != null && owner.isShowing() ? owner : null);
+        dialog.setVisible(true);
+        dialog.dispose();
+
+        Object value = pane.getValue();
+        if (value instanceof Integer result && result == JOptionPane.OK_OPTION) {
             displayedMonth = YearMonth.of((Integer) year.getValue(), months.getSelectedIndex() + 1);
             rebuildPopup(selected);
         }
