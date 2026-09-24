@@ -191,7 +191,6 @@ public class SalesReportPanel extends JPanel {
                 updateStatistics(totalSales, totalOrders);
                 reportValid=true;
 
-                System.out.println("Loaded " + totalOrders + " orders, total sales: " + SettingsPanel.formatCurrency(totalSales));
             }
 
             if (pstmt != null) pstmt.close();
