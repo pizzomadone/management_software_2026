@@ -198,7 +198,7 @@ public class SupplierOrderDialog extends JDialog {
 
     private void centerOnOwner() {
         Window owner = getOwner();
-        setLocationRelativeTo(owner != null && owner.isShowing() ? owner : null);
+        Dialogs.centerWindow(this);
     }
 
     @Override
@@ -393,7 +393,7 @@ public class SupplierOrderDialog extends JDialog {
         I18n.localize(dialog);
         dialog.pack();
         dialog.setResizable(false);
-        dialog.setLocationRelativeTo(this);
+        Dialogs.centerWindow(dialog);
         dialog.setVisible(true);
     }
 
