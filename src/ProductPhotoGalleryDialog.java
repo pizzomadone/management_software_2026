@@ -64,7 +64,7 @@ public final class ProductPhotoGalleryDialog extends JDialog {
         setSize(820, 720);
         setMinimumSize(new Dimension(520, 460));
         updateImage();
-        setLocationRelativeTo(getOwner());
+        Dialogs.centerWindow(this);
         I18n.localize(this);
     }
 
