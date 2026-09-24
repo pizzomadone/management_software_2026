@@ -106,25 +106,39 @@ public class AdvancedStatsPanel extends JPanel {
         });
         controls.add(periodPanel);
 
-        // Product series controls for the sales trend chart.
-        JPanel productSeriesBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 1));
-        productSeriesBar.add(new JLabel("Product sales:"));
+        updateCustomRangeVisibility();
+
+        // Sales tab
+        JPanel salesPanel = new JPanel(new BorderLayout(0, 4));
+
+        // Product-series controls belong only to Sales Trend.
+        JPanel productSeriesBar = new JPanel(new BorderLayout(8, 0));
+        productSeriesBar.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 6));
+
+        JPanel productSeriesActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+        productSeriesActions.setOpaque(false);
+        productSeriesActions.add(new JLabel("Product sales:"));
         addProductSeriesButton = new JButton("+");
         addProductSeriesButton.setToolTipText(I18n.tr("Add product sales line"));
         addProductSeriesButton.setMargin(new Insets(1, 9, 1, 9));
         addProductSeriesButton.addActionListener(e -> showAddProductSeriesDialog());
-        productSeriesBar.add(addProductSeriesButton);
+        productSeriesActions.add(addProductSeriesButton);
+        productSeriesBar.add(productSeriesActions, BorderLayout.WEST);
 
         selectedSeriesPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
         selectedSeriesPanel.setOpaque(false);
-        productSeriesBar.add(selectedSeriesPanel);
-        controls.add(productSeriesBar);
+        JScrollPane selectedSeriesScroll = new JScrollPane(
+            selectedSeriesPanel,
+            JScrollPane.VERTICAL_SCROLLBAR_NEVER,
+            JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+        selectedSeriesScroll.setBorder(null);
+        selectedSeriesScroll.setOpaque(false);
+        selectedSeriesScroll.getViewport().setOpaque(false);
+        selectedSeriesScroll.setPreferredSize(new Dimension(560, 34));
+        productSeriesBar.add(selectedSeriesScroll, BorderLayout.CENTER);
 
-        updateCustomRangeVisibility();
         refreshSelectedSeriesPanel();
 
-        // Sales tab
-        JPanel salesPanel = new JPanel(new BorderLayout());
         salesChartPanel = new JPanel() {
             @Override
             protected void paintComponent(Graphics g) {
@@ -132,6 +146,7 @@ public class AdvancedStatsPanel extends JPanel {
                 drawSalesChart(g);
             }
         };
+        salesPanel.add(productSeriesBar, BorderLayout.NORTH);
         salesPanel.add(salesChartPanel, BorderLayout.CENTER);
 
         // Products tab
@@ -483,9 +498,13 @@ public class AdvancedStatsPanel extends JPanel {
             int productId = entry.getKey();
             String name = entry.getValue();
 
-            JButton chip = new JButton("× " + name);
-            chip.setToolTipText(I18n.tr("Remove product sales line"));
-            chip.setMargin(new Insets(1, 6, 1, 6));
+            String chipName = name.length() > 24
+                ? name.substring(0, 21).stripTrailing() + "..."
+                : name;
+            JButton chip = new JButton(chipName + "  ×");
+            chip.setToolTipText(I18n.tr("Remove product sales line") + ": " + name);
+            chip.setMargin(new Insets(1, 7, 1, 7));
+            chip.setFocusable(false);
             final int id = productId;
             chip.addActionListener(e -> {
                 selectedSalesProducts.remove(id);
@@ -591,7 +610,7 @@ public class AdvancedStatsPanel extends JPanel {
         dialog.add(buttons, BorderLayout.SOUTH);
         dialog.pack();
         dialog.setResizable(true);
-        dialog.setLocationRelativeTo(owner != null && owner.isShowing() ? owner : null);
+        Dialogs.centerWindow(dialog);
 
         loadProductsForSalesChart(model, "");
         dialog.setVisible(true);
@@ -743,19 +762,27 @@ public class AdvancedStatsPanel extends JPanel {
                 double percentage = revenue / totalRevenue;
                 double arcAngle = 360.0 * percentage;
 
-                g2d.setColor(colors[i % colors.length]);
+                Color sliceColor = colors[i % colors.length];
+                g2d.setColor(sliceColor);
                 g2d.fillArc(centerX - diameter / 2, centerY - diameter / 2,
                     diameter, diameter,
                     (int)Math.round(startAngle), (int)Math.ceil(arcAngle));
+
+                drawPiePercentage(g2d, centerX, centerY, diameter,
+                    startAngle, arcAngle, percentage, sliceColor);
                 startAngle += arcAngle;
             }
 
             if (hasOther) {
-                g2d.setColor(Color.LIGHT_GRAY);
-                double otherAngle = 360.0 * otherRevenue / totalRevenue;
+                Color otherColor = Color.LIGHT_GRAY;
+                g2d.setColor(otherColor);
+                double otherPercentage = otherRevenue / totalRevenue;
+                double otherAngle = 360.0 * otherPercentage;
                 g2d.fillArc(centerX - diameter / 2, centerY - diameter / 2,
                     diameter, diameter,
                     (int)Math.round(startAngle), (int)Math.ceil(otherAngle));
+                drawPiePercentage(g2d, centerX, centerY, diameter,
+                    startAngle, otherAngle, otherPercentage, otherColor);
             }
 
             if (legendWidth <= 0 || legendItems <= 0) return;
@@ -809,6 +836,42 @@ public class AdvancedStatsPanel extends JPanel {
         } finally {
             g2d.dispose();
         }
+    }
+
+    private void drawPiePercentage(Graphics2D g2d, int centerX, int centerY,
+            int diameter, double startAngle, double arcAngle,
+            double percentage, Color sliceColor) {
+        if (percentage < 0.03 || arcAngle < 10) return;
+
+        double middle = Math.toRadians(startAngle + arcAngle / 2.0);
+        double radius = diameter * 0.32;
+        int x = centerX + (int)Math.round(Math.cos(middle) * radius);
+        int y = centerY - (int)Math.round(Math.sin(middle) * radius);
+
+        String label = String.format("%.1f%%", percentage * 100);
+        Font original = g2d.getFont();
+        Font font = original.deriveFont(Font.BOLD,
+            Math.max(10f, original.getSize2D() - 1f));
+        g2d.setFont(font);
+
+        FontMetrics metrics = g2d.getFontMetrics();
+        int textWidth = metrics.stringWidth(label);
+        int textHeight = metrics.getAscent();
+
+        // A small translucent background keeps percentages readable on any slice.
+        Color old = g2d.getColor();
+        g2d.setColor(new Color(255, 255, 255, 205));
+        g2d.fillRoundRect(
+            x - textWidth / 2 - 4,
+            y - textHeight + 2,
+            textWidth + 8,
+            textHeight + 5,
+            8, 8);
+        g2d.setColor(Color.BLACK);
+        g2d.drawString(label, x - textWidth / 2, y + 2);
+
+        g2d.setColor(old);
+        g2d.setFont(original);
     }
 
     private String fitText(Graphics2D g2d, String text, int maxWidth) {
