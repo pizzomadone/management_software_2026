@@ -52,7 +52,7 @@ public class InvoiceDialog extends JDialog {
             setupNewInvoice();
         }
 
-        setLocationRelativeTo(parent);
+        Dialogs.centerWindow(this);
     }
 
     // Constructor for JDialog parent
@@ -73,7 +73,7 @@ public class InvoiceDialog extends JDialog {
             setupNewInvoice();
         }
 
-        setLocationRelativeTo(parent);
+        Dialogs.centerWindow(this);
     }
 
     static boolean isFinalizedStatus(String status) {
