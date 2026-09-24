@@ -265,45 +265,60 @@ public class SupplierOrderDialog extends JDialog {
     }
 
     private void showAddProductDialog() {
-        JDialog dialog = new JDialog(this, "Add Product", true);
-        dialog.setLayout(new BorderLayout(3, 3));
-        dialog.setLocationRelativeTo(null);
+        JDialog dialog = new JDialog(this, I18n.tr("Add Product"), true);
+        dialog.setLayout(new BorderLayout(8, 8));
 
         JPanel panel = new JPanel(new GridBagLayout());
+        panel.setBorder(BorderFactory.createEmptyBorder(12, 12, 4, 12));
         GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(2, 3, 2, 3);
-        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.insets = new Insets(4, 4, 4, 8);
+        gbc.anchor = GridBagConstraints.WEST;
 
-        // Product combobox
+        // Product
         gbc.gridx = 0; gbc.gridy = 0;
         panel.add(new JLabel("Product:"), gbc);
 
         gbc.gridx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 1.0;
         JComboBox<ProductDisplay> productCombo = new JComboBox<>();
         for (Product product : productsCache.values()) {
             productCombo.addItem(new ProductDisplay(product));
         }
+        productCombo.setPreferredSize(new Dimension(430, productCombo.getPreferredSize().height));
+        productCombo.setMaximumSize(productCombo.getPreferredSize());
         panel.add(productCombo, gbc);
 
         // Quantity
         gbc.gridx = 0; gbc.gridy = 1;
+        gbc.weightx = 0;
+        gbc.fill = GridBagConstraints.NONE;
         panel.add(new JLabel("Quantity:"), gbc);
 
         gbc.gridx = 1;
         SpinnerNumberModel spinnerModel = new SpinnerNumberModel(1, 1, 9999, 1);
         JSpinner quantitySpinner = new JSpinner(spinnerModel);
+        Dimension spinnerSize = quantitySpinner.getPreferredSize();
+        quantitySpinner.setPreferredSize(new Dimension(85, spinnerSize.height));
+        quantitySpinner.setMinimumSize(quantitySpinner.getPreferredSize());
         panel.add(quantitySpinner, gbc);
 
         // Notes
         gbc.gridx = 0; gbc.gridy = 2;
+        gbc.anchor = GridBagConstraints.NORTHWEST;
         panel.add(new JLabel("Notes:"), gbc);
 
         gbc.gridx = 1;
-        JTextField noteField = new JTextField(30);
-        panel.add(noteField, gbc);
+        gbc.fill = GridBagConstraints.BOTH;
+        gbc.weightx = 1.0;
+        JTextArea noteArea = new JTextArea(3, 30);
+        noteArea.setLineWrap(true);
+        noteArea.setWrapStyleWord(true);
+        JScrollPane noteScroll = new JScrollPane(noteArea);
+        noteScroll.setPreferredSize(new Dimension(430, 76));
+        panel.add(noteScroll, gbc);
 
-        // Buttons
-        JPanel buttonPanel = new JPanel();
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
         JButton addButton = new JButton("Add");
         JButton cancelButton = new JButton("Cancel");
 
@@ -320,12 +335,20 @@ public class SupplierOrderDialog extends JDialog {
             try {
                 quantitySpinner.commitEdit();
                 quantity = Numbers.positiveQuantity(quantitySpinner.getValue());
-                quotedPrice = SupplierPricing.price(DatabaseManager.getInstance().getConnection(), supplierId,
-                    selectedProduct.getProduct().getId(), quantity, DateUtils.parseDate(dateField.getText(), dateFormat));
-            } catch (Exception ex) { Dialogs.showMessageDialog(dialog, ex.getMessage(), "Invalid product", JOptionPane.ERROR_MESSAGE); return; }
-            String note = noteField.getText().trim();
+                quotedPrice = SupplierPricing.price(
+                    DatabaseManager.getInstance().getConnection(),
+                    supplierId,
+                    selectedProduct.getProduct().getId(),
+                    quantity,
+                    DateUtils.parseDate(dateField.getText(), dateFormat));
+            } catch (Exception ex) {
+                Dialogs.showMessageDialog(dialog, ex.getMessage(),
+                    "Invalid product", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
 
-            // Check if product is already present
+            String note = noteArea.getText().trim();
+
             for (int i = 0; i < itemsTableModel.getRowCount(); i++) {
                 String code = (String)itemsTableModel.getValueAt(i, 0);
                 if (code.equals(selectedProduct.getProduct().getCode())) {
@@ -336,7 +359,6 @@ public class SupplierOrderDialog extends JDialog {
                 }
             }
 
-            // Add to table
             Vector<Object> row = new Vector<>();
             row.add(selectedProduct.getProduct().getCode());
             row.add(selectedProduct.getProduct().getName());
@@ -354,13 +376,14 @@ public class SupplierOrderDialog extends JDialog {
         cancelButton.addActionListener(e -> dialog.dispose());
 
         buttonPanel.add(addButton);
-
         buttonPanel.add(cancelButton);
 
         dialog.add(panel, BorderLayout.CENTER);
         dialog.add(buttonPanel, BorderLayout.SOUTH);
+        I18n.localize(dialog);
         dialog.pack();
-        dialog.setLocationRelativeTo(null);
+        dialog.setResizable(false);
+        dialog.setLocationRelativeTo(this);
         dialog.setVisible(true);
     }
 
