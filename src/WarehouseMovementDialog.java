@@ -51,7 +51,7 @@ public class WarehouseMovementDialog extends JDialog {
 
     private void setupWindow() {
         setSize(550, 580);
-        setLocationRelativeTo(null);
+        Dialogs.centerWindow(this);
         setLayout(new BorderLayout(8, 8));
         setMinimumSize(new Dimension(500, 550));
     }
