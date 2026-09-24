@@ -546,6 +546,12 @@ SELECT
 FROM seq
 JOIN products p ON p.id = 1 + ((x * 19) % 120);
 
+-- Final reconciliation from the values actually stored in SQLite.
+-- This deliberately derives every line total from quantity * stored unit_price,
+-- matching InvoicePDFGenerator/Numbers.lineTotal.
+UPDATE invoice_details
+SET total = ROUND(quantity * unit_price, 2);
+
 UPDATE invoices
 SET taxable_amount = ROUND(COALESCE((
         SELECT SUM(d.total)
