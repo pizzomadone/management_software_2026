@@ -34,7 +34,15 @@ public class SupplierOrdersPanel extends JPanel {
             new TableInteractionUtil.TableAction("Modify", this::editSelected),
             new TableInteractionUtil.TableAction("Delete", this::deleteSelected), null,
             new TableInteractionUtil.TableAction("Refresh", this::loadOrders, false));
-        table.addMouseListener(new java.awt.event.MouseAdapter() { @Override public void mouseClicked(java.awt.event.MouseEvent e) { if (e.getClickCount() == 2) editSelected(); }});
+        table.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override public void mouseClicked(java.awt.event.MouseEvent e) {
+                if (e.getClickCount() != 2 || !SwingUtilities.isLeftMouseButton(e)) return;
+                int viewRow = table.rowAtPoint(e.getPoint());
+                if (viewRow < 0) return;
+                table.setRowSelectionInterval(viewRow, viewRow);
+                editSelected();
+            }
+        });
         JPanel buttons = new JPanel(new FlowLayout());
         JButton add = new JButton("New Supplier Order"); JButton refresh = new JButton("Refresh");
         add.addActionListener(e -> newOrder()); edit.addActionListener(e -> editSelected()); delete.addActionListener(e -> deleteSelected()); refresh.addActionListener(e -> loadOrders());
