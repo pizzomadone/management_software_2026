@@ -80,9 +80,14 @@ public class SupplierOrderDialog extends JDialog {
         orderPanel.add(new JLabel("Supplier:"), gbc);
 
         gbc.gridx = 3;
-        JTextField supplierField = new JTextField(supplierName);
+        gbc.weightx = 1.0;
+        JTextField supplierField = new JTextField(supplierName, 24);
         supplierField.setEditable(false);
+        Dimension supplierSize = supplierField.getPreferredSize();
+        supplierField.setPreferredSize(new Dimension(260, supplierSize.height));
+        supplierField.setMinimumSize(new Dimension(220, supplierSize.height));
         orderPanel.add(supplierField, gbc);
+        gbc.weightx = 0.0;
 
         // Order date
         gbc.gridx = 0; gbc.gridy = 1;
@@ -98,8 +103,13 @@ public class SupplierOrderDialog extends JDialog {
         orderPanel.add(new JLabel("Delivery Date:"), gbc);
 
         gbc.gridx = 3;
-        deliveryDateField = new DatePickerField(10, true);
+        gbc.weightx = 1.0;
+        deliveryDateField = new DatePickerField(12, true);
+        Dimension deliverySize = deliveryDateField.getPreferredSize();
+        deliveryDateField.setPreferredSize(new Dimension(150, deliverySize.height));
+        deliveryDateField.setMinimumSize(new Dimension(135, deliverySize.height));
         orderPanel.add(deliveryDateField, gbc);
+        gbc.weightx = 0.0;
 
         // Status
         gbc.gridx = 0; gbc.gridy = 2;
