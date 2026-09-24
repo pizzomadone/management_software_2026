@@ -41,6 +41,7 @@ public class AdvancedStatsPanel extends JPanel {
     private DatePickerField toDateField;
     private JButton applyPeriodButton;
     private JButton addProductSeriesButton;
+    private JCheckBox showTotalSalesCheckBox;
     private JPanel selectedSeriesPanel;
     private Map<String, double[]> monthlySales;
     private final Map<Integer, String> selectedSalesProducts = new LinkedHashMap<>();
@@ -117,6 +118,14 @@ public class AdvancedStatsPanel extends JPanel {
 
         JPanel productSeriesActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
         productSeriesActions.setOpaque(false);
+        showTotalSalesCheckBox = new JCheckBox("Total sales", true);
+        showTotalSalesCheckBox.setToolTipText(I18n.tr("Show or hide total sales line"));
+        showTotalSalesCheckBox.addActionListener(e -> {
+            if (salesChartPanel != null) salesChartPanel.repaint();
+        });
+        productSeriesActions.add(showTotalSalesCheckBox);
+        productSeriesActions.add(Box.createHorizontalStrut(8));
+
         productSeriesActions.add(new JLabel("Product sales:"));
         addProductSeriesButton = new JButton("+");
         addProductSeriesButton.setToolTipText(I18n.tr("Add product sales line"));
@@ -342,7 +351,9 @@ public class AdvancedStatsPanel extends JPanel {
             int height = salesChartPanel.getHeight();
             int leftPadding = 78;
             int rightPadding = 30;
-            int topPadding = selectedSalesProducts.isEmpty() ? 35 : 62;
+            int visibleSeriesCount = selectedSalesProducts.size() +
+                (showTotalSalesCheckBox.isSelected() ? 1 : 0);
+            int topPadding = visibleSeriesCount <= 1 ? 35 : 62;
             int bottomPadding = 72;
 
             Map<String, double[]> currentSales = monthlySales;
@@ -356,8 +367,17 @@ public class AdvancedStatsPanel extends JPanel {
             Collections.sort(months);
             if (months.isEmpty()) return;
 
-            double maxSale = currentSales.values().stream()
-                .mapToDouble(values -> values[0]).max().orElse(0);
+            boolean showTotal = showTotalSalesCheckBox.isSelected();
+            if (!showTotal && selectedSalesProducts.isEmpty()) {
+                drawCenteredMessage(g2d, width, height,
+                    I18n.tr("No sales series selected"));
+                return;
+            }
+
+            double maxSale = showTotal
+                ? currentSales.values().stream()
+                    .mapToDouble(values -> values[0]).max().orElse(0)
+                : 0.0;
             for (Map<String, Double> series : productMonthlySales.values()) {
                 maxSale = Math.max(maxSale,
                     series.values().stream().mapToDouble(Double::doubleValue)
@@ -380,9 +400,11 @@ public class AdvancedStatsPanel extends JPanel {
                 g2d.drawString(I18n.tr("No sales in this period"),
                     leftPadding + 10, topPadding + chartHeight / 2);
             } else {
-                drawSalesSeries(g2d, months, currentSales, null,
-                    TOTAL_SALES_COLOR, leftPadding, topPadding,
-                    chartHeight, step, maxSale, 4);
+                if (showTotal) {
+                    drawSalesSeries(g2d, months, currentSales, null,
+                        TOTAL_SALES_COLOR, leftPadding, topPadding,
+                        chartHeight, step, maxSale, 4);
+                }
 
                 int colorIndex = 0;
                 for (Integer productId : selectedSalesProducts.keySet()) {
@@ -395,7 +417,7 @@ public class AdvancedStatsPanel extends JPanel {
                 }
             }
 
-            drawSalesLegend(g2d, width);
+            drawSalesLegend(g2d, width, showTotal);
 
             int maxLabels = Math.max(2, chartWidth / 85);
             int labelEvery = Math.max(1,
@@ -459,12 +481,14 @@ public class AdvancedStatsPanel extends JPanel {
         g2d.setStroke(new BasicStroke(1f));
     }
 
-    private void drawSalesLegend(Graphics2D g2d, int width) {
+    private void drawSalesLegend(Graphics2D g2d, int width, boolean showTotal) {
         int x = 82;
         int y = 20;
 
-        x = drawLegendItem(g2d, x, y, TOTAL_SALES_COLOR,
-            I18n.tr("Total sales"), width);
+        if (showTotal) {
+            x = drawLegendItem(g2d, x, y, TOTAL_SALES_COLOR,
+                I18n.tr("Total sales"), width);
+        }
 
         int colorIndex = 0;
         for (String name : selectedSalesProducts.values()) {
