@@ -95,7 +95,7 @@ public final class ProductDetailsDialog extends JDialog {
 
     private void centerOnOwner() {
         Window owner = getOwner();
-        setLocationRelativeTo(owner != null && owner.isShowing() ? owner : null);
+        Dialogs.centerWindow(this);
     }
 
     @Override
