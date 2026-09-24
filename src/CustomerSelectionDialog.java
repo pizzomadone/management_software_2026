@@ -22,7 +22,7 @@ public class CustomerSelectionDialog extends JDialog {
 
     private void setupWindow() {
         setSize(700, 500);
-        setLocationRelativeTo(null);
+        Dialogs.centerWindow(this);
         setLayout(new BorderLayout(10, 10));
     }
 
