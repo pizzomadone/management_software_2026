@@ -77,12 +77,12 @@ public class MultiSupplierOrderDialog extends JDialog {
         JPanel actions = new JPanel(); actions.add(review); actions.add(cancel);
         root.add(header, BorderLayout.NORTH); root.add(center, BorderLayout.CENTER); root.add(actions, BorderLayout.SOUTH);
         setContentPane(root);
-        setLocationRelativeTo(owner);
+        Dialogs.centerWindow(this);
     }
 
     @Override
     public void setVisible(boolean visible) {
-        if (visible) setLocationRelativeTo(getOwner());
+        if (visible) Dialogs.centerWindow(this);
         super.setVisible(visible);
     }
 
@@ -132,7 +132,7 @@ public class MultiSupplierOrderDialog extends JDialog {
         });
         JPanel bottom = new JPanel(); bottom.add(new JLabel("Quantity:")); bottom.add(quantity); bottom.add(choose);
         picker.add(searchPanel, BorderLayout.NORTH); picker.add(new JScrollPane(productTable), BorderLayout.CENTER); picker.add(bottom, BorderLayout.SOUTH);
-        picker.setSize(760, 480); picker.setLocationRelativeTo(this); load.run(); picker.setVisible(true);
+        picker.setSize(760, 480); Dialogs.centerWindow(picker); load.run(); picker.setVisible(true);
     }
 
     private void loadProducts(DefaultTableModel products, String term) {
