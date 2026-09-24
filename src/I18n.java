@@ -176,7 +176,11 @@ public final class I18n {
         AWTEventListener listener = event -> {
             if (event instanceof WindowEvent windowEvent &&
                     windowEvent.getID() == WindowEvent.WINDOW_OPENED) {
-                SwingUtilities.invokeLater(() -> localize(windowEvent.getWindow()));
+                SwingUtilities.invokeLater(() -> {
+                    Window window = windowEvent.getWindow();
+                    if (window instanceof Dialog) Dialogs.centerWindow(window);
+                    localize(window);
+                });
             }
         };
         Toolkit.getDefaultToolkit().addAWTEventListener(listener, AWTEvent.WINDOW_EVENT_MASK);
