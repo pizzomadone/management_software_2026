@@ -320,6 +320,8 @@ JOIN products p ON p.id = 1 + ((x * 11) % 120);
 
 -- ---------------------------------------------------------------------------
 -- CUSTOMER ORDERS: 240 + 720 lines
+-- Spread across roughly 30 months so the 6/12/24-month statistics filters
+-- produce visibly different results.
 -- Supported statuses: New / In Progress / Completed / Cancelled
 -- ---------------------------------------------------------------------------
 WITH RECURSIVE seq(x) AS (
@@ -332,7 +334,7 @@ INSERT INTO orders(
 )
 SELECT
     1 + ((x * 7) % 120),
-    datetime('now', '-' || (x % 180) || ' days', '-' || (x % 10) || ' hours'),
+    datetime('now', '-' || ((x * 17) % 900) || ' days', '-' || (x % 10) || ' hours'),
     CASE x % 4
         WHEN 0 THEN 'New'
         WHEN 1 THEN 'In Progress'
