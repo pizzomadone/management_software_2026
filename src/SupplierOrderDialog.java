@@ -30,8 +30,10 @@ public class SupplierOrderDialog extends JDialog {
     private Map<Integer, Product> productsCache;
     private boolean updatingTotals = false; // Flag to prevent recursion
 
-    public SupplierOrderDialog(JDialog parent, int supplierId, String supplierName, SupplierOrder order) {
-        super(parent, order == null ? "New Supplier Order" : "Edit Supplier Order", true);
+    public SupplierOrderDialog(Window parent, int supplierId, String supplierName, SupplierOrder order) {
+        super(parent,
+            I18n.tr(order == null ? "New Supplier Order" : "Edit Supplier Order"),
+            Dialog.ModalityType.APPLICATION_MODAL);
         this.supplierId = supplierId;
         this.supplierName = supplierName;
         this.order = order;
@@ -181,12 +183,17 @@ public class SupplierOrderDialog extends JDialog {
 
         add(mainPanel);
         pack();
-        setLocationRelativeTo(getOwner());
+        centerOnOwner();
+    }
+
+    private void centerOnOwner() {
+        Window owner = getOwner();
+        setLocationRelativeTo(owner != null && owner.isShowing() ? owner : null);
     }
 
     @Override
     public void setVisible(boolean visible) {
-        if (visible) setLocationRelativeTo(getOwner());
+        if (visible) centerOnOwner();
         super.setVisible(visible);
     }
 
