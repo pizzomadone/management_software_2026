@@ -19,10 +19,15 @@ public final class ProductDetailsDialog extends JDialog {
         JPanel content = new JPanel();
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
 
-        JLabel title = new JLabel(product.getName());
+        JTextArea title = wrappedText(product.getName(), true);
         title.setFont(title.getFont().deriveFont(Font.BOLD, title.getFont().getSize2D() + 3f));
+        title.setAlignmentX(Component.LEFT_ALIGNMENT);
+        title.setMaximumSize(new Dimension(560, 90));
         content.add(title);
-        content.add(new JLabel(product.getCode()));
+
+        JLabel code = new JLabel(product.getCode());
+        code.setAlignmentX(Component.LEFT_ALIGNMENT);
+        content.add(code);
         content.add(Box.createVerticalStrut(10));
 
         JPanel photos = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
@@ -57,7 +62,7 @@ public final class ProductDetailsDialog extends JDialog {
         g.anchor = GridBagConstraints.WEST;
         g.gridy = 0;
         addLine(details, g, "Category", product.getCategory());
-        addLine(details, g, "Description", product.getDescription());
+        addWrappedLine(details, g, "Description", product.getDescription());
         addLine(details, g, "Quantity", String.valueOf(product.getQuantity()));
         addLine(details, g, "Price", SettingsPanel.formatCurrency(product.getPrice()));
         addLine(details, g, "Acquisition Cost", SettingsPanel.formatCurrency(product.getAcquisitionCost()));
@@ -68,7 +73,11 @@ public final class ProductDetailsDialog extends JDialog {
         addLine(details, g, "Active", product.isActive() ? I18n.tr("Yes") : I18n.tr("No"));
         content.add(details);
 
-        add(new JScrollPane(content), BorderLayout.CENTER);
+        JScrollPane scroll = new JScrollPane(content,
+            JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
+            JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
+        add(scroll, BorderLayout.CENTER);
 
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         JButton edit = new JButton("Edit");
@@ -80,8 +89,19 @@ public final class ProductDetailsDialog extends JDialog {
         add(buttons, BorderLayout.SOUTH);
 
         setSize(620, 620);
-        setLocationRelativeTo(getOwner());
         I18n.localize(this);
+        centerOnOwner();
+    }
+
+    private void centerOnOwner() {
+        Window owner = getOwner();
+        setLocationRelativeTo(owner != null && owner.isShowing() ? owner : null);
+    }
+
+    @Override
+    public void setVisible(boolean visible) {
+        if (visible) centerOnOwner();
+        super.setVisible(visible);
     }
 
     private static void addLine(JPanel panel, GridBagConstraints g, String label, String value) {
@@ -93,6 +113,47 @@ public final class ProductDetailsDialog extends JDialog {
         panel.add(new JLabel(value == null || value.isBlank() ? I18n.tr("Not set") : value), g);
         g.fill = GridBagConstraints.NONE;
         g.gridy++;
+    }
+
+    private static void addWrappedLine(JPanel panel, GridBagConstraints g,
+            String label, String value) {
+        g.gridx = 0;
+        g.weightx = 0;
+        g.weighty = 0;
+        g.fill = GridBagConstraints.NONE;
+        g.anchor = GridBagConstraints.NORTHWEST;
+
+        JLabel l = new JLabel(label + ":");
+        l.setFont(l.getFont().deriveFont(Font.BOLD));
+        panel.add(l, g);
+
+        g.gridx = 1;
+        g.weightx = 1;
+        g.fill = GridBagConstraints.HORIZONTAL;
+
+        JTextArea text = wrappedText(
+            value == null || value.isBlank() ? I18n.tr("Not set") : value, false);
+        text.setColumns(34);
+        text.setRows(3);
+        text.setMaximumSize(new Dimension(440, 90));
+        panel.add(text, g);
+
+        g.fill = GridBagConstraints.NONE;
+        g.anchor = GridBagConstraints.WEST;
+        g.gridy++;
+    }
+
+    private static JTextArea wrappedText(String value, boolean title) {
+        JTextArea area = new JTextArea(value == null ? "" : value);
+        area.setEditable(false);
+        area.setLineWrap(true);
+        area.setWrapStyleWord(true);
+        area.setOpaque(false);
+        area.setFocusable(false);
+        area.setBorder(BorderFactory.createEmptyBorder());
+        area.setRows(title ? 2 : 1);
+        area.setColumns(title ? 38 : 34);
+        return area;
     }
 
     public boolean isEditRequested() { return editRequested; }
