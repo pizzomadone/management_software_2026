@@ -105,7 +105,7 @@ public class CustomerDialog extends JDialog {
         add(buttonPanel, BorderLayout.SOUTH);
 
         pack();
-        setLocationRelativeTo(null);
+        Dialogs.centerWindow(this);
     }
 
     private void loadCustomerData() {
