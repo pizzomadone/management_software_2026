@@ -151,7 +151,7 @@ public class AboutDialog extends JDialog {
 
         // Set dialog properties
         pack();
-        setLocationRelativeTo(getParent());
+        Dialogs.centerWindow(this);
     }
 
     private void openWebsite() {
@@ -223,7 +223,7 @@ public class AboutDialog extends JDialog {
         dialog.add(buttonPanel, BorderLayout.SOUTH);
 
         dialog.pack();
-        dialog.setLocationRelativeTo(this);
+        Dialogs.centerWindow(dialog);
         dialog.setVisible(true);
     }
 
