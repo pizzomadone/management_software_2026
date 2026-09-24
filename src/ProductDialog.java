@@ -207,7 +207,7 @@ public class ProductDialog extends JDialog {
         setSize(width, height);
         setMinimumSize(new Dimension(
             Math.min(720, width), Math.min(520, height)));
-        setLocationRelativeTo(getOwner());
+        Dialogs.centerWindow(this);
         I18n.localize(this);
     }
 
