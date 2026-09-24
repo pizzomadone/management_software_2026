@@ -537,7 +537,10 @@ SELECT
     1 + (x % 4),
     ROUND(p.price * (0.92 + (x % 3) * 0.04), 2),
     p.vat_rate,
-    ROUND((1 + (x % 4)) * p.price * (0.92 + (x % 3) * 0.04), 2),
+    ROUND(
+        (1 + (x % 4)) * ROUND(p.price * (0.92 + (x % 3) * 0.04), 2),
+        2
+    ),
     p.code,
     p.name
 FROM seq
@@ -550,7 +553,7 @@ SET taxable_amount = ROUND(COALESCE((
         WHERE d.invoice_id = invoices.id
     ), 0), 2),
     vat = ROUND(COALESCE((
-        SELECT SUM(d.total * d.vat_rate / 100.0)
+        SELECT SUM(ROUND(d.total * d.vat_rate / 100.0, 2))
         FROM invoice_details d
         WHERE d.invoice_id = invoices.id
     ), 0), 2);
@@ -648,6 +651,20 @@ UNION ALL SELECT '  Inactive: ' || COUNT(*) FROM products WHERE active = 0
 UNION ALL SELECT 'Customer orders: ' || COUNT(*) FROM orders
 UNION ALL SELECT '  Active reservations: ' || COUNT(*) FROM stock_reservations WHERE status='ACTIVE'
 UNION ALL SELECT 'Invoices: ' || COUNT(*) FROM invoices
+UNION ALL SELECT '  Invoice line mismatches: ' || COUNT(*)
+    FROM invoice_details
+    WHERE ABS(total - ROUND(quantity * unit_price, 2)) > 0.004
+UNION ALL SELECT '  Invoice header mismatches: ' || COUNT(*)
+    FROM invoices i
+    WHERE ABS(i.taxable_amount - COALESCE((
+              SELECT ROUND(SUM(d.total), 2)
+              FROM invoice_details d WHERE d.invoice_id=i.id
+          ), 0)) > 0.004
+       OR ABS(i.vat - COALESCE((
+              SELECT ROUND(SUM(ROUND(d.total * d.vat_rate / 100.0, 2)), 2)
+              FROM invoice_details d WHERE d.invoice_id=i.id
+          ), 0)) > 0.004
+       OR ABS(i.total - ROUND(i.taxable_amount + i.vat, 2)) > 0.004
 UNION ALL SELECT 'Supplier orders: ' || COUNT(*) FROM supplier_orders
 UNION ALL SELECT 'Supplier price rows: ' || COUNT(*) FROM supplier_price_lists
 UNION ALL SELECT 'Warehouse movements: ' || COUNT(*) FROM warehouse_movements
