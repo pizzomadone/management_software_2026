@@ -74,10 +74,10 @@ public class SupplierOrdersPanel extends JPanel {
         try {
             SupplierOrder order = loadOrder(id); if (order == null) return;
             Window owner = SwingUtilities.getWindowAncestor(this);
-            JDialog host = owner instanceof JDialog ? (JDialog) owner : new JDialog((Frame) owner);
-            SupplierOrderDialog dialog = new SupplierOrderDialog(host, order.getSupplierId(), order.getSupplierName(), order);
-            dialog.setVisible(true); if (dialog.isOrderSaved()) { loadOrders(); refreshProducts(); }
-            if (!(owner instanceof JDialog)) host.dispose();
+            SupplierOrderDialog dialog = new SupplierOrderDialog(
+                owner, order.getSupplierId(), order.getSupplierName(), order);
+            dialog.setVisible(true);
+            if (dialog.isOrderSaved()) { loadOrders(); refreshProducts(); }
         } catch (SQLException ex) { Dialogs.showMessageDialog(this, "Error loading supplier order: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE); }
     }
 
