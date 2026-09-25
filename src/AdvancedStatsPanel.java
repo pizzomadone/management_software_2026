@@ -113,38 +113,36 @@ public class AdvancedStatsPanel extends JPanel {
         JPanel salesPanel = new JPanel(new BorderLayout(0, 4));
 
         // Product-series controls belong only to Sales Trend.
-        JPanel productSeriesBar = new JPanel(new BorderLayout(8, 0));
-        productSeriesBar.setBorder(BorderFactory.createEmptyBorder(2, 6, 2, 6));
+        JPanel productSeriesBar = new JPanel();
+        productSeriesBar.setLayout(new BoxLayout(productSeriesBar, BoxLayout.Y_AXIS));
+        productSeriesBar.setBorder(BorderFactory.createEmptyBorder(3, 6, 3, 6));
 
-        JPanel productSeriesActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+        JPanel productSeriesActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 1));
         productSeriesActions.setOpaque(false);
+        productSeriesActions.setAlignmentX(Component.LEFT_ALIGNMENT);
+
         showTotalSalesCheckBox = new JCheckBox("Total sales", true);
         showTotalSalesCheckBox.setToolTipText(I18n.tr("Show or hide total sales line"));
         showTotalSalesCheckBox.addActionListener(e -> {
             if (salesChartPanel != null) salesChartPanel.repaint();
         });
         productSeriesActions.add(showTotalSalesCheckBox);
-        productSeriesActions.add(Box.createHorizontalStrut(8));
 
+        productSeriesActions.add(Box.createHorizontalStrut(10));
         productSeriesActions.add(new JLabel("Product sales:"));
+
         addProductSeriesButton = new JButton("+");
         addProductSeriesButton.setToolTipText(I18n.tr("Add product sales line"));
-        addProductSeriesButton.setMargin(new Insets(1, 9, 1, 9));
+        addProductSeriesButton.setMargin(new Insets(1, 10, 1, 10));
         addProductSeriesButton.addActionListener(e -> showAddProductSeriesDialog());
         productSeriesActions.add(addProductSeriesButton);
-        productSeriesBar.add(productSeriesActions, BorderLayout.WEST);
 
-        selectedSeriesPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        selectedSeriesPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
         selectedSeriesPanel.setOpaque(false);
-        JScrollPane selectedSeriesScroll = new JScrollPane(
-            selectedSeriesPanel,
-            JScrollPane.VERTICAL_SCROLLBAR_NEVER,
-            JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
-        selectedSeriesScroll.setBorder(null);
-        selectedSeriesScroll.setOpaque(false);
-        selectedSeriesScroll.getViewport().setOpaque(false);
-        selectedSeriesScroll.setPreferredSize(new Dimension(560, 34));
-        productSeriesBar.add(selectedSeriesScroll, BorderLayout.CENTER);
+        selectedSeriesPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        productSeriesBar.add(productSeriesActions);
+        productSeriesBar.add(selectedSeriesPanel);
 
         refreshSelectedSeriesPanel();
 
@@ -522,13 +520,17 @@ public class AdvancedStatsPanel extends JPanel {
             int productId = entry.getKey();
             String name = entry.getValue();
 
-            String chipName = name.length() > 24
-                ? name.substring(0, 21).stripTrailing() + "..."
+            String chipName = name.length() > 20
+                ? name.substring(0, 17).stripTrailing() + "..."
                 : name;
             JButton chip = new JButton(chipName + "  ×");
             chip.setToolTipText(I18n.tr("Remove product sales line") + ": " + name);
-            chip.setMargin(new Insets(1, 7, 1, 7));
+            chip.setMargin(new Insets(1, 8, 1, 8));
             chip.setFocusable(false);
+            Dimension chipSize = chip.getPreferredSize();
+            chip.setPreferredSize(new Dimension(
+                Math.min(190, Math.max(105, chipSize.width)),
+                Math.max(24, chipSize.height)));
             final int id = productId;
             chip.addActionListener(e -> {
                 selectedSalesProducts.remove(id);
@@ -541,6 +543,7 @@ public class AdvancedStatsPanel extends JPanel {
         }
 
         addProductSeriesButton.setEnabled(selectedSalesProducts.size() < MAX_PRODUCT_SERIES);
+        selectedSeriesPanel.setVisible(!selectedSalesProducts.isEmpty());
         selectedSeriesPanel.revalidate();
         selectedSeriesPanel.repaint();
     }
