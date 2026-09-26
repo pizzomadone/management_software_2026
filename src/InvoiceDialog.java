@@ -33,6 +33,7 @@ public class InvoiceDialog extends JDialog {
     private String previousStatus = null;
     private String documentCurrency;
     private boolean historicalForeignCurrencyLocked;
+    private JCheckBox createCompletedOrderCheckBox;
 
     // Constructor for JFrame parent
     public InvoiceDialog(JFrame parent, Invoice invoice) {
@@ -163,6 +164,35 @@ public class InvoiceDialog extends JDialog {
         statusCombo = new JComboBox<>(new String[]{"Draft", "Issued", "Paid", "Canceled"});
         statusCombo.putClientProperty("i18n.values", true);
         invoicePanel.add(statusCombo, gbc);
+
+        if (invoice == null) {
+            gbc.gridx = 0;
+            gbc.gridy = 3;
+            gbc.gridwidth = 4;
+
+            JPanel stockOptionPanel = new JPanel();
+            stockOptionPanel.setLayout(new BoxLayout(stockOptionPanel, BoxLayout.Y_AXIS));
+            stockOptionPanel.setOpaque(false);
+
+            createCompletedOrderCheckBox = new JCheckBox(
+                I18n.tr("Create a completed order automatically and update warehouse stock"),
+                true);
+            createCompletedOrderCheckBox.setToolTipText(I18n.tr(
+                "Creates a completed customer order with the same invoice products and updates stock."));
+            createCompletedOrderCheckBox.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+            JLabel stockWarning = new JLabel(I18n.tr(
+                "If this option is not selected, the invoice will not change warehouse quantities."));
+            stockWarning.setFont(stockWarning.getFont().deriveFont(
+                Math.max(10f, stockWarning.getFont().getSize2D() - 1f)));
+            stockWarning.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+            stockOptionPanel.add(createCompletedOrderCheckBox);
+            stockOptionPanel.add(stockWarning);
+            invoicePanel.add(stockOptionPanel, gbc);
+
+            gbc.gridwidth = 1;
+        }
 
         // Products table
         String symbol = SettingsPanel.getCurrencySymbol(currencyCode());
@@ -667,6 +697,63 @@ public class InvoiceDialog extends JDialog {
         }
     }
 
+    private List<StockManager.StockItem> invoiceStockItems(Connection conn) throws SQLException {
+        List<StockManager.StockItem> items = new ArrayList<>();
+        for (int i = 0; i < itemsTableModel.getRowCount(); i++) {
+            int productId = productIdForRow(conn, i);
+            String productName = String.valueOf(itemsTableModel.getValueAt(i, 1));
+            int quantity = parseInteger(itemsTableModel.getValueAt(i, 2));
+            items.add(new StockManager.StockItem(productId, productName, quantity));
+        }
+        return items;
+    }
+
+    private int createCompletedOrder(Connection conn, Date invoiceDate,
+            List<StockManager.StockItem> stockItems, String invoiceStatus) throws SQLException {
+        String paymentStatus = "Paid".equals(invoiceStatus) ? "PAID" : "NOT_PAID";
+        double paidAmount = "Paid".equals(invoiceStatus) ? currentTaxableAmount : 0.0;
+
+        int orderId;
+        try (PreparedStatement p = conn.prepareStatement("""
+                INSERT INTO orders
+                    (customer_id, order_date, status, total, payment_status, paid_amount)
+                VALUES (?, ?, 'Completed', ?, ?, ?)
+                """, Statement.RETURN_GENERATED_KEYS)) {
+            p.setInt(1, selectedCustomer.getId());
+            p.setTimestamp(2, DateUtils.toSqlTimestamp(invoiceDate));
+            p.setDouble(3, currentTaxableAmount);
+            p.setString(4, paymentStatus);
+            p.setDouble(5, paidAmount);
+            p.executeUpdate();
+            try (ResultSet keys = p.getGeneratedKeys()) {
+                if (!keys.next()) throw new SQLException("Failed to get order ID");
+                orderId = keys.getInt(1);
+            }
+        }
+
+        try (PreparedStatement p = conn.prepareStatement("""
+                INSERT INTO order_details(order_id, product_id, quantity, unit_price)
+                VALUES (?, ?, ?, ?)
+                """)) {
+            for (int i = 0; i < itemsTableModel.getRowCount(); i++) {
+                p.setInt(1, orderId);
+                p.setInt(2, productIdForRow(conn, i));
+                p.setInt(3, parseInteger(itemsTableModel.getValueAt(i, 2)));
+                p.setDouble(4, parseDouble(itemsTableModel.getValueAt(i, 3)));
+                p.addBatch();
+            }
+            p.executeBatch();
+        }
+
+        for (StockManager.StockItem item : stockItems) {
+            StockManager.createOrUpdateReservation(conn, item.getProductId(),
+                "ORDER", orderId, item.getQuantity(), "Order #" + orderId);
+        }
+        StockManager.completeReservationAndDecrementStock(
+            conn, "ORDER", orderId, invoiceDate, String.valueOf(orderId));
+        return orderId;
+    }
+
     private void saveInvoice() {
         if(historicalForeignCurrencyLocked) {
             saveHistoricalStatusOnly();
@@ -703,7 +790,9 @@ public class InvoiceDialog extends JDialog {
             String newStatus = (String)statusCombo.getSelectedItem();
             String number = numberField.getText();
 
-            // Invoices do not affect warehouse stock - stock is managed by orders only
+            boolean createCompletedOrder = invoice == null
+                && createCompletedOrderCheckBox != null
+                && createCompletedOrderCheckBox.isSelected();
 
             Connection conn = DatabaseManager.getInstance().getConnection();
             DatabaseManager.beginTransaction(conn);
@@ -711,14 +800,48 @@ public class InvoiceDialog extends JDialog {
                 int invoiceId;
 
                 if (invoice == null) {
+                    Integer sourceOrderId = null;
+                    if (createCompletedOrder) {
+                        List<StockManager.StockItem> stockItems = invoiceStockItems(conn);
+                        Map<String, StockManager.StockAvailability> insufficient =
+                            StockManager.checkStockAvailability(conn, stockItems, null, "ORDER");
+
+                        if (!insufficient.isEmpty()) {
+                            StringBuilder message = new StringBuilder(
+                                I18n.tr("Insufficient stock for the following products:") + "\n\n");
+                            for (Map.Entry<String, StockManager.StockAvailability> entry
+                                    : insufficient.entrySet()) {
+                                message.append("- ").append(entry.getKey()).append(": ")
+                                    .append(entry.getValue().getFormattedMessage()).append("\n");
+                            }
+                            message.append("\n")
+                                .append(I18n.tr("Do you want to proceed anyway?"))
+                                .append("\n")
+                                .append(I18n.tr("This will result in negative stock."));
+
+                            int choice = Dialogs.showConfirmDialog(this,
+                                message.toString(),
+                                I18n.tr("Insufficient Stock"),
+                                JOptionPane.YES_NO_OPTION,
+                                JOptionPane.WARNING_MESSAGE);
+                            if (choice != JOptionPane.YES_OPTION) {
+                                conn.rollback();
+                                return;
+                            }
+                        }
+
+                        sourceOrderId = createCompletedOrder(
+                            conn, invoiceDate, stockItems, newStatus);
+                    }
                     Calendar invoiceCalendar = Calendar.getInstance();
                     invoiceCalendar.setTime(invoiceDate);
                     number = DatabaseManager.getInstance().getNextInvoiceNumber(
                         conn, invoiceCalendar.get(Calendar.YEAR));
                     // New invoice
                     String invoiceQuery = """
-                        INSERT INTO invoices (number, date, customer_id, taxable_amount, vat, total, status)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        INSERT INTO invoices
+                            (number, date, customer_id, taxable_amount, vat, total, status, order_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """;
                     try (PreparedStatement pstmt = conn.prepareStatement(invoiceQuery, Statement.RETURN_GENERATED_KEYS)) {
                         pstmt.setString(1, number);
@@ -728,6 +851,8 @@ public class InvoiceDialog extends JDialog {
                         pstmt.setDouble(5, currentVat);
                         pstmt.setDouble(6, currentTotal);
                         pstmt.setString(7, newStatus);
+                        if (sourceOrderId != null) pstmt.setInt(8, sourceOrderId);
+                        else pstmt.setNull(8, Types.INTEGER);
                         pstmt.executeUpdate();
 
                         try (ResultSet rs = pstmt.getGeneratedKeys()) {
