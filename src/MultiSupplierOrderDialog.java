@@ -206,6 +206,11 @@ public class MultiSupplierOrderDialog extends JDialog {
             if (date == null) throw new IllegalArgumentException();
         } catch (Exception ex) { showWarning(this, "Invalid date format. Use dd/MM/yyyy format"); return; }
 
+        if (expected != null && expected.before(date)) {
+            showWarning(this, "Delivery date cannot be before order date");
+            return;
+        }
+
         Map<Integer, List<Integer>> groups = new LinkedHashMap<>();
         for (int i = 0; i < model.getRowCount(); i++) {
             Object supplier = model.getValueAt(i, 3);
