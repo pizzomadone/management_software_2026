@@ -19,7 +19,6 @@ public class SupplierOrderDialog extends JDialog {
     private String previousStatus = null;
 
     private JTextField numberField;
-    private JTextField supplierField;
     private DatePickerField dateField;
     private DatePickerField deliveryDateField;
     private JComboBox<String> statusCombo;
@@ -83,21 +82,12 @@ public class SupplierOrderDialog extends JDialog {
         gbc.gridx = 3;
         gbc.weightx = 1.0;
 
-        supplierField = new JTextField(supplierName, 24);
+        JTextField supplierField = new JTextField(supplierName, 24);
         supplierField.setEditable(false);
         Dimension supplierSize = supplierField.getPreferredSize();
-        supplierField.setPreferredSize(new Dimension(230, supplierSize.height));
-        supplierField.setMinimumSize(new Dimension(200, supplierSize.height));
-
-        JButton changeSupplierButton = new JButton("Change Supplier");
-        changeSupplierButton.setToolTipText(I18n.tr(
-            "Choose a different supplier for this supplier order"));
-        changeSupplierButton.addActionListener(e -> changeSupplier());
-
-        JPanel supplierSelectorPanel = new JPanel(new BorderLayout(5, 0));
-        supplierSelectorPanel.add(supplierField, BorderLayout.CENTER);
-        supplierSelectorPanel.add(changeSupplierButton, BorderLayout.EAST);
-        orderPanel.add(supplierSelectorPanel, gbc);
+        supplierField.setPreferredSize(new Dimension(260, supplierSize.height));
+        supplierField.setMinimumSize(new Dimension(220, supplierSize.height));
+        orderPanel.add(supplierField, gbc);
         gbc.weightx = 0.0;
 
         // Order date
@@ -467,30 +457,6 @@ public class SupplierOrderDialog extends JDialog {
         }
     }
 
-    private void changeSupplier() {
-        SupplierSelectionDialog selector = new SupplierSelectionDialog(this);
-        selector.setVisible(true);
-        if (!selector.isSupplierSelected()) return;
-
-        Supplier selected = selector.getSelectedSupplier();
-        if (selected == null || selected.getId() == supplierId) return;
-
-        supplierId = selected.getId();
-        supplierName = selected.getCompanyName();
-        supplierField.setText(supplierName);
-
-        if (itemsTableModel.getRowCount() > 0) {
-            int choice = Dialogs.showConfirmDialog(
-                this,
-                I18n.tr("Supplier changed. Apply the new supplier price list to the current order items?"),
-                I18n.tr("Supplier changed"),
-                JOptionPane.YES_NO_OPTION);
-            if (choice == JOptionPane.YES_OPTION) {
-                applyPriceList(false);
-            }
-        }
-    }
-
     private void updateTotals() {
         if(updatingTotals)return;
         updatingTotals=true;
@@ -647,19 +613,18 @@ public class SupplierOrderDialog extends JDialog {
 
                     String orderQuery = """
                         UPDATE supplier_orders SET
-                            supplier_id = ?, order_date = ?, expected_delivery_date = ?,
+                            order_date = ?, expected_delivery_date = ?,
                             status = ?, total = ?, notes = ?
                         WHERE id = ?
                     """;
 
                     try (PreparedStatement pstmt = conn.prepareStatement(orderQuery)) {
-                        pstmt.setInt(1, supplierId);
-                        pstmt.setTimestamp(2, DateUtils.toSqlTimestamp(orderDate));
-                        pstmt.setTimestamp(3, deliveryDate != null ? DateUtils.toSqlTimestamp(deliveryDate) : null);
-                        pstmt.setString(4, newStatus);
-                        pstmt.setDouble(5, total);
-                        pstmt.setString(6, notesArea.getText().trim());
-                        pstmt.setInt(7, orderId);
+                        pstmt.setTimestamp(1, DateUtils.toSqlTimestamp(orderDate));
+                        pstmt.setTimestamp(2, deliveryDate != null ? DateUtils.toSqlTimestamp(deliveryDate) : null);
+                        pstmt.setString(3, newStatus);
+                        pstmt.setDouble(4, total);
+                        pstmt.setString(5, notesArea.getText().trim());
+                        pstmt.setInt(6, orderId);
                         pstmt.executeUpdate();
                     }
 
