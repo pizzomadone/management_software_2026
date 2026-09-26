@@ -487,15 +487,24 @@ public class SupplierOrderDialog extends JDialog {
                 }
             } catch (Exception e) {
                 Dialogs.showMessageDialog(this,
-                    "Invalid date format. Use dd/MM/yyyy format",
-                    "Error", JOptionPane.ERROR_MESSAGE);
+                    I18n.tr("Invalid date format. Use dd/MM/yyyy format"),
+                    I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
                 return;
             }
 
             if (orderDate == null) {
                 Dialogs.showMessageDialog(this,
-                    "Please enter a valid order date",
-                    "Error", JOptionPane.ERROR_MESSAGE);
+                    I18n.tr("Please enter a valid order date"),
+                    I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            // A delivery date may be the same as or later than the order date.
+            // Only a delivery date before the order date is invalid.
+            if (deliveryDate != null && deliveryDate.before(orderDate)) {
+                Dialogs.showMessageDialog(this,
+                    I18n.tr("Delivery date cannot be before order date"),
+                    I18n.tr("Invalid date"), JOptionPane.ERROR_MESSAGE);
                 return;
             }
 
