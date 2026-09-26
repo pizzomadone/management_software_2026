@@ -463,7 +463,8 @@ public class DashboardPanel extends JPanel {
             int lowStockCount = 0;
             String lowStockQuery = "SELECT COUNT(*) as count FROM products p " +
                 "LEFT JOIN minimum_stock sm ON sm.product_id = p.id WHERE p.active = 1 AND " +
-                "(p.quantity < 0 OR (p.quantity < sm.minimum_quantity AND sm.minimum_quantity > 0))";
+                "((p.quantity - p.reserved_quantity) < 0 OR " +
+                "((p.quantity - p.reserved_quantity) < sm.minimum_quantity AND sm.minimum_quantity > 0))";
             try (Statement stmt = conn.createStatement();
                  ResultSet rs = stmt.executeQuery(lowStockQuery)) {
                 if (rs.next()) {
@@ -588,12 +589,17 @@ public class DashboardPanel extends JPanel {
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
-                SELECT p.code, p.name, p.quantity, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity,
-                       (COALESCE(sm.minimum_quantity, 0) - p.quantity) AS shortage
+                SELECT p.code, p.name, p.quantity, p.reserved_quantity,
+                       (p.quantity - p.reserved_quantity) AS available_quantity,
+                       COALESCE(sm.minimum_quantity, 0) AS minimum_quantity,
+                       (COALESCE(sm.minimum_quantity, 0) - (p.quantity - p.reserved_quantity)) AS shortage
                 FROM products p
                 LEFT JOIN minimum_stock sm ON sm.product_id = p.id
-                WHERE p.active = 1 AND (p.quantity < 0 OR (p.quantity < sm.minimum_quantity AND sm.minimum_quantity > 0))
-                ORDER BY (p.quantity < 0) DESC, shortage DESC, p.code
+                WHERE p.active = 1
+                  AND ((p.quantity - p.reserved_quantity) < 0
+                       OR ((p.quantity - p.reserved_quantity) < sm.minimum_quantity
+                           AND sm.minimum_quantity > 0))
+                ORDER BY ((p.quantity - p.reserved_quantity) < 0) DESC, shortage DESC, p.code
                 LIMIT 10
             """;
 
@@ -605,11 +611,11 @@ public class DashboardPanel extends JPanel {
                     hasAlerts = true;
                     String code = rs.getString("code");
                     String name = rs.getString("name");
-                    int quantity = rs.getInt("quantity");
+                    int availableQuantity = rs.getInt("available_quantity");
                     int minQuantity = rs.getInt("minimum_quantity");
                     long shortage = rs.getLong("shortage");
 
-                    JPanel alertItem = createAlertItem(code, name, quantity, minQuantity, shortage);
+                    JPanel alertItem = createAlertItem(code, name, availableQuantity, minQuantity, shortage);
                     alertsPanel.add(alertItem);
                     alertsPanel.add(Box.createVerticalStrut(5));
                 }
@@ -630,7 +636,7 @@ public class DashboardPanel extends JPanel {
         alertsPanel.repaint();
     }
 
-    private JPanel createAlertItem(String code, String name, int quantity, int minQuantity, long shortage) {
+    private JPanel createAlertItem(String code, String name, int availableQuantity, int minQuantity, long shortage) {
         JPanel panel = new JPanel(new BorderLayout(10, 5));
         panel.setBorder(BorderFactory.createCompoundBorder(
             BorderFactory.createLineBorder(DANGER_COLOR),
@@ -643,7 +649,7 @@ public class DashboardPanel extends JPanel {
         productLabel.setFont(new Font("Arial", Font.BOLD, 12));
 
         JLabel stockLabel = new JLabel(String.format("%s: %d / %s: %d (%s: %d)",
-            I18n.tr("Stock"), quantity, I18n.tr("Min"), minQuantity,
+            I18n.tr("Available"), availableQuantity, I18n.tr("Min"), minQuantity,
             I18n.tr("Short"), shortage));
         stockLabel.setFont(new Font("Arial", Font.PLAIN, 11));
         stockLabel.setForeground(new Color(100, 40, 40));
