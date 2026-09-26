@@ -24,6 +24,25 @@ public class ProductsPanel extends JPanel {
         38, 105, 145, 175, 64, 60, 66, 74, 68,
         120, 56, 68, 58, 140, 88, 58, 52
     };
+    private static final String[] PRODUCT_COLUMN_TOOLTIPS = {
+        "Internal product ID",
+        "Product code or SKU",
+        "Product name",
+        "Product description",
+        "Current selling price",
+        "Units physically in stock",
+        "Units committed to customer orders",
+        "Physical stock minus reserved units",
+        "Units ordered from suppliers, not yet received",
+        "Product category",
+        "Unit of measure",
+        "Minimum stock level before reorder",
+        "Whether the product is active",
+        "Preferred supplier",
+        "Warehouse storage location",
+        "VAT rate applied to the product",
+        "Primary product photo"
+    };
 
     private JTable productsTable;
     private JScrollPane productsScrollPane;
@@ -204,6 +223,28 @@ public class ProductsPanel extends JPanel {
                 label.setFont(candidate);
             }
             return component;
+        });
+
+        productsTable.getTableHeader().addMouseMotionListener(new MouseMotionAdapter() {
+            @Override
+            public void mouseMoved(MouseEvent e) {
+                int viewColumn = productsTable.getTableHeader().columnAtPoint(e.getPoint());
+                if (viewColumn < 0) {
+                    productsTable.getTableHeader().setToolTipText(null);
+                    return;
+                }
+                int modelColumn = productsTable.convertColumnIndexToModel(viewColumn);
+                String tooltip = modelColumn >= 0 && modelColumn < PRODUCT_COLUMN_TOOLTIPS.length
+                    ? I18n.tr(PRODUCT_COLUMN_TOOLTIPS[modelColumn])
+                    : null;
+                productsTable.getTableHeader().setToolTipText(tooltip);
+            }
+        });
+        productsTable.getTableHeader().addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseExited(MouseEvent e) {
+                productsTable.getTableHeader().setToolTipText(null);
+            }
         });
 
         TableCellRenderer centeredRenderer =
