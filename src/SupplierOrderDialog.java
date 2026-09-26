@@ -150,7 +150,7 @@ public class SupplierOrderDialog extends JDialog {
             }
         };
         itemsTable = new JTable(itemsTableModel);
-        itemsTable.setToolTipText("Unit prices are quoted when added. After changing quantities or dates, use Apply Price List to refresh them; negotiated prices can be edited manually.");
+        itemsTable.setToolTipText(I18n.tr("Unit prices are quoted when added. After changing quantities or dates, use Update Prices from Price List to refresh them; negotiated prices can be edited manually."));
         itemsTable.removeColumn(itemsTable.getColumnModel().getColumn(6));
 
         // FIXED: Improved listener to prevent infinite recursion
@@ -171,7 +171,8 @@ public class SupplierOrderDialog extends JDialog {
 
         tableButtonPanel.add(addItemButton);
         tableButtonPanel.add(removeItemButton);
-        JButton reprice = new JButton("Apply Price List");
+        JButton reprice = new JButton("Update Prices from Price List");
+        reprice.setToolTipText(I18n.tr("Replace order prices with the current supplier price list."));
         reprice.addActionListener(e -> applyPriceList());
         tableButtonPanel.add(reprice);
 
@@ -442,7 +443,7 @@ public class SupplierOrderDialog extends JDialog {
             if (askConfirmation && Dialogs.showConfirmDialog(
                     this,
                     I18n.tr("Replace all entered unit prices with the current price list for this date and these quantities?"),
-                    I18n.tr("Apply Price List"),
+                    I18n.tr("Update Prices from Price List"),
                     JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) {
                 return;
             }
