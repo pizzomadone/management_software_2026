@@ -33,6 +33,7 @@ public class InvoiceDialog extends JDialog {
     private String previousStatus = null;
     private String documentCurrency;
     private boolean historicalForeignCurrencyLocked;
+    private boolean linkedOrderLocked;
     private JCheckBox createCompletedOrderCheckBox;
 
     // Constructor for JFrame parent
@@ -43,6 +44,7 @@ public class InvoiceDialog extends JDialog {
         this.productsCache = new HashMap<>();
         this.documentCurrency = resolveDocumentCurrency(invoice);
         this.historicalForeignCurrencyLocked = invoice != null && isFinalizedStatus(invoice.getStatus());
+        this.linkedOrderLocked = invoice != null && hasLinkedOrder(invoice.getId());
 
         setupWindow();
         initComponents();
@@ -64,6 +66,7 @@ public class InvoiceDialog extends JDialog {
         this.productsCache = new HashMap<>();
         this.documentCurrency = resolveDocumentCurrency(invoice);
         this.historicalForeignCurrencyLocked = invoice != null && isFinalizedStatus(invoice.getStatus());
+        this.linkedOrderLocked = invoice != null && hasLinkedOrder(invoice.getId());
 
         setupWindow();
         initComponents();
@@ -79,6 +82,24 @@ public class InvoiceDialog extends JDialog {
 
     static boolean isFinalizedStatus(String status) {
         return status!=null && !"Draft".equals(status);
+    }
+
+    private boolean hasLinkedOrder(int invoiceId) {
+        try (PreparedStatement p = DatabaseManager.getInstance().getConnection().prepareStatement(
+                "SELECT order_id FROM invoices WHERE id=?")) {
+            p.setInt(1, invoiceId);
+            try (ResultSet r = p.executeQuery()) {
+                if (!r.next()) throw new IllegalStateException("Invoice no longer exists");
+                return r.getObject(1) != null;
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException(
+                "Unable to load invoice order link: " + e.getMessage(), e);
+        }
+    }
+
+    private boolean contentLocked() {
+        return historicalForeignCurrencyLocked || linkedOrderLocked;
     }
 
     private String resolveDocumentCurrency(Invoice target) {
@@ -363,7 +384,7 @@ public class InvoiceDialog extends JDialog {
     }
 
     private void showCustomerSelectionDialog() {
-        if(blockHistoricalCurrencyEdit()) return;
+        if(blockContentEdit()) return;
         CustomerSelectionDialog dialog = new CustomerSelectionDialog(this);
         dialog.setVisible(true);
 
@@ -389,7 +410,7 @@ public class InvoiceDialog extends JDialog {
     }
 
     private void createNewCustomer() {
-        if(blockHistoricalCurrencyEdit()) return;
+        if(blockContentEdit()) return;
         CustomerDialog dialog = new CustomerDialog(this, null);
         dialog.setVisible(true);
         if (dialog.isCustomerSaved()) {
@@ -400,7 +421,7 @@ public class InvoiceDialog extends JDialog {
     }
 
     private void showProductSelectionDialog() {
-        if(blockHistoricalCurrencyEdit()) return;
+        if(blockContentEdit()) return;
         ProductSelectionDialog dialog = new ProductSelectionDialog(this);
         dialog.setVisible(true);
 
@@ -444,7 +465,7 @@ public class InvoiceDialog extends JDialog {
     }
 
     private void editSelectedProduct() {
-        if(blockHistoricalCurrencyEdit()) return;
+        if(blockContentEdit()) return;
         int selectedRow = itemsTable.getSelectedRow();
         if (selectedRow == -1) {
             Dialogs.showMessageDialog(this,
@@ -483,7 +504,7 @@ public class InvoiceDialog extends JDialog {
     }
 
     private void removeSelectedProduct() {
-        if(blockHistoricalCurrencyEdit()) return;
+        if(blockContentEdit()) return;
         int selectedRow = itemsTable.getSelectedRow();
         if (selectedRow != -1) {
             String productName = (String) itemsTableModel.getValueAt(selectedRow, 1);
@@ -563,57 +584,130 @@ public class InvoiceDialog extends JDialog {
         }
 
         updateTotals();
-        if(historicalForeignCurrencyLocked) {
+        if (contentLocked()) {
             dateField.setEnabled(false);
             selectCustomerButton.setEnabled(false);
             itemsTable.setEnabled(false);
-            statusCombo.setModel(new DefaultComboBoxModel<>(new String[]{"Issued","Paid","Canceled"}));
-            statusCombo.putClientProperty("i18n.values", true);
-            statusCombo.setSelectedItem(invoice.getStatus());
-            String notice=!currencyCode().equals(SettingsPanel.getCurrencyCode())
-                ? I18n.tr("Historical invoice in a different currency: only the status can be changed.")
-                : I18n.tr("Finalized invoice: only the status can be changed.");
+
+            if (historicalForeignCurrencyLocked) {
+                statusCombo.setModel(new DefaultComboBoxModel<>(
+                    new String[]{"Issued", "Paid", "Canceled"}));
+                statusCombo.putClientProperty("i18n.values", true);
+                statusCombo.setSelectedItem(invoice.getStatus());
+            }
+
+            String notice;
+            if (linkedOrderLocked) {
+                notice = I18n.tr(
+                    "Invoice linked to a customer order: only the status can be changed.");
+            } else if (!currencyCode().equals(SettingsPanel.getCurrencyCode())) {
+                notice = I18n.tr(
+                    "Historical invoice in a different currency: only the status can be changed.");
+            } else {
+                notice = I18n.tr("Finalized invoice: only the status can be changed.");
+            }
             itemsTable.setToolTipText(notice);
             dateField.setToolTipText(notice);
             selectCustomerButton.setToolTipText(notice);
         }
     }
 
-    private boolean blockHistoricalCurrencyEdit() {
-        if(!historicalForeignCurrencyLocked) return false;
-        String message=!currencyCode().equals(SettingsPanel.getCurrencyCode())
-            ? I18n.tr("This historical invoice uses {OLD}. The current operating currency is {NEW}. Only its status can be changed.")
-                .replace("{OLD}",currencyCode()).replace("{NEW}",SettingsPanel.getCurrencyCode())
-            : I18n.tr("Issued, Paid and Canceled invoices are historical documents. Only their status can be changed.");
-        Dialogs.showMessageDialog(this,message,
-            I18n.tr("Historical Invoice"),JOptionPane.INFORMATION_MESSAGE);
+    private boolean blockContentEdit() {
+        if (!contentLocked()) return false;
+
+        String message;
+        String title;
+        if (linkedOrderLocked) {
+            message = I18n.tr(
+                "This invoice is linked to a customer order. Products, quantities, customer and date cannot be changed.");
+            title = I18n.tr("Linked Invoice");
+        } else if (!currencyCode().equals(SettingsPanel.getCurrencyCode())) {
+            message = I18n.tr(
+                "This historical invoice uses {OLD}. The current operating currency is {NEW}. Only its status can be changed.")
+                .replace("{OLD}", currencyCode())
+                .replace("{NEW}", SettingsPanel.getCurrencyCode());
+            title = I18n.tr("Historical Invoice");
+        } else {
+            message = I18n.tr(
+                "Issued, Paid and Canceled invoices are historical documents. Only their status can be changed.");
+            title = I18n.tr("Historical Invoice");
+        }
+
+        Dialogs.showMessageDialog(
+            this, message, title, JOptionPane.INFORMATION_MESSAGE);
         return true;
     }
 
-    private void saveHistoricalStatusOnly() {
-        String newStatus=(String)statusCombo.getSelectedItem();
-        if("Draft".equals(newStatus)) {
-            Dialogs.showMessageDialog(this,
-                I18n.tr("A finalized invoice cannot be returned to Draft."),
-                I18n.tr("Historical Invoice"),JOptionPane.WARNING_MESSAGE);
-            return;
-        }
+    private void saveLockedStatusOnly() {
+        String newStatus = (String) statusCombo.getSelectedItem();
+
         try {
-            Connection conn=DatabaseManager.getInstance().getConnection();
+            Connection conn = DatabaseManager.getInstance().getConnection();
             DatabaseManager.beginTransaction(conn);
-            try(PreparedStatement p=conn.prepareStatement(
-                    "UPDATE invoices SET status=? WHERE id=? AND currency_code=?")) {
-                p.setString(1,newStatus);p.setInt(2,invoice.getId());p.setString(3,currencyCode());
-                if(p.executeUpdate()!=1) throw new SQLException("Invoice changed or no longer exists");
-                conn.commit();invoice.setStatus(newStatus);invoiceSaved=true;dispose();
-            } catch(Exception e) {
-                conn.rollback();throw e;
-            } finally {conn.setAutoCommit(true);}
-        } catch(Exception e) {
+            try {
+                String currentStatus;
+                Integer currentOrderId;
+                String storedCurrency;
+
+                try (PreparedStatement read = conn.prepareStatement(
+                        "SELECT status,order_id,currency_code FROM invoices WHERE id=?")) {
+                    read.setInt(1, invoice.getId());
+                    try (ResultSet r = read.executeQuery()) {
+                        if (!r.next())
+                            throw new SQLException("Invoice changed or no longer exists");
+                        currentStatus = r.getString("status");
+                        Object orderValue = r.getObject("order_id");
+                        currentOrderId = orderValue == null ? null : ((Number) orderValue).intValue();
+                        storedCurrency = r.getString("currency_code");
+                    }
+                }
+
+                if (!java.util.Objects.equals(storedCurrency, currencyCode()))
+                    throw new SQLException("Invoice currency changed unexpectedly");
+
+                if (!"Draft".equals(currentStatus) && "Draft".equals(newStatus)) {
+                    Dialogs.showMessageDialog(
+                        this,
+                        I18n.tr("A finalized invoice cannot be returned to Draft."),
+                        I18n.tr("Historical Invoice"),
+                        JOptionPane.WARNING_MESSAGE);
+                    conn.rollback();
+                    return;
+                }
+
+                // A Draft reaches this path only because it is linked to an order.
+                if ("Draft".equals(currentStatus) && currentOrderId == null)
+                    throw new SQLException("Invoice is no longer linked to an order");
+
+                try (PreparedStatement p = conn.prepareStatement(
+                        "UPDATE invoices SET status=? WHERE id=?")) {
+                    p.setString(1, newStatus);
+                    p.setInt(2, invoice.getId());
+                    if (p.executeUpdate() != 1)
+                        throw new SQLException("Invoice changed or no longer exists");
+                }
+
+                InvoiceSnapshots.capture(conn, invoice.getId(), false);
+                conn.commit();
+
+                invoice.setStatus(newStatus);
+                historicalForeignCurrencyLocked = isFinalizedStatus(newStatus);
+                linkedOrderLocked = currentOrderId != null;
+                invoiceSaved = true;
+                dispose();
+            } catch (Exception e) {
+                conn.rollback();
+                throw e;
+            } finally {
+                conn.setAutoCommit(true);
+            }
+        } catch (Exception e) {
             e.printStackTrace();
-            Dialogs.showMessageDialog(this,
-                I18n.tr("Error while saving the invoice")+": "+e.getMessage(),
-                I18n.tr("Error"),JOptionPane.ERROR_MESSAGE);
+            Dialogs.showMessageDialog(
+                this,
+                I18n.tr("Error while saving the invoice") + ": " + e.getMessage(),
+                I18n.tr("Error"),
+                JOptionPane.ERROR_MESSAGE);
         }
     }
 
@@ -755,8 +849,8 @@ public class InvoiceDialog extends JDialog {
     }
 
     private void saveInvoice() {
-        if(historicalForeignCurrencyLocked) {
-            saveHistoricalStatusOnly();
+        if (contentLocked()) {
+            saveLockedStatusOnly();
             return;
         }
         try {
