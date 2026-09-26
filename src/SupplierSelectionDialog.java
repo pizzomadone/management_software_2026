@@ -22,7 +22,7 @@ public class SupplierSelectionDialog extends JDialog {
 
     private void setupWindow() {
         setSize(700, 500);
-        setLocationRelativeTo(null);
+        Dialogs.centerWindow(this);
         setLayout(new BorderLayout(10, 10));
     }
 
@@ -40,7 +40,6 @@ public class SupplierSelectionDialog extends JDialog {
         searchField.setToolTipText("Search by company name, VAT number, email or phone");
 
         JButton searchButton = new JButton("Search");
-        JButton clearButton = new JButton("Clear");
         JButton newSupplierButton = new JButton("New Supplier");
 
         // Real-time search while typing
@@ -64,16 +63,11 @@ public class SupplierSelectionDialog extends JDialog {
         });
 
         searchButton.addActionListener(e -> performSearch());
-        clearButton.addActionListener(e -> {
-            searchField.setText("");
-            loadAllSuppliers();
-        });
         newSupplierButton.addActionListener(e -> createNewSupplier());
 
         searchInputPanel.add(new JLabel("Search:"));
-        searchInputPanel.add(searchField);
+        searchInputPanel.add(TableInteractionUtil.withClearButton(searchField, null));
         searchInputPanel.add(searchButton);
-        searchInputPanel.add(clearButton);
         searchInputPanel.add(newSupplierButton);
 
         searchPanel.add(searchInputPanel, BorderLayout.CENTER);

@@ -12,6 +12,7 @@ public final class DatabaseIntegrity {
         "order_details", "id order_id product_id quantity unit_price");
     private static final Map<String, String> CURRENT = Map.ofEntries(
         Map.entry("products", "description reserved_quantity category alternative_sku weight unit_of_measure acquisition_cost active supplier_id warehouse_position vat_rate"),
+        Map.entry("product_images", "id product_id filename is_primary sort_order"),
         Map.entry("suppliers", "id company_name vat_number tax_code address phone email certified_email website notes"),
         Map.entry("orders", "payment_status paid_amount"),
         Map.entry("invoices", "id number date customer_id taxable_amount vat total status order_id currency_code customer_snapshot company_snapshot logo_snapshot snapshot_version"),

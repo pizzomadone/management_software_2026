@@ -1,9 +1,63 @@
 import javax.swing.*;
-import java.awt.Component;
+import java.awt.*;
 
 /** Centralized Swing dialogs: translate messages, titles and choices before Swing sizes the window. */
 public final class Dialogs {
     private Dialogs() {}
+
+    /**
+     * Centers a window on its nearest visible owner. If no visible owner exists,
+     * it centers on the usable bounds of the current/default screen.
+     */
+    public static void centerWindow(Window window) {
+        if (window == null || GraphicsEnvironment.isHeadless()) return;
+
+        Window owner = window.getOwner();
+        while (owner != null && !owner.isShowing()) owner = owner.getOwner();
+
+        if (owner == null) {
+            for (Window candidate : Window.getWindows()) {
+                if (candidate == window || !candidate.isShowing()) continue;
+                if (candidate.isActive()) {
+                    owner = candidate;
+                    break;
+                }
+            }
+        }
+
+        Rectangle usable;
+        if (owner != null && owner.getGraphicsConfiguration() != null) {
+            GraphicsConfiguration gc = owner.getGraphicsConfiguration();
+            Rectangle bounds = gc.getBounds();
+            Insets insets = Toolkit.getDefaultToolkit().getScreenInsets(gc);
+            usable = new Rectangle(
+                bounds.x + insets.left,
+                bounds.y + insets.top,
+                bounds.width - insets.left - insets.right,
+                bounds.height - insets.top - insets.bottom);
+        } else {
+            usable = GraphicsEnvironment.getLocalGraphicsEnvironment()
+                .getMaximumWindowBounds();
+        }
+
+        Dimension size = window.getSize();
+        int x;
+        int y;
+        if (owner != null) {
+            Rectangle b = owner.getBounds();
+            x = b.x + (b.width - size.width) / 2;
+            y = b.y + (b.height - size.height) / 2;
+        } else {
+            x = usable.x + (usable.width - size.width) / 2;
+            y = usable.y + (usable.height - size.height) / 2;
+        }
+
+        int maxX = usable.x + Math.max(0, usable.width - size.width);
+        int maxY = usable.y + Math.max(0, usable.height - size.height);
+        x = Math.max(usable.x, Math.min(x, maxX));
+        y = Math.max(usable.y, Math.min(y, maxY));
+        window.setLocation(x, y);
+    }
 
     private static Object message(Object value) {
         if (value instanceof String text) return I18n.tr(text);

@@ -242,6 +242,91 @@ public class RegressionTest {
             require(!Files.isSameFile(Path.of(imported.absolutePath()),OUT.resolve("open-wal.db")),"Imported backup is only a reference");
             b.deleteBackup(imported.id());require(Files.exists(OUT.resolve("open-wal.db")),"Deleted external original");
         });
+        test("product photos are optimized ordered and included only in complete backups", () -> {
+            if(db!=null)db.close();
+            DatabaseManager.getInstance().closeConnection();
+            Path live=AppConstants.getDatabasePath();
+            Files.deleteIfExists(live);
+            Files.deleteIfExists(Path.of(live+"-wal"));
+            Files.deleteIfExists(Path.of(live+"-shm"));
+            Path imageDir=AppConstants.getProductImagesDirectory();
+            if(Files.exists(imageDir)) {
+                try(var walk=Files.walk(imageDir)) {
+                    for(Path p:walk.sorted(Comparator.reverseOrder()).toList()) if(!p.equals(imageDir))Files.deleteIfExists(p);
+                }
+            }
+
+            DatabaseManager.getInstance().initDatabase();
+            db=DatabaseManager.getInstance().getConnection();
+            sql("INSERT INTO suppliers(id,company_name,vat_number) VALUES(1,'Photo Supplier','PHOTO1')");
+            sql("INSERT INTO products(id,code,name,description,price,quantity,acquisition_cost,supplier_id) VALUES(1,'PHOTO','Photo Product','',10,5,4,1)");
+
+            Path source=OUT.resolve("photo-source.png");
+            java.awt.image.BufferedImage original=new java.awt.image.BufferedImage(1600,1000,java.awt.image.BufferedImage.TYPE_INT_RGB);
+            for(int y=0;y<original.getHeight();y++) for(int x=0;x<original.getWidth();x++) {
+                int red=(x*255)/original.getWidth(), green=(y*255)/original.getHeight();
+                int blue=((x/20+y/20)%2==0)?70:190;
+                original.setRGB(x,y,(red<<16)|(green<<8)|blue);
+            }
+            javax.imageio.ImageIO.write(original,"png",source.toFile());
+
+            ProductImageStore store=ProductImageStore.getInstance();
+            var first=store.addImage(1,source.toFile(),false);
+            var second=store.addImage(1,source.toFile(),false);
+            var third=store.addImage(1,source.toFile(),false);
+            store.setPrimary(1,second.id());
+            store.move(1,third.id(),-1);
+
+            var photos=store.list(1);
+            require(photos.size()==3,"Product photo count differs");
+            require(photos.stream().filter(ProductImageStore.ProductImage::primary).count()==1 &&
+                    photos.stream().anyMatch(p->p.id()==second.id()&&p.primary()),"Primary photo differs");
+            require(photos.stream().map(ProductImageStore.ProductImage::sortOrder).distinct().count()==3,
+                "Photo sort order is not unique");
+
+            boolean fourthBlocked=false;
+            try{store.addImage(1,source.toFile(),false);}catch(Exception expected){fourthBlocked=true;}
+            require(fourthBlocked && "3".equals(value("SELECT COUNT(*) FROM product_images WHERE product_id=1")),
+                "Fourth product photo was accepted");
+
+            Path optimized=store.imagePath(first.filename());
+            require(Files.size(optimized)<=ProductImageStore.MAX_IMAGE_BYTES,"Optimized JPEG exceeds size limit");
+            java.awt.image.BufferedImage saved=javax.imageio.ImageIO.read(optimized.toFile());
+            require(Math.max(saved.getWidth(),saved.getHeight())<=ProductImageStore.MAX_LONG_SIDE,
+                "Optimized JPEG exceeds pixel limit");
+            Path thumb=store.thumbnailPath(first.filename());
+            require(Files.isRegularFile(thumb),"Thumbnail was not created");
+            java.awt.image.BufferedImage thumbnail=javax.imageio.ImageIO.read(thumb.toFile());
+            require(Math.max(thumbnail.getWidth(),thumbnail.getHeight())<=ProductImageStore.THUMB_LONG_SIDE,
+                "Thumbnail exceeds pixel limit");
+
+            BackupManager backup=BackupManager.getInstance();
+            Path folder=OUT.resolve("photo-backups");Files.createDirectories(folder);backup.setBackupDirectory(folder.toString());
+            Path complete=backup.performBackup(true);
+            require(complete.getFileName().toString().endsWith(".wsbu"),"Complete backup extension differs");
+            try(java.util.zip.ZipFile zip=new java.util.zip.ZipFile(complete.toFile())) {
+                require(zip.getEntry("manifest.json")!=null,"Complete backup has no manifest");
+                require(zip.getEntry("database/"+AppConstants.DATABASE_FILE_NAME)!=null,"Complete backup has no database");
+                require(zip.getEntry("images/"+first.filename())!=null,"Complete backup has no product image");
+                require(zip.getEntry("images/thumb_"+first.filename())==null,"Derived thumbnail was stored in backup");
+            }
+
+            sql("UPDATE products SET name='Changed after backup' WHERE id=1");
+            store.deleteFiles(first.filename());
+            backup.restoreBackup(complete.toString(),null);
+            db=DatabaseManager.getInstance().getConnection();
+            require("Photo Product".equals(value("SELECT name FROM products WHERE id=1")),"Complete restore did not restore database");
+            require(Files.isRegularFile(store.imagePath(first.filename())),"Complete restore did not restore product image");
+            require(Files.isRegularFile(store.thumbnailPath(first.filename())),"Complete restore did not rebuild thumbnail");
+
+            Path databaseOnly=backup.performBackup(false);
+            require(databaseOnly.getFileName().toString().endsWith(".db"),"Database-only backup extension differs");
+            try(Connection c2=DatabaseManager.openConnection("jdbc:sqlite:"+databaseOnly);
+                Statement s2=c2.createStatement();
+                ResultSet r2=s2.executeQuery("SELECT COUNT(*) FROM product_images")) {
+                require(r2.next() && r2.getInt(1)==0,"Database-only backup retained photo references");
+            }
+        });
     }
     public static void main(String[] args) throws Exception {
         Locale.setDefault(Locale.US);TimeZone.setDefault(TimeZone.getTimeZone("UTC"));

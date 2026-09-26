@@ -92,6 +92,7 @@ public class MainWindow extends JFrame {
 
         // Initialize the database FIRST before any UI setup
         DatabaseManager.getInstance().initDatabase();
+        ProductImageStore.getInstance().removeOrphanFiles();
         BackupManager.getInstance().startAutomaticBackups();
 
         // Ensure license file exists

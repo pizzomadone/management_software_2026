@@ -21,7 +21,7 @@ public class SupplierOrdersPanel extends JPanel {
         searchPanel.setBorder(BorderFactory.createTitledBorder("Search Supplier Orders"));
         JButton searchButton = new JButton("Search"); searchButton.addActionListener(e -> loadOrders());
         search.addActionListener(e -> loadOrders());
-        searchPanel.add(new JLabel("Search:")); searchPanel.add(search); searchPanel.add(searchButton);
+        searchPanel.add(new JLabel("Search:")); searchPanel.add(TableInteractionUtil.withClearButton(search, this::loadOrders)); searchPanel.add(searchButton);
         model = new DefaultTableModel(new String[]{"ID", "Number", "Supplier", "Date", "Delivery Date", "Status", "Total " + SettingsPanel.getCurrencySymbol(), "Notes"}, 0) {
             @Override public boolean isCellEditable(int r, int c) { return false; }
         };
@@ -34,7 +34,15 @@ public class SupplierOrdersPanel extends JPanel {
             new TableInteractionUtil.TableAction("Modify", this::editSelected),
             new TableInteractionUtil.TableAction("Delete", this::deleteSelected), null,
             new TableInteractionUtil.TableAction("Refresh", this::loadOrders, false));
-        table.addMouseListener(new java.awt.event.MouseAdapter() { @Override public void mouseClicked(java.awt.event.MouseEvent e) { if (e.getClickCount() == 2) editSelected(); }});
+        table.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override public void mouseClicked(java.awt.event.MouseEvent e) {
+                if (e.getClickCount() != 2 || !SwingUtilities.isLeftMouseButton(e)) return;
+                int viewRow = table.rowAtPoint(e.getPoint());
+                if (viewRow < 0) return;
+                table.setRowSelectionInterval(viewRow, viewRow);
+                editSelected();
+            }
+        });
         JPanel buttons = new JPanel(new FlowLayout());
         JButton add = new JButton("New Supplier Order"); JButton refresh = new JButton("Refresh");
         add.addActionListener(e -> newOrder()); edit.addActionListener(e -> editSelected()); delete.addActionListener(e -> deleteSelected()); refresh.addActionListener(e -> loadOrders());
@@ -74,10 +82,10 @@ public class SupplierOrdersPanel extends JPanel {
         try {
             SupplierOrder order = loadOrder(id); if (order == null) return;
             Window owner = SwingUtilities.getWindowAncestor(this);
-            JDialog host = owner instanceof JDialog ? (JDialog) owner : new JDialog((Frame) owner);
-            SupplierOrderDialog dialog = new SupplierOrderDialog(host, order.getSupplierId(), order.getSupplierName(), order);
-            dialog.setVisible(true); if (dialog.isOrderSaved()) { loadOrders(); refreshProducts(); }
-            if (!(owner instanceof JDialog)) host.dispose();
+            SupplierOrderDialog dialog = new SupplierOrderDialog(
+                owner, order.getSupplierId(), order.getSupplierName(), order);
+            dialog.setVisible(true);
+            if (dialog.isOrderSaved()) { loadOrders(); refreshProducts(); }
         } catch (SQLException ex) { Dialogs.showMessageDialog(this, "Error loading supplier order: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE); }
     }
 

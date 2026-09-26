@@ -220,7 +220,12 @@ public class InvoicePDFGenerator {
                 if(legacy)pdf.note(I18n.tr("Legacy invoice: party and product descriptions were captured during upgrade and may differ from the original document."));
                 pdf.save(outputFile);
             }
-        } catch(SQLException | IllegalArgumentException e) {throw new IOException(I18n.tr("Unable to generate a consistent invoice")+": "+e.getMessage(),e);}
+        } catch(SQLException | IllegalArgumentException e) {
+            String detail = e.getMessage() == null ? "" : I18n.tr(e.getMessage());
+            String message = I18n.tr("Unable to generate a consistent invoice");
+            if (!detail.isBlank()) message += ": " + detail;
+            throw new IOException(message, e);
+        }
     }
     private static void addLine(java.util.List<String> lines,String value) {
         if(value!=null && !value.trim().isEmpty())lines.add(value.trim());

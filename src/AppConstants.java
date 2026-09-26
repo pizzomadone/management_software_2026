@@ -150,6 +150,9 @@ public class AppConstants {
      */
     public static final String BACKUP_DIR_NAME = "backups";
 
+    /** Directory that stores optimized product photos and generated thumbnails. */
+    public static final String PRODUCT_IMAGES_DIR_NAME = "product_images";
+
     /**
      * Gets the application data directory path for the current platform.
      * Creates the directory if it doesn't exist.
@@ -239,6 +242,16 @@ public class AppConstants {
      *
      * @return The path to the EULA acceptance file
      */
+    public static Path getProductImagesDirectory() {
+        Path imageDir = getAppDataDirectory().resolve(PRODUCT_IMAGES_DIR_NAME);
+        try {
+            Files.createDirectories(imageDir);
+        } catch (IOException e) {
+            throw new IllegalStateException("Could not create product image directory", e);
+        }
+        return imageDir;
+    }
+
     public static Path getEulaAcceptedPath() {
         return getAppDataDirectory().resolve(EULA_ACCEPTED_FILE_NAME);
     }

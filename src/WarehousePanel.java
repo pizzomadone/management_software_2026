@@ -100,7 +100,7 @@ public class WarehousePanel extends JPanel {
         JButton searchButton = new JButton("Search");
 
         filterPanel.add(new JLabel("Search:"));
-        filterPanel.add(searchField);
+        filterPanel.add(TableInteractionUtil.withClearButton(searchField, () -> searchMovements("")));
         filterPanel.add(searchButton);
 
         // Movements table (ID hidden in column 0)
@@ -373,10 +373,14 @@ public class WarehousePanel extends JPanel {
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
-                SELECT p.id, p.name, p.quantity, sm.minimum_quantity, sm.reorder_quantity
+                SELECT p.id, p.name, p.quantity, p.reserved_quantity,
+                       (p.quantity - p.reserved_quantity) AS available_quantity,
+                       sm.minimum_quantity, sm.reorder_quantity
                 FROM products p
                 LEFT JOIN minimum_stock sm ON p.id = sm.product_id
-                WHERE p.active=1 AND sm.minimum_quantity>0 AND p.quantity < sm.minimum_quantity
+                WHERE p.active=1
+                  AND sm.minimum_quantity>0
+                  AND (p.quantity - p.reserved_quantity) < sm.minimum_quantity
                 AND NOT EXISTS (
                     SELECT 1 FROM warehouse_notifications n
                     WHERE n.product_id = p.id
@@ -392,13 +396,14 @@ public class WarehousePanel extends JPanel {
                 while (rs.next()) {
                     int productId = rs.getInt("id");
                     String productName = rs.getString("name");
-                    int quantity = rs.getInt("quantity");
+                    int availableQuantity = rs.getInt("available_quantity");
                     int minQuantity = rs.getInt("minimum_quantity");
 
-                    // Create notification
+                    // Minimum-stock notifications are based on available stock,
+                    // not on physical stock already committed to customers.
                     String message = String.format(
-                        "Stock is below minimum (%d). Current quantity: %d",
-                        minQuantity, quantity
+                        I18n.tr("Available stock is below minimum (%d). Available: %d"),
+                        minQuantity, availableQuantity
                     );
 
                     createNotification(productId, "MIN_STOCK", message);

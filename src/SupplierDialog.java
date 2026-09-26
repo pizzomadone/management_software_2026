@@ -145,7 +145,7 @@ public class SupplierDialog extends JDialog {
         add(legendPanel, BorderLayout.NORTH);
 
         pack();
-        setLocationRelativeTo(null);
+        Dialogs.centerWindow(this);
     }
 
     private void loadSupplierData() {

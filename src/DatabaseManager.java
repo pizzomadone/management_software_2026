@@ -42,7 +42,10 @@ public class DatabaseManager {
             boolean existing = java.nio.file.Files.exists(AppConstants.getDatabasePath());
             closeConnection();
             connection = openConnection(DB_URL);
-            if (existing) DatabaseIntegrity.validate(connection, true);
+            if (existing) {
+                repairOrphanedProductImageReferences(connection);
+                DatabaseIntegrity.validate(connection, true);
+            }
 
             // Enable foreign keys and set SQLite optimizations
             try (Statement stmt = connection.createStatement()) {
@@ -62,6 +65,29 @@ public class DatabaseManager {
         } catch (Exception e) {
             closeConnection();
             throw new IllegalStateException("Error during database initialization: " + e.getMessage(), e);
+        }
+    }
+
+    private static void repairOrphanedProductImageReferences(Connection c) throws SQLException {
+        boolean hasProducts = false;
+        boolean hasProductImages = false;
+        try (PreparedStatement p = c.prepareStatement(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('products','product_images')");
+             ResultSet r = p.executeQuery()) {
+            while (r.next()) {
+                if ("products".equals(r.getString(1))) hasProducts = true;
+                if ("product_images".equals(r.getString(1))) hasProductImages = true;
+            }
+        }
+        if (!hasProducts || !hasProductImages) return;
+
+        try (PreparedStatement p = c.prepareStatement(
+                "DELETE FROM product_images WHERE product_id NOT IN (SELECT id FROM products)")) {
+            int removed = p.executeUpdate();
+            if (removed > 0) {
+                System.out.println("Removed " + removed +
+                    " orphaned product image database reference(s).");
+            }
         }
     }
 
@@ -130,6 +156,17 @@ public class DatabaseManager {
                 warehouse_position TEXT DEFAULT '',
                 vat_rate REAL DEFAULT 0.0,
                 FOREIGN KEY (supplier_id) REFERENCES suppliers (id)
+            )
+        """;
+
+        String createProductImagesTable = """
+            CREATE TABLE IF NOT EXISTS product_images (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                product_id INTEGER NOT NULL,
+                filename TEXT NOT NULL,
+                is_primary INTEGER NOT NULL DEFAULT 0 CHECK(is_primary IN (0,1)),
+                sort_order INTEGER NOT NULL DEFAULT 0 CHECK(sort_order >= 0),
+                FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE CASCADE
             )
         """;
 
@@ -341,6 +378,7 @@ public class DatabaseManager {
             stmt.execute(createCustomersTable);
             stmt.execute(createSuppliersTable); // Create suppliers table first
             stmt.execute(createProductsTable);
+            stmt.execute(createProductImagesTable);
             stmt.execute(createOrdersTable);
             stmt.execute(createOrderDetailsTable);
             stmt.execute(createInvoicesTable);

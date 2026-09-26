@@ -28,7 +28,7 @@ public class EulaDialog extends JDialog {
     private void initComponents() {
         setLayout(new BorderLayout(10, 10));
         setSize(800, 600);
-        setLocationRelativeTo(getParent());
+        Dialogs.centerWindow(this);
         setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
 
         // Title panel

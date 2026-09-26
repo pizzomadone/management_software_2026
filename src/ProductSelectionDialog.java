@@ -31,7 +31,7 @@ public class ProductSelectionDialog extends JDialog {
     
     private void setupWindow() {
         setSize(950, 580); // Reduced height for better screen fit
-        setLocationRelativeTo(null);
+        Dialogs.centerWindow(this);
         setLayout(new BorderLayout(10, 10));
     }
     
@@ -49,7 +49,6 @@ public class ProductSelectionDialog extends JDialog {
         searchField.setToolTipText("Search by code, name or description");
         
         JButton searchButton = new JButton("Search");
-        JButton clearButton = new JButton("Clear");
         JButton newProductButton = new JButton("New Product");
 
         // Real-time search with delay
@@ -73,16 +72,11 @@ public class ProductSelectionDialog extends JDialog {
         });
         
         searchButton.addActionListener(e -> performSearch());
-        clearButton.addActionListener(e -> {
-            searchField.setText("");
-            loadAllProducts();
-        });
         newProductButton.addActionListener(e -> createNewProduct());
         
         searchInputPanel.add(new JLabel("Search:"));
-        searchInputPanel.add(searchField);
+        searchInputPanel.add(TableInteractionUtil.withClearButton(searchField, null));
         searchInputPanel.add(searchButton);
-        searchInputPanel.add(clearButton);
         searchInputPanel.add(newProductButton);
 
 

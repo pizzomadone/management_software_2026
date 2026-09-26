@@ -30,8 +30,10 @@ public class SupplierOrderDialog extends JDialog {
     private Map<Integer, Product> productsCache;
     private boolean updatingTotals = false; // Flag to prevent recursion
 
-    public SupplierOrderDialog(JDialog parent, int supplierId, String supplierName, SupplierOrder order) {
-        super(parent, order == null ? "New Supplier Order" : "Edit Supplier Order", true);
+    public SupplierOrderDialog(Window parent, int supplierId, String supplierName, SupplierOrder order) {
+        super(parent,
+            I18n.tr(order == null ? "New Supplier Order" : "Edit Supplier Order"),
+            Dialog.ModalityType.APPLICATION_MODAL);
         this.supplierId = supplierId;
         this.supplierName = supplierName;
         this.order = order;
@@ -78,9 +80,15 @@ public class SupplierOrderDialog extends JDialog {
         orderPanel.add(new JLabel("Supplier:"), gbc);
 
         gbc.gridx = 3;
-        JTextField supplierField = new JTextField(supplierName);
+        gbc.weightx = 1.0;
+
+        JTextField supplierField = new JTextField(supplierName, 24);
         supplierField.setEditable(false);
+        Dimension supplierSize = supplierField.getPreferredSize();
+        supplierField.setPreferredSize(new Dimension(260, supplierSize.height));
+        supplierField.setMinimumSize(new Dimension(220, supplierSize.height));
         orderPanel.add(supplierField, gbc);
+        gbc.weightx = 0.0;
 
         // Order date
         gbc.gridx = 0; gbc.gridy = 1;
@@ -96,8 +104,13 @@ public class SupplierOrderDialog extends JDialog {
         orderPanel.add(new JLabel("Delivery Date:"), gbc);
 
         gbc.gridx = 3;
-        deliveryDateField = new DatePickerField(10, true);
+        gbc.weightx = 1.0;
+        deliveryDateField = new DatePickerField(12, true);
+        Dimension deliverySize = deliveryDateField.getPreferredSize();
+        deliveryDateField.setPreferredSize(new Dimension(150, deliverySize.height));
+        deliveryDateField.setMinimumSize(new Dimension(135, deliverySize.height));
         orderPanel.add(deliveryDateField, gbc);
+        gbc.weightx = 0.0;
 
         // Status
         gbc.gridx = 0; gbc.gridy = 2;
@@ -127,7 +140,7 @@ public class SupplierOrderDialog extends JDialog {
             }
         };
         itemsTable = new JTable(itemsTableModel);
-        itemsTable.setToolTipText("Unit prices are quoted when added. After changing quantities or dates, use Apply Price List to refresh them; negotiated prices can be edited manually.");
+        itemsTable.setToolTipText(I18n.tr("Unit prices are quoted when added. After changing quantities or dates, use Update Prices from Price List to refresh them; negotiated prices can be edited manually."));
         itemsTable.removeColumn(itemsTable.getColumnModel().getColumn(6));
 
         // FIXED: Improved listener to prevent infinite recursion
@@ -148,7 +161,8 @@ public class SupplierOrderDialog extends JDialog {
 
         tableButtonPanel.add(addItemButton);
         tableButtonPanel.add(removeItemButton);
-        JButton reprice = new JButton("Apply Price List");
+        JButton reprice = new JButton("Update Prices from Price List");
+        reprice.setToolTipText(I18n.tr("Replace order prices with the current supplier price list."));
         reprice.addActionListener(e -> applyPriceList());
         tableButtonPanel.add(reprice);
 
@@ -181,12 +195,17 @@ public class SupplierOrderDialog extends JDialog {
 
         add(mainPanel);
         pack();
-        setLocationRelativeTo(getOwner());
+        centerOnOwner();
+    }
+
+    private void centerOnOwner() {
+        Window owner = getOwner();
+        Dialogs.centerWindow(this);
     }
 
     @Override
     public void setVisible(boolean visible) {
-        if (visible) setLocationRelativeTo(getOwner());
+        if (visible) centerOnOwner();
         super.setVisible(visible);
     }
 
@@ -258,45 +277,60 @@ public class SupplierOrderDialog extends JDialog {
     }
 
     private void showAddProductDialog() {
-        JDialog dialog = new JDialog(this, "Add Product", true);
-        dialog.setLayout(new BorderLayout(3, 3));
-        dialog.setLocationRelativeTo(null);
+        JDialog dialog = new JDialog(this, I18n.tr("Add Product"), true);
+        dialog.setLayout(new BorderLayout(8, 8));
 
         JPanel panel = new JPanel(new GridBagLayout());
+        panel.setBorder(BorderFactory.createEmptyBorder(12, 12, 4, 12));
         GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(2, 3, 2, 3);
-        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.insets = new Insets(4, 4, 4, 8);
+        gbc.anchor = GridBagConstraints.WEST;
 
-        // Product combobox
+        // Product
         gbc.gridx = 0; gbc.gridy = 0;
         panel.add(new JLabel("Product:"), gbc);
 
         gbc.gridx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 1.0;
         JComboBox<ProductDisplay> productCombo = new JComboBox<>();
         for (Product product : productsCache.values()) {
             productCombo.addItem(new ProductDisplay(product));
         }
+        productCombo.setPreferredSize(new Dimension(430, productCombo.getPreferredSize().height));
+        productCombo.setMaximumSize(productCombo.getPreferredSize());
         panel.add(productCombo, gbc);
 
         // Quantity
         gbc.gridx = 0; gbc.gridy = 1;
+        gbc.weightx = 0;
+        gbc.fill = GridBagConstraints.NONE;
         panel.add(new JLabel("Quantity:"), gbc);
 
         gbc.gridx = 1;
         SpinnerNumberModel spinnerModel = new SpinnerNumberModel(1, 1, 9999, 1);
         JSpinner quantitySpinner = new JSpinner(spinnerModel);
+        Dimension spinnerSize = quantitySpinner.getPreferredSize();
+        quantitySpinner.setPreferredSize(new Dimension(85, spinnerSize.height));
+        quantitySpinner.setMinimumSize(quantitySpinner.getPreferredSize());
         panel.add(quantitySpinner, gbc);
 
         // Notes
         gbc.gridx = 0; gbc.gridy = 2;
+        gbc.anchor = GridBagConstraints.NORTHWEST;
         panel.add(new JLabel("Notes:"), gbc);
 
         gbc.gridx = 1;
-        JTextField noteField = new JTextField(30);
-        panel.add(noteField, gbc);
+        gbc.fill = GridBagConstraints.BOTH;
+        gbc.weightx = 1.0;
+        JTextArea noteArea = new JTextArea(3, 30);
+        noteArea.setLineWrap(true);
+        noteArea.setWrapStyleWord(true);
+        JScrollPane noteScroll = new JScrollPane(noteArea);
+        noteScroll.setPreferredSize(new Dimension(430, 76));
+        panel.add(noteScroll, gbc);
 
-        // Buttons
-        JPanel buttonPanel = new JPanel();
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
         JButton addButton = new JButton("Add");
         JButton cancelButton = new JButton("Cancel");
 
@@ -313,12 +347,20 @@ public class SupplierOrderDialog extends JDialog {
             try {
                 quantitySpinner.commitEdit();
                 quantity = Numbers.positiveQuantity(quantitySpinner.getValue());
-                quotedPrice = SupplierPricing.price(DatabaseManager.getInstance().getConnection(), supplierId,
-                    selectedProduct.getProduct().getId(), quantity, DateUtils.parseDate(dateField.getText(), dateFormat));
-            } catch (Exception ex) { Dialogs.showMessageDialog(dialog, ex.getMessage(), "Invalid product", JOptionPane.ERROR_MESSAGE); return; }
-            String note = noteField.getText().trim();
+                quotedPrice = SupplierPricing.price(
+                    DatabaseManager.getInstance().getConnection(),
+                    supplierId,
+                    selectedProduct.getProduct().getId(),
+                    quantity,
+                    DateUtils.parseDate(dateField.getText(), dateFormat));
+            } catch (Exception ex) {
+                Dialogs.showMessageDialog(dialog, ex.getMessage(),
+                    "Invalid product", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
 
-            // Check if product is already present
+            String note = noteArea.getText().trim();
+
             for (int i = 0; i < itemsTableModel.getRowCount(); i++) {
                 String code = (String)itemsTableModel.getValueAt(i, 0);
                 if (code.equals(selectedProduct.getProduct().getCode())) {
@@ -329,7 +371,6 @@ public class SupplierOrderDialog extends JDialog {
                 }
             }
 
-            // Add to table
             Vector<Object> row = new Vector<>();
             row.add(selectedProduct.getProduct().getCode());
             row.add(selectedProduct.getProduct().getName());
@@ -347,13 +388,14 @@ public class SupplierOrderDialog extends JDialog {
         cancelButton.addActionListener(e -> dialog.dispose());
 
         buttonPanel.add(addButton);
-
         buttonPanel.add(cancelButton);
 
         dialog.add(panel, BorderLayout.CENTER);
         dialog.add(buttonPanel, BorderLayout.SOUTH);
+        I18n.localize(dialog);
         dialog.pack();
-        dialog.setLocationRelativeTo(null);
+        dialog.setResizable(false);
+        Dialogs.centerWindow(dialog);
         dialog.setVisible(true);
     }
 
@@ -382,16 +424,37 @@ public class SupplierOrderDialog extends JDialog {
     }
 
     private void applyPriceList() {
+        applyPriceList(true);
+    }
+
+    private void applyPriceList(boolean askConfirmation) {
         try {
             Numbers.commitEdits(itemsTable);
-            if(Dialogs.showConfirmDialog(this,"Replace all entered unit prices with the current price list for this date and these quantities?","Apply Price List",JOptionPane.YES_NO_OPTION)!=JOptionPane.YES_OPTION)return;
-            Date date=DateUtils.parseDate(dateField.getText(),dateFormat);
-            Connection c=DatabaseManager.getInstance().getConnection();
-            double[] prices=new double[itemsTableModel.getRowCount()];
-            for(int i=0;i<prices.length;i++)prices[i]=SupplierPricing.price(c,supplierId,productIdForRow(c,i),parseInteger(itemsTableModel.getValueAt(i,2)),date);
-            for(int i=0;i<prices.length;i++)itemsTableModel.setValueAt(prices[i],i,3);
+            if (askConfirmation && Dialogs.showConfirmDialog(
+                    this,
+                    I18n.tr("Replace all entered unit prices with the current price list for this date and these quantities?"),
+                    I18n.tr("Update Prices from Price List"),
+                    JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) {
+                return;
+            }
+
+            Date date = DateUtils.parseDate(dateField.getText(), dateFormat);
+            Connection c = DatabaseManager.getInstance().getConnection();
+            double[] prices = new double[itemsTableModel.getRowCount()];
+            for (int i = 0; i < prices.length; i++) {
+                prices[i] = SupplierPricing.price(
+                    c, supplierId, productIdForRow(c, i),
+                    parseInteger(itemsTableModel.getValueAt(i, 2)), date);
+            }
+            for (int i = 0; i < prices.length; i++) {
+                itemsTableModel.setValueAt(prices[i], i, 3);
+            }
             updateTotals();
-        } catch(Exception e) {Dialogs.showMessageDialog(this,e.getMessage(),"Unable to apply prices",JOptionPane.ERROR_MESSAGE);}
+        } catch (Exception e) {
+            Dialogs.showMessageDialog(
+                this, I18n.tr(e.getMessage()),
+                I18n.tr("Unable to apply prices"), JOptionPane.ERROR_MESSAGE);
+        }
     }
 
     private void updateTotals() {
@@ -447,15 +510,24 @@ public class SupplierOrderDialog extends JDialog {
                 }
             } catch (Exception e) {
                 Dialogs.showMessageDialog(this,
-                    "Invalid date format. Use dd/MM/yyyy format",
-                    "Error", JOptionPane.ERROR_MESSAGE);
+                    I18n.tr("Invalid date format. Use dd/MM/yyyy format"),
+                    I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
                 return;
             }
 
             if (orderDate == null) {
                 Dialogs.showMessageDialog(this,
-                    "Please enter a valid order date",
-                    "Error", JOptionPane.ERROR_MESSAGE);
+                    I18n.tr("Please enter a valid order date"),
+                    I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            // A delivery date may be the same as or later than the order date.
+            // Only a delivery date before the order date is invalid.
+            if (deliveryDate != null && deliveryDate.before(orderDate)) {
+                Dialogs.showMessageDialog(this,
+                    I18n.tr("Delivery date cannot be before order date"),
+                    I18n.tr("Invalid date"), JOptionPane.ERROR_MESSAGE);
                 return;
             }
 
