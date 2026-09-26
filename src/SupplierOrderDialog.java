@@ -19,6 +19,7 @@ public class SupplierOrderDialog extends JDialog {
     private String previousStatus = null;
 
     private JTextField numberField;
+    private JTextField supplierField;
     private DatePickerField dateField;
     private DatePickerField deliveryDateField;
     private JComboBox<String> statusCombo;
@@ -81,12 +82,22 @@ public class SupplierOrderDialog extends JDialog {
 
         gbc.gridx = 3;
         gbc.weightx = 1.0;
-        JTextField supplierField = new JTextField(supplierName, 24);
+
+        supplierField = new JTextField(supplierName, 24);
         supplierField.setEditable(false);
         Dimension supplierSize = supplierField.getPreferredSize();
-        supplierField.setPreferredSize(new Dimension(260, supplierSize.height));
-        supplierField.setMinimumSize(new Dimension(220, supplierSize.height));
-        orderPanel.add(supplierField, gbc);
+        supplierField.setPreferredSize(new Dimension(230, supplierSize.height));
+        supplierField.setMinimumSize(new Dimension(200, supplierSize.height));
+
+        JButton changeSupplierButton = new JButton("Change Supplier");
+        changeSupplierButton.setToolTipText(I18n.tr(
+            "Choose a different supplier for this supplier order"));
+        changeSupplierButton.addActionListener(e -> changeSupplier());
+
+        JPanel supplierSelectorPanel = new JPanel(new BorderLayout(5, 0));
+        supplierSelectorPanel.add(supplierField, BorderLayout.CENTER);
+        supplierSelectorPanel.add(changeSupplierButton, BorderLayout.EAST);
+        orderPanel.add(supplierSelectorPanel, gbc);
         gbc.weightx = 0.0;
 
         // Order date
@@ -422,16 +433,61 @@ public class SupplierOrderDialog extends JDialog {
     }
 
     private void applyPriceList() {
+        applyPriceList(true);
+    }
+
+    private void applyPriceList(boolean askConfirmation) {
         try {
             Numbers.commitEdits(itemsTable);
-            if(Dialogs.showConfirmDialog(this,"Replace all entered unit prices with the current price list for this date and these quantities?","Apply Price List",JOptionPane.YES_NO_OPTION)!=JOptionPane.YES_OPTION)return;
-            Date date=DateUtils.parseDate(dateField.getText(),dateFormat);
-            Connection c=DatabaseManager.getInstance().getConnection();
-            double[] prices=new double[itemsTableModel.getRowCount()];
-            for(int i=0;i<prices.length;i++)prices[i]=SupplierPricing.price(c,supplierId,productIdForRow(c,i),parseInteger(itemsTableModel.getValueAt(i,2)),date);
-            for(int i=0;i<prices.length;i++)itemsTableModel.setValueAt(prices[i],i,3);
+            if (askConfirmation && Dialogs.showConfirmDialog(
+                    this,
+                    I18n.tr("Replace all entered unit prices with the current price list for this date and these quantities?"),
+                    I18n.tr("Apply Price List"),
+                    JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) {
+                return;
+            }
+
+            Date date = DateUtils.parseDate(dateField.getText(), dateFormat);
+            Connection c = DatabaseManager.getInstance().getConnection();
+            double[] prices = new double[itemsTableModel.getRowCount()];
+            for (int i = 0; i < prices.length; i++) {
+                prices[i] = SupplierPricing.price(
+                    c, supplierId, productIdForRow(c, i),
+                    parseInteger(itemsTableModel.getValueAt(i, 2)), date);
+            }
+            for (int i = 0; i < prices.length; i++) {
+                itemsTableModel.setValueAt(prices[i], i, 3);
+            }
             updateTotals();
-        } catch(Exception e) {Dialogs.showMessageDialog(this,e.getMessage(),"Unable to apply prices",JOptionPane.ERROR_MESSAGE);}
+        } catch (Exception e) {
+            Dialogs.showMessageDialog(
+                this, I18n.tr(e.getMessage()),
+                I18n.tr("Unable to apply prices"), JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void changeSupplier() {
+        SupplierSelectionDialog selector = new SupplierSelectionDialog(this);
+        selector.setVisible(true);
+        if (!selector.isSupplierSelected()) return;
+
+        Supplier selected = selector.getSelectedSupplier();
+        if (selected == null || selected.getId() == supplierId) return;
+
+        supplierId = selected.getId();
+        supplierName = selected.getCompanyName();
+        supplierField.setText(supplierName);
+
+        if (itemsTableModel.getRowCount() > 0) {
+            int choice = Dialogs.showConfirmDialog(
+                this,
+                I18n.tr("Supplier changed. Apply the new supplier price list to the current order items?"),
+                I18n.tr("Supplier changed"),
+                JOptionPane.YES_NO_OPTION);
+            if (choice == JOptionPane.YES_OPTION) {
+                applyPriceList(false);
+            }
+        }
     }
 
     private void updateTotals() {
@@ -590,18 +646,19 @@ public class SupplierOrderDialog extends JDialog {
 
                     String orderQuery = """
                         UPDATE supplier_orders SET
-                            order_date = ?, expected_delivery_date = ?,
+                            supplier_id = ?, order_date = ?, expected_delivery_date = ?,
                             status = ?, total = ?, notes = ?
                         WHERE id = ?
                     """;
 
                     try (PreparedStatement pstmt = conn.prepareStatement(orderQuery)) {
-                        pstmt.setTimestamp(1, DateUtils.toSqlTimestamp(orderDate));
-                        pstmt.setTimestamp(2, deliveryDate != null ? DateUtils.toSqlTimestamp(deliveryDate) : null);
-                        pstmt.setString(3, newStatus);
-                        pstmt.setDouble(4, total);
-                        pstmt.setString(5, notesArea.getText().trim());
-                        pstmt.setInt(6, orderId);
+                        pstmt.setInt(1, supplierId);
+                        pstmt.setTimestamp(2, DateUtils.toSqlTimestamp(orderDate));
+                        pstmt.setTimestamp(3, deliveryDate != null ? DateUtils.toSqlTimestamp(deliveryDate) : null);
+                        pstmt.setString(4, newStatus);
+                        pstmt.setDouble(5, total);
+                        pstmt.setString(6, notesArea.getText().trim());
+                        pstmt.setInt(7, orderId);
                         pstmt.executeUpdate();
                     }
 
