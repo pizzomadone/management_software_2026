@@ -164,6 +164,46 @@ public final class ProductImageStore {
         String primary = primaryFilename == null ? filenames.get(0) : primaryFilename;
         for (String filename : filenames) attachStoredImage(c, productId, filename, filename.equals(primary));
     }
+    public void replaceStoredImages(Connection c, int productId, List<String> filenames,
+            String primaryFilename) throws SQLException {
+        List<String> ordered = filenames == null ? List.of() : new ArrayList<>(filenames);
+        if (ordered.size() > MAX_IMAGES_PER_PRODUCT)
+            throw new SQLException("Maximum three product photos");
+
+        Set<String> unique = new LinkedHashSet<>();
+        for (String filename : ordered) {
+            String safe = safeName(filename);
+            if (!unique.add(safe)) throw new SQLException("Duplicate product image");
+            if (!Files.isRegularFile(imagePath(safe)))
+                throw new SQLException("Stored product image is missing");
+        }
+
+        String primary = ordered.isEmpty() ? null :
+            (primaryFilename != null && unique.contains(primaryFilename)
+                ? primaryFilename : ordered.get(0));
+
+        try (PreparedStatement p = c.prepareStatement(
+                "DELETE FROM product_images WHERE product_id=?")) {
+            p.setInt(1, productId);
+            p.executeUpdate();
+        }
+
+        if (ordered.isEmpty()) return;
+
+        try (PreparedStatement p = c.prepareStatement(
+                "INSERT INTO product_images(product_id,filename,is_primary,sort_order) VALUES(?,?,?,?)")) {
+            for (int i = 0; i < ordered.size(); i++) {
+                String filename = safeName(ordered.get(i));
+                p.setInt(1, productId);
+                p.setString(2, filename);
+                p.setInt(3, filename.equals(primary) ? 1 : 0);
+                p.setInt(4, i);
+                p.addBatch();
+            }
+            p.executeBatch();
+        }
+    }
+
 
     public void setPrimary(int productId, int imageId) throws SQLException {
         Connection c = DatabaseManager.getInstance().getConnection();
