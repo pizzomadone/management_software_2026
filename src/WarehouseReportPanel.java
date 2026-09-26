@@ -65,7 +65,7 @@ public class WarehouseReportPanel extends JPanel {
         statsPanel.add(outOfStockLabel);
 
         // Products Table
-        String[] columns = {"Code", "Product", "Quantity", "Acquisition Cost", "Stock at standard cost", "Status"};
+        String[] columns = {"Code", "Product", "Physical", "Reserved", "Available", "Acquisition Cost", "Stock at standard cost", "Status"};
         productsModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -205,21 +205,26 @@ public class WarehouseReportPanel extends JPanel {
                     row.add(rs.getString("code"));
                     row.add(rs.getString("name"));
 
-                    int quantity = Numbers.quantity(rs.getObject("quantity"));
+                    int physicalStock = Numbers.quantity(rs.getObject("quantity"));
+                    int reservedStock = Numbers.quantity(rs.getObject("reserved_quantity"));
+                    long availableStock = (long) physicalStock - reservedStock;
                     double price = Numbers.nonNegative(rs.getObject("acquisition_cost"));
-                    double totalValueProduct = Numbers.stockValue(quantity,price);
+                    double totalValueProduct = Numbers.stockValue(physicalStock, price);
                     int minQuantity = rs.getInt("minimum_quantity");
 
-                    row.add(quantity);
+                    row.add(physicalStock);
+                    row.add(reservedStock);
+                    row.add(availableStock);
                     row.add(Numbers.unitText(price));
                     row.add(Numbers.moneyText(totalValueProduct));
 
-                    // Determine status
+                    // Stock thresholds are based on what is actually available
+                    // after customer reservations. Valuation remains physical stock.
                     String status;
-                    if (quantity <= 0) {
+                    if (availableStock <= 0) {
                         status = "OUT OF STOCK";
                         outOfStock++;
-                    } else if (minQuantity > 0 && quantity < minQuantity) {
+                    } else if (minQuantity > 0 && availableStock < minQuantity) {
                         status = "LOW STOCK";
                         lowStock++;
                     } else {
