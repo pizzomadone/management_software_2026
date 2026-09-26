@@ -23,8 +23,12 @@ public class ProductDialog extends JDialog {
     private JTextField warehousePositionField;
     private JTextField vatRateField;
     private JPanel photosPanel;
+    // Working photo draft. Existing product images are not changed until Save.
     private List<String> pendingPhotoFilenames = new ArrayList<>();
+    private List<String> originalPhotoFilenames = new ArrayList<>();
     private String pendingPrimaryFilename;
+    private String originalPrimaryFilename;
+    private boolean photosInitialized;
 
     private boolean productSaved = false;
     private Product product;
@@ -244,26 +248,48 @@ public class ProductDialog extends JDialog {
         panel.add(Box.createVerticalGlue(), filler);
     }
 
+    private void initializePhotoDraft() throws SQLException {
+        if (photosInitialized) return;
+
+        pendingPhotoFilenames.clear();
+        originalPhotoFilenames.clear();
+        pendingPrimaryFilename = null;
+        originalPrimaryFilename = null;
+
+        if (product != null) {
+            List<ProductImageStore.ProductImage> images =
+                ProductImageStore.getInstance().list(product.getId());
+            for (ProductImageStore.ProductImage image : images) {
+                pendingPhotoFilenames.add(image.filename());
+                originalPhotoFilenames.add(image.filename());
+                if (image.primary()) {
+                    pendingPrimaryFilename = image.filename();
+                    originalPrimaryFilename = image.filename();
+                }
+            }
+            if (pendingPrimaryFilename == null && !pendingPhotoFilenames.isEmpty()) {
+                pendingPrimaryFilename = pendingPhotoFilenames.get(0);
+                originalPrimaryFilename = pendingPrimaryFilename;
+            }
+        }
+        photosInitialized = true;
+    }
+
     private void refreshPhotosPanel() {
         if (photosPanel == null) return;
         photosPanel.removeAll();
         try {
-            List<ProductImageStore.ProductImage> existing =
-                product == null ? List.of() : ProductImageStore.getInstance().list(product.getId());
-            List<String> pending = pendingPhotos();
+            initializePhotoDraft();
+            List<String> photos = pendingPhotos();
 
             JPanel gallery = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
             gallery.setOpaque(false);
 
-            for (int i = 0; i < existing.size(); i++) {
-                ProductImageStore.ProductImage image = existing.get(i);
-                gallery.add(existingPhotoCard(image, i, existing.size()));
-            }
-            for (int i = 0; i < pending.size(); i++) {
-                gallery.add(pendingPhotoCard(pending.get(i), i, pending.size()));
+            for (int i = 0; i < photos.size(); i++) {
+                gallery.add(photoDraftCard(photos.get(i), i, photos.size()));
             }
 
-            if (existing.isEmpty() && pending.isEmpty()) {
+            if (photos.isEmpty()) {
                 JLabel empty = new JLabel(I18n.tr("No photos"));
                 empty.setBorder(BorderFactory.createEmptyBorder(12, 8, 12, 8));
                 gallery.add(empty);
@@ -274,14 +300,13 @@ public class ProductDialog extends JDialog {
             galleryHolder.add(gallery, BorderLayout.WEST);
             photosPanel.add(galleryHolder, BorderLayout.CENTER);
 
-            int count = existing.size() + pending.size();
             JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 2));
             actions.setOpaque(false);
             JButton addPhoto = new JButton(I18n.tr("Add Photo"));
-            addPhoto.setEnabled(count < ProductImageStore.MAX_IMAGES_PER_PRODUCT);
+            addPhoto.setEnabled(photos.size() < ProductImageStore.MAX_IMAGES_PER_PRODUCT);
             addPhoto.addActionListener(e -> addPhoto());
             actions.add(addPhoto);
-            actions.add(new JLabel(count + "/" + ProductImageStore.MAX_IMAGES_PER_PRODUCT));
+            actions.add(new JLabel(photos.size() + "/" + ProductImageStore.MAX_IMAGES_PER_PRODUCT));
             photosPanel.add(actions, BorderLayout.SOUTH);
         } catch (Exception e) {
             photosPanel.add(new JLabel(I18n.tr("Unable to load product photos")),
@@ -292,49 +317,7 @@ public class ProductDialog extends JDialog {
         photosPanel.repaint();
     }
 
-    private JPanel existingPhotoCard(ProductImageStore.ProductImage image, int index, int total) {
-        JPanel card = createPhotoCardShell();
-        ImageIcon icon = ProductImageStore.getInstance().icon(image.filename(), 95);
-        JLabel preview = createPhotoPreview(icon);
-        card.add(preview, BorderLayout.CENTER);
-
-        JPanel controls = new JPanel(new FlowLayout(FlowLayout.CENTER, 4, 2));
-        controls.setOpaque(false);
-
-        if (image.primary()) {
-            JLabel primary = new JLabel("★");
-            primary.setToolTipText(I18n.tr("Primary"));
-            primary.setFont(primary.getFont().deriveFont(Font.BOLD));
-            controls.add(primary);
-        } else {
-            JButton primary = photoActionButton("☆", I18n.tr("Set as Primary"));
-            primary.addActionListener(e -> runPhotoAction(() ->
-                ProductImageStore.getInstance().setPrimary(image.productId(), image.id())));
-            controls.add(primary);
-        }
-
-        JButton left = photoActionButton("←", I18n.tr("Move Left"));
-        JButton right = photoActionButton("→", I18n.tr("Move Right"));
-        left.setEnabled(index > 0);
-        right.setEnabled(index < total - 1);
-        left.addActionListener(e -> runPhotoAction(() ->
-            ProductImageStore.getInstance().move(image.productId(), image.id(), -1)));
-        right.addActionListener(e -> runPhotoAction(() ->
-            ProductImageStore.getInstance().move(image.productId(), image.id(), 1)));
-        controls.add(left);
-        controls.add(right);
-
-        JButton delete = photoActionButton("×", I18n.tr("Delete Photo"));
-        delete.getAccessibleContext().setAccessibleName(I18n.tr("Delete Photo"));
-        delete.addActionListener(e -> runPhotoAction(() ->
-            ProductImageStore.getInstance().deleteImage(image.productId(), image.id())));
-        controls.add(delete);
-
-        card.add(controls, BorderLayout.SOUTH);
-        return card;
-    }
-
-    private JPanel pendingPhotoCard(String filename, int index, int total) {
+    private JPanel photoDraftCard(String filename, int index, int total) {
         JPanel card = createPhotoCardShell();
         ImageIcon icon = ProductImageStore.getInstance().icon(filename, 95);
         JLabel preview = createPhotoPreview(icon);
@@ -372,7 +355,13 @@ public class ProductDialog extends JDialog {
         delete.getAccessibleContext().setAccessibleName(I18n.tr("Delete Photo"));
         delete.addActionListener(e -> {
             pendingPhotos().remove(filename);
-            ProductImageStore.getInstance().deleteFiles(filename);
+
+            // A newly selected image is only a temporary file until Save.
+            // Existing image files stay untouched so Cancel can restore the draft.
+            if (!originalPhotoFilenames.contains(filename)) {
+                ProductImageStore.getInstance().deleteFiles(filename);
+            }
+
             if (filename.equals(pendingPrimaryFilename)) {
                 pendingPrimaryFilename = pendingPhotos().isEmpty()
                     ? null : pendingPhotos().get(0);
@@ -428,10 +417,14 @@ public class ProductDialog extends JDialog {
     }
 
     private void addPhoto() {
-        int existing = 0;
-        try { if (product != null) existing = ProductImageStore.getInstance().list(product.getId()).size(); }
-        catch (SQLException e) { showPhotoError(e); return; }
-        if (existing + pendingPhotos().size() >= ProductImageStore.MAX_IMAGES_PER_PRODUCT) {
+        try {
+            initializePhotoDraft();
+        } catch (SQLException e) {
+            showPhotoError(e);
+            return;
+        }
+
+        if (pendingPhotos().size() >= ProductImageStore.MAX_IMAGES_PER_PRODUCT) {
             Dialogs.showMessageDialog(this, I18n.tr("Maximum three product photos"),
                 I18n.tr("Photos"), JOptionPane.WARNING_MESSAGE);
             return;
@@ -444,25 +437,14 @@ public class ProductDialog extends JDialog {
         if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
 
         try {
-            if (product == null) {
-                String filename = ProductImageStore.getInstance().storeOptimizedImage(chooser.getSelectedFile());
-                pendingPhotos().add(filename);
-                if (pendingPhotos().size() == 1) pendingPrimaryFilename = filename;
-            } else {
-                ProductImageStore.getInstance().addImage(product.getId(), chooser.getSelectedFile(), false);
-            }
+            String filename =
+                ProductImageStore.getInstance().storeOptimizedImage(chooser.getSelectedFile());
+            pendingPhotos().add(filename);
+            if (pendingPhotos().size() == 1) pendingPrimaryFilename = filename;
             refreshPhotosPanel();
-        } catch (Exception e) { showPhotoError(e); }
-    }
-
-    @FunctionalInterface
-    private interface PhotoAction { void run() throws Exception; }
-
-    private void runPhotoAction(PhotoAction action) {
-        try {
-            action.run();
-            refreshPhotosPanel();
-        } catch (Exception e) { showPhotoError(e); }
+        } catch (Exception e) {
+            showPhotoError(e);
+        }
     }
 
     private void showPhotoError(Exception e) {
@@ -547,8 +529,14 @@ public class ProductDialog extends JDialog {
         }
     }
 
+    private boolean photoDraftChanged() {
+        return !originalPhotoFilenames.equals(pendingPhotoFilenames) ||
+            !java.util.Objects.equals(originalPrimaryFilename, pendingPrimaryFilename);
+    }
+
     private void saveProduct() {
         try {
+            initializePhotoDraft();
             quantitySpinner.commitEdit();
             minimumQuantitySpinner.commitEdit();
 
@@ -573,6 +561,13 @@ public class ProductDialog extends JDialog {
                 Dialogs.showMessageDialog(this, "Code and Name fields are required",
                     "Error", JOptionPane.ERROR_MESSAGE);
                 return;
+            }
+
+            List<String> removedOriginalPhotos = new ArrayList<>();
+            if (product != null && photoDraftChanged()) {
+                for (String filename : originalPhotoFilenames) {
+                    if (!pendingPhotoFilenames.contains(filename)) removedOriginalPhotos.add(filename);
+                }
             }
 
             Connection conn = DatabaseManager.getInstance().getConnection();
@@ -655,15 +650,29 @@ public class ProductDialog extends JDialog {
                     minimum.setInt(1,productId); minimum.setInt(2,minimumQuantity); minimum.executeUpdate();
                 }
 
-                if (product == null && pendingPhotoFilenames != null && !pendingPhotoFilenames.isEmpty()) {
-                    ProductImageStore.getInstance().attachStoredImages(
+                if (product == null) {
+                    if (pendingPhotoFilenames != null && !pendingPhotoFilenames.isEmpty()) {
+                        ProductImageStore.getInstance().attachStoredImages(
+                            conn, productId, pendingPhotoFilenames, pendingPrimaryFilename);
+                    }
+                } else if (photoDraftChanged()) {
+                    ProductImageStore.getInstance().replaceStoredImages(
                         conn, productId, pendingPhotoFilenames, pendingPrimaryFilename);
                 }
 
                 conn.commit();
                 productSaved = true;
+
+                // Database references are committed first. Files removed from an
+                // existing product are deleted only now, never while editing.
+                if (!removedOriginalPhotos.isEmpty()) {
+                    ProductImageStore.getInstance().deleteNamedFiles(removedOriginalPhotos);
+                }
+
                 if (pendingPhotoFilenames != null) pendingPhotoFilenames.clear();
+                originalPhotoFilenames.clear();
                 pendingPrimaryFilename = null;
+                originalPrimaryFilename = null;
             } catch (Exception e) {
                 conn.rollback();
                 throw e;
@@ -681,8 +690,12 @@ public class ProductDialog extends JDialog {
 
     @Override
     public void dispose() {
-        if (!productSaved && product == null && pendingPhotoFilenames != null) {
-            ProductImageStore.getInstance().deleteNamedFiles(new ArrayList<>(pendingPhotoFilenames));
+        if (!productSaved && pendingPhotoFilenames != null) {
+            List<String> temporary = new ArrayList<>();
+            for (String filename : pendingPhotoFilenames) {
+                if (!originalPhotoFilenames.contains(filename)) temporary.add(filename);
+            }
+            ProductImageStore.getInstance().deleteNamedFiles(temporary);
             pendingPhotoFilenames.clear();
         }
         super.dispose();
