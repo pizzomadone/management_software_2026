@@ -91,6 +91,7 @@ public class ProductSelectionDialog extends JDialog {
             }
         };
         productsTable = new JTable(tableModel);
+        TableStyleUtil.applyCompact(productsTable);
 
         // Hide ID column
         productsTable.getColumnModel().getColumn(0).setMinWidth(0);
