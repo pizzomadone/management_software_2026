@@ -78,11 +78,11 @@ public class BackupPanel extends JPanel {
             @Override public boolean isCellEditable(int row, int column) { return false; }
         };
         backupsTable = new JTable(tableModel);
-        TableStyleUtil.applyCompact(backupsTable);
         backupsTable.removeColumn(backupsTable.getColumnModel().getColumn(0));
         TableSorterUtil.enableSorting(backupsTable, new int[]{0}, dateTimeFormat);
         backupsTable.getColumnModel().getColumn(3).setPreferredWidth(420);
         backupsTable.getColumnModel().getColumn(4).setCellRenderer(new StatusRenderer());
+        TableStyleUtil.applyCompact(backupsTable);
         TableInteractionUtil.addDeleteKeyAction(backupsTable, this::deleteSelectedBackup);
         TableInteractionUtil.addContextMenu(backupsTable,
             new TableInteractionUtil.TableAction("Perform Backup", this::performBackup, false),
