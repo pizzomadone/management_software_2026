@@ -148,6 +148,7 @@ public final class InventoryLotManager {
             throws SQLException {
         int needed=quantity;
         double costTotal=0;
+        boolean costKnown=true;
         try(PreparedStatement lots=c.prepareStatement("""
                 SELECT id,remaining_quantity,unit_cost
                 FROM inventory_lots
@@ -168,12 +169,17 @@ public final class InventoryLotManager {
             }
         }
         if(needed>0) {
-            double fallback=currentAcquisitionCost(c,productId);
-            insertConsumption(c,null,detailId,null,needed,fallback);
-            costTotal=Numbers.add(costTotal,Numbers.lineTotal(needed,fallback));
+            // The sale is allowed to drive physical stock negative, but there is no
+            // real FIFO layer for these units. Keep a zero-cost marker only so a later
+            // rollback is distinguishable from a legacy sale with no FIFO history.
+            // Historical cost/profit stays unavailable instead of being invented from
+            // the product's current acquisition cost.
+            insertConsumption(c,null,detailId,null,needed,0.0);
+            costKnown=false;
         }
         try(PreparedStatement u=c.prepareStatement("UPDATE order_details SET cost_total=? WHERE id=?")) {
-            u.setDouble(1,Numbers.money(java.math.BigDecimal.valueOf(costTotal)));
+            if(costKnown) u.setDouble(1,Numbers.money(java.math.BigDecimal.valueOf(costTotal)));
+            else u.setNull(1,Types.REAL);
             u.setInt(2,detailId);u.executeUpdate();
         }
     }
