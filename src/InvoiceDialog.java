@@ -220,6 +220,7 @@ public class InvoiceDialog extends JDialog {
         String[] columns = {"Code", "Product", "Quantity", "Unit Price " + symbol, "VAT Rate %", "Total " + symbol, "Product ID"};
         itemsTableModel = new InvoiceTableModel(columns, 0);
         itemsTable = new JTable(itemsTableModel);
+        TableStyleUtil.applyCompact(itemsTable);
         itemsTable.removeColumn(itemsTable.getColumnModel().getColumn(6));
 
         // Configure table
