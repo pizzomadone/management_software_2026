@@ -320,6 +320,17 @@ public class ExtendedRegressionTest extends RegressionTest {
                     SupplierPricing.price(db,2,1,1,new java.util.Date())==8,
                 "Supplier-specific prices were not preserved");
         });
+        test("legacy supplier list migration keeps the latest price even for the preferred supplier",()->{
+            fresh();
+            sql("CREATE TABLE supplier_price_lists(id INTEGER PRIMARY KEY,supplier_id INTEGER NOT NULL,product_id INTEGER NOT NULL,supplier_product_code TEXT,price REAL NOT NULL,minimum_quantity INTEGER DEFAULT 1,validity_start_date DATETIME NOT NULL,validity_end_date DATETIME,notes TEXT)");
+            sql("INSERT INTO supplier_price_lists VALUES(1,1,1,'OLD-A',6,1,1000,NULL,'old'),(2,1,1,'NEW-A',7,1,2000,NULL,'latest')");
+            sql("DELETE FROM schema_migrations WHERE version='012'");
+            DatabaseMigrationManager.migrate(db);
+            require("7.0|NEW-A|1".equals(value("SELECT purchase_price||'|'||supplier_product_code||'|'||is_preferred FROM product_suppliers WHERE product_id=1 AND supplier_id=1")),
+                "Preferred supplier did not inherit the latest legacy supplier price");
+            require("0".equals(value("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='supplier_price_lists'")),
+                "Legacy supplier price-list table remains after migration");
+        });
         test("legacy supplier migration preserves referenced products",()->{
             fresh();try(Connection c=DatabaseManager.openConnection("jdbc:sqlite::memory:");Statement s=c.createStatement()) {
                 s.execute("CREATE TABLE suppliers(id INTEGER PRIMARY KEY,company_name TEXT)");s.execute("INSERT INTO suppliers VALUES(1,'Supplier')");
@@ -379,6 +390,7 @@ public class ExtendedRegressionTest extends RegressionTest {
                 "Purchase Price",
                 "Preferred Supplier",
                 "Last Purchase Cost",
+                "Stock at last purchase cost",
                 "Historical Cost",
                 "Gross Profit",
                 "Refresh Supplier Prices"
