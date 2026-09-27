@@ -17,8 +17,10 @@ public class ProductDialog extends JDialog {
     private JComboBox<String> unitOfMeasureComboBox;
     private JSpinner minimumQuantitySpinner;
     private JTextField acquisitionCostField;
+    private JTextField preferredSupplierPriceField;
     private JCheckBox activeCheckBox;
     private JButton selectSupplierButton;
+    private JButton manageSuppliersButton;
     private Supplier selectedSupplier;
     private JTextField warehousePositionField;
     private JTextField vatRateField;
@@ -112,10 +114,20 @@ public class ProductDialog extends JDialog {
         newSupplierButton.setMargin(new Insets(2, 9, 2, 9));
         newSupplierButton.addActionListener(e -> createNewSupplier());
 
+        manageSuppliersButton = new JButton("...");
+        manageSuppliersButton.setToolTipText(I18n.tr("Manage all suppliers for this product"));
+        manageSuppliersButton.setMargin(new Insets(2, 9, 2, 9));
+        manageSuppliersButton.setEnabled(product != null);
+        manageSuppliersButton.addActionListener(e -> showProductSuppliersDialog());
+
+        JPanel supplierActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 3, 0));
+        supplierActions.add(newSupplierButton);
+        supplierActions.add(manageSuppliersButton);
+
         JPanel supplierPanel = new JPanel(new BorderLayout(5, 0));
         supplierPanel.add(selectSupplierButton, BorderLayout.CENTER);
-        supplierPanel.add(newSupplierButton, BorderLayout.EAST);
-        setFieldWidth(supplierPanel, 285);
+        supplierPanel.add(supplierActions, BorderLayout.EAST);
+        setFieldWidth(supplierPanel, 330);
 
         addFormRow(productPanel, 0, "Code:", codeField);
         addFormRow(productPanel, 1, "Name:", nameField);
@@ -123,14 +135,21 @@ public class ProductDialog extends JDialog {
         addFormRow(productPanel, 3, "Category:", categoryComboBox);
         addFormRow(productPanel, 4, "Alternative SKU:", alternativeSkuField);
         addFormRow(productPanel, 5, "Unit of Measure:", unitOfMeasureComboBox);
-        addFormRow(productPanel, 6, "Supplier:", supplierPanel);
+        addFormRow(productPanel, 6, "Preferred Supplier:", supplierPanel);
         addFormFiller(productPanel, 7);
 
         priceField = new JTextField(10);
         setFieldWidth(priceField, 115);
+        preferredSupplierPriceField = new JTextField(10);
+        setFieldWidth(preferredSupplierPriceField, 115);
+        preferredSupplierPriceField.setText("0.0");
+        preferredSupplierPriceField.setToolTipText(I18n.tr("Current reference price from the preferred supplier. Orders may use a different negotiated price."));
+
         acquisitionCostField = new JTextField(10);
         setFieldWidth(acquisitionCostField, 115);
         acquisitionCostField.setText("0.0");
+        acquisitionCostField.setEditable(false);
+        acquisitionCostField.setToolTipText(I18n.tr("Last actual purchase cost. Historical sales keep the FIFO cost recorded when they were completed."));
         quantitySpinner = new JSpinner(new SpinnerNumberModel(0, 0, 999999, 1));
         setFieldWidth(quantitySpinner, 110);
         minimumQuantitySpinner = new JSpinner(new SpinnerNumberModel(0, 0, 999999, 1));
@@ -146,14 +165,17 @@ public class ProductDialog extends JDialog {
         activeCheckBox = new JCheckBox("", true);
 
         addFormRow(stockPanel, 0, "Price:", priceField);
-        addFormRow(stockPanel, 1, "Acquisition Cost:", acquisitionCostField);
-        addFormRow(stockPanel, 2, "Quantity:", quantitySpinner);
-        addFormRow(stockPanel, 3, "Minimum Quantity:", minimumQuantitySpinner);
-        addFormRow(stockPanel, 4, "Weight (kg):", weightField);
-        addFormRow(stockPanel, 5, "Warehouse Position:", warehousePositionField);
-        addFormRow(stockPanel, 6, "VAT Rate (%):", vatRateField);
-        addFormRow(stockPanel, 7, "Active:", activeCheckBox);
-        addFormFiller(stockPanel, 8);
+        addFormRow(stockPanel, 1, "Preferred Supplier Price:", withHelp(preferredSupplierPriceField,
+            "Current reference price from the preferred supplier. It is proposed in purchase orders but can be changed."));
+        addFormRow(stockPanel, 2, "Last Purchase Cost:", withHelp(acquisitionCostField,
+            "Last actual purchase cost. Historical sales retain their original FIFO cost."));
+        addFormRow(stockPanel, 3, "Quantity:", quantitySpinner);
+        addFormRow(stockPanel, 4, "Minimum Quantity:", minimumQuantitySpinner);
+        addFormRow(stockPanel, 5, "Weight (kg):", weightField);
+        addFormRow(stockPanel, 6, "Warehouse Position:", warehousePositionField);
+        addFormRow(stockPanel, 7, "VAT Rate (%):", vatRateField);
+        addFormRow(stockPanel, 8, "Active:", activeCheckBox);
+        addFormFiller(stockPanel, 9);
 
         GridBagConstraints leftSection = new GridBagConstraints();
         leftSection.gridx = 0;
@@ -231,6 +253,16 @@ public class ProductDialog extends JDialog {
         field.fill = GridBagConstraints.NONE;
         field.insets = new Insets(4, 0, 4, 6);
         panel.add(component, field);
+    }
+
+    private JPanel withHelp(JComponent component, String tooltip) {
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        panel.setOpaque(false);
+        panel.add(component);
+        JLabel help = new JLabel("?");
+        help.setToolTipText(I18n.tr(tooltip));
+        panel.add(help);
+        return panel;
     }
 
     private void setFieldWidth(JComponent component, int width) {
@@ -472,11 +504,35 @@ public class ProductDialog extends JDialog {
         acquisitionCostField.setText(String.valueOf(product.getAcquisitionCost()));
         activeCheckBox.setSelected(product.isActive());
 
-        Integer supplierId = product.getSupplierId();
-        if (supplierId != null && supplierId > 0) loadSupplierById(supplierId);
+        loadPreferredSupplierRelation();
 
         warehousePositionField.setText(product.getWarehousePosition());
         vatRateField.setText(String.valueOf(product.getVatRate()));
+    }
+
+    private void loadPreferredSupplierRelation() {
+        if (product == null) return;
+        try {
+            Connection conn = DatabaseManager.getInstance().getConnection();
+            try (PreparedStatement p = conn.prepareStatement("""
+                    SELECT supplier_id,purchase_price
+                    FROM product_suppliers
+                    WHERE product_id=? AND is_preferred=1 LIMIT 1
+                    """)) {
+                p.setInt(1,product.getId());
+                try (ResultSet r=p.executeQuery()) {
+                    if (r.next()) {
+                        loadSupplierById(r.getInt("supplier_id"));
+                        preferredSupplierPriceField.setText(Numbers.unitText(r.getDouble("purchase_price")));
+                        return;
+                    }
+                }
+            }
+            Integer legacy = product.getSupplierId();
+            if (legacy != null && legacy > 0) loadSupplierById(legacy);
+        } catch (SQLException e) {
+            selectSupplierButton.setText("Click to select supplier...");
+        }
     }
 
     private void loadSupplierById(Integer supplierId) {
@@ -506,7 +562,47 @@ public class ProductDialog extends JDialog {
         if (dialog.isSupplierSelected()) {
             selectedSupplier = dialog.getSelectedSupplier();
             updateSupplierButton();
+            loadSelectedSupplierPrice();
         }
+    }
+
+    private void loadSelectedSupplierPrice() {
+        if (selectedSupplier == null) return;
+        if (product == null) {
+            if (preferredSupplierPriceField.getText().trim().isEmpty())
+                preferredSupplierPriceField.setText("0.0");
+            return;
+        }
+        try {
+            Connection c=DatabaseManager.getInstance().getConnection();
+            try(PreparedStatement p=c.prepareStatement("""
+                    SELECT purchase_price FROM product_suppliers
+                    WHERE product_id=? AND supplier_id=?
+                    """)) {
+                p.setInt(1,product.getId());p.setInt(2,selectedSupplier.getId());
+                try(ResultSet r=p.executeQuery()) {
+                    preferredSupplierPriceField.setText(r.next()
+                        ? Numbers.unitText(r.getDouble(1))
+                        : Numbers.unitText(product.getAcquisitionCost()));
+                }
+            }
+        } catch(SQLException e) {
+            preferredSupplierPriceField.setText(Numbers.unitText(product.getAcquisitionCost()));
+        }
+    }
+
+    private void showProductSuppliersDialog() {
+        if (product == null) {
+            Dialogs.showMessageDialog(this,
+                I18n.tr("Save the product first, then you can add additional suppliers."),
+                I18n.tr("Product Suppliers"), JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        ProductSuppliersDialog dialog=new ProductSuppliersDialog(this,product.getId(),product.getName());
+        dialog.setVisible(true);
+        selectedSupplier=null;
+        selectSupplierButton.setText("Click to select supplier...");
+        loadPreferredSupplierRelation();
     }
 
     private void updateSupplierButton() {
@@ -551,9 +647,12 @@ public class ProductDialog extends JDialog {
             String unitOfMeasure = String.valueOf(unitOfMeasureComboBox.getSelectedItem());
             int minimumQuantity = Numbers.quantity(minimumQuantitySpinner.getValue());
             if (minimumQuantity < 0) throw new IllegalArgumentException("Minimum stock cannot be negative");
-            double acquisitionCost = Numbers.nonNegative(acquisitionCostField.getText());
             boolean active = activeCheckBox.isSelected();
             Integer supplierId = selectedSupplier != null ? selectedSupplier.getId() : null;
+            double preferredSupplierPrice = supplierId != null
+                ? Numbers.nonNegative(preferredSupplierPriceField.getText()) : 0.0;
+            double acquisitionCost = product == null && supplierId != null
+                ? preferredSupplierPrice : Numbers.nonNegative(acquisitionCostField.getText());
             String warehousePosition = warehousePositionField.getText().trim();
             double vatRate = Numbers.vat(vatRateField.getText());
 
@@ -594,7 +693,7 @@ public class ProductDialog extends JDialog {
                     """;
                     try (PreparedStatement pstmt = conn.prepareStatement(query, Statement.RETURN_GENERATED_KEYS)) {
                         pstmt.setString(1, code); pstmt.setString(2, name); pstmt.setString(3, description);
-                        pstmt.setDouble(4, price); pstmt.setInt(5, quantity); pstmt.setString(6, category);
+                        pstmt.setDouble(4, price); pstmt.setInt(5, 0); pstmt.setString(6, category);
                         pstmt.setString(7, alternativeSku); pstmt.setDouble(8, weight);
                         pstmt.setString(9, unitOfMeasure); pstmt.setDouble(10, acquisitionCost);
                         pstmt.setInt(11, active ? 1 : 0);
@@ -618,7 +717,7 @@ public class ProductDialog extends JDialog {
                     """;
                     try (PreparedStatement pstmt = conn.prepareStatement(query)) {
                         pstmt.setString(1, code); pstmt.setString(2, name); pstmt.setString(3, description);
-                        pstmt.setDouble(4, price); pstmt.setInt(5, quantity); pstmt.setString(6, category);
+                        pstmt.setDouble(4, price); pstmt.setInt(5, oldQuantity); pstmt.setString(6, category);
                         pstmt.setString(7, alternativeSku); pstmt.setDouble(8, weight);
                         pstmt.setString(9, unitOfMeasure); pstmt.setDouble(10, acquisitionCost);
                         pstmt.setInt(11, active ? 1 : 0);
@@ -632,6 +731,9 @@ public class ProductDialog extends JDialog {
 
                 long delta = (long)quantity - oldQuantity;
                 if (delta != 0) {
+                    int intDelta=Math.toIntExact(delta);
+                    InventoryLotManager.adjustProductStock(
+                        conn,productId,intDelta,new java.util.Date(),acquisitionCost);
                     int change = Math.toIntExact(Math.abs(delta));
                     try (PreparedStatement movement = conn.prepareStatement("INSERT INTO warehouse_movements " +
                             "(product_id,type,quantity,reason,document_type,notes) VALUES(?,?,?,?,?,?)")) {
@@ -649,6 +751,8 @@ public class ProductDialog extends JDialog {
                         """)) {
                     minimum.setInt(1,productId); minimum.setInt(2,minimumQuantity); minimum.executeUpdate();
                 }
+
+                savePreferredSupplierRelation(conn,productId,supplierId,preferredSupplierPrice);
 
                 if (product == null) {
                     if (pendingPhotoFilenames != null && !pendingPhotoFilenames.isEmpty()) {
@@ -685,6 +789,24 @@ public class ProductDialog extends JDialog {
             Dialogs.showMessageDialog(this,
                 "Error while saving product: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void savePreferredSupplierRelation(Connection c,int productId,Integer supplierId,
+                                               double purchasePrice) throws SQLException {
+        if(supplierId==null)return;
+        try(PreparedStatement clear=c.prepareStatement(
+                "UPDATE product_suppliers SET is_preferred=0 WHERE product_id=? AND supplier_id<>?")){
+            clear.setInt(1,productId);clear.setInt(2,supplierId);clear.executeUpdate();
+        }
+        try(PreparedStatement upsert=c.prepareStatement("""
+                INSERT INTO product_suppliers(product_id,supplier_id,purchase_price,is_preferred)
+                VALUES(?,?,?,1)
+                ON CONFLICT(product_id,supplier_id) DO UPDATE SET
+                    purchase_price=excluded.purchase_price,is_preferred=1
+                """)){
+            upsert.setInt(1,productId);upsert.setInt(2,supplierId);
+            upsert.setDouble(3,purchasePrice);upsert.executeUpdate();
         }
     }
 
