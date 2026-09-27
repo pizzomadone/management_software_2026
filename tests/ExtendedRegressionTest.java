@@ -113,7 +113,8 @@ public class ExtendedRegressionTest extends RegressionTest {
         });
         test("both editors use the warehouse threshold without overwriting reorder settings",()->{
             fresh();sql("INSERT INTO minimum_stock(product_id,minimum_quantity,reorder_quantity) VALUES(1,5,10)");
-            sql("UPDATE minimum_stock SET reorder_quantity=30,lead_time_days=6,preferred_supplier_id=2,notes='Keep these settings' WHERE product_id=1");
+            sql("INSERT INTO product_suppliers(product_id,supplier_id,purchase_price,is_preferred) VALUES(1,2,7,1)");
+            sql("UPDATE minimum_stock SET reorder_quantity=30,lead_time_days=6,notes='Keep these settings' WHERE product_id=1");
             PD product=OperationalRegressionTest.productEditor(10);((JSpinner)get(product,"minimumQuantitySpinner")).setValue(14);call(product,"saveProduct");
             require(Boolean.TRUE.equals(get(product,"productSaved")),"Product editor did not save");
             require("14|30|6|2|Keep these settings".equals(value("SELECT minimum_quantity||'|'||reorder_quantity||'|'||lead_time_days||'|'||preferred_supplier_id||'|'||notes FROM minimum_stock WHERE product_id=1")),"Product edit changed other reorder settings");
@@ -308,10 +309,16 @@ public class ExtendedRegressionTest extends RegressionTest {
             java.io.PrintWriter broken=new java.io.PrintWriter(new java.io.Writer(){public void write(char[] b,int o,int n)throws java.io.IOException{throw new java.io.IOException("Disk full");}public void flush(){}public void close(){}});
             broken.print("data");boolean blocked=false;try{Csv.finish(broken);}catch(java.io.IOException e){blocked=true;}require(blocked,"Writer failure reported as success");
         });
-        test("price list lookup identifies the selected period by ID",()->{
-            fresh();sql("INSERT INTO supplier_price_lists(id,supplier_id,product_id,supplier_product_code,price,validity_start_date,validity_end_date) VALUES(1,1,1,'SUP-A',5,1767225600000,1782777600000),(2,1,1,'SUP-A',8,1782864000000,NULL)");
-            SupplierPriceListWindow w=empty(SupplierPriceListWindow.class);put(w,"supplierId",1);
-            SupplierPriceList selected=(SupplierPriceList)call(w,"loadPriceListItem",new Class<?>[]{int.class},2);require(selected.getId()==2 && selected.getPrice()==8,"Selected price period lost");
+        test("product supplier relation keeps one preferred supplier and independent prices",()->{
+            fresh();
+            sql("INSERT INTO product_suppliers(product_id,supplier_id,supplier_product_code,purchase_price,is_preferred) VALUES(1,2,'SUP-B',8,1)");
+            require("1".equals(value("SELECT COUNT(*) FROM product_suppliers WHERE product_id=1 AND is_preferred=1")),
+                "Product has more than one preferred supplier");
+            require("2".equals(value("SELECT supplier_id FROM product_suppliers WHERE product_id=1 AND is_preferred=1")),
+                "Preferred supplier was not changed");
+            require(SupplierPricing.price(db,1,1,1,new java.util.Date())==5 &&
+                    SupplierPricing.price(db,2,1,1,new java.util.Date())==8,
+                "Supplier-specific prices were not preserved");
         });
         test("legacy supplier migration preserves referenced products",()->{
             fresh();try(Connection c=DatabaseManager.openConnection("jdbc:sqlite::memory:");Statement s=c.createStatement()) {
@@ -365,7 +372,16 @@ public class ExtendedRegressionTest extends RegressionTest {
                 "Issued, Paid and Canceled invoices are historical documents. Only their status can be changed.",
                 "A finalized invoice cannot be returned to Draft.",
                 "Before changing currency, we recommend creating a backup of your database.",
-                "Open Backup"
+                "Open Backup",
+                "Products Supplied",
+                "Product Suppliers",
+                "Inventory Lots",
+                "Purchase Price",
+                "Preferred Supplier",
+                "Last Purchase Cost",
+                "Historical Cost",
+                "Gross Profit",
+                "Refresh Supplier Prices"
             };
             try {
                 for(String language:List.of("it","es","pt_BR","fr","de","pl","en")) {
@@ -397,7 +413,7 @@ public class ExtendedRegressionTest extends RegressionTest {
 
             require("USD".equals(DatabaseCurrency.read(db)) && "USD".equals(SettingsPanel.getCurrencyCode()),"Operating currency did not change");
             require("10.0|5.0".equals(value("SELECT price||'|'||acquisition_cost FROM products WHERE id=1")),"Relabel converted product values");
-            require("9.0".equals(value("SELECT price FROM supplier_price_lists WHERE product_id=1")),"Relabel converted supplier price");
+            require("9.0".equals(value("SELECT purchase_price FROM product_suppliers WHERE product_id=1 AND supplier_id=1")),"Relabel converted supplier price");
             require("30.0|10.0|10.0".equals(value("SELECT total||'|'||paid_amount||'|'||(SELECT unit_price FROM order_details WHERE order_id=10) FROM orders WHERE id=10")),"Relabel changed customer order values");
             require("10.0|5.0".equals(value("SELECT total||'|'||(SELECT unit_price FROM supplier_order_details WHERE order_id=10) FROM supplier_orders WHERE id=10")),"Relabel changed supplier order values");
             require("EUR|10.0|2.2|12.2".equals(value("SELECT currency_code||'|'||taxable_amount||'|'||vat||'|'||total FROM invoices WHERE id=10")),"Finalized invoice was relabelled");
@@ -421,7 +437,7 @@ public class ExtendedRegressionTest extends RegressionTest {
             DatabaseCurrency.change("USD",DatabaseCurrency.ChangeMode.CONVERT,new java.math.BigDecimal("1.2"));
 
             require("12.0|6.0".equals(value("SELECT price||'|'||acquisition_cost FROM products WHERE id=1")),"Product price or acquisition cost not converted");
-            require("10.8".equals(value("SELECT price FROM supplier_price_lists WHERE product_id=1")),"Supplier price list not converted");
+            require("10.8".equals(value("SELECT price FROM supplier_price_lists WHERE product_id=1")),"Supplier product price not converted");
             require("36.0|12.0|12.0".equals(value("SELECT total||'|'||paid_amount||'|'||(SELECT unit_price FROM order_details WHERE order_id=10) FROM orders WHERE id=10")),"Customer order conversion is inconsistent");
             require("12.0|6.0|12.0".equals(value("SELECT total||'|'||(SELECT unit_price FROM supplier_order_details WHERE order_id=10)||'|'||(SELECT total FROM supplier_order_details WHERE order_id=10) FROM supplier_orders WHERE id=10")),"Supplier order conversion is inconsistent");
             require("USD|24.0|5.28|29.28|12.0|24.0".equals(value("SELECT currency_code||'|'||taxable_amount||'|'||vat||'|'||total||'|'||(SELECT unit_price FROM invoice_details WHERE invoice_id=11)||'|'||(SELECT total FROM invoice_details WHERE invoice_id=11) FROM invoices WHERE id=11")),"Draft invoice conversion is inconsistent");
@@ -555,12 +571,12 @@ public class ExtendedRegressionTest extends RegressionTest {
             fresh();
             sql("UPDATE products SET price=10,acquisition_cost=5 WHERE id=1");
             sql("INSERT INTO supplier_price_lists(supplier_id,product_id,price,minimum_quantity,validity_start_date) VALUES(1,1,9,1,0)");
-            sql("CREATE TRIGGER reject_currency_test BEFORE UPDATE ON supplier_price_lists BEGIN SELECT RAISE(ABORT,'currency rollback test'); END");
+            sql("CREATE TRIGGER reject_currency_test BEFORE UPDATE ON product_suppliers BEGIN SELECT RAISE(ABORT,'currency rollback test'); END");
             boolean blocked=false;
             try{DatabaseCurrency.change("USD",DatabaseCurrency.ChangeMode.CONVERT,new java.math.BigDecimal("1.2"));}catch(SQLException e){blocked=true;}
             require(blocked,"Injected conversion failure was ignored");
             require("EUR".equals(DatabaseCurrency.read(db)) && "EUR".equals(SettingsPanel.getCurrencyCode()),"Failed conversion changed database currency");
-            require("10.0|5.0|9.0".equals(value("SELECT p.price||'|'||p.acquisition_cost||'|'||s.price FROM products p JOIN supplier_price_lists s ON s.product_id=p.id WHERE p.id=1")),"Failed conversion left partial monetary changes");
+            require("10.0|5.0|9.0".equals(value("SELECT p.price||'|'||p.acquisition_cost||'|'||s.purchase_price FROM products p JOIN product_suppliers s ON s.product_id=p.id AND s.supplier_id=1 WHERE p.id=1")),"Failed conversion left partial monetary changes");
             sql("DROP TRIGGER reject_currency_test");
 
             sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(10,'HIST-EUR',0,1,10,2.2,12.2,'Issued')");
