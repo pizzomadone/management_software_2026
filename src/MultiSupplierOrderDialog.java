@@ -95,7 +95,7 @@ public class MultiSupplierOrderDialog extends JDialog {
 
     private void selectProduct() {
         JDialog picker = new JDialog(this, "Select Product", true);
-        DefaultTableModel products = new DefaultTableModel(new String[]{"ID", "Code", "Product", "Supplier ID", "Supplier", "Purchase Price", "Stock"}, 0) {
+        DefaultTableModel products = new DefaultTableModel(new String[]{"ID", "Code", "Product", "Supplier ID", "Supplier", "Purchase Price", "Stock", "Preferred"}, 0) {
             @Override public boolean isCellEditable(int r, int c) { return false; }
         };
         JTable productTable = new JTable(products);
@@ -151,7 +151,8 @@ public class MultiSupplierOrderDialog extends JDialog {
             ps.setString(1, term); ps.setString(2, pattern); ps.setString(3, pattern); ps.setString(4, pattern);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) products.addRow(new Object[]{rs.getInt(1), rs.getString(2), rs.getString(3),
-                    rs.getObject(4), rs.getString(5), rs.getDouble(7), rs.getInt(6)});
+                    rs.getObject(4), rs.getString(5), rs.getDouble(7), rs.getInt(6),
+                    rs.getInt(8)==1?I18n.tr("Yes"):I18n.tr("No")});
             }
         } catch (SQLException ex) { showError(this, "Error loading products: " + ex.getMessage()); }
     }
