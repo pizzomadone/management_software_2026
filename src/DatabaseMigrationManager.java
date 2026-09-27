@@ -316,7 +316,11 @@ public final class DatabaseMigrationManager {
                               AND x.supplier_id=product_suppliers.supplier_id
                             ORDER BY x.validity_start_date DESC, x.id DESC LIMIT 1
                         ), notes)
-                    WHERE is_preferred=0
+                    WHERE EXISTS (
+                        SELECT 1 FROM supplier_price_lists x
+                        WHERE x.product_id=product_suppliers.product_id
+                          AND x.supplier_id=product_suppliers.supplier_id
+                    )
                 """);
             }
 
