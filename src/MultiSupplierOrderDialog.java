@@ -61,7 +61,7 @@ public class MultiSupplierOrderDialog extends JDialog {
         remove.addActionListener(e -> removeProduct());
         itemButtons.add(add); itemButtons.add(remove);
         JButton reprice=new JButton("Refresh Supplier Prices");
-        reprice.addActionListener(e -> applyPriceList());itemButtons.add(reprice);
+        reprice.addActionListener(e -> refreshSupplierPrices());itemButtons.add(reprice);
         totalLabel = new JLabel("Total: " + SettingsPanel.formatCurrency(0));
         totalLabel.setFont(totalLabel.getFont().deriveFont(Font.BOLD, 14f));
         JPanel total = new JPanel(new FlowLayout(FlowLayout.RIGHT)); total.add(totalLabel);
@@ -162,7 +162,7 @@ public class MultiSupplierOrderDialog extends JDialog {
         if (row >= 0) { model.removeRow(table.convertRowIndexToModel(row)); updateTotals(); }
     }
 
-    private void applyPriceList() {
+    private void refreshSupplierPrices() {
         try {
             Numbers.commitEdits(table);
             if(Dialogs.showConfirmDialog(this,"Replace all entered unit prices with the current prices saved for each supplier?","Refresh Supplier Prices",JOptionPane.YES_NO_OPTION)!=JOptionPane.YES_OPTION)return;
