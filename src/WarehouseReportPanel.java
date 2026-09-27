@@ -73,6 +73,7 @@ public class WarehouseReportPanel extends JPanel {
             }
         };
         productsTable = new JTable(productsModel);
+        TableStyleUtil.applyCompact(productsTable);
 
         // Enable column sorting
         TableSorterUtil.enableSorting(productsTable);
@@ -143,6 +144,7 @@ public class WarehouseReportPanel extends JPanel {
             }
         };
         movementsTable = new JTable(movementsModel);
+        TableStyleUtil.applyCompact(movementsTable);
 
         // Enable column sorting with date support (column 0 is "Date")
         TableSorterUtil.enableSorting(movementsTable, new int[]{0}, dateFormat);
