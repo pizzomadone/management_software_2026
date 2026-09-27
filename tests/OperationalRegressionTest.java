@@ -70,7 +70,7 @@ public class OperationalRegressionTest extends RegressionTest {
             fresh();sql("UPDATE products SET price=10,acquisition_cost=0.004,quantity=1 WHERE id=1");sql("UPDATE products SET acquisition_cost=99,active=0 WHERE id=2");
             WarehouseReportPanel report=new WarehouseReportPanel();DefaultTableModel model=(DefaultTableModel)get(report,"productsModel");require(model.getRowCount()==1,"Inactive catalog included");
             DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
-            require(((JLabel)get(dash,"warehouseValueLabel")).getText().equals(SettingsPanel.formatCurrency(Numbers.nonNegative(model.getValueAt(0,4)))),"Valuation rounding differs");
+            require(((JLabel)get(dash,"warehouseValueLabel")).getText().equals(SettingsPanel.formatCurrency(Numbers.nonNegative(model.getValueAt(0,6)))),"Valuation rounding differs");
             sql("UPDATE products SET acquisition_cost=0 WHERE id=1");call(dash,"loadKPIData");require(((JLabel)get(dash,"avgMarginLabel")).getText().equals("100.0%"),"Zero cost margin is not 100%");
         });
         test("monthly invoiced total includes the exact first millisecond",()->{
@@ -99,11 +99,11 @@ public class OperationalRegressionTest extends RegressionTest {
             require(kpi(dash,"negativeStockCountLabel").equals("1") && kpi(dash,"lowStockCountLabel").equals("1"),"Negative stock without a minimum was hidden");
             require(labels((JPanel)get(dash,"alertsPanel")).stream().anyMatch(l->l.getText().contains("-100")),"No deficit alert");
             WarehouseReportPanel report=new WarehouseReportPanel();DefaultTableModel rows=(DefaultTableModel)get(report,"productsModel");
-            require(rows.getValueAt(0,4).equals("1.01") && rows.getValueAt(1,4).equals("0.00"),"Report valuation differs from dashboard");
+            require(rows.getValueAt(0,6).equals("1.01") && rows.getValueAt(1,6).equals("0.00"),"Report valuation differs from dashboard");
             require(rows.getValueAt(1,2).equals(-100) && value("SELECT quantity FROM products WHERE id=2").equals("-100"),"Valuation overwrote the actual deficit");
             sql("UPDATE products SET quantity=2 WHERE id=2");call(dash,"loadKPIData");call(report,"loadProductsData");
             require(kpi(dash,"warehouseValueLabel").equals(SettingsPanel.formatCurrency(161.01)) && kpi(dash,"negativeStockCountLabel").equals("0"),"Restock did not restore asset value");
-            require(rows.getValueAt(1,4).equals("160.00"),"Report did not refresh after restock");
+            require(rows.getValueAt(1,6).equals("160.00"),"Report did not refresh after restock");
             sql("UPDATE products SET quantity=-2147483648 WHERE id=2");
             sql("INSERT INTO minimum_stock(product_id,minimum_quantity,reorder_quantity) VALUES(2,2147483647,0)");call(dash,"loadKPIData");call(dash,"loadAlerts");
             require(labels((JPanel)get(dash,"alertsPanel")).stream().anyMatch(l->l.getText().contains("4294967295")),"Deficit alert overflowed");
@@ -181,17 +181,17 @@ public class OperationalRegressionTest extends RegressionTest {
             sql("INSERT INTO minimum_stock(product_id,minimum_quantity,reorder_quantity) VALUES(1,3,0),(4,10,0),(5,10,0)");
             sql("INSERT INTO orders(customer_id,order_date,status,total) VALUES(1,'2000-01-01','In Progress',0),(1,'2000-01-01','Completed',0),(1,'2000-01-01','Cancelled',0)");
             DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
-            require(kpi(dash,"lowStockCountLabel").equals("2"),"Low stock counted units reservations inactive products or a disabled threshold");
+            require(kpi(dash,"lowStockCountLabel").equals("3"),"Low stock omitted a deficit, ignored reservations, counted inactive products or mishandled a disabled threshold");
             require(kpi(dash,"zeroStockLabel").equals("2"),"Out of stock omitted a negative balance or included inactive products");
             require(kpi(dash,"pendingOrdersLabel").equals("2"),"Pending orders used the monthly filter or included closed documents");
             require(kpi(dash,"warehouseValueLabel").equals(SettingsPanel.formatCurrency(50)) && kpi(dash,"warehouseSaleValueLabel").equals(SettingsPanel.formatCurrency(150)),"Reservations reduced physical stock value");
             WarehouseReportPanel report=new WarehouseReportPanel();DefaultTableModel rows=(DefaultTableModel)get(report,"productsModel");
-            int outOfStock=0;for(int row=0;row<rows.getRowCount();row++)if(rows.getValueAt(row,5).equals("OUT OF STOCK"))outOfStock++;
+            int outOfStock=0;for(int row=0;row<rows.getRowCount();row++)if(rows.getValueAt(row,7).equals("OUT OF STOCK"))outOfStock++;
             require(outOfStock==2,"Warehouse report and dashboard disagree on out of stock");
         });
         test("KPI titles notes and explanations translate in every supported language",()->{
             fresh();DashboardPanel dash=new DashboardPanel(null);JPanel panel=(JPanel)call(dash,"createKPIPanel");
-            String[] titles={"Stock at standard cost","Stock at sale price","Monthly order sales (excl. VAT)","Monthly invoiced (excl. VAT)","Potential stock margin",
+            String[] titles={"Stock at last purchase cost","Stock at sale price","Monthly order sales (excl. VAT)","Monthly invoiced (excl. VAT)","Potential stock margin",
                 "In-stock products with zero purchase cost","Negative-stock products (excluded from valuation)"};
             Map<String,String> fields=Map.of("warehouseValue","warehouseValueLabel","warehouseSaleValue","warehouseSaleValueLabel",
                 "lowStock","lowStockCountLabel","zeroStock","zeroStockLabel","monthRevenue","monthRevenueLabel",
