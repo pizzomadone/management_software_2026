@@ -1,230 +1,180 @@
-// File: SupplierPriceListWindow.java
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.sql.*;
 import java.util.Vector;
-import java.text.SimpleDateFormat;
-import java.util.Date;
 
+/**
+ * Shows the products currently supplied by one supplier.
+ * Historical supplier "price list" terminology is intentionally no longer exposed in the UI.
+ */
 public class SupplierPriceListWindow extends JDialog {
-    private int supplierId;
-    private String supplierName;
-    private JTable priceListTable;
-    private DefaultTableModel tableModel;
-    private JButton addButton;
+    private final int supplierId;
+    private final String supplierName;
+    private JTable table;
+    private DefaultTableModel model;
     private JButton editButton;
     private JButton deleteButton;
-    private JButton refreshButton;
-    private SimpleDateFormat dateFormat;
 
-    public SupplierPriceListWindow(JDialog parent, int supplierId, String supplierName) {
-        super(parent, "Price List: " + supplierName, true);
-        this.supplierId = supplierId;
-        this.supplierName = supplierName;
-        this.dateFormat = new SimpleDateFormat("dd/MM/yyyy");
-
-        setupWindow();
-        initComponents();
-        loadPriceList();
+    public SupplierPriceListWindow(JDialog parent,int supplierId,String supplierName){
+        super(parent,I18n.tr("Products Supplied")+": "+supplierName,true);
+        this.supplierId=supplierId;this.supplierName=supplierName;
+        setup();
     }
 
-    // Constructor for JFrame parent
-    public SupplierPriceListWindow(JFrame parent, int supplierId, String supplierName) {
-        super(parent, "Price List: " + supplierName, true);
-        this.supplierId = supplierId;
-        this.supplierName = supplierName;
-        this.dateFormat = new SimpleDateFormat("dd/MM/yyyy");
-
-        setupWindow();
-        initComponents();
-        loadPriceList();
+    public SupplierPriceListWindow(JFrame parent,int supplierId,String supplierName){
+        super(parent,I18n.tr("Products Supplied")+": "+supplierName,true);
+        this.supplierId=supplierId;this.supplierName=supplierName;
+        setup();
     }
 
-    private void setupWindow() {
-        setSize(900, 600);
-        Dialogs.centerWindow(this);
-        setLayout(new BorderLayout(10, 10));
-    }
+    private void setup(){
+        setLayout(new BorderLayout(8,8));
+        setSize(780,520);
 
-    private void initComponents() {
-        // Price list table
-        String[] columns = {"Product", "Supplier Code", "Price " + SettingsPanel.getCurrencySymbol(), "Min. Qty.", "Valid From", "Valid Until", "Notes", "ID"};
-        tableModel = new DefaultTableModel(columns, 0) {
-            @Override
-            public boolean isCellEditable(int row, int column) {
-                return false;
-            }
+        model=new DefaultTableModel(new String[]{
+            "Product","Supplier Code","Purchase Price","Preferred","Notes","ID"
+        },0){
+            @Override public boolean isCellEditable(int r,int c){return false;}
         };
-        priceListTable = new JTable(tableModel);
-        priceListTable.removeColumn(priceListTable.getColumnModel().getColumn(7));
-        priceListTable.getSelectionModel().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        priceListTable.getSelectionModel().addListSelectionListener(e -> updateButtonStates());
+        table=new JTable(model);
+        table.setAutoCreateRowSorter(true);
+        table.getSelectionModel().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        table.getSelectionModel().addListSelectionListener(e->updateButtons());
+        table.removeColumn(table.getColumnModel().getColumn(5));
 
-        // Buttons panel
-        JPanel buttonPanel = new JPanel();
-        addButton = new JButton("New Price");
-        editButton = new JButton("Edit");
-        deleteButton = new JButton("Delete");
-        refreshButton = new JButton("Refresh");
+        JPanel buttons=new JPanel(new FlowLayout(FlowLayout.LEFT));
+        JButton add=new JButton("Add Product");
+        editButton=new JButton("Edit");
+        deleteButton=new JButton("Remove");
+        JButton refresh=new JButton("Refresh");
+        add.addActionListener(e->openEditor(null));
+        editButton.addActionListener(e->editSelected());
+        deleteButton.addActionListener(e->deleteSelected());
+        refresh.addActionListener(e->load());
+        buttons.add(add);buttons.add(editButton);buttons.add(deleteButton);buttons.add(refresh);
 
-        addButton.addActionListener(e -> showPriceDialog(null));
-        editButton.addActionListener(e -> editSelectedPrice());
-        deleteButton.addActionListener(e -> deleteSelectedPrice());
-        refreshButton.addActionListener(e -> loadPriceList());
+        JLabel help=new JLabel("?");
+        help.setToolTipText(I18n.tr("Supplier prices are current reference prices. Each supplier order stores the actual price paid separately."));
+        JPanel north=new JPanel(new FlowLayout(FlowLayout.LEFT));
+        north.add(new JLabel(I18n.tr("Products available from this supplier")));
+        north.add(help);
 
-        buttonPanel.add(addButton);
-        buttonPanel.add(editButton);
-        buttonPanel.add(deleteButton);
-        buttonPanel.add(refreshButton);
-
-        // Main layout
-        add(new JScrollPane(priceListTable), BorderLayout.CENTER);
-        add(buttonPanel, BorderLayout.SOUTH);
-
-        updateButtonStates();
+        add(north,BorderLayout.NORTH);
+        add(new JScrollPane(table),BorderLayout.CENTER);
+        add(buttons,BorderLayout.SOUTH);
+        I18n.localize(this);
+        Dialogs.centerWindow(this);
+        load();
+        updateButtons();
     }
 
-    private void updateButtonStates() {
-        boolean isRowSelected = priceListTable.getSelectedRow() != -1;
-        editButton.setEnabled(isRowSelected);
-        deleteButton.setEnabled(isRowSelected);
+    private void updateButtons(){
+        boolean selected=table.getSelectedRow()>=0;
+        editButton.setEnabled(selected);deleteButton.setEnabled(selected);
     }
 
-    private void loadPriceList() {
-        tableModel.setRowCount(0);
-        try {
-            Connection conn = DatabaseManager.getInstance().getConnection();
-            String query = """
-                SELECT l.*, p.name as product_name
-                FROM supplier_price_lists l
-                JOIN products p ON l.product_id = p.id
-                WHERE l.supplier_id = ?
-                ORDER BY p.name
-            """;
-
-            try (PreparedStatement pstmt = conn.prepareStatement(query)) {
-                pstmt.setInt(1, supplierId);
-                ResultSet rs = pstmt.executeQuery();
-
-                while (rs.next()) {
-                    Vector<Object> row = new Vector<>();
-                    row.add(rs.getString("product_name"));
-                    row.add(rs.getString("supplier_product_code"));
-                    row.add(Numbers.unitText(rs.getDouble("price")));
-                    row.add(rs.getInt("minimum_quantity"));
-                    row.add(DateUtils.formatDate(DateUtils.parseDate(rs,"validity_start_date"),dateFormat));
-                    Date endDate = DateUtils.parseDate(rs,"validity_end_date");
-                    row.add(endDate != null ? dateFormat.format(endDate) : "");
-                    row.add(rs.getString("notes"));
-                    row.add(rs.getInt("id"));
-                    tableModel.addRow(row);
-                }
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-            Dialogs.showMessageDialog(this,
-                "Error loading price list: " + e.getMessage(),
-                "Error", JOptionPane.ERROR_MESSAGE);
-        }
-    }
-
-    private void showPriceDialog(SupplierPriceList priceList) {
-        SupplierPriceListDialog dialog = new SupplierPriceListDialog(this, supplierId, supplierName, priceList);
-        dialog.setVisible(true);
-        if (dialog.isPriceSaved()) {
-            loadPriceList();
-        }
-    }
-
-    private void editSelectedPrice() {
-        int selectedRow = priceListTable.getSelectedRow();
-        if (selectedRow != -1) {
-            selectedRow = priceListTable.convertRowIndexToModel(selectedRow);
-            int priceId = ((Number)tableModel.getValueAt(selectedRow,7)).intValue();
-            String productName = (String)tableModel.getValueAt(selectedRow, 0);
-            String supplierCode = (String)tableModel.getValueAt(selectedRow, 1);
-            try {
-                SupplierPriceList priceList = loadPriceListItem(priceId);
-                if (priceList != null) {
-                    showPriceDialog(priceList);
-                }
-            } catch (SQLException e) {
-                e.printStackTrace();
-                Dialogs.showMessageDialog(this,
-                    "Error loading price: " + e.getMessage(),
-                    "Error", JOptionPane.ERROR_MESSAGE);
-            }
-        }
-    }
-
-    private SupplierPriceList loadPriceListItem(int priceId) throws SQLException {
-        Connection conn = DatabaseManager.getInstance().getConnection();
-        String query = """
-            SELECT l.*, p.name as product_name
-            FROM supplier_price_lists l
-            JOIN products p ON l.product_id = p.id
-            WHERE l.supplier_id = ? AND l.id = ?
-        """;
-
-        try (PreparedStatement pstmt = conn.prepareStatement(query)) {
-            pstmt.setInt(1, supplierId);
-            pstmt.setInt(2, priceId);
-            try (ResultSet rs = pstmt.executeQuery()) {
-                if (rs.next()) {
-                    return new SupplierPriceList(
-                        rs.getInt("id"),
-                        rs.getInt("supplier_id"),
-                        rs.getInt("product_id"),
-                        rs.getString("supplier_product_code"),
-                        rs.getDouble("price"),
-                        rs.getInt("minimum_quantity"),
-                        DateUtils.parseDate(rs,"validity_start_date"),
-                        DateUtils.parseDate(rs,"validity_end_date"),
-                        rs.getString("notes")
-                    );
-                }
-            }
-        }
-        return null;
-    }
-
-    private void deleteSelectedPrice() {
-        int selectedRow = priceListTable.getSelectedRow();
-        if (selectedRow != -1) {
-            selectedRow = priceListTable.convertRowIndexToModel(selectedRow);
-            int priceId = ((Number)tableModel.getValueAt(selectedRow,7)).intValue();
-            String productName = (String)tableModel.getValueAt(selectedRow, 0);
-            String supplierCode = (String)tableModel.getValueAt(selectedRow, 1);
-
-            int result = Dialogs.showConfirmDialog(this,
-                "Are you sure you want to delete the price for product " + productName + "?",
-                "Confirm Deletion",
-                JOptionPane.YES_NO_OPTION,
-                JOptionPane.WARNING_MESSAGE);
-
-            if (result == JOptionPane.YES_OPTION) {
-                try {
-                    Connection conn = DatabaseManager.getInstance().getConnection();
-                    String query = """
-                        DELETE FROM supplier_price_lists
-                        WHERE supplier_id = ?
-                        AND id = ?
-                    """;
-
-                    try (PreparedStatement pstmt = conn.prepareStatement(query)) {
-                        pstmt.setInt(1, supplierId);
-                        pstmt.setInt(2, priceId);
-                        pstmt.executeUpdate();
-                        loadPriceList();
+    private void load(){
+        model.setRowCount(0);
+        try{
+            Connection c=DatabaseManager.getInstance().getConnection();
+            try(PreparedStatement p=c.prepareStatement("""
+                    SELECT ps.id,ps.product_id,p.code,p.name,ps.supplier_product_code,
+                           ps.purchase_price,ps.is_preferred,ps.notes
+                    FROM product_suppliers ps
+                    JOIN products p ON p.id=ps.product_id
+                    WHERE ps.supplier_id=?
+                    ORDER BY ps.is_preferred DESC,p.name,p.code
+                    """)){
+                p.setInt(1,supplierId);
+                try(ResultSet r=p.executeQuery()){
+                    while(r.next()){
+                        Vector<Object> row=new Vector<>();
+                        row.add(r.getString("code")+" - "+r.getString("name"));
+                        row.add(r.getString("supplier_product_code"));
+                        row.add(SettingsPanel.formatCurrency(r.getDouble("purchase_price")));
+                        row.add(r.getInt("is_preferred")==1?I18n.tr("Yes"):I18n.tr("No"));
+                        row.add(r.getString("notes"));
+                        row.add(r.getInt("id"));
+                        model.addRow(row);
                     }
-                } catch (SQLException e) {
-                    e.printStackTrace();
-                    Dialogs.showMessageDialog(this,
-                        "Error deleting price: " + e.getMessage(),
-                        "Error", JOptionPane.ERROR_MESSAGE);
                 }
             }
+        }catch(SQLException e){
+            Dialogs.showMessageDialog(this,I18n.tr("Error loading supplied products")+": "+e.getMessage(),
+                I18n.tr("Error"),JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void openEditor(SupplierPriceList relation){
+        SupplierPriceListDialog d=new SupplierPriceListDialog(this,supplierId,supplierName,relation);
+        d.setVisible(true);
+        if(d.isPriceSaved())load();
+    }
+
+    private void editSelected(){
+        int view=table.getSelectedRow();if(view<0)return;
+        int row=table.convertRowIndexToModel(view);
+        int id=((Number)model.getValueAt(row,5)).intValue();
+        try{
+            Connection c=DatabaseManager.getInstance().getConnection();
+            try(PreparedStatement p=c.prepareStatement("""
+                    SELECT id,supplier_id,product_id,supplier_product_code,purchase_price,is_preferred,notes
+                    FROM product_suppliers WHERE id=? AND supplier_id=?
+                    """)){
+                p.setInt(1,id);p.setInt(2,supplierId);
+                try(ResultSet r=p.executeQuery()){
+                    if(r.next())openEditor(new SupplierPriceList(
+                        r.getInt("id"),r.getInt("supplier_id"),r.getInt("product_id"),
+                        r.getString("supplier_product_code"),r.getDouble("purchase_price"),
+                        r.getInt("is_preferred")==1,r.getString("notes")));
+                }
+            }
+        }catch(SQLException e){
+            Dialogs.showMessageDialog(this,I18n.tr("Error loading supplier product")+": "+e.getMessage(),
+                I18n.tr("Error"),JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void deleteSelected(){
+        int view=table.getSelectedRow();if(view<0)return;
+        int row=table.convertRowIndexToModel(view);
+        int id=((Number)model.getValueAt(row,5)).intValue();
+        String product=String.valueOf(model.getValueAt(row,0));
+        if(Dialogs.showConfirmDialog(this,
+                I18n.tr("Remove this product from the supplier?")+"\n"+product,
+                I18n.tr("Confirm Deletion"),JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE)!=JOptionPane.YES_OPTION)return;
+        try{
+            Connection c=DatabaseManager.getInstance().getConnection();
+            DatabaseManager.beginTransaction(c);
+            try{
+                boolean preferred=false;int productId=0;
+                try(PreparedStatement q=c.prepareStatement(
+                        "SELECT product_id,is_preferred FROM product_suppliers WHERE id=?")){
+                    q.setInt(1,id);try(ResultSet r=q.executeQuery()){
+                        if(!r.next())throw new SQLException("Supplier product no longer exists");
+                        productId=r.getInt(1);preferred=r.getInt(2)==1;
+                    }
+                }
+                try(PreparedStatement d=c.prepareStatement("DELETE FROM product_suppliers WHERE id=?")){
+                    d.setInt(1,id);d.executeUpdate();
+                }
+                if(preferred){
+                    try(PreparedStatement u=c.prepareStatement("""
+                            UPDATE product_suppliers SET is_preferred=1
+                            WHERE id=(SELECT id FROM product_suppliers WHERE product_id=? ORDER BY id LIMIT 1)
+                            """)){
+                        u.setInt(1,productId);u.executeUpdate();
+                    }
+                }
+                c.commit();
+            }catch(Exception e){c.rollback();throw e;}
+            finally{c.setAutoCommit(true);}
+            load();
+        }catch(Exception e){
+            Dialogs.showMessageDialog(this,I18n.tr("Error removing supplier product")+": "+e.getMessage(),
+                I18n.tr("Error"),JOptionPane.ERROR_MESSAGE);
         }
     }
 }
