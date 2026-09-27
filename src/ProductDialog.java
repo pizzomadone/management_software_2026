@@ -528,8 +528,6 @@ public class ProductDialog extends JDialog {
                     }
                 }
             }
-            Integer legacy = product.getSupplierId();
-            if (legacy != null && legacy > 0) loadSupplierById(legacy);
         } catch (SQLException e) {
             selectSupplierButton.setText("Click to select supplier...");
         }
@@ -651,8 +649,10 @@ public class ProductDialog extends JDialog {
             Integer supplierId = selectedSupplier != null ? selectedSupplier.getId() : null;
             double preferredSupplierPrice = supplierId != null
                 ? Numbers.nonNegative(preferredSupplierPriceField.getText()) : 0.0;
-            double acquisitionCost = product == null && supplierId != null
-                ? preferredSupplierPrice : Numbers.nonNegative(acquisitionCostField.getText());
+            // A supplier reference price is not an actual purchase. New products have
+            // no last purchase cost until a supplier order is completed.
+            double acquisitionCost = product == null
+                ? 0.0 : Numbers.nonNegative(acquisitionCostField.getText());
             String warehousePosition = warehousePositionField.getText().trim();
             double vatRate = Numbers.vat(vatRateField.getText());
 
@@ -688,8 +688,8 @@ public class ProductDialog extends JDialog {
                     String query = """
                         INSERT INTO products (code, name, description, price, quantity,
                             category, alternative_sku, weight, unit_of_measure,
-                            acquisition_cost, active, supplier_id, warehouse_position, vat_rate)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            acquisition_cost, active, warehouse_position, vat_rate)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """;
                     try (PreparedStatement pstmt = conn.prepareStatement(query, Statement.RETURN_GENERATED_KEYS)) {
                         pstmt.setString(1, code); pstmt.setString(2, name); pstmt.setString(3, description);
@@ -697,9 +697,7 @@ public class ProductDialog extends JDialog {
                         pstmt.setString(7, alternativeSku); pstmt.setDouble(8, weight);
                         pstmt.setString(9, unitOfMeasure); pstmt.setDouble(10, acquisitionCost);
                         pstmt.setInt(11, active ? 1 : 0);
-                        if (supplierId != null) pstmt.setInt(12, supplierId);
-                        else pstmt.setNull(12, Types.INTEGER);
-                        pstmt.setString(13, warehousePosition); pstmt.setDouble(14, vatRate);
+                        pstmt.setString(12, warehousePosition); pstmt.setDouble(13, vatRate);
                         pstmt.executeUpdate();
                         try (ResultSet keys = pstmt.getGeneratedKeys()) {
                             if (!keys.next()) throw new SQLException("Missing product identifier");
@@ -711,7 +709,7 @@ public class ProductDialog extends JDialog {
                         UPDATE products
                         SET code = ?, name = ?, description = ?, price = ?, quantity = ?,
                             category = ?, alternative_sku = ?, weight = ?, unit_of_measure = ?,
-                            acquisition_cost = ?, active = ?, supplier_id = ?,
+                            acquisition_cost = ?, active = ?,
                             warehouse_position = ?, vat_rate = ?
                         WHERE id = ?
                     """;
@@ -721,10 +719,8 @@ public class ProductDialog extends JDialog {
                         pstmt.setString(7, alternativeSku); pstmt.setDouble(8, weight);
                         pstmt.setString(9, unitOfMeasure); pstmt.setDouble(10, acquisitionCost);
                         pstmt.setInt(11, active ? 1 : 0);
-                        if (supplierId != null) pstmt.setInt(12, supplierId);
-                        else pstmt.setNull(12, Types.INTEGER);
-                        pstmt.setString(13, warehousePosition); pstmt.setDouble(14, vatRate);
-                        pstmt.setInt(15, product.getId());
+                        pstmt.setString(12, warehousePosition); pstmt.setDouble(13, vatRate);
+                        pstmt.setInt(14, product.getId());
                         pstmt.executeUpdate();
                     }
                 }
