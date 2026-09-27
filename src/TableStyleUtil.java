@@ -340,12 +340,15 @@ public final class TableStyleUtil {
     }
 
     private static boolean isCenteredDataHeader(String h) {
-        if (h.equals("#") || h.equals("id") || h.equals("%")) return true;
+        if (h.equals("#") || h.equals("id") || h.equals("%")
+                || h.endsWith(" id") || h.startsWith("id ") || h.contains(" id "))
+            return true;
 
         return containsAny(h,
             // Codes / identifiers
             "code", "codice", "código", "codigo", "kod", "sku",
             "number", "numero", "número", "numéro", "nummer", "nr",
+            " no.", " n.", "n°", "nº",
             "document", "documento", "dokument",
             // Dates
             "date", "data", "fecha", "datum",
@@ -395,7 +398,13 @@ public final class TableStyleUtil {
     private static BadgeColors badgeColors(String value) {
         String text = normalized(value);
 
-        if (containsAny(text, "completed", "completato", "completed", "complete",
+        // Negative states first: words such as "inactive" contain "active".
+        if (containsAny(text, "cancelled", "canceled", "annullato", "inactive",
+                "inattivo", "missing", "error", "out of stock", "overdue", "no",
+                "nein", "non", "nie")) {
+            return new BadgeColors(new Color(247, 226, 226), new Color(145, 54, 54));
+        }
+        if (containsAny(text, "completed", "completato", "complete",
                 "paid", "active", "attivo", "found", "handled", "read", "delivered",
                 "in stock", "yes", "si", "sí", "oui", "ja", "tak")) {
             return new BadgeColors(new Color(224, 242, 229), new Color(34, 105, 55));
@@ -406,11 +415,6 @@ public final class TableStyleUtil {
         if (containsAny(text, "in transit", "in transito", "pending", "low stock",
                 "warning", "waiting")) {
             return new BadgeColors(new Color(252, 238, 215), new Color(145, 90, 18));
-        }
-        if (containsAny(text, "cancelled", "canceled", "annullato", "inactive",
-                "inattivo", "missing", "error", "out of stock", "overdue", "no",
-                "nein", "non", "nie")) {
-            return new BadgeColors(new Color(247, 226, 226), new Color(145, 54, 54));
         }
         return new BadgeColors(new Color(235, 235, 235), new Color(85, 85, 85));
     }
