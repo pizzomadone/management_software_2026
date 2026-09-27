@@ -187,6 +187,44 @@ public class RegressionTest {
             catch(SQLException e){blocked=true;}
             require(blocked && qty()==7,"Automatic movement is editable");
         });
+        test("manual inward and outward movements preserve FIFO exactly", () -> {
+            fresh();
+            sql("DELETE FROM inventory_lot_consumptions");
+            sql("DELETE FROM inventory_lots");
+            sql("INSERT INTO inventory_lots(id,product_id,received_date,initial_quantity,remaining_quantity,unit_cost,source_type) VALUES(40,1,1000,10,10,5,'TEST')");
+            sql("INSERT INTO warehouse_movements(id,product_id,date,type,quantity,reason,document_type) VALUES(50,1,2000,'INWARD',4,'Manual','MANUAL')");
+            InventoryLotManager.applyManualMovement(db,50,1,"INWARD",4,new java.util.Date(2000));
+            require(qty()==14 && "4|4".equals(value("SELECT initial_quantity||'|'||remaining_quantity FROM inventory_lots WHERE warehouse_movement_id=50")),
+                "Manual inward did not create its FIFO lot");
+            InventoryLotManager.reverseManualMovement(db,50,1,"INWARD",4);
+            require(qty()==10 && "0".equals(value("SELECT COUNT(*) FROM inventory_lots WHERE warehouse_movement_id=50")),
+                "Manual inward reversal did not remove its exact FIFO lot");
+
+            sql("INSERT INTO warehouse_movements(id,product_id,date,type,quantity,reason,document_type) VALUES(51,1,3000,'OUTWARD',3,'Manual','MANUAL')");
+            InventoryLotManager.applyManualMovement(db,51,1,"OUTWARD",3,new java.util.Date(3000));
+            require(qty()==7 && "7".equals(value("SELECT remaining_quantity FROM inventory_lots WHERE id=40")),
+                "Manual outward did not consume FIFO");
+            require("40|3|5.0".equals(value("SELECT lot_id||'|'||quantity||'|'||unit_cost FROM inventory_lot_consumptions WHERE warehouse_movement_id=51")),
+                "Manual outward did not preserve its FIFO consumption");
+            InventoryLotManager.reverseManualMovement(db,51,1,"OUTWARD",3);
+            require(qty()==10 && "10".equals(value("SELECT remaining_quantity FROM inventory_lots WHERE id=40")) &&
+                    "0".equals(value("SELECT COUNT(*) FROM inventory_lot_consumptions WHERE warehouse_movement_id=51")),
+                "Manual outward reversal did not restore the exact FIFO layer");
+        });
+        test("legacy manual movements without FIFO history cannot be reversed", () -> {
+            fresh();
+            sql("INSERT INTO warehouse_movements(id,product_id,date,type,quantity,reason,document_type) VALUES(60,1,1000,'INWARD',2,'Legacy','MANUAL')");
+            boolean inwardBlocked=false;
+            try { InventoryLotManager.reverseManualMovement(db,60,1,"INWARD",2); }
+            catch(SQLException e) { inwardBlocked=true; }
+            require(inwardBlocked && qty()==10,"Legacy inward without FIFO history changed stock");
+
+            sql("INSERT INTO warehouse_movements(id,product_id,date,type,quantity,reason,document_type) VALUES(61,1,1000,'OUTWARD',2,'Legacy','MANUAL')");
+            boolean outwardBlocked=false;
+            try { InventoryLotManager.reverseManualMovement(db,61,1,"OUTWARD",2); }
+            catch(SQLException e) { outwardBlocked=true; }
+            require(outwardBlocked && qty()==10,"Legacy outward without FIFO history changed stock");
+        });
         test("overflow aborts the entire receiving transaction", () -> {
             fresh();SD d=supplier(false,new HashMap<>());
             ((DefaultTableModel)get(d,"itemsTableModel")).setValueAt(Integer.MAX_VALUE,0,2);
