@@ -51,6 +51,7 @@ public class InvoicesPanel extends JPanel {
             }
         };
         invoicesTable = new JTable(tableModel);
+        TableStyleUtil.applyCompact(invoicesTable);
         invoicesTable.getSelectionModel().addListSelectionListener(e -> updateButtonStates());
 
         // Enable column sorting with date support (column 1 is "Date")
