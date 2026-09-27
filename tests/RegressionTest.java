@@ -238,6 +238,16 @@ public class RegressionTest {
             require("10.0".equals(value("SELECT acquisition_cost FROM products WHERE id=1")),"Last purchase cost was not updated");
             require("5.0".equals(value("SELECT purchase_price FROM product_suppliers WHERE product_id=1 AND supplier_id=1")),
                 "Negotiated receipt silently changed supplier reference price");
+
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total) VALUES(21,1,4000,'Completed',45)");
+            sql("INSERT INTO order_details(id,order_id,product_id,quantity,unit_price) VALUES(21,21,1,3,15)");
+            StockManager.createOrUpdateReservation(db,1,"ORDER",21,3,"");
+            StockManager.completeReservationAndDecrementStock(db,"ORDER",21,new java.util.Date(4000),"21");
+            require(qty()==0,"Second FIFO sale changed physical stock incorrectly");
+            require("30.0".equals(value("SELECT cost_total FROM order_details WHERE id=21")),
+                "Second FIFO sale did not consume the remaining 3 units at cost 10");
+            require("0,0".equals(value("SELECT GROUP_CONCAT(remaining_quantity,',') FROM (SELECT remaining_quantity FROM inventory_lots WHERE source_type='SUPPLIER_ORDER' ORDER BY received_date,id)")),
+                "Second FIFO sale left an incorrect lot balance");
         });
         test("reversing a completed sale restores its exact FIFO layers", () -> {
             fresh();
@@ -258,6 +268,46 @@ public class RegressionTest {
                 "Reversing sale did not restore original FIFO lots");
             require(value("SELECT cost_total IS NULL FROM order_details WHERE id=20").equals("1"),
                 "Reversed sale retained a historical cost");
+        });
+        test("negative stock keeps historical FIFO cost unavailable and rolls back cleanly", () -> {
+            fresh();
+            sql("DELETE FROM inventory_lot_consumptions");
+            sql("DELETE FROM inventory_lots");
+            sql("UPDATE products SET quantity=0,acquisition_cost=9 WHERE id=1");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total) VALUES(20,1,3000,'Completed',30)");
+            sql("INSERT INTO order_details(id,order_id,product_id,quantity,unit_price) VALUES(20,20,1,2,15)");
+            StockManager.createOrUpdateReservation(db,1,"ORDER",20,2,"");
+            StockManager.completeReservationAndDecrementStock(db,"ORDER",20,new java.util.Date(3000),"20");
+            require(qty()==-2,"Negative-stock sale did not update physical stock");
+            require("1".equals(value("SELECT cost_total IS NULL FROM order_details WHERE id=20")),
+                "Unknown FIFO units were assigned an invented historical cost");
+            require("2|1".equals(value("SELECT quantity||'|'||(lot_id IS NULL) FROM inventory_lot_consumptions WHERE order_detail_id=20")),
+                "Unknown FIFO quantity was not marked for exact rollback");
+            StockManager.deleteOrder(db,20,"Completed");
+            require(qty()==0,"Negative-stock sale rollback did not restore physical stock");
+            require("0".equals(value("SELECT COUNT(*) FROM inventory_lot_consumptions WHERE order_detail_id=20")),
+                "Negative-stock sale rollback left FIFO consumption rows");
+            require("0".equals(value("SELECT COUNT(*) FROM inventory_lots WHERE source_type='LEGACY_RESTORE'")),
+                "Negative-stock rollback invented a replacement FIFO lot");
+        });
+        test("consumed supplier FIFO lot blocks receipt reversal", () -> {
+            fresh();
+            sql("DELETE FROM inventory_lot_consumptions");
+            sql("DELETE FROM inventory_lots");
+            sql("UPDATE products SET quantity=0,acquisition_cost=0 WHERE id=1");
+            sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,status,total) VALUES(10,1,'PO-LOCK',1000,'Completed',25)");
+            sql("INSERT INTO supplier_order_details(id,order_id,product_id,quantity,unit_price,total) VALUES(10,10,1,5,5,25)");
+            InventoryLotManager.receiveSupplierOrder(db,10,new java.util.Date(1000),"PO-LOCK");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total) VALUES(20,1,2000,'Completed',15)");
+            sql("INSERT INTO order_details(id,order_id,product_id,quantity,unit_price) VALUES(20,20,1,1,15)");
+            StockManager.createOrUpdateReservation(db,1,"ORDER",20,1,"");
+            StockManager.completeReservationAndDecrementStock(db,"ORDER",20,new java.util.Date(2000),"20");
+            boolean blocked=false;
+            try { InventoryLotManager.reverseSupplierOrder(db,10,"PO-LOCK"); }
+            catch(SQLException e) { blocked=true; }
+            require(blocked,"Consumed supplier FIFO lot was reversible");
+            require(qty()==4 && "4".equals(value("SELECT remaining_quantity FROM inventory_lots WHERE supplier_order_detail_id=10")),
+                "Rejected supplier receipt reversal changed stock or FIFO state");
         });
         test("WAL import includes committed data and retains a prior copy", () -> {
             if(db!=null)db.close();Path current=AppConstants.getDatabasePath();Files.deleteIfExists(current);
