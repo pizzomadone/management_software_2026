@@ -107,7 +107,7 @@ public class ExtendedRegressionTest extends RegressionTest {
                 if(i>2)sql("INSERT INTO products(id,code,name,price) VALUES("+i+",'P"+i+"','Product "+i+"',10)");
                 sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(1,"+i+",1,10)");
             }
-            AdvancedStatsPanel p=new AdvancedStatsPanel();call(p,"loadProductsData");
+            AdvancedStatsPanel p=new AdvancedStatsPanel();call(p,"loadData");
             JTable t=(JTable)get(p,"topProductsTable");require(t.getRowCount()==10 && "5.0%".equals(t.getValueAt(0,3)),"Wrong market share");
             require((double)get(p,"productsTotalRevenue")==200,"Chart denominator differs from table");
         });
@@ -131,7 +131,7 @@ public class ExtendedRegressionTest extends RegressionTest {
             DashboardPanel dashboard=new DashboardPanel(null);call(dashboard,"loadKPIData");
             require(((JLabel)get(dashboard,"lowStockCountLabel")).getText().equals("1"),"Dashboard differs");
             WarehouseReportPanel report=new WarehouseReportPanel();
-            require(((DefaultTableModel)get(report,"productsModel")).getValueAt(0,5).equals("LOW STOCK"),"Warehouse report differs");
+            require(((DefaultTableModel)get(report,"productsModel")).getValueAt(0,7).equals("LOW STOCK"),"Warehouse report differs");
             db.setAutoCommit(false);
             try {
                 sql("UPDATE minimum_stock SET minimum_quantity=21 WHERE product_id=1");
@@ -192,7 +192,7 @@ public class ExtendedRegressionTest extends RegressionTest {
             sql("INSERT INTO minimum_stock(product_id,minimum_quantity,reorder_quantity,lead_time_days,preferred_supplier_id,notes) VALUES(2,4,25,5,1,'Original reorder settings')");
             DatabaseMigrationManager.migrate(db);requireNormalizedThresholdSchema();
             require("8|0".equals(value("SELECT minimum_quantity||'|'||reorder_quantity FROM minimum_stock WHERE product_id=1")),"Product-only threshold lost");
-            require("4|25|5|1|Original reorder settings".equals(value("SELECT minimum_quantity||'|'||reorder_quantity||'|'||lead_time_days||'|'||preferred_supplier_id||'|'||notes FROM minimum_stock WHERE product_id=2")),"Existing reorder settings changed");
+            require("4|25|5|2|Original reorder settings".equals(value("SELECT minimum_quantity||'|'||reorder_quantity||'|'||lead_time_days||'|'||preferred_supplier_id||'|'||notes FROM minimum_stock WHERE product_id=2")),"Existing reorder settings did not synchronize to product_suppliers");
             require(qty()==7 && "1|3|10.0".equals(value("SELECT product_id||'|'||quantity||'|'||unit_price FROM order_details WHERE order_id=1")),"Migration altered stock or order history");
             DatabaseMigrationManager.migrate(db);requireNormalizedThresholdSchema();
             require("2".equals(value("SELECT COUNT(*) FROM minimum_stock")),"Repeated upgrade duplicated settings");
@@ -246,13 +246,21 @@ public class ExtendedRegressionTest extends RegressionTest {
             for(int period=0;period<3;period++) {
                 ((JComboBox<?>)get(panel,"periodCombo")).setSelectedIndex(period);call(panel,"loadData");
                 @SuppressWarnings("unchecked") Map<String,double[]> sales=(Map<String,double[]>)get(panel,"monthlySales");
-                require(sales.size()==1 && sales.values().iterator().next()[0]==30 && sales.values().iterator().next()[1]==1,"Monthly statistics include non-completed or out-of-period documents");
+                long nonZeroMonths=sales.values().stream().filter(v->v[0]!=0 || v[1]!=0).count();
+                double salesTotal=sales.values().stream().mapToDouble(v->v[0]).sum();
+                double orderCount=sales.values().stream().mapToDouble(v->v[1]).sum();
+                require(nonZeroMonths==1 && salesTotal==30 && orderCount==1,
+                    "Monthly statistics include non-completed or out-of-period documents");
                 JTable products=(JTable)get(panel,"topProductsTable");
                 require(products.getRowCount()==1 && products.getValueAt(0,0).equals("Product A") && ((Number)products.getValueAt(0,1)).longValue()==3,"Product statistics include invalid order details");
                 require((double)get(panel,"productsTotalRevenue")==30,"Product chart total differs from completed sales");
             }
             sql("UPDATE orders SET status='Cancelled' WHERE id=1");call(panel,"loadData");
-            require(((Map<?,?>)get(panel,"monthlySales")).isEmpty() && ((JTable)get(panel,"topProductsTable")).getRowCount()==0 && (double)get(panel,"productsTotalRevenue")==0,"Cancelled sale remained in the charts");
+            @SuppressWarnings("unchecked") Map<String,double[]> cancelledSales=(Map<String,double[]>)get(panel,"monthlySales");
+            require(cancelledSales.values().stream().allMatch(v->v[0]==0 && v[1]==0) &&
+                    ((JTable)get(panel,"topProductsTable")).getRowCount()==0 &&
+                    (double)get(panel,"productsTotalRevenue")==0,
+                "Cancelled sale remained in the charts");
         });
         test("PDF export finds embedded source-folder and bundled fallback fonts",()->{
             Path isolated=Files.createDirectories(OUT.resolve("pdf-packaging"));
@@ -545,7 +553,7 @@ public class ExtendedRegressionTest extends RegressionTest {
             JTable abc=(JTable)get(dash,"abcAnalysisTable");
             require(SettingsPanel.formatCurrency(2.68).equals(abc.getValueAt(0,3)),
                 "ABC revenue uses different rounding");
-            AdvancedStatsPanel stats=new AdvancedStatsPanel();call(stats,"loadProductsData");
+            AdvancedStatsPanel stats=new AdvancedStatsPanel();call(stats,"loadData");
             JTable productStats=(JTable)get(stats,"topProductsTable");
             require(productStats.getRowCount()>0 && SettingsPanel.formatCurrency(2.68).equals(productStats.getValueAt(0,2)),
                 "Advanced statistics revenue uses different rounding");
