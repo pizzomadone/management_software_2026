@@ -773,7 +773,8 @@ public class ProductsPanel extends JPanel {
     private Product loadProduct(int productId) throws SQLException {
         Connection conn = DatabaseManager.getInstance().getConnection();
         String query = """
-            SELECT p.*, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity, f.company_name as supplier_name
+            SELECT p.*, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity,
+                   ps.supplier_id AS preferred_supplier_id, f.company_name as supplier_name
             FROM products p
             LEFT JOIN minimum_stock sm ON sm.product_id = p.id
             LEFT JOIN product_suppliers ps ON ps.product_id=p.id AND ps.is_preferred=1
@@ -784,7 +785,7 @@ public class ProductsPanel extends JPanel {
             pstmt.setInt(1, productId);
             try (ResultSet rs = pstmt.executeQuery()) {
                 if (!rs.next()) return null;
-                Integer supplierId = getIntegerFromResultSet(rs, "supplier_id");
+                Integer supplierId = getIntegerFromResultSet(rs, "preferred_supplier_id");
                 return new Product(
                     rs.getInt("id"), rs.getString("code"), rs.getString("name"),
                     rs.getString("description"), rs.getDouble("price"),
@@ -825,7 +826,8 @@ public class ProductsPanel extends JPanel {
             try {
                 Connection conn = DatabaseManager.getInstance().getConnection();
                 String query = """
-                    SELECT p.*, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity, f.company_name as supplier_name
+                    SELECT p.*, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity,
+                   ps.supplier_id AS preferred_supplier_id, f.company_name as supplier_name
                     FROM products p
                     LEFT JOIN minimum_stock sm ON sm.product_id = p.id
                     LEFT JOIN product_suppliers ps ON ps.product_id=p.id AND ps.is_preferred=1
@@ -837,7 +839,7 @@ public class ProductsPanel extends JPanel {
                     try (ResultSet rs = pstmt.executeQuery()) {
                         if (rs.next()) {
                             // Safely read integer and double fields with proper type handling
-                            Integer supplierId = getIntegerFromResultSet(rs, "supplier_id");
+                            Integer supplierId = getIntegerFromResultSet(rs, "preferred_supplier_id");
                             String supplierName = rs.getString("supplier_name");
 
                             int quantity = getIntegerFromResultSet(rs, "quantity", 0);
