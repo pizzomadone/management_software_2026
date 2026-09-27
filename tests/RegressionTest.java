@@ -65,6 +65,7 @@ public class RegressionTest {
         sql("INSERT INTO customers(id,first_name,last_name) VALUES(1,'Test','Customer')");
         sql("INSERT INTO suppliers(id,company_name,vat_number) VALUES(1,'Supplier','TEST1'),(2,'Other','TEST2')");
         sql("INSERT INTO products(id,code,name,description,price,quantity,acquisition_cost,supplier_id) VALUES(1,'A','Product A','',10,10,5,1),(2,'B','Product B','',20,10,8,2)");
+        sql("INSERT INTO product_suppliers(product_id,supplier_id,purchase_price,is_preferred) VALUES(1,1,5,1),(2,2,8,1)");
     }
     static Customer customer(){return new Customer(1,"Test","Customer","","","");}
     static String today(){return new SimpleDateFormat("dd/MM/yyyy").format(new java.util.Date());}
@@ -169,9 +170,12 @@ public class RegressionTest {
             require("1".equals(value("SELECT COUNT(*) FROM invoice_details")),"Lost invoice row");
             require("36.6".equals(value("SELECT total FROM invoices")),"Invoice totals differ");
         });
-        test("supplier reassignment preserves existing purchase rows and stock", () -> {
+        test("preferred supplier reassignment preserves existing purchase rows and stock", () -> {
             fresh();SD d=supplier(false,new HashMap<>());call(d,"saveOrder");require(qty()==13,"Receipt failed");
-            sql("UPDATE products SET supplier_id=2 WHERE id=1");SD again=supplier(true,new HashMap<>());
+            sql("INSERT INTO product_suppliers(product_id,supplier_id,purchase_price,is_preferred) VALUES(1,2,9,1)");
+            require("2".equals(value("SELECT supplier_id FROM product_suppliers WHERE product_id=1 AND is_preferred=1")),
+                "Preferred supplier did not change");
+            SD again=supplier(true,new HashMap<>());
             put(again,"order",new SupplierOrder(1,1,"Supplier",value("SELECT number FROM supplier_orders"),new java.util.Date(),null,"Completed",30,""));
             ((JTextField)get(again,"numberField")).setText(value("SELECT number FROM supplier_orders"));
             call(again,"saveOrder");require(qty()==13,"Reassignment lost received stock");
@@ -206,11 +210,34 @@ public class RegressionTest {
             fresh();sql("INSERT INTO supplier_orders(supplier_id,number,order_date,status,total) VALUES(1,'OF20260001',0,'Draft',0)");
             require("OF20260002".equals(DocumentNumbers.nextSupplierNumber(db,new SimpleDateFormat("yyyy-MM-dd").parse("2026-09-08"))),"Wrong sequence");
         });
-        test("supplier pricing respects dates and minimum quantities", () -> {
-            fresh();long start=System.currentTimeMillis()-86400000L,end=System.currentTimeMillis()+86400000L;
-            sql("INSERT INTO supplier_price_lists(supplier_id,product_id,price,minimum_quantity,validity_start_date,validity_end_date) VALUES(1,1,2,1,"+start+","+end+"),(1,1,1,100,"+start+","+end+"),(1,1,99,1,"+(end+86400000L)+",NULL)");
-            require(SupplierPricing.price(db,1,1,3,new java.util.Date())==2,"Ignored date/minimum quantity");
-            require(SupplierPricing.price(db,1,1,100,new java.util.Date())==1,"Missing quantity break");
+        test("supplier pricing uses the current product-supplier price", () -> {
+            fresh();
+            sql("UPDATE product_suppliers SET purchase_price=2 WHERE product_id=1 AND supplier_id=1");
+            require(SupplierPricing.price(db,1,1,3,new java.util.Date())==2,"Wrong supplier reference price");
+            require(SupplierPricing.price(db,1,1,100,new java.util.Date())==2,"Quantity changed a simple supplier price");
+            sql("INSERT INTO product_suppliers(product_id,supplier_id,purchase_price,is_preferred) VALUES(1,2,7,0)");
+            require(SupplierPricing.price(db,2,1,1,new java.util.Date())==7,"Alternate supplier price not used");
+        });
+        test("FIFO freezes exact historical purchase cost on customer sales", () -> {
+            fresh();
+            sql("UPDATE products SET quantity=0,acquisition_cost=0 WHERE id=1");
+            sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,status,total) VALUES(10,1,'PO-A',1000,'Completed',25)");
+            sql("INSERT INTO supplier_order_details(id,order_id,product_id,quantity,unit_price,total) VALUES(10,10,1,5,5,25)");
+            InventoryLotManager.receiveSupplierOrder(db,10,new java.util.Date(1000),"PO-A");
+            sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,status,total) VALUES(11,1,'PO-B',2000,'Completed',50)");
+            sql("INSERT INTO supplier_order_details(id,order_id,product_id,quantity,unit_price,total) VALUES(11,11,1,5,10,50)");
+            InventoryLotManager.receiveSupplierOrder(db,11,new java.util.Date(2000),"PO-B");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total) VALUES(20,1,3000,'Completed',105)");
+            sql("INSERT INTO order_details(id,order_id,product_id,quantity,unit_price) VALUES(20,20,1,7,15)");
+            StockManager.createOrUpdateReservation(db,1,"ORDER",20,7,"");
+            StockManager.completeReservationAndDecrementStock(db,"ORDER",20,new java.util.Date(3000),"20");
+            require(qty()==3,"FIFO sale changed physical stock incorrectly");
+            require("45.0".equals(value("SELECT cost_total FROM order_details WHERE id=20")),"FIFO historical cost is not 45");
+            require("0,3".equals(value("SELECT GROUP_CONCAT(remaining_quantity,',') FROM (SELECT remaining_quantity FROM inventory_lots WHERE source_type='SUPPLIER_ORDER' ORDER BY received_date,id)")),
+                "FIFO did not consume oldest lot first");
+            require("10.0".equals(value("SELECT acquisition_cost FROM products WHERE id=1")),"Last purchase cost was not updated");
+            require("5.0".equals(value("SELECT purchase_price FROM product_suppliers WHERE product_id=1 AND supplier_id=1")),
+                "Negotiated receipt silently changed supplier reference price");
         });
         test("WAL import includes committed data and retains a prior copy", () -> {
             if(db!=null)db.close();Path current=AppConstants.getDatabasePath();Files.deleteIfExists(current);
