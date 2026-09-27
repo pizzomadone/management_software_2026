@@ -37,6 +37,7 @@ public class SupplierProductsWindow extends JDialog {
             @Override public boolean isCellEditable(int r,int c){return false;}
         };
         table=new JTable(model);
+        TableStyleUtil.applyCompact(table);
         table.setAutoCreateRowSorter(true);
         table.getSelectionModel().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         table.getSelectionModel().addListSelectionListener(e->updateButtons());
