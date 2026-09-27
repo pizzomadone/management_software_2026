@@ -54,6 +54,7 @@ public class OrdersPanel extends JPanel {
             }
         };
         ordersTable = new JTable(tableModel);
+        TableStyleUtil.applyCompact(ordersTable);
         ordersTable.getSelectionModel().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         ordersTable.getSelectionModel().addListSelectionListener(e -> updateButtonStates());
 
