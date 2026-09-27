@@ -12,7 +12,7 @@ public class SuppliersPanel extends JPanel {
     private JButton editButton;
     private JButton deleteButton;
     private JButton ordersButton;
-    private JButton priceListButton;
+    private JButton productsButton;
     private JButton refreshButton;
 
     public SuppliersPanel() {
@@ -64,7 +64,7 @@ public class SuppliersPanel extends JPanel {
             new TableInteractionUtil.TableAction("Delete", this::deleteSelectedSupplier),
             null, // Separator
             new TableInteractionUtil.TableAction("Orders", this::showSupplierOrders),
-            new TableInteractionUtil.TableAction("Products Supplied", this::showSupplierPriceList),
+            new TableInteractionUtil.TableAction("Products Supplied", this::showSupplierProducts),
             null, // Separator
             new TableInteractionUtil.TableAction("Refresh", this::loadSuppliers, false)
         );
@@ -88,21 +88,21 @@ public class SuppliersPanel extends JPanel {
         editButton = new JButton("Edit");
         deleteButton = new JButton("Delete");
         ordersButton = new JButton("Orders");
-        priceListButton = new JButton("Products Supplied");
+        productsButton = new JButton("Products Supplied");
         refreshButton = new JButton("Refresh");
 
         addButton.addActionListener(e -> showSupplierDialog(null));
         editButton.addActionListener(e -> editSelectedSupplier());
         deleteButton.addActionListener(e -> deleteSelectedSupplier());
         ordersButton.addActionListener(e -> showSupplierOrders());
-        priceListButton.addActionListener(e -> showSupplierPriceList());
+        productsButton.addActionListener(e -> showSupplierProducts());
         refreshButton.addActionListener(e -> loadSuppliers());
 
         buttonPanel.add(addButton);
         buttonPanel.add(editButton);
         buttonPanel.add(deleteButton);
         buttonPanel.add(ordersButton);
-        buttonPanel.add(priceListButton);
+        buttonPanel.add(productsButton);
         buttonPanel.add(refreshButton);
 
         // Main layout
@@ -118,7 +118,7 @@ public class SuppliersPanel extends JPanel {
         editButton.setEnabled(isRowSelected);
         deleteButton.setEnabled(isRowSelected);
         ordersButton.setEnabled(isRowSelected);
-        priceListButton.setEnabled(isRowSelected);
+        productsButton.setEnabled(isRowSelected);
     }
 
     private void loadSuppliers() {
@@ -244,21 +244,13 @@ public class SuppliersPanel extends JPanel {
                 // Check for existing dependencies
                 boolean hasOrders = hasSupplierOrders(conn, id);
                 boolean hasSupplierProducts = hasSupplierProducts(conn, id);
-                boolean hasMinStockReferences = hasMinStockReferences(conn, id);
 
-                boolean hasProducts;
-                try (PreparedStatement products = conn.prepareStatement("SELECT 1 FROM products WHERE supplier_id=? LIMIT 1")) {
-                    products.setInt(1,id);
-                    try (ResultSet rows=products.executeQuery()) {hasProducts=rows.next();}
-                }
-                if (hasOrders || hasSupplierProducts || hasMinStockReferences || hasProducts) {
+                if (hasOrders || hasSupplierProducts) {
                     StringBuilder message = new StringBuilder();
                     message.append("Supplier '").append(name).append("' has related business records:\n");
 
-                    if (hasProducts) message.append("- Assigned products will be disassociated\n");
                     if (hasOrders) message.append("- Existing orders\n");
-                    if (hasSupplierProducts) message.append("- Supplied products\n");
-                    if (hasMinStockReferences) message.append("- Minimum stock references\n");
+                    if (hasSupplierProducts) message.append("- Supplied products will be disassociated\n");
 
                     message.append("\nChoose what should happen:\n");
                     message.append("- Keep: nothing is deleted; supplier, orders, stock and references remain unchanged.\n");
@@ -312,8 +304,7 @@ public class SuppliersPanel extends JPanel {
             "WARNING: This will permanently delete supplier '" + name + "' and ALL related data:\n" +
             "- All orders from this supplier\n" +
             "- All supplied-product associations\n" +
-            "- All references in minimum stock settings\n" +
-            "- All supplier references in products (will be set to none)\n" +
+            "- Preferred-supplier references linked to those products\n" +
             "- All related warehouse movements\n\n" +
             "Stock received from completed supplier orders will be removed before deletion.\n\n" +
             "This action CANNOT be undone!\n\n" +
@@ -436,15 +427,6 @@ public class SuppliersPanel extends JPanel {
         }
     }
 
-    private boolean hasMinStockReferences(Connection conn, int supplierId) throws SQLException {
-        String query = "SELECT COUNT(*) FROM minimum_stock WHERE preferred_supplier_id = ?";
-        try (PreparedStatement pstmt = conn.prepareStatement(query)) {
-            pstmt.setInt(1, supplierId);
-            ResultSet rs = pstmt.executeQuery();
-            return rs.next() && rs.getInt(1) > 0;
-        }
-    }
-
     private void showSupplierOrders() {
         int selectedRow = suppliersTable.getSelectedRow();
         if (selectedRow != -1) {
@@ -472,7 +454,7 @@ public class SuppliersPanel extends JPanel {
         }
     }
 
-    private void showSupplierPriceList() {
+    private void showSupplierProducts() {
         int selectedRow = suppliersTable.getSelectedRow();
         if (selectedRow != -1) {
             // Convert view index to model index (important when table is sorted)
@@ -482,14 +464,14 @@ public class SuppliersPanel extends JPanel {
 
             Window parentWindow = SwingUtilities.getWindowAncestor(this);
 
-            SupplierPriceListWindow priceListWindow;
+            SupplierProductsWindow productsWindow;
             if (parentWindow instanceof JFrame) {
-                priceListWindow = new SupplierPriceListWindow((JFrame) parentWindow, supplierId, supplierName);
+                productsWindow = new SupplierProductsWindow((JFrame) parentWindow, supplierId, supplierName);
             } else {
-                priceListWindow = new SupplierPriceListWindow((JDialog) parentWindow, supplierId, supplierName);
+                productsWindow = new SupplierProductsWindow((JDialog) parentWindow, supplierId, supplierName);
             }
 
-            priceListWindow.setVisible(true);
+            productsWindow.setVisible(true);
         }
     }
     public void refreshData() { loadSuppliers(); }
