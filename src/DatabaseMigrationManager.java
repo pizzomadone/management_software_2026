@@ -32,7 +32,9 @@ public final class DatabaseMigrationManager {
         new Migration("010", "Store minimum quantity only with warehouse reorder settings",
             DatabaseMigrationManager::normalizeStockThresholds),
         new Migration("011", "Add product image metadata and constraints",
-            DatabaseMigrationManager::migrateProductImages)
+            DatabaseMigrationManager::migrateProductImages),
+        new Migration("012", "Replace supplier price lists with product suppliers and add FIFO cost history",
+            DatabaseMigrationManager::migrateProductSuppliersAndFifo)
     );
 
     private DatabaseMigrationManager() {}
@@ -218,6 +220,248 @@ public final class DatabaseMigrationManager {
         }
     }
 
+
+    private static void migrateProductSuppliersAndFifo(Connection c) throws SQLException {
+        addColumnIfMissing(c, "order_details", "cost_total",
+            "ALTER TABLE order_details ADD COLUMN cost_total REAL");
+
+        try (Statement s = c.createStatement()) {
+            s.execute("""
+                CREATE TABLE IF NOT EXISTS product_suppliers (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    product_id INTEGER NOT NULL,
+                    supplier_id INTEGER NOT NULL,
+                    supplier_product_code TEXT,
+                    purchase_price REAL NOT NULL DEFAULT 0.0,
+                    is_preferred INTEGER NOT NULL DEFAULT 0 CHECK(is_preferred IN (0,1)),
+                    notes TEXT,
+                    UNIQUE(product_id, supplier_id),
+                    FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE CASCADE,
+                    FOREIGN KEY(supplier_id) REFERENCES suppliers(id) ON DELETE CASCADE
+                )
+            """);
+            s.execute("""
+                CREATE TABLE IF NOT EXISTS inventory_lots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    product_id INTEGER NOT NULL,
+                    supplier_id INTEGER,
+                    supplier_order_detail_id INTEGER,
+                    warehouse_movement_id INTEGER,
+                    received_date DATETIME NOT NULL,
+                    initial_quantity INTEGER NOT NULL CHECK(initial_quantity >= 0),
+                    remaining_quantity INTEGER NOT NULL CHECK(remaining_quantity >= 0 AND remaining_quantity <= initial_quantity),
+                    unit_cost REAL NOT NULL CHECK(unit_cost >= 0),
+                    source_type TEXT NOT NULL,
+                    FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE CASCADE,
+                    FOREIGN KEY(supplier_id) REFERENCES suppliers(id),
+                    FOREIGN KEY(supplier_order_detail_id) REFERENCES supplier_order_details(id),
+                    FOREIGN KEY(warehouse_movement_id) REFERENCES warehouse_movements(id)
+                )
+            """);
+            s.execute("""
+                CREATE TABLE IF NOT EXISTS inventory_lot_consumptions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    lot_id INTEGER,
+                    order_detail_id INTEGER,
+                    warehouse_movement_id INTEGER,
+                    quantity INTEGER NOT NULL CHECK(quantity > 0),
+                    unit_cost REAL NOT NULL CHECK(unit_cost >= 0),
+                    FOREIGN KEY(lot_id) REFERENCES inventory_lots(id),
+                    FOREIGN KEY(order_detail_id) REFERENCES order_details(id) ON DELETE CASCADE,
+                    FOREIGN KEY(warehouse_movement_id) REFERENCES warehouse_movements(id) ON DELETE CASCADE
+                )
+            """);
+
+            // Existing primary supplier becomes the preferred supplier relation.
+            if (hasColumn(c, "products", "supplier_id")) {
+                s.execute("""
+                    INSERT OR IGNORE INTO product_suppliers
+                        (product_id, supplier_id, purchase_price, is_preferred)
+                    SELECT id, supplier_id, acquisition_cost, 1
+                    FROM products WHERE supplier_id IS NOT NULL
+                """);
+            }
+
+            // Preserve every old supplier/product association. Multiple price-list
+            // rows collapse to the most recently defined supplier price.
+            if (hasTable(c, "supplier_price_lists")) {
+                s.execute("""
+                    INSERT OR IGNORE INTO product_suppliers
+                        (product_id, supplier_id, supplier_product_code, purchase_price, is_preferred, notes)
+                    SELECT spl.product_id, spl.supplier_id, spl.supplier_product_code, spl.price, 0, spl.notes
+                    FROM supplier_price_lists spl
+                    WHERE spl.id = (
+                        SELECT x.id FROM supplier_price_lists x
+                        WHERE x.product_id=spl.product_id AND x.supplier_id=spl.supplier_id
+                        ORDER BY x.validity_start_date DESC, x.id DESC LIMIT 1
+                    )
+                """);
+                s.execute("""
+                    UPDATE product_suppliers
+                    SET supplier_product_code = COALESCE((
+                            SELECT x.supplier_product_code FROM supplier_price_lists x
+                            WHERE x.product_id=product_suppliers.product_id
+                              AND x.supplier_id=product_suppliers.supplier_id
+                            ORDER BY x.validity_start_date DESC, x.id DESC LIMIT 1
+                        ), supplier_product_code),
+                        purchase_price = COALESCE((
+                            SELECT x.price FROM supplier_price_lists x
+                            WHERE x.product_id=product_suppliers.product_id
+                              AND x.supplier_id=product_suppliers.supplier_id
+                            ORDER BY x.validity_start_date DESC, x.id DESC LIMIT 1
+                        ), purchase_price),
+                        notes = COALESCE((
+                            SELECT x.notes FROM supplier_price_lists x
+                            WHERE x.product_id=product_suppliers.product_id
+                              AND x.supplier_id=product_suppliers.supplier_id
+                            ORDER BY x.validity_start_date DESC, x.id DESC LIMIT 1
+                        ), notes)
+                    WHERE is_preferred=0
+                """);
+            }
+
+            // Preserve a reorder supplier that was different from the legacy product supplier.
+            if (hasColumn(c, "minimum_stock", "preferred_supplier_id")) {
+                s.execute("""
+                    INSERT OR IGNORE INTO product_suppliers
+                        (product_id, supplier_id, purchase_price, is_preferred)
+                    SELECT sm.product_id, sm.preferred_supplier_id, p.acquisition_cost,
+                           CASE WHEN NOT EXISTS (
+                               SELECT 1 FROM product_suppliers ps
+                               WHERE ps.product_id=sm.product_id AND ps.is_preferred=1
+                           ) THEN 1 ELSE 0 END
+                    FROM minimum_stock sm
+                    JOIN products p ON p.id=sm.product_id
+                    WHERE sm.preferred_supplier_id IS NOT NULL
+                """);
+            }
+
+            // Any product with suppliers must have exactly one preferred supplier.
+            s.execute("""
+                UPDATE product_suppliers SET is_preferred=1
+                WHERE id IN (
+                    SELECT MIN(ps.id) FROM product_suppliers ps
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM product_suppliers pref
+                        WHERE pref.product_id=ps.product_id AND pref.is_preferred=1
+                    )
+                    GROUP BY ps.product_id
+                )
+            """);
+
+            s.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_product_suppliers_pair ON product_suppliers(product_id,supplier_id)");
+            s.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_product_suppliers_preferred ON product_suppliers(product_id) WHERE is_preferred=1");
+            s.execute("CREATE INDEX IF NOT EXISTS idx_product_suppliers_supplier ON product_suppliers(supplier_id)");
+            s.execute("CREATE INDEX IF NOT EXISTS idx_inventory_lots_fifo ON inventory_lots(product_id,received_date,id)");
+            s.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_lots_supplier_detail ON inventory_lots(supplier_order_detail_id) WHERE supplier_order_detail_id IS NOT NULL");
+            s.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_lots_movement ON inventory_lots(warehouse_movement_id) WHERE warehouse_movement_id IS NOT NULL");
+            s.execute("CREATE INDEX IF NOT EXISTS idx_lot_consumptions_order_detail ON inventory_lot_consumptions(order_detail_id)");
+            s.execute("CREATE INDEX IF NOT EXISTS idx_lot_consumptions_movement ON inventory_lot_consumptions(warehouse_movement_id)");
+
+            // Existing stock cannot be reconstructed into historical layers safely.
+            // Start it as one migration layer at the product's current acquisition cost.
+            s.execute("""
+                INSERT INTO inventory_lots
+                    (product_id, received_date, initial_quantity, remaining_quantity, unit_cost, source_type)
+                SELECT p.id, CURRENT_TIMESTAMP, p.quantity, p.quantity, p.acquisition_cost, 'MIGRATION'
+                FROM products p
+                WHERE p.quantity>0
+                  AND NOT EXISTS (SELECT 1 FROM inventory_lots l WHERE l.product_id=p.id)
+            """);
+
+            // product_suppliers is the source of truth. Legacy columns remain as
+            // compatibility caches for older code/database readers.
+            s.execute("DROP TRIGGER IF EXISTS product_suppliers_preferred_insert");
+            s.execute("DROP TRIGGER IF EXISTS product_suppliers_preferred_update");
+            s.execute("DROP TRIGGER IF EXISTS product_suppliers_sync_insert");
+            s.execute("DROP TRIGGER IF EXISTS product_suppliers_sync_update");
+            s.execute("DROP TRIGGER IF EXISTS product_suppliers_sync_delete");
+
+            s.execute("""
+                CREATE TRIGGER product_suppliers_preferred_insert
+                BEFORE INSERT ON product_suppliers
+                WHEN NEW.is_preferred=1
+                BEGIN
+                    UPDATE product_suppliers SET is_preferred=0
+                    WHERE product_id=NEW.product_id;
+                END
+            """);
+            s.execute("""
+                CREATE TRIGGER product_suppliers_preferred_update
+                BEFORE UPDATE OF is_preferred ON product_suppliers
+                WHEN NEW.is_preferred=1 AND OLD.is_preferred<>1
+                BEGIN
+                    UPDATE product_suppliers SET is_preferred=0
+                    WHERE product_id=NEW.product_id AND id<>OLD.id;
+                END
+            """);
+            s.execute("""
+                CREATE TRIGGER product_suppliers_sync_insert
+                AFTER INSERT ON product_suppliers
+                BEGIN
+                    UPDATE products SET supplier_id=(
+                        SELECT supplier_id FROM product_suppliers
+                        WHERE product_id=NEW.product_id AND is_preferred=1 LIMIT 1
+                    ) WHERE id=NEW.product_id;
+                    UPDATE minimum_stock SET preferred_supplier_id=(
+                        SELECT supplier_id FROM product_suppliers
+                        WHERE product_id=NEW.product_id AND is_preferred=1 LIMIT 1
+                    ) WHERE product_id=NEW.product_id;
+                END
+            """);
+            s.execute("""
+                CREATE TRIGGER product_suppliers_sync_update
+                AFTER UPDATE ON product_suppliers
+                BEGIN
+                    UPDATE products SET supplier_id=(
+                        SELECT supplier_id FROM product_suppliers
+                        WHERE product_id=NEW.product_id AND is_preferred=1 LIMIT 1
+                    ) WHERE id=NEW.product_id;
+                    UPDATE minimum_stock SET preferred_supplier_id=(
+                        SELECT supplier_id FROM product_suppliers
+                        WHERE product_id=NEW.product_id AND is_preferred=1 LIMIT 1
+                    ) WHERE product_id=NEW.product_id;
+                END
+            """);
+            s.execute("""
+                CREATE TRIGGER product_suppliers_sync_delete
+                AFTER DELETE ON product_suppliers
+                BEGIN
+                    UPDATE products SET supplier_id=(
+                        SELECT supplier_id FROM product_suppliers
+                        WHERE product_id=OLD.product_id AND is_preferred=1 LIMIT 1
+                    ) WHERE id=OLD.product_id;
+                    UPDATE minimum_stock SET preferred_supplier_id=(
+                        SELECT supplier_id FROM product_suppliers
+                        WHERE product_id=OLD.product_id AND is_preferred=1 LIMIT 1
+                    ) WHERE product_id=OLD.product_id;
+                END
+            """);
+
+            if (hasColumn(c, "products", "supplier_id")) {
+                s.execute("""
+                    UPDATE products SET supplier_id=(
+                        SELECT supplier_id FROM product_suppliers ps
+                        WHERE ps.product_id=products.id AND ps.is_preferred=1 LIMIT 1
+                    )
+                """);
+            }
+            if (hasColumn(c, "minimum_stock", "preferred_supplier_id")) {
+                s.execute("""
+                    UPDATE minimum_stock SET preferred_supplier_id=(
+                        SELECT supplier_id FROM product_suppliers ps
+                        WHERE ps.product_id=minimum_stock.product_id AND ps.is_preferred=1 LIMIT 1
+                    )
+                """);
+            }
+
+            if (hasTable(c, "supplier_price_lists")) {
+                s.execute("DROP TABLE supplier_price_lists");
+            }
+        }
+        DatabaseIntegrity.installGuards(c);
+    }
+
     private static void migrateInvoiceSnapshots(Connection c) throws SQLException {
         DatabaseCurrency.initialize(c, DatabaseCurrency.codeFromSetting(SettingsPanel.getGlobalSetting("currency","EUR - Euro (€)")));
         for(String column:List.of("currency_code","customer_snapshot","company_snapshot"))
@@ -235,6 +479,14 @@ public final class DatabaseMigrationManager {
             try (Statement stmt = connection.createStatement()) {
                 stmt.execute(alterStatement);
             }
+        }
+    }
+
+    private static boolean hasTable(Connection connection, String table) throws SQLException {
+        try (PreparedStatement p = connection.prepareStatement(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?")) {
+            p.setString(1, table);
+            try (ResultSet r = p.executeQuery()) { return r.next(); }
         }
     }
 
