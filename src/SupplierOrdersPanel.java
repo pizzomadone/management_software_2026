@@ -59,10 +59,12 @@ public class SupplierOrdersPanel extends JPanel {
     private void styleSupplierOrdersTable() {
         // Compact table: just enough breathing room without wasting vertical space.
         table.setRowHeight(Math.max(24, table.getFontMetrics(table.getFont()).getHeight() + 5));
-        table.setIntercellSpacing(new Dimension(0, 1));
-        table.setShowVerticalLines(false);
+        table.setIntercellSpacing(new Dimension(1, 1));
+        table.setShowVerticalLines(true);
         table.setShowHorizontalLines(true);
-        table.setGridColor(adjustColor(table.getBackground(), isLight(table.getBackground()) ? -12 : 14));
+        // Almost imperceptible separators: enough to guide the eye without
+        // making the table look like a spreadsheet grid.
+        table.setGridColor(adjustColor(table.getBackground(), isLight(table.getBackground()) ? -6 : 8));
         table.setFillsViewportHeight(true);
 
         JTableHeader header = table.getTableHeader();
