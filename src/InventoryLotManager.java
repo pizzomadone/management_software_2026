@@ -424,16 +424,21 @@ public final class InventoryLotManager {
             try(ResultSet r=p.executeQuery()){if(r.next())cost=Numbers.nonNegative(r.getObject(1));}
         }
         if(cost==null) {
+            // Migration/opening layers may be the only surviving evidence of the
+            // previous actual cost. A current supplier reference price is not an
+            // actual purchase and must never become acquisition_cost.
             try(PreparedStatement p=c.prepareStatement("""
-                    SELECT purchase_price FROM product_suppliers
-                    WHERE product_id=? AND is_preferred=1 LIMIT 1
+                    SELECT unit_cost FROM inventory_lots
+                    WHERE product_id=? AND source_type IN ('MIGRATION','DEMO_OPENING')
+                    ORDER BY received_date DESC,id DESC LIMIT 1
                     """)) {
                 p.setInt(1,productId);try(ResultSet r=p.executeQuery()){
                     if(r.next())cost=Numbers.nonNegative(r.getObject(1));
                 }
             }
         }
-        if(cost!=null)try(PreparedStatement p=c.prepareStatement(
+        if(cost==null) cost=0.0;
+        try(PreparedStatement p=c.prepareStatement(
                 "UPDATE products SET acquisition_cost=? WHERE id=?")) {
             p.setDouble(1,cost);p.setInt(2,productId);p.executeUpdate();
         }
