@@ -140,6 +140,7 @@ public class SupplierOrderDialog extends JDialog {
             }
         };
         itemsTable = new JTable(itemsTableModel);
+        TableStyleUtil.applyCompact(itemsTable);
         itemsTable.setToolTipText(I18n.tr("Unit prices start from the supplier's current product price and can be edited for discounts or negotiated terms."));
         itemsTable.removeColumn(itemsTable.getColumnModel().getColumn(6));
 
