@@ -149,6 +149,7 @@ public class OrderDialog extends JDialog {
             }
         };
         itemsTable = new JTable(itemsTableModel);
+        TableStyleUtil.applyCompact(itemsTable);
         
         // Hide ID column
         itemsTable.getColumnModel().getColumn(0).setMinWidth(0);
