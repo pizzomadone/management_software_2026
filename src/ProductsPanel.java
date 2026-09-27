@@ -204,7 +204,9 @@ public class ProductsPanel extends JPanel {
     }
     
     private void configureProductTablePresentation() {
-        productsTable.setAutoResizeMode(JTable.AUTO_RESIZE_SUBSEQUENT_COLUMNS);
+        // Keep the table width fixed while redistributing a manual resize
+        // across all remaining columns, as in the original product-table behavior.
+        productsTable.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
 
         TableCellRenderer headerDelegate = productsTable.getTableHeader().getDefaultRenderer();
         productsTable.getTableHeader().setDefaultRenderer((table, value, selected, focus, row, column) -> {
