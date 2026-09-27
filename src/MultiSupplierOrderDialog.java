@@ -48,7 +48,7 @@ public class MultiSupplierOrderDialog extends JDialog {
             @Override public boolean isCellEditable(int row, int column) { return column == 5 || column == 6 || column == 8; }
         };
         table = new JTable(model);
-        table.setToolTipText("Unit prices are quoted when added. Use Apply Price List after changing quantities or dates; negotiated prices can be edited manually.");
+        table.setToolTipText("Unit prices start from each supplier's current product price and can be edited for discounts or negotiated terms.");
         hideColumn(0); hideColumn(3);
         model.addTableModelListener(e -> {
             if (!updating && (e.getColumn() == 5 || e.getColumn() == 6)) SwingUtilities.invokeLater(this::previewTotals);
@@ -60,7 +60,7 @@ public class MultiSupplierOrderDialog extends JDialog {
         add.addActionListener(e -> selectProduct());
         remove.addActionListener(e -> removeProduct());
         itemButtons.add(add); itemButtons.add(remove);
-        JButton reprice=new JButton("Apply Price List");
+        JButton reprice=new JButton("Refresh Supplier Prices");
         reprice.addActionListener(e -> applyPriceList());itemButtons.add(reprice);
         totalLabel = new JLabel("Total: " + SettingsPanel.formatCurrency(0));
         totalLabel.setFont(totalLabel.getFont().deriveFont(Font.BOLD, 14f));
@@ -138,18 +138,20 @@ public class MultiSupplierOrderDialog extends JDialog {
     private void loadProducts(DefaultTableModel products, String term) {
         products.setRowCount(0);
         String query = """
-            SELECT p.id, p.code, p.name, p.supplier_id, s.company_name, p.quantity,
-                   p.acquisition_cost purchase_price
-            FROM products p LEFT JOIN suppliers s ON s.id=p.supplier_id
+            SELECT p.id,p.code,p.name,ps.supplier_id,s.company_name,p.quantity,
+                   ps.purchase_price,ps.is_preferred
+            FROM product_suppliers ps
+            JOIN products p ON p.id=ps.product_id
+            JOIN suppliers s ON s.id=ps.supplier_id
             WHERE p.active=1 AND (?='' OR p.code LIKE ? OR p.name LIKE ? OR s.company_name LIKE ?)
-            ORDER BY p.name
+            ORDER BY p.name,ps.is_preferred DESC,s.company_name
             """;
         try (PreparedStatement ps = DatabaseManager.getInstance().getConnection().prepareStatement(query)) {
             String pattern = "%" + term + "%";
             ps.setString(1, term); ps.setString(2, pattern); ps.setString(3, pattern); ps.setString(4, pattern);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) products.addRow(new Object[]{rs.getInt(1), rs.getString(2), rs.getString(3),
-                    rs.getObject(4), rs.getString(5) == null ? "Not assigned" : rs.getString(5), SupplierPricing.price(DatabaseManager.getInstance().getConnection(),rs.getInt(4),rs.getInt(1),1,new java.util.Date()), rs.getInt(6)});
+                    rs.getObject(4), rs.getString(5), rs.getDouble(7), rs.getInt(6)});
             }
         } catch (SQLException ex) { showError(this, "Error loading products: " + ex.getMessage()); }
     }
@@ -162,7 +164,7 @@ public class MultiSupplierOrderDialog extends JDialog {
     private void applyPriceList() {
         try {
             Numbers.commitEdits(table);
-            if(Dialogs.showConfirmDialog(this,"Replace all entered unit prices with the current price list for this date and these quantities?","Apply Price List",JOptionPane.YES_NO_OPTION)!=JOptionPane.YES_OPTION)return;
+            if(Dialogs.showConfirmDialog(this,"Replace all entered unit prices with the current prices saved for each supplier?","Refresh Supplier Prices",JOptionPane.YES_NO_OPTION)!=JOptionPane.YES_OPTION)return;
             java.util.Date date=DateUtils.parseDate(orderDate.getText(),dateFormat);
             Connection c=DatabaseManager.getInstance().getConnection();double[] prices=new double[model.getRowCount()];
             for(int i=0;i<prices.length;i++)prices[i]=SupplierPricing.price(c,((Number)model.getValueAt(i,3)).intValue(),((Number)model.getValueAt(i,0)).intValue(),Numbers.positiveQuantity(model.getValueAt(i,5)),date);
@@ -262,7 +264,8 @@ public class MultiSupplierOrderDialog extends JDialog {
                     }
                     ps.executeBatch();
                 }
-                if ("Completed".equals(status.getSelectedItem())) StockManager.incrementStock(conn, stock, date, number, "SUPPLIER_ORDER");
+                if ("Completed".equals(status.getSelectedItem()))
+                    InventoryLotManager.receiveSupplierOrder(conn,orderId,date,number);
             }
             conn.commit(); saved = true; dispose();
         } catch (Exception ex) {
