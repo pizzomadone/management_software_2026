@@ -397,7 +397,7 @@ public class ExtendedRegressionTest extends RegressionTest {
         test("currency relabel changes operational currency without touching finalized invoices",()->{
             fresh();
             sql("UPDATE products SET price=10,acquisition_cost=5 WHERE id=1");
-            sql("INSERT INTO supplier_price_lists(supplier_id,product_id,price,minimum_quantity,validity_start_date) VALUES(1,1,9,1,0)");
+            sql("UPDATE product_suppliers SET purchase_price=9 WHERE supplier_id=1 AND product_id=1");
             sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) VALUES(10,1,0,'Completed',30,'PARTIALLY_PAID',10)");
             sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(10,1,3,10)");
             sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,status,total) VALUES(10,1,'CUR-SUP',0,'Completed',10)");
@@ -422,7 +422,7 @@ public class ExtendedRegressionTest extends RegressionTest {
         test("currency conversion updates all operational values and preserves finalized invoices",()->{
             fresh();
             sql("UPDATE products SET price=10,acquisition_cost=5 WHERE id=1");
-            sql("INSERT INTO supplier_price_lists(supplier_id,product_id,price,minimum_quantity,validity_start_date) VALUES(1,1,9,1,0)");
+            sql("UPDATE product_suppliers SET purchase_price=9 WHERE supplier_id=1 AND product_id=1");
             sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) VALUES(10,1,0,'Completed',30,'PARTIALLY_PAID',10)");
             sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(10,1,3,10)");
             sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,status,total) VALUES(10,1,'FX-SUP',0,'Completed',10)");
@@ -437,7 +437,7 @@ public class ExtendedRegressionTest extends RegressionTest {
             DatabaseCurrency.change("USD",DatabaseCurrency.ChangeMode.CONVERT,new java.math.BigDecimal("1.2"));
 
             require("12.0|6.0".equals(value("SELECT price||'|'||acquisition_cost FROM products WHERE id=1")),"Product price or acquisition cost not converted");
-            require("10.8".equals(value("SELECT price FROM supplier_price_lists WHERE product_id=1")),"Supplier product price not converted");
+            require("10.8".equals(value("SELECT purchase_price FROM product_suppliers WHERE product_id=1 AND supplier_id=1")),"Supplier product price not converted");
             require("36.0|12.0|12.0".equals(value("SELECT total||'|'||paid_amount||'|'||(SELECT unit_price FROM order_details WHERE order_id=10) FROM orders WHERE id=10")),"Customer order conversion is inconsistent");
             require("12.0|6.0|12.0".equals(value("SELECT total||'|'||(SELECT unit_price FROM supplier_order_details WHERE order_id=10)||'|'||(SELECT total FROM supplier_order_details WHERE order_id=10) FROM supplier_orders WHERE id=10")),"Supplier order conversion is inconsistent");
             require("USD|24.0|5.28|29.28|12.0|24.0".equals(value("SELECT currency_code||'|'||taxable_amount||'|'||vat||'|'||total||'|'||(SELECT unit_price FROM invoice_details WHERE invoice_id=11)||'|'||(SELECT total FROM invoice_details WHERE invoice_id=11) FROM invoices WHERE id=11")),"Draft invoice conversion is inconsistent");
@@ -451,7 +451,7 @@ public class ExtendedRegressionTest extends RegressionTest {
         test("currency conversion preserves sub-cent unit precision and recalculates cents consistently",()->{
             fresh();
             sql("UPDATE products SET price=0.000001,acquisition_cost=0.000001 WHERE id=1");
-            sql("INSERT INTO supplier_price_lists(supplier_id,product_id,price,minimum_quantity,validity_start_date) VALUES(1,1,0.000001,1,0)");
+            sql("UPDATE product_suppliers SET purchase_price=0.000001 WHERE supplier_id=1 AND product_id=1");
             sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) VALUES(20,1,0,'Completed',1.00,'PARTIALLY_PAID',0.33)");
             sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(20,1,1000000,0.000001)");
             sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,status,total) VALUES(20,1,'FX-PRECISION',0,'Completed',1.00)");
@@ -527,7 +527,7 @@ public class ExtendedRegressionTest extends RegressionTest {
         test("currency conversion keeps cents consistent with high quantities VAT and partial payments",()->{
             fresh();
             sql("UPDATE products SET price=0.0000004,acquisition_cost=2.675 WHERE id=1");
-            sql("INSERT INTO supplier_price_lists(supplier_id,product_id,price,minimum_quantity,validity_start_date) VALUES(1,1,0.0000004,1,0)");
+            sql("UPDATE product_suppliers SET purchase_price=0.0000004 WHERE supplier_id=1 AND product_id=1");
             sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) VALUES(20,1,"+System.currentTimeMillis()+",'Completed',0.40,'PARTIALLY_PAID',0.335)");
             sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(20,1,1000000,0.0000004)");
             sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(20,'FX-PRECISION',"+System.currentTimeMillis()+",1,8.03,1.77,9.80,'Draft')");
@@ -570,7 +570,7 @@ public class ExtendedRegressionTest extends RegressionTest {
         test("currency conversion is atomic and historical foreign invoice only changes status",()->{
             fresh();
             sql("UPDATE products SET price=10,acquisition_cost=5 WHERE id=1");
-            sql("INSERT INTO supplier_price_lists(supplier_id,product_id,price,minimum_quantity,validity_start_date) VALUES(1,1,9,1,0)");
+            sql("UPDATE product_suppliers SET purchase_price=9 WHERE supplier_id=1 AND product_id=1");
             sql("CREATE TRIGGER reject_currency_test BEFORE UPDATE ON product_suppliers BEGIN SELECT RAISE(ABORT,'currency rollback test'); END");
             boolean blocked=false;
             try{DatabaseCurrency.change("USD",DatabaseCurrency.ChangeMode.CONVERT,new java.math.BigDecimal("1.2"));}catch(SQLException e){blocked=true;}
