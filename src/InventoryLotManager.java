@@ -65,6 +65,19 @@ public final class InventoryLotManager {
     public static void reverseSupplierOrder(Connection c, int orderId, String number)
             throws SQLException {
         try(PreparedStatement p=c.prepareStatement("""
+                SELECT d.id
+                FROM supplier_order_details d
+                LEFT JOIN inventory_lots l ON l.supplier_order_detail_id=d.id
+                WHERE d.order_id=? AND l.id IS NULL
+                LIMIT 1
+                """)) {
+            p.setInt(1,orderId);
+            try(ResultSet r=p.executeQuery()) {
+                if(r.next())
+                    throw new SQLException("This supplier receipt has no FIFO lot history and cannot be reversed safely");
+            }
+        }
+        try(PreparedStatement p=c.prepareStatement("""
                 SELECT l.id,l.product_id,l.initial_quantity,l.remaining_quantity
                 FROM inventory_lots l
                 JOIN supplier_order_details d ON d.id=l.supplier_order_detail_id
