@@ -414,8 +414,8 @@ public class WarehouseMovementDialog extends JDialog {
                 }
             }
 
+                int movementId;
                 if (movement == null) {
-                    // Insert new movement
                     String insertQuery = """
                         INSERT INTO warehouse_movements (
                             product_id, date, type, quantity, reason,
@@ -423,7 +423,8 @@ public class WarehouseMovementDialog extends JDialog {
                         ) VALUES (?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?)
                     """;
 
-                    try (PreparedStatement pstmt = conn.prepareStatement(insertQuery)) {
+                    try (PreparedStatement pstmt = conn.prepareStatement(
+                            insertQuery, Statement.RETURN_GENERATED_KEYS)) {
                         pstmt.setInt(1, selectedProduct.getId());
                         pstmt.setString(2, type);
                         pstmt.setInt(3, quantity);
@@ -437,12 +438,21 @@ public class WarehouseMovementDialog extends JDialog {
 
                         String notes = notesArea.getText().trim();
                         pstmt.setString(7, notes.isEmpty() ? null : notes);
-
                         pstmt.executeUpdate();
-                    }
 
+                        try(ResultSet keys=pstmt.getGeneratedKeys()){
+                            if(!keys.next())throw new SQLException("Unable to create warehouse movement");
+                            movementId=keys.getInt(1);
+                        }
+                    }
                 } else {
-                    // Update existing movement (product can now be changed)
+                    movementId=movement.getId();
+
+                    // Undo the exact FIFO effect of the old manual movement first.
+                    InventoryLotManager.reverseManualMovement(
+                        conn,movement.getId(),movement.getProductId(),
+                        movement.getType(),movement.getQuantity());
+
                     String updateQuery = """
                         UPDATE warehouse_movements SET
                             product_id = ?, type = ?, quantity = ?, reason = ?,
@@ -464,38 +474,14 @@ public class WarehouseMovementDialog extends JDialog {
 
                         String notes = notesArea.getText().trim();
                         pstmt.setString(7, notes.isEmpty() ? null : notes);
-
-                        pstmt.setInt(8, movement.getId());
-                        pstmt.executeUpdate();
-                    }
-
-                    // Restore original quantity before applying new changes
-                    String resetQuery = """
-                        UPDATE products
-                        SET quantity = quantity + ?
-                        WHERE id = ?
-                    """;
-                    try (PreparedStatement pstmt = conn.prepareStatement(resetQuery)) {
-                        int quantityDelta = "INWARD".equals(movement.getType()) ?
-                            -movement.getQuantity() : movement.getQuantity();
-                        pstmt.setInt(1, quantityDelta);
-                        pstmt.setInt(2, movement.getProductId());
+                        pstmt.setInt(8, movementId);
                         pstmt.executeUpdate();
                     }
                 }
 
-                // Update product quantity
-                String updateProductQuery = """
-                    UPDATE products
-                    SET quantity = quantity + ?
-                    WHERE id = ?
-                """;
-                try (PreparedStatement pstmt = conn.prepareStatement(updateProductQuery)) {
-                    int quantityDelta = "INWARD".equals(type) ? quantity : -quantity;
-                    pstmt.setInt(1, quantityDelta);
-                    pstmt.setInt(2, selectedProduct.getId());
-                    pstmt.executeUpdate();
-                }
+                InventoryLotManager.applyManualMovement(
+                    conn,movementId,selectedProduct.getId(),type,quantity,
+                    movement == null ? new Date() : movement.getDate());
 
                 conn.commit();
                 movementSaved = true;
