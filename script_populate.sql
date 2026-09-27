@@ -468,19 +468,20 @@ INSERT INTO supplier_order_details(
     order_id, product_id, quantity, unit_price, total, notes
 )
 SELECT
-    1 + ((x - 1) / 3),
+    o.id,
     p.id,
     5 + (x % 26),
-    ROUND(CASE WHEN p.acquisition_cost > 0
-               THEN p.acquisition_cost
-               ELSE p.price * 0.45 END, 2),
+    ROUND(ps.purchase_price * CASE WHEN x % 5 = 0 THEN 0.90 ELSE 1.00 END, 2),
     ROUND((5 + (x % 26)) *
-        (CASE WHEN p.acquisition_cost > 0
-              THEN p.acquisition_cost
-              ELSE p.price * 0.45 END), 2),
-    'Supplier order line generated for testing'
+        ROUND(ps.purchase_price * CASE WHEN x % 5 = 0 THEN 0.90 ELSE 1.00 END, 2), 2),
+    CASE WHEN x % 5 = 0
+         THEN 'Negotiated discount below current supplier price'
+         ELSE 'Supplier order line generated for testing' END
 FROM seq
-JOIN products p ON p.id = 1 + ((x * 13) % 120);
+JOIN supplier_orders o ON o.id = 1 + ((x - 1) / 3)
+JOIN products p ON p.id = o.supplier_id + 18 * ((o.id + ((x - 1) % 3)) % 6)
+JOIN product_suppliers ps
+  ON ps.product_id=p.id AND ps.supplier_id=o.supplier_id;
 
 UPDATE supplier_orders
 SET total = ROUND(COALESCE((
@@ -488,6 +489,19 @@ SET total = ROUND(COALESCE((
     FROM supplier_order_details d
     WHERE d.order_id = supplier_orders.id
 ), 0), 2);
+
+-- Completed supplier orders are historical receipts. They are represented as
+-- exhausted lots because the demo's current stock was created separately above.
+INSERT INTO inventory_lots(
+    product_id,supplier_id,supplier_order_detail_id,received_date,
+    initial_quantity,remaining_quantity,unit_cost,source_type
+)
+SELECT
+    d.product_id,o.supplier_id,d.id,o.order_date,
+    d.quantity,0,d.unit_price,'LEGACY_SUPPLIER_ORDER'
+FROM supplier_order_details d
+JOIN supplier_orders o ON o.id=d.order_id
+WHERE o.status='Completed';
 
 -- ---------------------------------------------------------------------------
 -- INVOICES: 180 + 540 lines
