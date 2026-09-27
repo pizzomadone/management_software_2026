@@ -150,7 +150,7 @@ public class SupplierProductDialog extends JDialog {
         }
     }
 
-    public boolean isPriceSaved(){return saved;}
+    public boolean isSaved(){return saved;}
 
     private static final class ProductDisplay{
         final int id;final String code;final String name;
