@@ -81,6 +81,7 @@ public class CustomerSelectionDialog extends JDialog {
             }
         };
         customersTable = new JTable(tableModel);
+        TableStyleUtil.applyCompact(customersTable);
 
         // Hide ID column but keep it for data
         customersTable.getColumnModel().getColumn(0).setMinWidth(0);
