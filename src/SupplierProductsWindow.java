@@ -108,7 +108,7 @@ public class SupplierProductsWindow extends JDialog {
     private void openEditor(SupplierProduct relation){
         SupplierProductDialog d=new SupplierProductDialog(this,supplierId,supplierName,relation);
         d.setVisible(true);
-        if(d.isPriceSaved())load();
+        if(d.isSaved())load();
     }
 
     private void editSelected(){
