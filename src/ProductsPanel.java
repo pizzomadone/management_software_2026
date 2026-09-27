@@ -115,6 +115,7 @@ public class ProductsPanel extends JPanel {
             }
         });
         configureProductTablePresentation();
+        TableStyleUtil.applyProductEnhancements(productsTable);
         productsTable.getSelectionModel().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         productsTable.getSelectionModel().addListSelectionListener(e -> updateButtonStates());
 
