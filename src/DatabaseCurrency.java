@@ -69,7 +69,7 @@ public final class DatabaseCurrency {
             if(mode==ChangeMode.CONVERT) {
                 verifyConvertibleDocuments(c);
                 convertProducts(c,rate);
-                convertSupplierPriceLists(c,rate);
+                convertSupplierRelationsAndLots(c,rate);
                 convertCustomerOrders(c,rate);
                 convertSupplierOrders(c,rate);
                 convertDraftInvoices(c,rate,code);
@@ -104,7 +104,7 @@ public final class DatabaseCurrency {
         try(Statement s=c.createStatement();ResultSet r=s.executeQuery(
                 "SELECT (SELECT COUNT(*) FROM products)+(SELECT COUNT(*) FROM orders)+"+
                 "(SELECT COUNT(*) FROM invoices)+(SELECT COUNT(*) FROM supplier_orders)+"+
-                "(SELECT COUNT(*) FROM supplier_price_lists)")) {
+                "(SELECT COUNT(*) FROM product_suppliers)+(SELECT COUNT(*) FROM inventory_lots)")) {
             if(r.next() && r.getLong(1)>0)
                 throw new SQLException("Choose whether to relabel or convert existing monetary values.");
         }
@@ -217,12 +217,30 @@ public final class DatabaseCurrency {
         }
     }
 
-    private static void convertSupplierPriceLists(Connection c,BigDecimal rate) throws SQLException {
-        try(PreparedStatement read=c.prepareStatement("SELECT id,price FROM supplier_price_lists");
-            PreparedStatement write=c.prepareStatement("UPDATE supplier_price_lists SET price=? WHERE id=?");
+    private static void convertSupplierRelationsAndLots(Connection c,BigDecimal rate) throws SQLException {
+        try(PreparedStatement read=c.prepareStatement("SELECT id,purchase_price FROM product_suppliers");
+            PreparedStatement write=c.prepareStatement("UPDATE product_suppliers SET purchase_price=? WHERE id=?");
             ResultSet r=read.executeQuery()) {
             while(r.next()) {
-                write.setDouble(1,convertUnit(r.getObject("price"),rate));
+                write.setDouble(1,convertUnit(r.getObject("purchase_price"),rate));
+                write.setInt(2,r.getInt("id"));write.addBatch();
+            }
+            write.executeBatch();
+        }
+        try(PreparedStatement read=c.prepareStatement("SELECT id,unit_cost FROM inventory_lots");
+            PreparedStatement write=c.prepareStatement("UPDATE inventory_lots SET unit_cost=? WHERE id=?");
+            ResultSet r=read.executeQuery()) {
+            while(r.next()) {
+                write.setDouble(1,convertUnit(r.getObject("unit_cost"),rate));
+                write.setInt(2,r.getInt("id"));write.addBatch();
+            }
+            write.executeBatch();
+        }
+        try(PreparedStatement read=c.prepareStatement("SELECT id,unit_cost FROM inventory_lot_consumptions");
+            PreparedStatement write=c.prepareStatement("UPDATE inventory_lot_consumptions SET unit_cost=? WHERE id=?");
+            ResultSet r=read.executeQuery()) {
+            while(r.next()) {
+                write.setDouble(1,convertUnit(r.getObject("unit_cost"),rate));
                 write.setInt(2,r.getInt("id"));write.addBatch();
             }
             write.executeBatch();
@@ -231,13 +249,16 @@ public final class DatabaseCurrency {
 
     private static void convertCustomerOrders(Connection c,BigDecimal rate) throws SQLException {
         try(PreparedStatement read=c.prepareStatement(
-                "SELECT id,unit_price FROM order_details ORDER BY id");
+                "SELECT id,unit_price,cost_total FROM order_details ORDER BY id");
             PreparedStatement write=c.prepareStatement(
-                "UPDATE order_details SET unit_price=? WHERE id=?");
+                "UPDATE order_details SET unit_price=?,cost_total=? WHERE id=?");
             ResultSet r=read.executeQuery()) {
             while(r.next()) {
                 write.setDouble(1,convertUnit(r.getObject("unit_price"),rate));
-                write.setInt(2,r.getInt("id"));write.addBatch();
+                Object cost=r.getObject("cost_total");
+                if(cost==null) write.setNull(2,Types.REAL);
+                else write.setDouble(2,convertMoney(cost,rate));
+                write.setInt(3,r.getInt("id"));write.addBatch();
             }
             write.executeBatch();
         }
