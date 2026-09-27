@@ -59,6 +59,7 @@ public class SupplierOrdersWindow extends JDialog {
             }
         };
         ordersTable = new JTable(tableModel);
+        TableStyleUtil.applyCompact(ordersTable);
         ordersTable.getSelectionModel().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         ordersTable.getSelectionModel().addListSelectionListener(e -> updateButtonStates());
 
