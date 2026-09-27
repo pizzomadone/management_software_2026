@@ -581,11 +581,11 @@ public class ProductDialog extends JDialog {
                 try(ResultSet r=p.executeQuery()) {
                     preferredSupplierPriceField.setText(r.next()
                         ? Numbers.unitText(r.getDouble(1))
-                        : Numbers.unitText(product.getAcquisitionCost()));
+                        : "0.0");
                 }
             }
         } catch(SQLException e) {
-            preferredSupplierPriceField.setText(Numbers.unitText(product.getAcquisitionCost()));
+            preferredSupplierPriceField.setText("0.0");
         }
     }
 
