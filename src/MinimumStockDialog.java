@@ -97,7 +97,8 @@ public class MinimumStockDialog extends JDialog {
 
         gbc.gridx = 1;
         supplierCombo = new JComboBox<>();
-        supplierCombo.addItem(new SupplierComboItem(null, "-- None --"));
+        supplierCombo.setEnabled(false);
+        supplierCombo.setToolTipText(I18n.tr("The preferred supplier is managed from the product's supplier list."));
         formPanel.add(supplierCombo, gbc);
 
         // Notes
@@ -138,21 +139,29 @@ public class MinimumStockDialog extends JDialog {
     }
 
     private void loadSuppliers() {
+        supplierCombo.removeAllItems();
+        supplierCombo.addItem(new SupplierComboItem(null, "-- None --"));
+        if (minStock == null) return;
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
-            String query = "SELECT id, company_name FROM suppliers ORDER BY company_name";
-
-            try (Statement stmt = conn.createStatement();
-                 ResultSet rs = stmt.executeQuery(query)) {
-                while (rs.next()) {
-                    supplierCombo.addItem(new SupplierComboItem(
-                        rs.getInt("id"),
-                        rs.getString("company_name")
-                    ));
+            String query = """
+                SELECT ps.supplier_id,s.company_name
+                FROM product_suppliers ps
+                JOIN suppliers s ON s.id=ps.supplier_id
+                WHERE ps.product_id=? AND ps.is_preferred=1
+                LIMIT 1
+                """;
+            try (PreparedStatement p = conn.prepareStatement(query)) {
+                p.setInt(1,minStock.getProductId());
+                try (ResultSet rs = p.executeQuery()) {
+                    if (rs.next()) {
+                        supplierCombo.addItem(new SupplierComboItem(
+                            rs.getInt("supplier_id"),rs.getString("company_name")));
+                        supplierCombo.setSelectedIndex(1);
+                    }
                 }
             }
         } catch (SQLException e) {
-            e.printStackTrace();
             Dialogs.showMessageDialog(this,
                 "Error loading suppliers: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
@@ -222,8 +231,16 @@ public class MinimumStockDialog extends JDialog {
                 }
             }
 
-            SupplierComboItem selectedSupplier = (SupplierComboItem) supplierCombo.getSelectedItem();
-            Integer supplierId = selectedSupplier != null ? selectedSupplier.getId() : null;
+            Integer supplierId = null;
+            try (PreparedStatement preferred = conn.prepareStatement("""
+                    SELECT supplier_id FROM product_suppliers
+                    WHERE product_id=? AND is_preferred=1 LIMIT 1
+                    """)) {
+                preferred.setInt(1,minStock.getProductId());
+                try (ResultSet r=preferred.executeQuery()) {
+                    if(r.next()) supplierId=r.getInt(1);
+                }
+            }
 
             if (exists) {
                 // Update existing record
