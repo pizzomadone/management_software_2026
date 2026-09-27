@@ -66,6 +66,7 @@ public class WarehousePanel extends JPanel {
             }
         };
         stockTable = new JTable(stockModel);
+        TableStyleUtil.applyCompact(stockTable);
 
         // Enable column sorting
         TableSorterUtil.enableSorting(stockTable);
@@ -119,6 +120,7 @@ public class WarehousePanel extends JPanel {
             }
         };
         movementsTable = new JTable(movementsModel);
+        TableStyleUtil.applyCompact(movementsTable);
 
         // Enable column sorting with date support (column 1 is "Date")
         TableSorterUtil.enableSorting(movementsTable, new int[]{1}, dateFormat);
@@ -183,6 +185,7 @@ public class WarehousePanel extends JPanel {
             "Date","Product","Supplier","Supplier Order","Initial Qty","Remaining Qty","Unit Cost","Source"
         },0){@Override public boolean isCellEditable(int r,int c){return false;}};
         lotsTable=new JTable(lotsModel);
+        TableStyleUtil.applyCompact(lotsTable);
         TableSorterUtil.enableSorting(lotsTable,new int[]{0},dateFormat);
 
         showExhaustedLots=new JCheckBox("Show exhausted lots",true);
@@ -210,6 +213,7 @@ public class WarehousePanel extends JPanel {
             }
         };
         notificationsTable = new JTable(notificationsModel);
+        TableStyleUtil.applyCompact(notificationsTable);
         notificationsTable.removeColumn(notificationsTable.getColumnModel().getColumn(5));
 
         // Enable column sorting with date support (column 0 is "Date")
