@@ -48,6 +48,7 @@ public class MultiSupplierOrderDialog extends JDialog {
             @Override public boolean isCellEditable(int row, int column) { return column == 5 || column == 6 || column == 8; }
         };
         table = new JTable(model);
+        TableStyleUtil.applyCompact(table);
         table.setToolTipText(I18n.tr("Unit prices start from the supplier's current product price and can be edited for discounts or negotiated terms."));
         hideColumn(0); hideColumn(3);
         model.addTableModelListener(e -> {
@@ -100,6 +101,7 @@ public class MultiSupplierOrderDialog extends JDialog {
             @Override public boolean isCellEditable(int r, int c) { return false; }
         };
         JTable productTable = new JTable(products);
+        TableStyleUtil.applyCompact(productTable);
         JTextField search = new JTextField(25);
         Runnable load = () -> {
             loadProducts(products, search.getText().trim());
