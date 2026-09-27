@@ -51,6 +51,7 @@ public class ProductsPanel extends JPanel {
     private JButton addButton;
     private JButton detailsButton;
     private JButton editButton;
+    private JButton lotsButton;
     private JButton deleteButton;
     private JButton refreshButton;
     private Timer photoPreviewTimer;
@@ -128,6 +129,7 @@ public class ProductsPanel extends JPanel {
             new TableInteractionUtil.TableAction("Add Product", () -> showProductDialog(null), false),
             new TableInteractionUtil.TableAction("View Details", this::viewSelectedProduct),
             new TableInteractionUtil.TableAction("Edit", this::editSelectedProduct),
+            new TableInteractionUtil.TableAction("Lots", this::showSelectedProductLots),
             new TableInteractionUtil.TableAction("Delete", this::deleteSelectedProduct),
             null, // Separator
             new TableInteractionUtil.TableAction("Refresh", this::loadProducts, false)
@@ -164,18 +166,21 @@ public class ProductsPanel extends JPanel {
         addButton = new JButton("Add");
         detailsButton = new JButton("View Details");
         editButton = new JButton("Edit");
+        lotsButton = new JButton("Lots");
         deleteButton = new JButton("Delete");
         refreshButton = new JButton("Refresh");
         
         addButton.addActionListener(e -> showProductDialog(null));
         detailsButton.addActionListener(e -> viewSelectedProduct());
         editButton.addActionListener(e -> editSelectedProduct());
+        lotsButton.addActionListener(e -> showSelectedProductLots());
         deleteButton.addActionListener(e -> deleteSelectedProduct());
         refreshButton.addActionListener(e -> loadProducts());
         
         buttonPanel.add(addButton);
         buttonPanel.add(detailsButton);
         buttonPanel.add(editButton);
+        buttonPanel.add(lotsButton);
         buttonPanel.add(deleteButton);
         buttonPanel.add(refreshButton);
         
@@ -590,6 +595,7 @@ public class ProductsPanel extends JPanel {
         boolean isRowSelected = productsTable.getSelectedRow() != -1;
         detailsButton.setEnabled(isRowSelected);
         editButton.setEnabled(isRowSelected);
+        lotsButton.setEnabled(isRowSelected);
         deleteButton.setEnabled(isRowSelected);
     }
     
@@ -608,7 +614,8 @@ public class ProductsPanel extends JPanel {
                        END), 0) as on_order_quantity
                 FROM products p
                 LEFT JOIN minimum_stock sm ON sm.product_id = p.id
-                LEFT JOIN suppliers f ON p.supplier_id = f.id
+                LEFT JOIN product_suppliers ps ON ps.product_id=p.id AND ps.is_preferred=1
+                LEFT JOIN suppliers f ON ps.supplier_id = f.id
                 LEFT JOIN supplier_order_details sod ON p.id = sod.product_id
                 LEFT JOIN supplier_orders so ON sod.order_id = so.id
                 GROUP BY p.id
@@ -674,7 +681,8 @@ public class ProductsPanel extends JPanel {
                        END), 0) as on_order_quantity
                 FROM products p
                 LEFT JOIN minimum_stock sm ON sm.product_id = p.id
-                LEFT JOIN suppliers f ON p.supplier_id = f.id
+                LEFT JOIN product_suppliers ps ON ps.product_id=p.id AND ps.is_preferred=1
+                LEFT JOIN suppliers f ON ps.supplier_id = f.id
                 LEFT JOIN supplier_order_details sod ON p.id = sod.product_id
                 LEFT JOIN supplier_orders so ON sod.order_id = so.id
                 WHERE p.code LIKE ? OR p.name LIKE ? OR p.description LIKE ?
@@ -768,7 +776,8 @@ public class ProductsPanel extends JPanel {
             SELECT p.*, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity, f.company_name as supplier_name
             FROM products p
             LEFT JOIN minimum_stock sm ON sm.product_id = p.id
-            LEFT JOIN suppliers f ON p.supplier_id = f.id
+            LEFT JOIN product_suppliers ps ON ps.product_id=p.id AND ps.is_preferred=1
+                LEFT JOIN suppliers f ON ps.supplier_id = f.id
             WHERE p.id = ?
         """;
         try (PreparedStatement pstmt = conn.prepareStatement(query)) {
@@ -796,6 +805,16 @@ public class ProductsPanel extends JPanel {
         }
     }
 
+    private void showSelectedProductLots() {
+        int selectedRow=productsTable.getSelectedRow();
+        if(selectedRow<0)return;
+        int row=productsTable.convertRowIndexToModel(selectedRow);
+        int productId=((Number)tableModel.getValueAt(row,0)).intValue();
+        String productName=String.valueOf(tableModel.getValueAt(row,2));
+        Window owner=SwingUtilities.getWindowAncestor(this);
+        new InventoryLotsDialog(owner,productId,productName).setVisible(true);
+    }
+
     private void editSelectedProduct() {
         int selectedRow = productsTable.getSelectedRow();
         if (selectedRow != -1) {
@@ -809,7 +828,8 @@ public class ProductsPanel extends JPanel {
                     SELECT p.*, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity, f.company_name as supplier_name
                     FROM products p
                     LEFT JOIN minimum_stock sm ON sm.product_id = p.id
-                    LEFT JOIN suppliers f ON p.supplier_id = f.id
+                    LEFT JOIN product_suppliers ps ON ps.product_id=p.id AND ps.is_preferred=1
+                LEFT JOIN suppliers f ON ps.supplier_id = f.id
                     WHERE p.id = ?
                 """;
                 try (PreparedStatement pstmt = conn.prepareStatement(query)) {
@@ -873,7 +893,7 @@ public class ProductsPanel extends JPanel {
                 boolean hasOrders = hasProductInOrders(conn, id);
                 boolean hasInvoices = hasProductInInvoices(conn, id);
                 boolean hasSupplierOrders = hasProductInSupplierOrders(conn, id);
-                boolean hasPriceLists = hasProductInPriceLists(conn, id);
+                boolean hasSupplierLinks = hasProductInSupplierLinks(conn, id);
                 boolean hasWarehouseMovements = hasProductInWarehouseMovements(conn, id);
                 boolean hasMinStock = hasProductInMinStock(conn, id);
                 boolean hasReservations = hasProductInReservations(conn, id);
@@ -888,7 +908,7 @@ public class ProductsPanel extends JPanel {
                     if (hasOrders) message.append("- Customer orders\n");
                     if (hasInvoices) message.append("- Invoice entries\n");
                     if (hasSupplierOrders) message.append("- Supplier orders\n");
-                    if (hasPriceLists) message.append("- Price list entries\n");
+                    if (hasSupplierLinks) message.append("- Supplier associations\n");
                     if (hasWarehouseMovements) message.append("- Warehouse movements\n");
                     if (hasReservations) message.append("- Active or historical stock reservations\n");
                     message.append("\nDeleting it would alter orders, invoices or stock history. " +
@@ -899,8 +919,8 @@ public class ProductsPanel extends JPanel {
                     return;
                 }
 
-                if (hasPriceLists || hasMinStock || hasNotifications) {
-                    String details = (hasPriceLists ? "- Price list entries\n" : "") +
+                if (hasSupplierLinks || hasMinStock || hasNotifications) {
+                    String details = (hasSupplierLinks ? "- Supplier associations\n" : "") +
                         (hasMinStock ? "- Minimum stock settings\n" : "") +
                         (hasNotifications ? "- Warehouse notifications\n" : "");
                     int cleanup = Dialogs.showConfirmDialog(this,
@@ -951,7 +971,7 @@ public class ProductsPanel extends JPanel {
         DatabaseManager.beginTransaction(conn);
         try {
             String[] statements = {
-                "DELETE FROM supplier_price_lists WHERE product_id = ?",
+                "DELETE FROM product_suppliers WHERE product_id = ?",
                 "DELETE FROM warehouse_notifications WHERE product_id = ?",
                 "DELETE FROM minimum_stock WHERE product_id = ?",
                 "DELETE FROM products WHERE id = ?"
@@ -1016,8 +1036,8 @@ public class ProductsPanel extends JPanel {
         }
     }
 
-    private boolean hasProductInPriceLists(Connection conn, int productId) throws SQLException {
-        String query = "SELECT COUNT(*) FROM supplier_price_lists WHERE product_id = ?";
+    private boolean hasProductInSupplierLinks(Connection conn, int productId) throws SQLException {
+        String query = "SELECT COUNT(*) FROM product_suppliers WHERE product_id = ?";
         try (PreparedStatement pstmt = conn.prepareStatement(query)) {
             pstmt.setInt(1, productId);
             ResultSet rs = pstmt.executeQuery();
