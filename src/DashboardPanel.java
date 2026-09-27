@@ -144,7 +144,7 @@ public class DashboardPanel extends JPanel {
         ));
 
         JPanel cards = new JPanel(new GridLayout(2, 4, 10, 10));
-        cards.add(createKPICard("Stock at standard cost", "—", SECONDARY_COLOR, "warehouseValue"));
+        cards.add(createKPICard("Stock at last purchase cost", "—", SECONDARY_COLOR, "warehouseValue"));
         cards.add(createKPICard("Stock at sale price", "—", SECONDARY_COLOR, "warehouseSaleValue"));
         cards.add(createKPICard("Low Stock Products", "—", DANGER_COLOR, "lowStock"));
         cards.add(createKPICard("Out of Stock Products", "—", WARNING_COLOR, "zeroStock"));
