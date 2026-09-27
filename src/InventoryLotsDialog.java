@@ -25,6 +25,7 @@ public class InventoryLotsDialog extends JDialog {
             "Unit Cost","Source","ID"
         },0){@Override public boolean isCellEditable(int r,int c){return false;}};
         table=new JTable(model);table.setAutoCreateRowSorter(true);
+        TableStyleUtil.applyCompact(table);
         int idView=table.convertColumnIndexToView(8);
         table.getColumnModel().getColumn(idView).setMinWidth(0);
         table.getColumnModel().getColumn(idView).setMaxWidth(0);
