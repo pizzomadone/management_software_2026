@@ -140,7 +140,7 @@ public class SupplierOrderDialog extends JDialog {
             }
         };
         itemsTable = new JTable(itemsTableModel);
-        itemsTable.setToolTipText(I18n.tr("Unit prices are quoted when added. After changing quantities or dates, use Update Prices from Price List to refresh them; negotiated prices can be edited manually."));
+        itemsTable.setToolTipText(I18n.tr("Unit prices start from the supplier's current product price and can be edited for discounts or negotiated terms."));
         itemsTable.removeColumn(itemsTable.getColumnModel().getColumn(6));
 
         // FIXED: Improved listener to prevent infinite recursion
@@ -161,8 +161,8 @@ public class SupplierOrderDialog extends JDialog {
 
         tableButtonPanel.add(addItemButton);
         tableButtonPanel.add(removeItemButton);
-        JButton reprice = new JButton("Update Prices from Price List");
-        reprice.setToolTipText(I18n.tr("Replace order prices with the current supplier price list."));
+        JButton reprice = new JButton("Refresh Supplier Prices");
+        reprice.setToolTipText(I18n.tr("Replace order prices with the current prices saved for this supplier."));
         reprice.addActionListener(e -> applyPriceList());
         tableButtonPanel.add(reprice);
 
@@ -225,7 +225,13 @@ public class SupplierOrderDialog extends JDialog {
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             productsCache.clear();
-            String query = "SELECT * FROM products WHERE supplier_id=? ORDER BY name";
+            String query = """
+                SELECT p.*, ps.purchase_price
+                FROM product_suppliers ps
+                JOIN products p ON p.id=ps.product_id
+                WHERE ps.supplier_id=? AND p.active=1
+                ORDER BY p.name,p.code
+                """;
             try (PreparedStatement pstmt = conn.prepareStatement(query)) {
                 pstmt.setInt(1, supplierId);
                 ResultSet rs = pstmt.executeQuery();
@@ -236,7 +242,7 @@ public class SupplierOrderDialog extends JDialog {
                         rs.getString("code"),
                         rs.getString("name"),
                         rs.getString("description"),
-                        SupplierPricing.price(conn, supplierId, rs.getInt("id"), 1, new Date()),
+                        rs.getDouble("purchase_price"),
                         rs.getInt("quantity")
                     );
                     productsCache.put(product.getId(), product);
@@ -432,8 +438,8 @@ public class SupplierOrderDialog extends JDialog {
             Numbers.commitEdits(itemsTable);
             if (askConfirmation && Dialogs.showConfirmDialog(
                     this,
-                    I18n.tr("Replace all entered unit prices with the current price list for this date and these quantities?"),
-                    I18n.tr("Update Prices from Price List"),
+                    I18n.tr("Replace all entered unit prices with the current supplier prices?"),
+                    I18n.tr("Refresh Supplier Prices"),
                     JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) {
                 return;
             }
@@ -453,7 +459,7 @@ public class SupplierOrderDialog extends JDialog {
         } catch (Exception e) {
             Dialogs.showMessageDialog(
                 this, I18n.tr(e.getMessage()),
-                I18n.tr("Unable to apply prices"), JOptionPane.ERROR_MESSAGE);
+                I18n.tr("Unable to refresh supplier prices"), JOptionPane.ERROR_MESSAGE);
         }
     }
 
@@ -591,8 +597,8 @@ public class SupplierOrderDialog extends JDialog {
 
                     // Handle stock if Completed
                     if ("Completed".equals(newStatus)) {
-                        StockManager.incrementStock(conn, stockItems, orderDate,
-                            numberField.getText(), "SUPPLIER_ORDER");
+                        InventoryLotManager.receiveSupplierOrder(
+                            conn, orderId, orderDate, numberField.getText());
                     }
 
                 } else {
@@ -608,7 +614,7 @@ public class SupplierOrderDialog extends JDialog {
                         }
                     }
                     if ("Completed".equals(previousStatus)) {
-                        StockManager.reverseSupplierOrder(conn, oldStockItems, order.getNumber());
+                        InventoryLotManager.reverseSupplierOrder(conn, orderId, order.getNumber());
                     }
 
                     String orderQuery = """
@@ -639,8 +645,8 @@ public class SupplierOrderDialog extends JDialog {
                     insertOrderDetails(conn, orderId);
 
                     if ("Completed".equals(newStatus)) {
-                        StockManager.incrementStock(conn, stockItems, orderDate,
-                            numberField.getText(), "SUPPLIER_ORDER");
+                        InventoryLotManager.receiveSupplierOrder(
+                            conn, orderId, orderDate, numberField.getText());
                     }
                 }
 
