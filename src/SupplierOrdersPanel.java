@@ -79,7 +79,7 @@ public class SupplierOrdersPanel extends JPanel {
             component.setFont(header.getFont());
             component.setBackground(headerBackground);
             if (component instanceof JLabel label) {
-                label.setHorizontalAlignment(SwingConstants.LEFT);
+                label.setHorizontalAlignment(SwingConstants.CENTER);
                 label.setBorder(BorderFactory.createCompoundBorder(
                     BorderFactory.createMatteBorder(0, 0, 1, 0, headerLine),
                     BorderFactory.createEmptyBorder(0, 4, 0, 4)));
@@ -88,7 +88,7 @@ public class SupplierOrdersPanel extends JPanel {
         });
 
         table.getColumnModel().getColumn(0).setCellRenderer(
-            new CompactCellRenderer(SwingConstants.RIGHT, false));
+            new CompactCellRenderer(SwingConstants.CENTER, false));
         table.getColumnModel().getColumn(1).setCellRenderer(
             new CompactCellRenderer(SwingConstants.LEFT, false));
         table.getColumnModel().getColumn(2).setCellRenderer(
@@ -99,7 +99,7 @@ public class SupplierOrdersPanel extends JPanel {
             new CompactCellRenderer(SwingConstants.CENTER, false));
         table.getColumnModel().getColumn(5).setCellRenderer(new StatusBadgeRenderer());
         table.getColumnModel().getColumn(6).setCellRenderer(
-            new CompactCellRenderer(SwingConstants.RIGHT, false));
+            new CompactCellRenderer(SwingConstants.CENTER, false));
         table.getColumnModel().getColumn(7).setCellRenderer(
             new CompactCellRenderer(SwingConstants.LEFT, true));
 
