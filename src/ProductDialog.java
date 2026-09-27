@@ -283,6 +283,8 @@ public class ProductDialog extends JDialog {
     private void initializePhotoDraft() throws SQLException {
         if (photosInitialized) return;
 
+        if (pendingPhotoFilenames == null) pendingPhotoFilenames = new ArrayList<>();
+        if (originalPhotoFilenames == null) originalPhotoFilenames = new ArrayList<>();
         pendingPhotoFilenames.clear();
         originalPhotoFilenames.clear();
         pendingPrimaryFilename = null;
