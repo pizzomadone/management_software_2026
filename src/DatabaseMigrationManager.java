@@ -358,15 +358,34 @@ public final class DatabaseMigrationManager {
             s.execute("CREATE INDEX IF NOT EXISTS idx_lot_consumptions_order_detail ON inventory_lot_consumptions(order_detail_id)");
             s.execute("CREATE INDEX IF NOT EXISTS idx_lot_consumptions_movement ON inventory_lot_consumptions(warehouse_movement_id)");
 
-            // Existing stock cannot be reconstructed into historical layers safely.
-            // Start it as one migration layer at the product's current acquisition cost.
+            // Legacy completed supplier orders are real purchase history, but the old
+            // database cannot tell which of their units are still on hand. Preserve them as
+            // exhausted historical lots. This also prevents a migrated completed receipt from
+            // being reversed and corrupting today's stock.
+            s.execute("""
+                INSERT OR IGNORE INTO inventory_lots
+                    (product_id,supplier_id,supplier_order_detail_id,received_date,
+                     initial_quantity,remaining_quantity,unit_cost,source_type)
+                SELECT d.product_id,o.supplier_id,d.id,o.order_date,
+                       d.quantity,0,d.unit_price,'LEGACY_SUPPLIER_ORDER'
+                FROM supplier_order_details d
+                JOIN supplier_orders o ON o.id=d.order_id
+                WHERE o.status='Completed'
+            """);
+
+            // Existing on-hand stock cannot be assigned reliably to those historical orders.
+            // Start the current balance as one migration layer at the product's current
+            // acquisition cost. Old customer sales intentionally keep cost_total=NULL.
             s.execute("""
                 INSERT INTO inventory_lots
                     (product_id, received_date, initial_quantity, remaining_quantity, unit_cost, source_type)
                 SELECT p.id, CURRENT_TIMESTAMP, p.quantity, p.quantity, p.acquisition_cost, 'MIGRATION'
                 FROM products p
                 WHERE p.quantity>0
-                  AND NOT EXISTS (SELECT 1 FROM inventory_lots l WHERE l.product_id=p.id)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM inventory_lots l
+                      WHERE l.product_id=p.id AND l.remaining_quantity>0
+                  )
             """);
 
             // product_suppliers is the source of truth. Legacy columns remain as
