@@ -788,15 +788,10 @@ public class WarehousePanel extends JPanel {
                             }
                         }
 
-                        // Reverse the stock movement
+                        // Reverse the exact FIFO effect before deleting the manual movement.
                         if (productId > 0) {
-                            String updateStockQuery = "UPDATE products SET quantity = quantity + ? WHERE id = ?";
-                            try (PreparedStatement pstmt = conn.prepareStatement(updateStockQuery)) {
-                                int quantityDelta = "INWARD".equals(movementType) ? -movementQuantity : movementQuantity;
-                                pstmt.setInt(1, quantityDelta);
-                                pstmt.setInt(2, productId);
-                                pstmt.executeUpdate();
-                            }
+                            InventoryLotManager.reverseManualMovement(
+                                conn,movementId,productId,movementType,movementQuantity);
                         }
 
                         // Delete the movement
