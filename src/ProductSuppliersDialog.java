@@ -20,6 +20,7 @@ public class ProductSuppliersDialog extends JDialog {
             "Supplier","Supplier Code","Purchase Price","Preferred","Notes","ID","Supplier ID"
         },0){@Override public boolean isCellEditable(int r,int c){return false;}};
         table=new JTable(model);table.setAutoCreateRowSorter(true);
+        TableStyleUtil.applyCompact(table);
         hide(5);hide(6);
 
         JLabel help=new JLabel("?");
