@@ -119,7 +119,7 @@ public class MultiSupplierOrderDialog extends JDialog {
                 quantity.commitEdit(); qty = Numbers.positiveQuantity(quantity.getValue());
                 Object supplier = products.getValueAt(row, 3);
                 if (!(supplier instanceof Number)) throw new IllegalArgumentException("Assign a supplier before ordering this product");
-                price = SupplierPricing.price(DatabaseManager.getInstance().getConnection(), ((Number)supplier).intValue(), id, qty, DateUtils.parseDate(orderDate.getText(), dateFormat));
+                price = SupplierPricing.price(DatabaseManager.getInstance().getConnection(), ((Number)supplier).intValue(), id);
             } catch (Exception ex) { showWarning(picker,ex.getMessage()); return; }
             model.addRow(new Object[]{id, products.getValueAt(row, 1), products.getValueAt(row, 2),
                 products.getValueAt(row, 3), products.getValueAt(row, 4), qty,
@@ -166,9 +166,8 @@ public class MultiSupplierOrderDialog extends JDialog {
         try {
             Numbers.commitEdits(table);
             if(Dialogs.showConfirmDialog(this,"Replace all entered unit prices with the current prices saved for each supplier?","Refresh Supplier Prices",JOptionPane.YES_NO_OPTION)!=JOptionPane.YES_OPTION)return;
-            java.util.Date date=DateUtils.parseDate(orderDate.getText(),dateFormat);
             Connection c=DatabaseManager.getInstance().getConnection();double[] prices=new double[model.getRowCount()];
-            for(int i=0;i<prices.length;i++)prices[i]=SupplierPricing.price(c,((Number)model.getValueAt(i,3)).intValue(),((Number)model.getValueAt(i,0)).intValue(),Numbers.positiveQuantity(model.getValueAt(i,5)),date);
+            for(int i=0;i<prices.length;i++)prices[i]=SupplierPricing.price(c,((Number)model.getValueAt(i,3)).intValue(),((Number)model.getValueAt(i,0)).intValue());
             for(int i=0;i<prices.length;i++)model.setValueAt(prices[i],i,6);
             updateTotals();
         } catch(Exception e) {showWarning(this,e.getMessage());}
