@@ -65,9 +65,9 @@ public final class ProductDetailsDialog extends JDialog {
         addWrappedLine(details, g, "Description", product.getDescription());
         addLine(details, g, "Quantity", String.valueOf(product.getQuantity()));
         addLine(details, g, "Price", SettingsPanel.formatCurrency(product.getPrice()));
-        addLine(details, g, "Acquisition Cost", SettingsPanel.formatCurrency(product.getAcquisitionCost()));
+        addLine(details, g, "Last Purchase Cost", SettingsPanel.formatCurrency(product.getAcquisitionCost()));
         addLine(details, g, "Minimum Quantity", String.valueOf(product.getMinimumQuantity()));
-        addLine(details, g, "Supplier", product.getSupplierName());
+        addLine(details, g, "Preferred Supplier", product.getSupplierName());
         addLine(details, g, "Warehouse Position", product.getWarehousePosition());
         addLine(details, g, "VAT Rate (%)", Numbers.moneyText(product.getVatRate()));
         addLine(details, g, "Active", product.isActive() ? I18n.tr("Yes") : I18n.tr("No"));
@@ -80,10 +80,18 @@ public final class ProductDetailsDialog extends JDialog {
         add(scroll, BorderLayout.CENTER);
 
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JButton suppliers = new JButton("Suppliers");
+        JButton lots = new JButton("Lots");
         JButton edit = new JButton("Edit");
         JButton close = new JButton("Close");
+        suppliers.addActionListener(e ->
+            new ProductSuppliersDialog(this,product.getId(),product.getName()).setVisible(true));
+        lots.addActionListener(e ->
+            new InventoryLotsDialog(this,product.getId(),product.getName()).setVisible(true));
         edit.addActionListener(e -> { editRequested = true; dispose(); });
         close.addActionListener(e -> dispose());
+        buttons.add(suppliers);
+        buttons.add(lots);
         buttons.add(edit);
         buttons.add(close);
         add(buttons, BorderLayout.SOUTH);
