@@ -435,7 +435,9 @@ public class ExtendedRegressionTest extends RegressionTest {
             sql("UPDATE products SET price=10,acquisition_cost=5 WHERE id=1");
             sql("UPDATE product_suppliers SET purchase_price=9 WHERE supplier_id=1 AND product_id=1");
             sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) VALUES(10,1,0,'Completed',30,'PARTIALLY_PAID',10)");
-            sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(10,1,3,10)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price,cost_total) VALUES(10,1,3,10,12)");
+            sql("INSERT INTO inventory_lots(id,product_id,supplier_id,received_date,initial_quantity,remaining_quantity,unit_cost,source_type) VALUES(50,1,1,0,5,2,4,'TEST')");
+            sql("INSERT INTO inventory_lot_consumptions(lot_id,order_detail_id,quantity,unit_cost) SELECT 50,id,1,4 FROM order_details WHERE order_id=10");
             sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,status,total) VALUES(10,1,'CUR-SUP',0,'Completed',10)");
             sql("INSERT INTO supplier_order_details(order_id,product_id,quantity,unit_price,total) VALUES(10,1,2,5,10)");
             sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(10,'CUR-ISSUED',0,1,10,2.2,12.2,'Issued')");
@@ -450,7 +452,9 @@ public class ExtendedRegressionTest extends RegressionTest {
             require("USD".equals(DatabaseCurrency.read(db)) && "USD".equals(SettingsPanel.getCurrencyCode()),"Operating currency did not change");
             require("10.0|5.0".equals(value("SELECT price||'|'||acquisition_cost FROM products WHERE id=1")),"Relabel converted product values");
             require("9.0".equals(value("SELECT purchase_price FROM product_suppliers WHERE product_id=1 AND supplier_id=1")),"Relabel converted supplier price");
-            require("30.0|10.0|10.0".equals(value("SELECT total||'|'||paid_amount||'|'||(SELECT unit_price FROM order_details WHERE order_id=10) FROM orders WHERE id=10")),"Relabel changed customer order values");
+            require("30.0|10.0|10.0|12.0".equals(value("SELECT total||'|'||paid_amount||'|'||(SELECT unit_price FROM order_details WHERE order_id=10)||'|'||(SELECT cost_total FROM order_details WHERE order_id=10) FROM orders WHERE id=10")),"Relabel changed customer order values");
+            require("4.0|4.0".equals(value("SELECT l.unit_cost||'|'||c.unit_cost FROM inventory_lots l JOIN inventory_lot_consumptions c ON c.lot_id=l.id WHERE l.id=50")),
+                "Relabel changed FIFO historical unit costs");
             require("10.0|5.0".equals(value("SELECT total||'|'||(SELECT unit_price FROM supplier_order_details WHERE order_id=10) FROM supplier_orders WHERE id=10")),"Relabel changed supplier order values");
             require("EUR|10.0|2.2|12.2".equals(value("SELECT currency_code||'|'||taxable_amount||'|'||vat||'|'||total FROM invoices WHERE id=10")),"Finalized invoice was relabelled");
             require("USD|20.0|4.4|24.4".equals(value("SELECT currency_code||'|'||taxable_amount||'|'||vat||'|'||total FROM invoices WHERE id=11")),"Draft did not adopt the new currency");
@@ -460,7 +464,9 @@ public class ExtendedRegressionTest extends RegressionTest {
             sql("UPDATE products SET price=10,acquisition_cost=5 WHERE id=1");
             sql("UPDATE product_suppliers SET purchase_price=9 WHERE supplier_id=1 AND product_id=1");
             sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) VALUES(10,1,0,'Completed',30,'PARTIALLY_PAID',10)");
-            sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(10,1,3,10)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price,cost_total) VALUES(10,1,3,10,12)");
+            sql("INSERT INTO inventory_lots(id,product_id,supplier_id,received_date,initial_quantity,remaining_quantity,unit_cost,source_type) VALUES(50,1,1,0,5,2,4,'TEST')");
+            sql("INSERT INTO inventory_lot_consumptions(lot_id,order_detail_id,quantity,unit_cost) SELECT 50,id,1,4 FROM order_details WHERE order_id=10");
             sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,status,total) VALUES(10,1,'FX-SUP',0,'Completed',10)");
             sql("INSERT INTO supplier_order_details(order_id,product_id,quantity,unit_price,total) VALUES(10,1,2,5,10)");
             sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(10,'FX-ISSUED',"+System.currentTimeMillis()+",1,10,2.2,12.2,'Issued')");
@@ -474,7 +480,9 @@ public class ExtendedRegressionTest extends RegressionTest {
 
             require("12.0|6.0".equals(value("SELECT price||'|'||acquisition_cost FROM products WHERE id=1")),"Product price or acquisition cost not converted");
             require("10.8".equals(value("SELECT purchase_price FROM product_suppliers WHERE product_id=1 AND supplier_id=1")),"Supplier product price not converted");
-            require("36.0|12.0|12.0".equals(value("SELECT total||'|'||paid_amount||'|'||(SELECT unit_price FROM order_details WHERE order_id=10) FROM orders WHERE id=10")),"Customer order conversion is inconsistent");
+            require("36.0|12.0|12.0|14.4".equals(value("SELECT total||'|'||paid_amount||'|'||(SELECT unit_price FROM order_details WHERE order_id=10)||'|'||(SELECT cost_total FROM order_details WHERE order_id=10) FROM orders WHERE id=10")),"Customer order conversion is inconsistent");
+            require("4.8|4.8".equals(value("SELECT l.unit_cost||'|'||c.unit_cost FROM inventory_lots l JOIN inventory_lot_consumptions c ON c.lot_id=l.id WHERE l.id=50")),
+                "FIFO historical unit costs were not converted consistently");
             require("12.0|6.0|12.0".equals(value("SELECT total||'|'||(SELECT unit_price FROM supplier_order_details WHERE order_id=10)||'|'||(SELECT total FROM supplier_order_details WHERE order_id=10) FROM supplier_orders WHERE id=10")),"Supplier order conversion is inconsistent");
             require("USD|24.0|5.28|29.28|12.0|24.0".equals(value("SELECT currency_code||'|'||taxable_amount||'|'||vat||'|'||total||'|'||(SELECT unit_price FROM invoice_details WHERE invoice_id=11)||'|'||(SELECT total FROM invoice_details WHERE invoice_id=11) FROM invoices WHERE id=11")),"Draft invoice conversion is inconsistent");
             require("EUR|10.0|2.2|12.2|10.0".equals(value("SELECT currency_code||'|'||taxable_amount||'|'||vat||'|'||total||'|'||(SELECT unit_price FROM invoice_details WHERE invoice_id=10) FROM invoices WHERE id=10")),"Finalized invoice changed during conversion");
