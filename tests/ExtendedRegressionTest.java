@@ -331,6 +331,30 @@ public class ExtendedRegressionTest extends RegressionTest {
             require("0".equals(value("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='supplier_price_lists'")),
                 "Legacy supplier price-list table remains after migration");
         });
+        test("legacy supplier list migration prefers an applicable price over a future row",()->{
+            fresh();
+            sql("CREATE TABLE supplier_price_lists(id INTEGER PRIMARY KEY,supplier_id INTEGER NOT NULL,product_id INTEGER NOT NULL,supplier_product_code TEXT,price REAL NOT NULL,minimum_quantity INTEGER DEFAULT 1,validity_start_date DATETIME NOT NULL,validity_end_date DATETIME,notes TEXT)");
+            sql("INSERT INTO supplier_price_lists VALUES(1,1,1,'ACTIVE',6,1,'2025-01-01','2027-12-31','active'),(2,1,1,'FUTURE',99,1,'2030-01-01',NULL,'future')");
+            sql("DELETE FROM schema_migrations WHERE version='012'");
+            DatabaseMigrationManager.migrate(db);
+            require("6.0|ACTIVE".equals(value("SELECT purchase_price||'|'||supplier_product_code FROM product_suppliers WHERE product_id=1 AND supplier_id=1")),
+                "Migration selected a future supplier price instead of the currently applicable row");
+        });
+        test("migration 012 rerun does not duplicate exhausted opening FIFO layers",()->{
+            fresh();
+            sql("DELETE FROM inventory_lot_consumptions");
+            sql("DELETE FROM inventory_lots");
+            sql("UPDATE products SET quantity=4,acquisition_cost=3 WHERE id=1");
+            sql("DELETE FROM schema_migrations WHERE version='012'");
+            DatabaseMigrationManager.migrate(db);
+            require("1|4".equals(value("SELECT COUNT(*)||'|'||MAX(remaining_quantity) FROM inventory_lots WHERE product_id=1 AND source_type='MIGRATION'")),
+                "Initial migration FIFO layer was not created exactly once");
+            sql("UPDATE inventory_lots SET remaining_quantity=0 WHERE product_id=1 AND source_type='MIGRATION'");
+            sql("DELETE FROM schema_migrations WHERE version='012'");
+            DatabaseMigrationManager.migrate(db);
+            require("1".equals(value("SELECT COUNT(*) FROM inventory_lots WHERE product_id=1 AND source_type='MIGRATION'")),
+                "Rerunning migration 012 duplicated an exhausted opening FIFO layer");
+        });
         test("legacy supplier migration preserves referenced products",()->{
             fresh();try(Connection c=DatabaseManager.openConnection("jdbc:sqlite::memory:");Statement s=c.createStatement()) {
                 s.execute("CREATE TABLE suppliers(id INTEGER PRIMARY KEY,company_name TEXT)");s.execute("INSERT INTO suppliers VALUES(1,'Supplier')");
