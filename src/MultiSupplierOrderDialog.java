@@ -48,7 +48,7 @@ public class MultiSupplierOrderDialog extends JDialog {
             @Override public boolean isCellEditable(int row, int column) { return column == 5 || column == 6 || column == 8; }
         };
         table = new JTable(model);
-        table.setToolTipText("Unit prices start from each supplier's current product price and can be edited for discounts or negotiated terms.");
+        table.setToolTipText(I18n.tr("Unit prices start from the supplier's current product price and can be edited for discounts or negotiated terms."));
         hideColumn(0); hideColumn(3);
         model.addTableModelListener(e -> {
             if (!updating && (e.getColumn() == 5 || e.getColumn() == 6)) SwingUtilities.invokeLater(this::previewTotals);
@@ -77,6 +77,7 @@ public class MultiSupplierOrderDialog extends JDialog {
         JPanel actions = new JPanel(); actions.add(review); actions.add(cancel);
         root.add(header, BorderLayout.NORTH); root.add(center, BorderLayout.CENTER); root.add(actions, BorderLayout.SOUTH);
         setContentPane(root);
+        I18n.localize(this);
         Dialogs.centerWindow(this);
     }
 
@@ -100,7 +101,10 @@ public class MultiSupplierOrderDialog extends JDialog {
         };
         JTable productTable = new JTable(products);
         JTextField search = new JTextField(25);
-        Runnable load = () -> loadProducts(products, search.getText().trim());
+        Runnable load = () -> {
+            loadProducts(products, search.getText().trim());
+            if (products.getRowCount() > 0) productTable.setRowSelectionInterval(0, 0);
+        };
         JButton searchButton = new JButton("Search"); searchButton.addActionListener(e -> load.run());
         JPanel searchPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         searchPanel.add(new JLabel("Search:")); searchPanel.add(search); searchPanel.add(searchButton);
@@ -118,7 +122,7 @@ public class MultiSupplierOrderDialog extends JDialog {
             try {
                 quantity.commitEdit(); qty = Numbers.positiveQuantity(quantity.getValue());
                 Object supplier = products.getValueAt(row, 3);
-                if (!(supplier instanceof Number)) throw new IllegalArgumentException("Assign a supplier before ordering this product");
+                if (!(supplier instanceof Number)) throw new IllegalArgumentException(I18n.tr("Assign a supplier before ordering this product"));
                 price = SupplierPricing.price(DatabaseManager.getInstance().getConnection(), ((Number)supplier).intValue(), id);
             } catch (Exception ex) { showWarning(picker,ex.getMessage()); return; }
             model.addRow(new Object[]{id, products.getValueAt(row, 1), products.getValueAt(row, 2),
@@ -132,7 +136,7 @@ public class MultiSupplierOrderDialog extends JDialog {
         });
         JPanel bottom = new JPanel(); bottom.add(new JLabel("Quantity:")); bottom.add(quantity); bottom.add(choose);
         picker.add(searchPanel, BorderLayout.NORTH); picker.add(new JScrollPane(productTable), BorderLayout.CENTER); picker.add(bottom, BorderLayout.SOUTH);
-        picker.setSize(760, 480); Dialogs.centerWindow(picker); load.run(); picker.setVisible(true);
+        picker.setSize(760, 480); I18n.localize(picker); Dialogs.centerWindow(picker); load.run(); picker.setVisible(true);
     }
 
     private void loadProducts(DefaultTableModel products, String term) {
@@ -165,7 +169,7 @@ public class MultiSupplierOrderDialog extends JDialog {
     private void refreshSupplierPrices() {
         try {
             Numbers.commitEdits(table);
-            if(Dialogs.showConfirmDialog(this,"Replace all entered unit prices with the current prices saved for each supplier?","Refresh Supplier Prices",JOptionPane.YES_NO_OPTION)!=JOptionPane.YES_OPTION)return;
+            if(Dialogs.showConfirmDialog(this,I18n.tr("Replace all entered unit prices with the current prices saved for each supplier?"),I18n.tr("Refresh Supplier Prices"),JOptionPane.YES_NO_OPTION)!=JOptionPane.YES_OPTION)return;
             Connection c=DatabaseManager.getInstance().getConnection();double[] prices=new double[model.getRowCount()];
             for(int i=0;i<prices.length;i++)prices[i]=SupplierPricing.price(c,((Number)model.getValueAt(i,3)).intValue(),((Number)model.getValueAt(i,0)).intValue());
             for(int i=0;i<prices.length;i++)model.setValueAt(prices[i],i,6);
@@ -217,20 +221,27 @@ public class MultiSupplierOrderDialog extends JDialog {
         for (int i = 0; i < model.getRowCount(); i++) {
             Object supplier = model.getValueAt(i, 3);
             if (!(supplier instanceof Number) || parseInt(model.getValueAt(i, 5)) <= 0 || parseDouble(model.getValueAt(i, 6)) < 0) {
-                showWarning(this, "Every product must have a supplier, a positive quantity and a non-negative purchase price.\nCheck: " + model.getValueAt(i, 2));
+                showWarning(this, I18n.format(
+                    "Every product must have a supplier, a positive quantity and a non-negative purchase price. Check: {0}",
+                    model.getValueAt(i, 2)));
                 return;
             }
             groups.computeIfAbsent(((Number) supplier).intValue(), key -> new ArrayList<>()).add(i);
         }
-        StringBuilder summary = new StringBuilder("The selection will create " + groups.size() + " separate supplier order(s):\n\n");
+        StringBuilder summary = new StringBuilder(
+            I18n.format("The selection will create {0} separate supplier order(s):", groups.size()) + "\n\n");
         double grandTotal = 0;
         for (List<Integer> rows : groups.values()) {
             int first = rows.get(0); double subtotal = 0;
-            summary.append(model.getValueAt(first, 4)).append(" — ").append(rows.size()).append(" product(s)\n");
+            summary.append(model.getValueAt(first, 4)).append(" - ")
+                .append(I18n.format("{0} product(s)", rows.size())).append("\n");
             for (int row : rows) subtotal = Numbers.add(subtotal,parseDouble(model.getValueAt(row, 7)));
-            summary.append("Subtotal: ").append(SettingsPanel.formatCurrency(subtotal)).append("\n\n"); grandTotal = Numbers.add(grandTotal,subtotal);
+            summary.append(I18n.tr("Subtotal")).append(": ")
+                .append(SettingsPanel.formatCurrency(subtotal)).append("\n\n");
+            grandTotal = Numbers.add(grandTotal,subtotal);
         }
-        summary.append("Grand total: ").append(SettingsPanel.formatCurrency(grandTotal));
+        summary.append(I18n.tr("Grand total")).append(": ")
+            .append(SettingsPanel.formatCurrency(grandTotal));
         JTextArea area = new JTextArea(summary.toString(), 12, 48); area.setEditable(false); area.setOpaque(false);
         int answer = Dialogs.showConfirmDialog(this, new JScrollPane(area), "Confirm Supplier Order Split", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
         if (answer != JOptionPane.OK_OPTION) return;
