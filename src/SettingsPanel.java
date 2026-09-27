@@ -593,7 +593,7 @@ public class SettingsPanel extends JPanel {
 
                 String confirmation=I18n.tr("Existing operational monetary values will be converted using:")+"\n"+
                     "1 "+oldCode+" = "+rate.stripTrailingZeros().toPlainString()+" "+newCode+"\n\n"+
-                    I18n.tr("Changing the operating currency affects products, costs, supplier price lists, customer orders, supplier orders and Draft invoices.")+
+                    I18n.tr("Changing the operating currency affects products, costs, supplier product prices, customer orders, supplier orders and Draft invoices.")+
                     "\n\n"+I18n.tr("Issued, Paid and Canceled invoices will not be changed.");
                 int confirm=Dialogs.showConfirmDialog(this,confirmation,I18n.tr("Confirm Currency Conversion"),
                     JOptionPane.OK_CANCEL_OPTION,JOptionPane.WARNING_MESSAGE);
