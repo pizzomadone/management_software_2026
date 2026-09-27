@@ -64,7 +64,7 @@ public class SuppliersPanel extends JPanel {
             new TableInteractionUtil.TableAction("Delete", this::deleteSelectedSupplier),
             null, // Separator
             new TableInteractionUtil.TableAction("Orders", this::showSupplierOrders),
-            new TableInteractionUtil.TableAction("Price List", this::showSupplierPriceList),
+            new TableInteractionUtil.TableAction("Products Supplied", this::showSupplierPriceList),
             null, // Separator
             new TableInteractionUtil.TableAction("Refresh", this::loadSuppliers, false)
         );
@@ -88,7 +88,7 @@ public class SuppliersPanel extends JPanel {
         editButton = new JButton("Edit");
         deleteButton = new JButton("Delete");
         ordersButton = new JButton("Orders");
-        priceListButton = new JButton("Price List");
+        priceListButton = new JButton("Products Supplied");
         refreshButton = new JButton("Refresh");
 
         addButton.addActionListener(e -> showSupplierDialog(null));
@@ -243,7 +243,7 @@ public class SuppliersPanel extends JPanel {
 
                 // Check for existing dependencies
                 boolean hasOrders = hasSupplierOrders(conn, id);
-                boolean hasPriceList = hasSupplierPriceList(conn, id);
+                boolean hasSupplierProducts = hasSupplierProducts(conn, id);
                 boolean hasMinStockReferences = hasMinStockReferences(conn, id);
 
                 boolean hasProducts;
@@ -251,18 +251,18 @@ public class SuppliersPanel extends JPanel {
                     products.setInt(1,id);
                     try (ResultSet rows=products.executeQuery()) {hasProducts=rows.next();}
                 }
-                if (hasOrders || hasPriceList || hasMinStockReferences || hasProducts) {
+                if (hasOrders || hasSupplierProducts || hasMinStockReferences || hasProducts) {
                     StringBuilder message = new StringBuilder();
                     message.append("Supplier '").append(name).append("' has related business records:\n");
 
                     if (hasProducts) message.append("- Assigned products will be disassociated\n");
                     if (hasOrders) message.append("- Existing orders\n");
-                    if (hasPriceList) message.append("- Price list entries\n");
+                    if (hasSupplierProducts) message.append("- Supplied products\n");
                     if (hasMinStockReferences) message.append("- Minimum stock references\n");
 
                     message.append("\nChoose what should happen:\n");
                     message.append("- Keep: nothing is deleted; supplier, orders, stock and references remain unchanged.\n");
-                    message.append("- Delete all: supplier orders and price lists are permanently deleted; stock received from completed orders is reversed and related movements are deleted.");
+                    message.append("- Delete all: supplier orders and product associations are permanently deleted; stock received from completed orders is reversed and related movements are deleted.");
 
                     String[] options = {"Keep Supplier and Records", "Delete Supplier and All Related Data"};
                     int choice = Dialogs.showOptionDialog(this,
@@ -311,7 +311,7 @@ public class SuppliersPanel extends JPanel {
         int confirmResult = Dialogs.showConfirmDialog(this,
             "WARNING: This will permanently delete supplier '" + name + "' and ALL related data:\n" +
             "- All orders from this supplier\n" +
-            "- All price list entries\n" +
+            "- All supplied-product associations\n" +
             "- All references in minimum stock settings\n" +
             "- All supplier references in products (will be set to none)\n" +
             "- All related warehouse movements\n\n" +
@@ -354,15 +354,16 @@ public class SuppliersPanel extends JPanel {
                     System.out.println("Deleted " + deleted + " orders");
                 }
 
-                // 3. Delete price lists
-                String deletePriceLists = "DELETE FROM supplier_price_lists WHERE supplier_id = ?";
-                try (PreparedStatement pstmt = conn.prepareStatement(deletePriceLists)) {
+                // 3. Remove product/supplier associations. Triggers keep the
+                // legacy preferred-supplier caches synchronized.
+                String deleteRelations = "DELETE FROM product_suppliers WHERE supplier_id = ?";
+                try (PreparedStatement pstmt = conn.prepareStatement(deleteRelations)) {
                     pstmt.setInt(1, id);
                     int deleted = pstmt.executeUpdate();
-                    System.out.println("Deleted " + deleted + " price list entries");
+                    System.out.println("Deleted " + deleted + " supplied-product associations");
                 }
 
-                // 4. Remove supplier references from minimum stock
+                // 4. Remove any remaining legacy minimum-stock cache references
                 String updateMinStock = """
                     UPDATE minimum_stock
                     SET preferred_supplier_id = NULL
@@ -426,8 +427,8 @@ public class SuppliersPanel extends JPanel {
         }
     }
 
-    private boolean hasSupplierPriceList(Connection conn, int supplierId) throws SQLException {
-        String query = "SELECT COUNT(*) FROM supplier_price_lists WHERE supplier_id = ?";
+    private boolean hasSupplierProducts(Connection conn, int supplierId) throws SQLException {
+        String query = "SELECT COUNT(*) FROM product_suppliers WHERE supplier_id = ?";
         try (PreparedStatement pstmt = conn.prepareStatement(query)) {
             pstmt.setInt(1, supplierId);
             ResultSet rs = pstmt.executeQuery();
