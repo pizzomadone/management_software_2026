@@ -143,13 +143,13 @@ public class ProductDialog extends JDialog {
         preferredSupplierPriceField = new JTextField(10);
         setFieldWidth(preferredSupplierPriceField, 115);
         preferredSupplierPriceField.setText("0.0");
-        preferredSupplierPriceField.setToolTipText(I18n.tr("Current reference price from the preferred supplier. Orders may use a different negotiated price."));
+        preferredSupplierPriceField.setToolTipText(I18n.tr("Current reference price from the preferred supplier. It is proposed in purchase orders but can be changed."));
 
         acquisitionCostField = new JTextField(10);
         setFieldWidth(acquisitionCostField, 115);
         acquisitionCostField.setText("0.0");
         acquisitionCostField.setEditable(false);
-        acquisitionCostField.setToolTipText(I18n.tr("Last actual purchase cost. Historical sales keep the FIFO cost recorded when they were completed."));
+        acquisitionCostField.setToolTipText(I18n.tr("Last actual purchase cost. Historical sales retain their original FIFO cost."));
         quantitySpinner = new JSpinner(new SpinnerNumberModel(0, 0, 999999, 1));
         setFieldWidth(quantitySpinner, 110);
         minimumQuantitySpinner = new JSpinner(new SpinnerNumberModel(0, 0, 999999, 1));
