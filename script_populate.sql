@@ -255,7 +255,7 @@ SELECT
         ELSE ROUND((9.90 + ((x * 37) % 850) / 2.7) * (0.42 + (x % 5) * 0.06), 2)
     END,
     CASE WHEN x % 20 = 0 THEN 0 ELSE 1 END,
-    1 + ((x - 1) % 18),
+    NULL,
     char(65 + ((x - 1) % 6)) || '-' ||
         printf('%02d', 1 + ((x * 3) % 30)) || '-S' || (1 + (x % 5)),
     CASE x % 5
@@ -277,7 +277,7 @@ SELECT
     CASE WHEN id % 13 = 0 THEN 0 ELSE 5 + (id % 12) END,
     15 + (id % 45),
     2 + (id % 14),
-    supplier_id,
+    NULL,
     CASE
         WHEN id % 11 = 0 THEN 'Out-of-stock test case'
         WHEN id % 7 = 0 THEN 'Low-stock test case'
@@ -294,12 +294,11 @@ INSERT INTO product_suppliers(
     product_id,supplier_id,supplier_product_code,purchase_price,is_preferred,notes
 )
 SELECT
-    p.id,p.supplier_id,
-    'SUP-' || printf('%02d',p.supplier_id) || '-' || p.code,
+    p.id,1 + ((p.id - 1) % 18),
+    'SUP-' || printf('%02d',1 + ((p.id - 1) % 18)) || '-' || p.code,
     ROUND(CASE WHEN p.acquisition_cost=0 THEN p.price*0.45 ELSE p.acquisition_cost END,2),
     1,'Preferred supplier'
-FROM products p
-WHERE p.supplier_id IS NOT NULL;
+FROM products p;
 
 -- Two alternative suppliers with independent current reference prices.
 WITH alternatives(n) AS (VALUES(1),(2))
@@ -308,15 +307,16 @@ INSERT INTO product_suppliers(
 )
 SELECT
     p.id,
-    1 + ((p.supplier_id - 1 + alternatives.n * 5) % 18),
-    'SUP-' || printf('%02d',1 + ((p.supplier_id - 1 + alternatives.n * 5) % 18)) || '-' || p.code,
+    1 + ((pref.supplier_id - 1 + alternatives.n * 5) % 18),
+    'SUP-' || printf('%02d',1 + ((pref.supplier_id - 1 + alternatives.n * 5) % 18)) || '-' || p.code,
     ROUND(
         CASE WHEN p.acquisition_cost=0 THEN p.price*0.45
              ELSE p.acquisition_cost*(0.94 + alternatives.n*0.04) END,2
     ),
     0,'Alternative supplier'
-FROM products p CROSS JOIN alternatives
-WHERE p.supplier_id IS NOT NULL;
+FROM products p
+JOIN product_suppliers pref ON pref.product_id=p.id AND pref.is_preferred=1
+CROSS JOIN alternatives;
 
 -- Demo opening stock. This is the current economic inventory layer; historical
 -- pre-script purchases are intentionally not fabricated.
@@ -324,9 +324,10 @@ INSERT INTO inventory_lots(
     product_id,supplier_id,received_date,initial_quantity,remaining_quantity,unit_cost,source_type
 )
 SELECT
-    p.id,p.supplier_id,datetime('now','-365 days'),
+    p.id,pref.supplier_id,datetime('now','-365 days'),
     p.quantity,p.quantity,p.acquisition_cost,'DEMO_OPENING'
 FROM products p
+LEFT JOIN product_suppliers pref ON pref.product_id=p.id AND pref.is_preferred=1
 WHERE p.quantity>0;
 
 -- ---------------------------------------------------------------------------
@@ -372,9 +373,7 @@ SELECT
     p.id,
     1 + (x % 5),
     ROUND(p.price * (0.90 + (x % 3) * 0.05), 2),
-    CASE WHEN ((1 + ((x - 1) / 3)) % 4)=2
-         THEN ROUND((1 + (x % 5)) * p.acquisition_cost,2)
-         ELSE NULL END
+    NULL
 FROM seq
 JOIN products p ON p.id = 1 + ((x * 17) % 120);
 
