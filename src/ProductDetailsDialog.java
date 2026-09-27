@@ -16,21 +16,24 @@ public final class ProductDetailsDialog extends JDialog {
         setLayout(new BorderLayout(10, 10));
         ((JComponent)getContentPane()).setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
 
-        JPanel content = new JPanel();
+        JPanel content = new ViewportWidthPanel();
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
 
         JTextArea title = wrappedText(product.getName(), true);
         title.setFont(title.getFont().deriveFont(Font.BOLD, title.getFont().getSize2D() + 3f));
         title.setAlignmentX(Component.LEFT_ALIGNMENT);
-        title.setMaximumSize(new Dimension(560, 90));
+        title.setMaximumSize(new Dimension(Integer.MAX_VALUE, 90));
         content.add(title);
 
-        JLabel code = new JLabel(product.getCode());
+        JTextArea code = wrappedText(product.getCode(), false);
         code.setAlignmentX(Component.LEFT_ALIGNMENT);
+        code.setMaximumSize(new Dimension(Integer.MAX_VALUE, 45));
         content.add(code);
         content.add(Box.createVerticalStrut(10));
 
         JPanel photos = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
+        photos.setAlignmentX(Component.LEFT_ALIGNMENT);
+        photos.setMaximumSize(new Dimension(Integer.MAX_VALUE, 300));
         photos.setBorder(BorderFactory.createTitledBorder("Photos"));
         try {
             List<ProductImageStore.ProductImage> images = ProductImageStore.getInstance().list(product.getId());
@@ -57,8 +60,10 @@ public final class ProductDetailsDialog extends JDialog {
         content.add(Box.createVerticalStrut(8));
 
         JPanel details = new JPanel(new GridBagLayout());
+        details.setAlignmentX(Component.LEFT_ALIGNMENT);
+        details.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
         GridBagConstraints g = new GridBagConstraints();
-        g.insets = new Insets(3, 5, 3, 12);
+        g.insets = new Insets(3, 5, 3, 8);
         g.anchor = GridBagConstraints.WEST;
         g.gridy = 0;
         addLine(details, g, "Category", product.getCategory());
@@ -77,6 +82,7 @@ public final class ProductDetailsDialog extends JDialog {
             JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
             JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         scroll.getVerticalScrollBar().setUnitIncrement(16);
+        scroll.getViewport().setBackground(content.getBackground());
         add(scroll, BorderLayout.CENTER);
 
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
@@ -97,12 +103,12 @@ public final class ProductDetailsDialog extends JDialog {
         add(buttons, BorderLayout.SOUTH);
 
         setSize(620, 620);
+        setMinimumSize(new Dimension(520, 480));
         I18n.localize(this);
         centerOnOwner();
     }
 
     private void centerOnOwner() {
-        Window owner = getOwner();
         Dialogs.centerWindow(this);
     }
 
@@ -113,18 +119,16 @@ public final class ProductDetailsDialog extends JDialog {
     }
 
     private static void addLine(JPanel panel, GridBagConstraints g, String label, String value) {
-        g.gridx = 0; g.weightx = 0;
-        JLabel l = new JLabel(label + ":");
-        l.setFont(l.getFont().deriveFont(Font.BOLD));
-        panel.add(l, g);
-        g.gridx = 1; g.weightx = 1; g.fill = GridBagConstraints.HORIZONTAL;
-        panel.add(new JLabel(value == null || value.isBlank() ? I18n.tr("Not set") : value), g);
-        g.fill = GridBagConstraints.NONE;
-        g.gridy++;
+        addValueLine(panel, g, label, value, 1, 42);
     }
 
     private static void addWrappedLine(JPanel panel, GridBagConstraints g,
             String label, String value) {
+        addValueLine(panel, g, label, value, 3, 82);
+    }
+
+    private static void addValueLine(JPanel panel, GridBagConstraints g,
+            String label, String value, int rows, int maxHeight) {
         g.gridx = 0;
         g.weightx = 0;
         g.weighty = 0;
@@ -141,9 +145,10 @@ public final class ProductDetailsDialog extends JDialog {
 
         JTextArea text = wrappedText(
             value == null || value.isBlank() ? I18n.tr("Not set") : value, false);
-        text.setColumns(34);
-        text.setRows(3);
-        text.setMaximumSize(new Dimension(440, 90));
+        text.setRows(rows);
+        text.setColumns(1);
+        text.setMinimumSize(new Dimension(0, text.getPreferredSize().height));
+        text.setMaximumSize(new Dimension(Integer.MAX_VALUE, maxHeight));
         panel.add(text, g);
 
         g.fill = GridBagConstraints.NONE;
@@ -160,8 +165,35 @@ public final class ProductDetailsDialog extends JDialog {
         area.setFocusable(false);
         area.setBorder(BorderFactory.createEmptyBorder());
         area.setRows(title ? 2 : 1);
-        area.setColumns(title ? 38 : 34);
+        area.setColumns(1);
         return area;
+    }
+
+    private static final class ViewportWidthPanel extends JPanel implements Scrollable {
+        @Override
+        public Dimension getPreferredScrollableViewportSize() {
+            return getPreferredSize();
+        }
+
+        @Override
+        public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) {
+            return 16;
+        }
+
+        @Override
+        public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction) {
+            return Math.max(16, visibleRect.height - 16);
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportWidth() {
+            return true;
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportHeight() {
+            return false;
+        }
     }
 
     public boolean isEditRequested() { return editRequested; }
