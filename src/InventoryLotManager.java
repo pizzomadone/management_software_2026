@@ -210,16 +210,11 @@ public final class InventoryLotManager {
                         x.setInt(1,detailId);x.executeUpdate();
                     }
 
-                    // Legacy completed orders predate FIFO allocations. When such an order
-                    // is reopened, create a layer for the stock being restored.
-                    if(restored==0) {
-                        int q=Numbers.positiveQuantity(d.getObject("quantity"));
-                        double cost;
-                        Object saved=d.getObject("cost_total");
-                        if(saved!=null) cost=Numbers.nonNegative(((Number)saved).doubleValue()/q);
-                        else cost=currentAcquisitionCost(c,d.getInt("product_id"));
-                        insertLot(c,d.getInt("product_id"),null,null,null,new Date(),q,q,cost,"LEGACY_RESTORE");
-                    }
+                    // A migrated completed sale has no exact FIFO allocations to restore.
+                    // Refuse the reversal rather than inventing a replacement lot/cost.
+                    if(restored==0)
+                        throw new SQLException("This completed sale has no FIFO history and cannot be reversed safely");
+
                     try(PreparedStatement u=c.prepareStatement(
                             "UPDATE order_details SET cost_total=NULL WHERE id=?")) {
                         u.setInt(1,detailId);u.executeUpdate();
