@@ -1,5 +1,5 @@
 -- WareStat test database population script
--- Target: current schema on feature/product-images-backup (migrations through 011)
+-- Target: current schema on feature/product-suppliers-fifo (migrations through 012)
 --
 -- IMPORTANT
 -- 1) Start WareStat at least once so that the database and all migrations are created.
@@ -22,7 +22,7 @@
 -- - customer orders in every supported status/payment state
 -- - active/completed/cancelled stock reservations
 -- - invoices in Draft/Issued/Paid/Canceled states with immutable snapshots
--- - supplier orders and price lists
+-- - supplier orders, product/supplier prices and FIFO inventory lots
 -- - warehouse movements and notifications
 -- - long product codes/names/descriptions for UI testing
 
@@ -49,11 +49,13 @@ SET status = 'CANCELLED'
 WHERE status = 'ACTIVE';
 
 DELETE FROM stock_reservations;
+DELETE FROM inventory_lot_consumptions;
+DELETE FROM inventory_lots;
 DELETE FROM product_images;
 DELETE FROM warehouse_notifications;
 DELETE FROM warehouse_movements;
 DELETE FROM minimum_stock;
-DELETE FROM supplier_price_lists;
+DELETE FROM product_suppliers;
 DELETE FROM supplier_order_details;
 DELETE FROM supplier_orders;
 DELETE FROM invoice_details;
@@ -71,8 +73,8 @@ DELETE FROM sqlite_sequence
 WHERE name IN (
     'customers','suppliers','products','product_images','orders','order_details',
     'invoices','invoice_details','supplier_orders','supplier_order_details',
-    'supplier_price_lists','warehouse_movements','warehouse_notifications',
-    'stock_reservations','company_data'
+    'product_suppliers','inventory_lots','inventory_lot_consumptions',
+    'warehouse_movements','warehouse_notifications','stock_reservations','company_data'
 );
 
 -- The current schema always has application_metadata after migrations.
@@ -284,39 +286,48 @@ SELECT
 FROM products;
 
 -- ---------------------------------------------------------------------------
--- SUPPLIER PRICE LISTS: 360
+-- PRODUCT / SUPPLIER RELATIONS: 360 (3 suppliers per product)
 -- ---------------------------------------------------------------------------
-WITH RECURSIVE seq(x) AS (
-    SELECT 1
-    UNION ALL
-    SELECT x + 1 FROM seq WHERE x < 360
-)
-INSERT INTO supplier_price_lists(
-    supplier_id, product_id, supplier_product_code, price, minimum_quantity,
-    validity_start_date, validity_end_date, notes
+-- Preferred supplier: current reference price initially matches the product's
+-- last purchase cost. It remains independent from future negotiated order prices.
+INSERT INTO product_suppliers(
+    product_id,supplier_id,supplier_product_code,purchase_price,is_preferred,notes
 )
 SELECT
-    1 + ((x * 5) % 18),
+    p.id,p.supplier_id,
+    'SUP-' || printf('%02d',p.supplier_id) || '-' || p.code,
+    ROUND(CASE WHEN p.acquisition_cost=0 THEN p.price*0.45 ELSE p.acquisition_cost END,2),
+    1,'Preferred supplier'
+FROM products p
+WHERE p.supplier_id IS NOT NULL;
+
+-- Two alternative suppliers with independent current reference prices.
+WITH alternatives(n) AS (VALUES(1),(2))
+INSERT INTO product_suppliers(
+    product_id,supplier_id,supplier_product_code,purchase_price,is_preferred,notes
+)
+SELECT
     p.id,
-    'SUP-' || printf('%02d', 1 + ((x * 5) % 18)) || '-' || p.code,
+    1 + ((p.supplier_id - 1 + alternatives.n * 5) % 18),
+    'SUP-' || printf('%02d',1 + ((p.supplier_id - 1 + alternatives.n * 5) % 18)) || '-' || p.code,
     ROUND(
-        CASE WHEN p.acquisition_cost = 0
-             THEN p.price * 0.45
-             ELSE p.acquisition_cost * (0.92 + (x % 5) * 0.03)
-        END, 2
+        CASE WHEN p.acquisition_cost=0 THEN p.price*0.45
+             ELSE p.acquisition_cost*(0.94 + alternatives.n*0.04) END,2
     ),
-    1 + (x % 10),
-    datetime('now', '-' || (x % 180) || ' days'),
-    CASE WHEN x % 4 = 0
-         THEN datetime('now', '+' || (30 + (x % 150)) || ' days')
-         ELSE NULL END,
-    CASE x % 3
-        WHEN 0 THEN 'Preferred bulk price'
-        WHEN 1 THEN 'Standard supplier quotation'
-        ELSE 'Alternative supplier price for comparison'
-    END
-FROM seq
-JOIN products p ON p.id = 1 + ((x * 11) % 120);
+    0,'Alternative supplier'
+FROM products p CROSS JOIN alternatives
+WHERE p.supplier_id IS NOT NULL;
+
+-- Demo opening stock. This is the current economic inventory layer; historical
+-- pre-script purchases are intentionally not fabricated.
+INSERT INTO inventory_lots(
+    product_id,supplier_id,received_date,initial_quantity,remaining_quantity,unit_cost,source_type
+)
+SELECT
+    p.id,p.supplier_id,datetime('now','-365 days'),
+    p.quantity,p.quantity,p.acquisition_cost,'DEMO_OPENING'
+FROM products p
+WHERE p.quantity>0;
 
 -- ---------------------------------------------------------------------------
 -- CUSTOMER ORDERS: 240 + 720 lines
@@ -355,12 +366,15 @@ WITH RECURSIVE seq(x) AS (
     UNION ALL
     SELECT x + 1 FROM seq WHERE x < 720
 )
-INSERT INTO order_details(order_id, product_id, quantity, unit_price)
+INSERT INTO order_details(order_id, product_id, quantity, unit_price, cost_total)
 SELECT
     1 + ((x - 1) / 3),
     p.id,
     1 + (x % 5),
-    ROUND(p.price * (0.90 + (x % 3) * 0.05), 2)
+    ROUND(p.price * (0.90 + (x % 3) * 0.05), 2),
+    CASE WHEN ((1 + ((x - 1) / 3)) % 4)=2
+         THEN ROUND((1 + (x % 5)) * p.acquisition_cost,2)
+         ELSE NULL END
 FROM seq
 JOIN products p ON p.id = 1 + ((x * 17) % 120);
 
@@ -672,7 +686,9 @@ UNION ALL SELECT '  Invoice header mismatches: ' || COUNT(*)
           ), 0)) > 0.004
        OR ABS(i.total - ROUND(i.taxable_amount + i.vat, 2)) > 0.004
 UNION ALL SELECT 'Supplier orders: ' || COUNT(*) FROM supplier_orders
-UNION ALL SELECT 'Supplier price rows: ' || COUNT(*) FROM supplier_price_lists
+UNION ALL SELECT 'Product/supplier relations: ' || COUNT(*) FROM product_suppliers
+UNION ALL SELECT 'FIFO lots: ' || COUNT(*) FROM inventory_lots
+UNION ALL SELECT 'Sales with historical cost: ' || COUNT(*) FROM order_details WHERE cost_total IS NOT NULL
 UNION ALL SELECT 'Warehouse movements: ' || COUNT(*) FROM warehouse_movements
 UNION ALL SELECT 'Warehouse notifications: ' || COUNT(*) FROM warehouse_notifications
 UNION ALL SELECT 'Product images: ' || COUNT(*) || ' (add from UI for photo/backup tests)' FROM product_images;
