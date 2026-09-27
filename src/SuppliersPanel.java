@@ -48,6 +48,7 @@ public class SuppliersPanel extends JPanel {
             }
         };
         suppliersTable = new JTable(tableModel);
+        TableStyleUtil.applyCompact(suppliersTable);
         suppliersTable.getSelectionModel().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         suppliersTable.getSelectionModel().addListSelectionListener(e -> updateButtonStates());
 
