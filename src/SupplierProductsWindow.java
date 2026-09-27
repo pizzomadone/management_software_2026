@@ -56,7 +56,7 @@ public class SupplierProductsWindow extends JDialog {
         JLabel help=new JLabel("?");
         help.setToolTipText(I18n.tr("Supplier prices are current reference prices. Each supplier order stores the actual price paid separately."));
         JPanel north=new JPanel(new FlowLayout(FlowLayout.LEFT));
-        north.add(new JLabel(I18n.tr("Products available from this supplier")));
+        north.add(new JLabel(I18n.tr("Products Supplied")));
         north.add(help);
 
         add(north,BorderLayout.NORTH);
