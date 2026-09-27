@@ -356,9 +356,7 @@ public class SupplierOrderDialog extends JDialog {
                 quotedPrice = SupplierPricing.price(
                     DatabaseManager.getInstance().getConnection(),
                     supplierId,
-                    selectedProduct.getProduct().getId(),
-                    quantity,
-                    DateUtils.parseDate(dateField.getText(), dateFormat));
+                    selectedProduct.getProduct().getId());
             } catch (Exception ex) {
                 Dialogs.showMessageDialog(dialog, ex.getMessage(),
                     "Invalid product", JOptionPane.ERROR_MESSAGE);
@@ -444,13 +442,11 @@ public class SupplierOrderDialog extends JDialog {
                 return;
             }
 
-            Date date = DateUtils.parseDate(dateField.getText(), dateFormat);
             Connection c = DatabaseManager.getInstance().getConnection();
             double[] prices = new double[itemsTableModel.getRowCount()];
             for (int i = 0; i < prices.length; i++) {
                 prices[i] = SupplierPricing.price(
-                    c, supplierId, productIdForRow(c, i),
-                    parseInteger(itemsTableModel.getValueAt(i, 2)), date);
+                    c, supplierId, productIdForRow(c, i));
             }
             for (int i = 0; i < prices.length; i++) {
                 itemsTableModel.setValueAt(prices[i], i, 3);
