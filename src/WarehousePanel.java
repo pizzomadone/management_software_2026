@@ -10,10 +10,13 @@ public class WarehousePanel extends JPanel {
     private JTabbedPane tabbedPane;
     private JTable stockTable;
     private JTable movementsTable;
+    private JTable lotsTable;
     private JTable notificationsTable;
     private DefaultTableModel stockModel;
     private DefaultTableModel movementsModel;
+    private DefaultTableModel lotsModel;
     private DefaultTableModel notificationsModel;
+    private JCheckBox showExhaustedLots;
     private SimpleDateFormat dateFormat;
 
     public WarehousePanel() {
@@ -39,6 +42,10 @@ public class WarehousePanel extends JPanel {
         // Tab Movements
         JPanel movementsPanel = createMovementsPanel();
         tabbedPane.addTab("Movements", movementsPanel);
+
+        // Tab FIFO lots
+        JPanel lotsPanel = createLotsPanel();
+        tabbedPane.addTab("Lots", lotsPanel);
 
         // Tab Notifications
         JPanel notificationsPanel = createNotificationsPanel();
@@ -169,6 +176,28 @@ public class WarehousePanel extends JPanel {
         return panel;
     }
 
+    private JPanel createLotsPanel() {
+        JPanel panel=new JPanel(new BorderLayout());
+
+        lotsModel=new DefaultTableModel(new String[]{
+            "Date","Product","Supplier","Supplier Order","Initial Qty","Remaining Qty","Unit Cost","Source"
+        },0){@Override public boolean isCellEditable(int r,int c){return false;}};
+        lotsTable=new JTable(lotsModel);
+        TableSorterUtil.enableSorting(lotsTable,new int[]{0},dateFormat);
+
+        showExhaustedLots=new JCheckBox("Show Exhausted Lots",true);
+        showExhaustedLots.addActionListener(e->loadLotsData());
+        JButton refresh=new JButton("Refresh");refresh.addActionListener(e->loadLotsData());
+        JLabel help=new JLabel("?");
+        help.setToolTipText(I18n.tr("FIFO uses the oldest available lots first. Historical sales keep the exact cost of the lots consumed when the sale was completed."));
+        JPanel controls=new JPanel(new FlowLayout(FlowLayout.LEFT));
+        controls.add(showExhaustedLots);controls.add(refresh);controls.add(help);
+
+        panel.add(controls,BorderLayout.NORTH);
+        panel.add(new JScrollPane(lotsTable),BorderLayout.CENTER);
+        return panel;
+    }
+
     private JPanel createNotificationsPanel() {
         JPanel panel = new JPanel(new BorderLayout());
 
@@ -217,6 +246,7 @@ public class WarehousePanel extends JPanel {
     private void loadData() {
         loadStockData();
         loadMovementsData();
+        loadLotsData();
         checkLowStock();
         loadNotificationsData();
     }
@@ -230,7 +260,8 @@ public class WarehousePanel extends JPanel {
                         s.company_name as supplier_name
                 FROM products p
                 LEFT JOIN minimum_stock sm ON p.id = sm.product_id
-                LEFT JOIN suppliers s ON sm.preferred_supplier_id = s.id
+                LEFT JOIN product_suppliers ps ON ps.product_id=p.id AND ps.is_preferred=1
+                LEFT JOIN suppliers s ON ps.supplier_id = s.id
                 ORDER BY p.name
             """;
 
@@ -276,6 +307,46 @@ public class WarehousePanel extends JPanel {
             Dialogs.showMessageDialog(this,
                 "Error loading warehouse data: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void loadLotsData() {
+        if(lotsModel==null)return;
+        lotsModel.setRowCount(0);
+        String query="""
+            SELECT l.received_date,p.code,p.name,s.company_name,o.number,
+                   l.initial_quantity,l.remaining_quantity,l.unit_cost,l.source_type
+            FROM inventory_lots l
+            JOIN products p ON p.id=l.product_id
+            LEFT JOIN suppliers s ON s.id=l.supplier_id
+            LEFT JOIN supplier_order_details d ON d.id=l.supplier_order_detail_id
+            LEFT JOIN supplier_orders o ON o.id=d.order_id
+            WHERE (?=1 OR l.remaining_quantity>0)
+            ORDER BY l.received_date DESC,l.id DESC
+            """;
+        try{
+            Connection conn=DatabaseManager.getInstance().getConnection();
+            try(PreparedStatement p=conn.prepareStatement(query)){
+                p.setInt(1,showExhaustedLots!=null && showExhaustedLots.isSelected()?1:0);
+                try(ResultSet r=p.executeQuery()){
+                    while(r.next()){
+                        Date d=DateUtils.parseDate(r,"received_date");
+                        Vector<Object> row=new Vector<>();
+                        row.add(d==null?"":DateUtils.formatDate(d,dateFormat));
+                        row.add(r.getString("code")+" - "+r.getString("name"));
+                        row.add(r.getString("company_name")==null?"":r.getString("company_name"));
+                        row.add(r.getString("number")==null?"":r.getString("number"));
+                        row.add(r.getInt("initial_quantity"));
+                        row.add(r.getInt("remaining_quantity"));
+                        row.add(SettingsPanel.formatCurrency(r.getDouble("unit_cost")));
+                        row.add(r.getString("source_type"));
+                        lotsModel.addRow(row);
+                    }
+                }
+            }
+        }catch(SQLException e){
+            Dialogs.showMessageDialog(this,"Error loading inventory lots: "+e.getMessage(),
+                "Error",JOptionPane.ERROR_MESSAGE);
         }
     }
 
