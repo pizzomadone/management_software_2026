@@ -42,6 +42,7 @@ public class ProductDialog extends JDialog {
         initComponents();
         if (product != null) loadProductData();
         refreshPhotosPanel();
+        fitDialogToContent();
     }
 
     public ProductDialog(JDialog parent, Product product) {
@@ -51,6 +52,7 @@ public class ProductDialog extends JDialog {
         initComponents();
         if (product != null) loadProductData();
         refreshPhotosPanel();
+        fitDialogToContent();
     }
 
     private void setupDialog() {
@@ -59,7 +61,7 @@ public class ProductDialog extends JDialog {
     }
 
     private void initComponents() {
-        JPanel content = new JPanel(new BorderLayout(10, 10));
+        JPanel content = new ViewportWidthPanel(new BorderLayout(10, 10));
         content.setBorder(BorderFactory.createEmptyBorder(10, 12, 8, 12));
 
         JPanel formsPanel = new JPanel(new GridBagLayout());
@@ -79,6 +81,7 @@ public class ProductDialog extends JDialog {
         descriptionArea.setWrapStyleWord(true);
         JScrollPane descriptionScroll = new JScrollPane(descriptionArea);
         descriptionScroll.setPreferredSize(new Dimension(285, 52));
+        descriptionScroll.setMinimumSize(new Dimension(120, 52));
 
         String[] categories = {"", "Electronics", "Computers & Accessories", "Smartphones & Tablets",
             "Furniture", "Office Furniture", "Home Furniture", "Clothing", "Men's Clothing",
@@ -197,8 +200,8 @@ public class ProductDialog extends JDialog {
 
         // Allow both sections to shrink with the dialog instead of clipping the
         // right side when their preferred widths are larger than the viewport.
-        productPanel.setMinimumSize(new Dimension(390, productPanel.getMinimumSize().height));
-        stockPanel.setMinimumSize(new Dimension(280, stockPanel.getMinimumSize().height));
+        productPanel.setMinimumSize(new Dimension(340, productPanel.getMinimumSize().height));
+        stockPanel.setMinimumSize(new Dimension(250, stockPanel.getMinimumSize().height));
 
         content.add(formsPanel, BorderLayout.NORTH);
 
@@ -220,21 +223,33 @@ public class ProductDialog extends JDialog {
             JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         scroll.setBorder(null);
         scroll.getVerticalScrollBar().setUnitIncrement(16);
+        scroll.getViewport().setBackground(content.getBackground());
 
         add(scroll, BorderLayout.CENTER);
         add(buttonPanel, BorderLayout.SOUTH);
 
+        // Localize before measuring: translated labels can be substantially wider
+        // than their English counterparts.
+        I18n.localize(this);
+    }
+
+    private void fitDialogToContent() {
+        pack();
+
         Rectangle usable = GraphicsEnvironment.getLocalGraphicsEnvironment()
             .getMaximumWindowBounds();
-        int width = Math.min(840, Math.max(720, usable.width - 80));
-        int height = Math.min(620, Math.max(500, usable.height - 80));
-        setPreferredSize(new Dimension(width, height));
-        pack();
+        Dimension preferred = getPreferredSize();
+
+        int maxWidth = Math.max(620, usable.width - 60);
+        int maxHeight = Math.max(480, usable.height - 60);
+        int width = Math.min(maxWidth, Math.max(760, preferred.width));
+        int height = Math.min(maxHeight, Math.max(560, preferred.height));
+
         setSize(width, height);
         setMinimumSize(new Dimension(
-            Math.min(720, width), Math.min(520, height)));
+            Math.min(680, maxWidth),
+            Math.min(500, maxHeight)));
         Dialogs.centerWindow(this);
-        I18n.localize(this);
     }
 
     private void addFormRow(JPanel panel, int row, String labelText, Component component) {
@@ -250,7 +265,7 @@ public class ProductDialog extends JDialog {
         field.gridy = row;
         field.weightx = 1.0;
         field.anchor = GridBagConstraints.WEST;
-        field.fill = GridBagConstraints.NONE;
+        field.fill = GridBagConstraints.HORIZONTAL;
         field.insets = new Insets(4, 0, 4, 6);
         panel.add(component, field);
     }
@@ -268,6 +283,8 @@ public class ProductDialog extends JDialog {
     private void setFieldWidth(JComponent component, int width) {
         Dimension preferred = component.getPreferredSize();
         component.setPreferredSize(new Dimension(width, preferred.height));
+        component.setMinimumSize(new Dimension(Math.min(80, width), preferred.height));
+        component.setMaximumSize(new Dimension(Integer.MAX_VALUE, preferred.height));
     }
 
     private void addFormFiller(JPanel panel, int row) {
@@ -819,6 +836,37 @@ public class ProductDialog extends JDialog {
             pendingPhotoFilenames.clear();
         }
         super.dispose();
+    }
+
+    private static final class ViewportWidthPanel extends JPanel implements Scrollable {
+        ViewportWidthPanel(LayoutManager layout) {
+            super(layout);
+        }
+
+        @Override
+        public Dimension getPreferredScrollableViewportSize() {
+            return getPreferredSize();
+        }
+
+        @Override
+        public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) {
+            return 16;
+        }
+
+        @Override
+        public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction) {
+            return Math.max(16, visibleRect.height - 16);
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportWidth() {
+            return true;
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportHeight() {
+            return false;
+        }
     }
 
     public boolean isProductSaved() { return productSaved; }
