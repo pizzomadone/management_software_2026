@@ -293,7 +293,11 @@ public final class DatabaseMigrationManager {
                     WHERE spl.id = (
                         SELECT x.id FROM supplier_price_lists x
                         WHERE x.product_id=spl.product_id AND x.supplier_id=spl.supplier_id
-                        ORDER BY x.validity_start_date DESC, x.id DESC LIMIT 1
+                        ORDER BY CASE
+                            WHEN warestat_date(x.validity_start_date) <= date('now')
+                             AND (x.validity_end_date IS NULL OR warestat_date(x.validity_end_date) >= date('now'))
+                            THEN 0 ELSE 1 END,
+                            x.validity_start_date DESC, x.id DESC LIMIT 1
                     )
                 """);
                 s.execute("""
@@ -302,19 +306,31 @@ public final class DatabaseMigrationManager {
                             SELECT x.supplier_product_code FROM supplier_price_lists x
                             WHERE x.product_id=product_suppliers.product_id
                               AND x.supplier_id=product_suppliers.supplier_id
-                            ORDER BY x.validity_start_date DESC, x.id DESC LIMIT 1
+                            ORDER BY CASE
+                            WHEN warestat_date(x.validity_start_date) <= date('now')
+                             AND (x.validity_end_date IS NULL OR warestat_date(x.validity_end_date) >= date('now'))
+                            THEN 0 ELSE 1 END,
+                            x.validity_start_date DESC, x.id DESC LIMIT 1
                         ), supplier_product_code),
                         purchase_price = COALESCE((
                             SELECT x.price FROM supplier_price_lists x
                             WHERE x.product_id=product_suppliers.product_id
                               AND x.supplier_id=product_suppliers.supplier_id
-                            ORDER BY x.validity_start_date DESC, x.id DESC LIMIT 1
+                            ORDER BY CASE
+                            WHEN warestat_date(x.validity_start_date) <= date('now')
+                             AND (x.validity_end_date IS NULL OR warestat_date(x.validity_end_date) >= date('now'))
+                            THEN 0 ELSE 1 END,
+                            x.validity_start_date DESC, x.id DESC LIMIT 1
                         ), purchase_price),
                         notes = COALESCE((
                             SELECT x.notes FROM supplier_price_lists x
                             WHERE x.product_id=product_suppliers.product_id
                               AND x.supplier_id=product_suppliers.supplier_id
-                            ORDER BY x.validity_start_date DESC, x.id DESC LIMIT 1
+                            ORDER BY CASE
+                            WHEN warestat_date(x.validity_start_date) <= date('now')
+                             AND (x.validity_end_date IS NULL OR warestat_date(x.validity_end_date) >= date('now'))
+                            THEN 0 ELSE 1 END,
+                            x.validity_start_date DESC, x.id DESC LIMIT 1
                         ), notes)
                     WHERE EXISTS (
                         SELECT 1 FROM supplier_price_lists x
@@ -389,6 +405,10 @@ public final class DatabaseMigrationManager {
                   AND NOT EXISTS (
                       SELECT 1 FROM inventory_lots l
                       WHERE l.product_id=p.id AND l.remaining_quantity>0
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM inventory_lots l
+                      WHERE l.product_id=p.id AND l.source_type='MIGRATION'
                   )
             """);
 
