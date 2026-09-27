@@ -185,6 +185,25 @@ public final class InventoryLotManager {
     }
 
     public static void restoreOrder(Connection c,int orderId) throws SQLException {
+        // Preflight the entire order before changing any lot. This also makes the
+        // method safe for callers that have not opened an explicit transaction.
+        try(PreparedStatement check=c.prepareStatement("""
+                SELECT d.id
+                FROM order_details d
+                WHERE d.order_id=?
+                  AND NOT EXISTS (
+                      SELECT 1 FROM inventory_lot_consumptions x
+                      WHERE x.order_detail_id=d.id
+                  )
+                LIMIT 1
+                """)) {
+            check.setInt(1,orderId);
+            try(ResultSet r=check.executeQuery()) {
+                if(r.next())
+                    throw new SQLException("This completed sale has no FIFO history and cannot be reversed safely");
+            }
+        }
+
         try(PreparedStatement details=c.prepareStatement(
                 "SELECT id,product_id,quantity,cost_total FROM order_details WHERE order_id=? ORDER BY id")) {
             details.setInt(1,orderId);
@@ -210,10 +229,8 @@ public final class InventoryLotManager {
                         x.setInt(1,detailId);x.executeUpdate();
                     }
 
-                    // A migrated completed sale has no exact FIFO allocations to restore.
-                    // Refuse the reversal rather than inventing a replacement lot/cost.
                     if(restored==0)
-                        throw new SQLException("This completed sale has no FIFO history and cannot be reversed safely");
+                        throw new SQLException("FIFO history is incomplete for this completed sale");
 
                     try(PreparedStatement u=c.prepareStatement(
                             "UPDATE order_details SET cost_total=NULL WHERE id=?")) {
@@ -252,12 +269,12 @@ public final class InventoryLotManager {
                     """)) {
                 p.setInt(1,movementId);
                 try(ResultSet r=p.executeQuery()) {
-                    if(r.next()) {
-                        if(r.getInt("remaining_quantity")!=r.getInt("initial_quantity"))
-                            throw new SQLException("This inward movement cannot be changed because part of its FIFO lot has already been consumed");
-                        try(PreparedStatement d=c.prepareStatement("DELETE FROM inventory_lots WHERE id=?")) {
-                            d.setInt(1,r.getInt("id"));d.executeUpdate();
-                        }
+                    if(!r.next())
+                        throw new SQLException("This inward movement has no FIFO lot history and cannot be reversed safely");
+                    if(r.getInt("remaining_quantity")!=r.getInt("initial_quantity"))
+                        throw new SQLException("This inward movement cannot be changed because part of its FIFO lot has already been consumed");
+                    try(PreparedStatement d=c.prepareStatement("DELETE FROM inventory_lots WHERE id=?")) {
+                        d.setInt(1,r.getInt("id"));d.executeUpdate();
                     }
                 }
             }
@@ -265,6 +282,14 @@ public final class InventoryLotManager {
                 u.setInt(1,quantity);u.setInt(2,productId);u.executeUpdate();
             }
         } else if("OUTWARD".equals(type)) {
+            try(PreparedStatement p=c.prepareStatement(
+                    "SELECT 1 FROM inventory_lot_consumptions WHERE warehouse_movement_id=? LIMIT 1")) {
+                p.setInt(1,movementId);
+                try(ResultSet r=p.executeQuery()) {
+                    if(!r.next())
+                        throw new SQLException("This outward movement has no FIFO history and cannot be reversed safely");
+                }
+            }
             restoreMovementConsumptions(c,movementId);
             try(PreparedStatement u=c.prepareStatement("UPDATE products SET quantity=quantity+? WHERE id=?")) {
                 u.setInt(1,quantity);u.setInt(2,productId);u.executeUpdate();
