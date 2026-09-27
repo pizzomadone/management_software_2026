@@ -1,421 +1,160 @@
 import javax.swing.*;
 import java.awt.*;
 import java.sql.*;
-import java.text.SimpleDateFormat;
-import java.util.Date;
 
 public class SupplierPriceListDialog extends JDialog {
-    private int supplierId;
-    private String supplierName;
-    private SupplierPriceList priceList;
-    private boolean priceSaved = false;
+    private final int supplierId;
+    private final String supplierName;
+    private final SupplierPriceList relation;
+    private boolean saved;
 
     private JComboBox<ProductDisplay> productCombo;
     private JTextField supplierCodeField;
     private JTextField priceField;
-    private JSpinner minimumQuantitySpinner;
-    private DatePickerField startDateField;
-    private DatePickerField endDateField;
+    private JCheckBox preferredCheck;
     private JTextArea notesArea;
-    private SimpleDateFormat dateFormat;
 
-    public SupplierPriceListDialog(JDialog parent, int supplierId, String supplierName, SupplierPriceList priceList) {
-        super(parent, priceList == null ? "New Price" : "Edit Price", true);
-        this.supplierId = supplierId;
-        this.supplierName = supplierName;
-        this.priceList = priceList;
-        this.dateFormat = new SimpleDateFormat("dd/MM/yyyy");
-
-        setupWindow();
-        initComponents();
+    public SupplierPriceListDialog(JDialog parent,int supplierId,String supplierName,SupplierPriceList relation){
+        super(parent,I18n.tr(relation==null?"Add Supplied Product":"Edit Supplied Product"),true);
+        this.supplierId=supplierId;this.supplierName=supplierName;this.relation=relation;
+        build();
         loadProducts();
-        if (priceList != null) {
-            loadPriceData();
-        }
+        if(relation!=null)loadRelation();
     }
 
-    private void setupWindow() {
-        
-        setLayout(new BorderLayout(3, 3));
+    private void build(){
+        setLayout(new BorderLayout(8,8));
+        JPanel form=new JPanel(new GridBagLayout());
+        form.setBorder(BorderFactory.createEmptyBorder(10,12,6,12));
+        GridBagConstraints g=new GridBagConstraints();
+        g.insets=new Insets(4,4,4,4);g.fill=GridBagConstraints.HORIZONTAL;
+
+        JTextField supplier=new JTextField(supplierName);supplier.setEditable(false);
+        productCombo=new JComboBox<>();
+        supplierCodeField=new JTextField(22);
+        priceField=new JTextField(12);
+        preferredCheck=new JCheckBox(I18n.tr("Preferred supplier for this product"));
+        notesArea=new JTextArea(3,22);notesArea.setLineWrap(true);notesArea.setWrapStyleWord(true);
+
+        addRow(form,g,0,"Supplier:",supplier);
+        addRow(form,g,1,"Product:",productCombo);
+        addRow(form,g,2,"Supplier Code:",supplierCodeField);
+        addRow(form,g,3,"Purchase Price:",priceField);
+        addRow(form,g,4,"Preferred:",preferredCheck);
+        addRow(form,g,5,"Notes:",new JScrollPane(notesArea));
+
+        JLabel help=new JLabel("?");
+        help.setToolTipText(I18n.tr("This is the supplier's current reference price. The actual price paid is stored in each supplier order."));
+        JPanel helpPanel=new JPanel(new FlowLayout(FlowLayout.LEFT));
+        helpPanel.add(help);helpPanel.add(new JLabel(I18n.tr("Current supplier price")));
+
+        JButton save=new JButton("Save"),cancel=new JButton("Cancel");
+        save.addActionListener(e->save());cancel.addActionListener(e->dispose());
+        JPanel actions=new JPanel();actions.add(save);actions.add(cancel);
+
+        add(helpPanel,BorderLayout.NORTH);add(form,BorderLayout.CENTER);add(actions,BorderLayout.SOUTH);
+        setSize(520,390);Dialogs.centerWindow(this);I18n.localize(this);
     }
 
-    private void initComponents() {
-        JPanel formPanel = new JPanel(new GridBagLayout());
-        formPanel.setBorder(BorderFactory.createEmptyBorder(3, 3, 3, 3));
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(2, 3, 2, 3);
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.weightx = 0.0;
-
-        // Supplier
-        gbc.gridx = 0; gbc.gridy = 0;
-        formPanel.add(new JLabel("Supplier:"), gbc);
-
-        gbc.gridx = 1;
-        gbc.weightx = 1.0;
-        JTextField supplierField = new JTextField(supplierName);
-        supplierField.setEditable(false);
-        supplierField.setPreferredSize(new Dimension(300, 28));
-        formPanel.add(supplierField, gbc);
-
-        // Product
-        gbc.gridx = 0; gbc.gridy = 1;
-        gbc.weightx = 0.0;
-        formPanel.add(new JLabel("* Product:"), gbc);
-
-        gbc.gridx = 1;
-        gbc.weightx = 1.0;
-        productCombo = new JComboBox<>();
-        productCombo.setPreferredSize(new Dimension(300, 28));
-        if (priceList != null) {
-            productCombo.setEnabled(false); // Do not allow product change in edit mode
-        }
-        formPanel.add(productCombo, gbc);
-
-        // Supplier Code
-        gbc.gridx = 0; gbc.gridy = 2;
-        gbc.weightx = 0.0;
-        formPanel.add(new JLabel("Supplier Code:"), gbc);
-
-        gbc.gridx = 1;
-        gbc.weightx = 1.0;
-        supplierCodeField = new JTextField(20);
-        supplierCodeField.setPreferredSize(new Dimension(300, 28));
-        formPanel.add(supplierCodeField, gbc);
-
-        // Price
-        gbc.gridx = 0; gbc.gridy = 3;
-        gbc.weightx = 0.0;
-        formPanel.add(new JLabel("* Price " + SettingsPanel.getCurrencySymbol() + ":"), gbc);
-
-        gbc.gridx = 1;
-        gbc.weightx = 1.0;
-        priceField = new JTextField(10);
-        priceField.setPreferredSize(new Dimension(300, 28));
-        formPanel.add(priceField, gbc);
-
-        // Minimum quantity
-        gbc.gridx = 0; gbc.gridy = 4;
-        gbc.weightx = 0.0;
-        formPanel.add(new JLabel("Minimum Quantity:"), gbc);
-
-        gbc.gridx = 1;
-        gbc.weightx = 1.0;
-        SpinnerNumberModel spinnerModel = new SpinnerNumberModel(1, 1, 9999, 1);
-        minimumQuantitySpinner = new JSpinner(spinnerModel);
-        minimumQuantitySpinner.setPreferredSize(new Dimension(300, 28));
-        formPanel.add(minimumQuantitySpinner, gbc);
-
-        // Validity start date
-        gbc.gridx = 0; gbc.gridy = 5;
-        gbc.weightx = 0.0;
-        formPanel.add(new JLabel("* Validity Start Date:"), gbc);
-
-        gbc.gridx = 1;
-        gbc.weightx = 1.0;
-        startDateField = new DatePickerField(10);
-        startDateField.setText(DateUtils.formatDate(new Date(), dateFormat));
-        startDateField.setToolTipText("Format: dd/MM/yyyy");
-        startDateField.setPreferredSize(new Dimension(300, 28));
-        formPanel.add(startDateField, gbc);
-
-        // Validity end date
-        gbc.gridx = 0; gbc.gridy = 6;
-        gbc.weightx = 0.0;
-        formPanel.add(new JLabel("Validity End Date:"), gbc);
-
-        gbc.gridx = 1;
-        gbc.weightx = 1.0;
-        endDateField = new DatePickerField(10, true);
-        endDateField.setToolTipText("Format: dd/MM/yyyy (optional)");
-        endDateField.setPreferredSize(new Dimension(300, 28));
-        formPanel.add(endDateField, gbc);
-
-        // Notes
-        gbc.gridx = 0; gbc.gridy = 7;
-        gbc.weightx = 0.0;
-        gbc.anchor = GridBagConstraints.NORTHWEST;
-        formPanel.add(new JLabel("Notes:"), gbc);
-
-        gbc.gridx = 1;
-        gbc.weightx = 1.0;
-        gbc.weighty = 1.0;
-        gbc.fill = GridBagConstraints.BOTH;
-        notesArea = new JTextArea(3, 25);
-        notesArea.setLineWrap(true);
-        notesArea.setWrapStyleWord(true);
-        JScrollPane notesScroll = new JScrollPane(notesArea);
-        notesScroll.setPreferredSize(new Dimension(300, 80));
-        notesScroll.setMinimumSize(new Dimension(300, 60));
-        formPanel.add(notesScroll, gbc);
-
-        // Buttons
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 10));
-        JButton saveButton = new JButton("Save");
-        JButton cancelButton = new JButton("Cancel");
-
-        saveButton.setPreferredSize(new Dimension(90, 32));
-        cancelButton.setPreferredSize(new Dimension(90, 32));
-        saveButton.setFont(saveButton.getFont().deriveFont(Font.BOLD));
-
-        saveButton.addActionListener(e -> savePrice());
-        cancelButton.addActionListener(e -> dispose());
-
-        buttonPanel.add(saveButton);
-        buttonPanel.add(cancelButton);
-
-        // Legend
-        JPanel legendPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 5));
-        JLabel legendLabel = new JLabel("* Required fields");
-        legendLabel.setFont(legendLabel.getFont().deriveFont(Font.ITALIC));
-        legendLabel.setForeground(Color.GRAY);
-        legendPanel.add(legendLabel);
-
-        // Main layout
-        add(legendPanel, BorderLayout.NORTH);
-        add(formPanel, BorderLayout.CENTER);
-        add(buttonPanel, BorderLayout.SOUTH);
-
-        pack();
-        Dialogs.centerWindow(this);
+    private void addRow(JPanel p,GridBagConstraints g,int row,String label,Component field){
+        g.gridx=0;g.gridy=row;g.weightx=0;g.weighty=0;g.fill=GridBagConstraints.HORIZONTAL;
+        p.add(new JLabel(label),g);
+        g.gridx=1;g.weightx=1;
+        if(field instanceof JScrollPane){g.fill=GridBagConstraints.BOTH;g.weighty=1;}
+        p.add(field,g);
     }
 
-    private void loadProducts() {
-        try {
-            Connection conn = DatabaseManager.getInstance().getConnection();
-            String query = "SELECT * FROM products ORDER BY name";
-
-            try (Statement stmt = conn.createStatement();
-                 ResultSet rs = stmt.executeQuery(query)) {
-                while (rs.next()) {
-                    Product product = new Product(
-                        rs.getInt("id"),
-                        rs.getString("code"),
-                        rs.getString("name"),
-                        rs.getString("description"),
-                        rs.getDouble("price"),
-                        rs.getInt("quantity")
-                    );
-                    productCombo.addItem(new ProductDisplay(product));
-                }
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-            Dialogs.showMessageDialog(this,
-                "Error loading products: " + e.getMessage(),
-                "Error", JOptionPane.ERROR_MESSAGE);
-        }
-    }
-
-    private static class ProductDisplay {
-        private Product product;
-
-        public ProductDisplay(Product product) {
-            this.product = product;
-        }
-
-        public Product getProduct() { return product; }
-
-        @Override
-        public String toString() {
-            return String.format("%s - %s", product.getCode(), product.getName());
-        }
-    }
-
-    private void loadPriceData() {
-        try {
-            Connection conn = DatabaseManager.getInstance().getConnection();
-            String query = """
-                SELECT l.*, p.name as product_name
-                FROM supplier_price_lists l
-                JOIN products p ON l.product_id = p.id
-                WHERE l.id = ?
-            """;
-
-            try (PreparedStatement pstmt = conn.prepareStatement(query)) {
-                pstmt.setInt(1, priceList.getId());
-                try (ResultSet rs = pstmt.executeQuery()) {
-                    if (rs.next()) {
-                        // Select product
-                        for (int i = 0; i < productCombo.getItemCount(); i++) {
-                            ProductDisplay item = (ProductDisplay)productCombo.getItemAt(i);
-                            if (item.getProduct().getId() == rs.getInt("product_id")) {
-                                productCombo.setSelectedIndex(i);
-                                break;
-                            }
-                        }
-
-                        supplierCodeField.setText(rs.getString("supplier_product_code"));
-                        priceField.setText(String.valueOf(rs.getDouble("price")));
-                        minimumQuantitySpinner.setValue(rs.getInt("minimum_quantity"));
-
-                        // FIXED: Use DateUtils for proper date parsing
-                        Date startDate = DateUtils.parseDate(rs, "validity_start_date");
-                        if (startDate != null) {
-                            startDateField.setText(DateUtils.formatDate(startDate, dateFormat));
-                        }
-
-                        Date endDate = DateUtils.parseDate(rs, "validity_end_date");
-                        if (endDate != null) {
-                            endDateField.setText(DateUtils.formatDate(endDate, dateFormat));
-                        }
-
-                        notesArea.setText(rs.getString("notes"));
-                    }
-                }
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-            Dialogs.showMessageDialog(this,
-                "Error loading price: " + e.getMessage(),
-                "Error", JOptionPane.ERROR_MESSAGE);
-        }
-    }
-
-    private void savePrice() {
-        try {
-            // Validation
-            if (productCombo.getSelectedItem() == null) {
-                Dialogs.showMessageDialog(this,
-                    "Select a product",
-                    "Error", JOptionPane.ERROR_MESSAGE);
-                return;
-            }
-
-            String priceText = priceField.getText().trim().replace(",", ".");
-            if (priceText.isEmpty()) {
-                Dialogs.showMessageDialog(this,
-                    "Enter a price",
-                    "Error", JOptionPane.ERROR_MESSAGE);
-                return;
-            }
-
-            double price;
-            try {
-                price = Numbers.nonNegative(priceText);
-                if (price <= 0) throw new NumberFormatException();
-            } catch (IllegalArgumentException e) {
-                Dialogs.showMessageDialog(this,
-                    "Price must be a positive number",
-                    "Error", JOptionPane.ERROR_MESSAGE);
-                return;
-            }
-
-            // FIXED: Use DateUtils for date parsing with proper validation
-            Date startDate;
-            Date endDate = null;
-            try {
-                startDate = DateUtils.parseDate(startDateField.getText(), dateFormat);
-                if (startDate == null) {
-                    Dialogs.showMessageDialog(this,
-                        "Please enter a valid start date (dd/MM/yyyy)",
-                        "Error", JOptionPane.ERROR_MESSAGE);
-                    return;
-                }
-
-                String endDateText = endDateField.getText().trim();
-                if (!endDateText.isEmpty()) {
-                    endDate = DateUtils.parseDate(endDateText, dateFormat);
-                    if (endDate == null) {
-                        Dialogs.showMessageDialog(this,
-                            "Invalid end date format. Use dd/MM/yyyy",
-                            "Error", JOptionPane.ERROR_MESSAGE);
-                        return;
-                    }
-
-                    if (endDate.before(startDate)) {
-                        Dialogs.showMessageDialog(this,
-                            "The end validity date must be after the start date",
-                            "Error", JOptionPane.ERROR_MESSAGE);
-                        return;
-                    }
-                }
-            } catch (Exception e) {
-                Dialogs.showMessageDialog(this,
-                    "Invalid date format. Use dd/MM/yyyy format",
-                    "Error", JOptionPane.ERROR_MESSAGE);
-                return;
-            }
-
-            ProductDisplay selectedProduct = (ProductDisplay)productCombo.getSelectedItem();
-            int productId = selectedProduct.getProduct().getId();
-
-            minimumQuantitySpinner.commitEdit();
-            int minimum = Numbers.positiveQuantity(minimumQuantitySpinner.getValue());
-            Connection conn = DatabaseManager.getInstance().getConnection();
-            DatabaseManager.beginTransaction(conn);
-            try {
-                String overlap = "SELECT id FROM supplier_price_lists WHERE supplier_id=? AND product_id=? AND minimum_quantity=? AND id<>? " +
-                    "AND (validity_end_date IS NULL OR " + DateUtils.sqlDate("validity_end_date") + ">=?) " +
-                    "AND (? IS NULL OR " + DateUtils.sqlDate("validity_start_date") + "<=?)";
-                try (PreparedStatement check = conn.prepareStatement(overlap)) {
-                    check.setInt(1,supplierId);check.setInt(2,productId);check.setInt(3,minimum);check.setInt(4,priceList==null?-1:priceList.getId());
-                    SimpleDateFormat iso = new SimpleDateFormat("yyyy-MM-dd");
-                    check.setString(5,iso.format(startDate));check.setString(6,endDate==null?null:iso.format(endDate));check.setString(7,endDate==null?null:iso.format(endDate));
-                    try (ResultSet r = check.executeQuery()) {
-                        if (r.next()) throw new SQLException("Another price for this quantity overlaps the selected validity period");
-                    }
-                }
-            if (priceList == null) {
-                // Insert new price
-                String insertQuery = """
-                    INSERT INTO supplier_price_lists (
-                        supplier_id, product_id, supplier_product_code,
-                        price, minimum_quantity, validity_start_date,
-                        validity_end_date, notes
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    private void loadProducts(){
+        try{
+            Connection c=DatabaseManager.getInstance().getConnection();
+            String sql=relation==null?"""
+                SELECT id,code,name FROM products
+                WHERE active=1 AND NOT EXISTS(
+                    SELECT 1 FROM product_suppliers ps
+                    WHERE ps.product_id=products.id AND ps.supplier_id=?
+                )
+                ORDER BY name,code
+                """:"""
+                SELECT id,code,name FROM products
+                WHERE id=? ORDER BY name,code
                 """;
-
-                try (PreparedStatement pstmt = conn.prepareStatement(insertQuery)) {
-                    pstmt.setInt(1, supplierId);
-                    pstmt.setInt(2, productId);
-                    pstmt.setString(3, supplierCodeField.getText().trim());
-                    pstmt.setDouble(4, price);
-                    pstmt.setInt(5, minimum);
-                    pstmt.setTimestamp(6, DateUtils.toSqlTimestamp(startDate));
-                    pstmt.setTimestamp(7, endDate != null ? DateUtils.toSqlTimestamp(endDate) : null);
-                    pstmt.setString(8, notesArea.getText().trim());
-                    pstmt.executeUpdate();
-                }
-
-            } else {
-                // Update existing price
-                String updateQuery = """
-                    UPDATE supplier_price_lists SET
-                        supplier_product_code = ?,
-                        price = ?, minimum_quantity = ?,
-                        validity_start_date = ?, validity_end_date = ?,
-                        notes = ?
-                    WHERE id = ?
-                """;
-
-                try (PreparedStatement pstmt = conn.prepareStatement(updateQuery)) {
-                    pstmt.setString(1, supplierCodeField.getText().trim());
-                    pstmt.setDouble(2, price);
-                    pstmt.setInt(3, minimum);
-                    pstmt.setTimestamp(4, DateUtils.toSqlTimestamp(startDate));
-                    pstmt.setTimestamp(5, endDate != null ? DateUtils.toSqlTimestamp(endDate) : null);
-                    pstmt.setString(6, notesArea.getText().trim());
-                    pstmt.setInt(7, priceList.getId());
-                    pstmt.executeUpdate();
+            try(PreparedStatement p=c.prepareStatement(sql)){
+                p.setInt(1,relation==null?supplierId:relation.getProductId());
+                try(ResultSet r=p.executeQuery()){
+                    while(r.next())productCombo.addItem(new ProductDisplay(
+                        r.getInt("id"),r.getString("code"),r.getString("name")));
                 }
             }
+        }catch(SQLException e){
+            Dialogs.showMessageDialog(this,I18n.tr("Error loading products")+": "+e.getMessage(),
+                I18n.tr("Error"),JOptionPane.ERROR_MESSAGE);
+        }
+    }
 
-            conn.commit();
-            priceSaved = true;
-            } catch (Exception e) { conn.rollback(); throw e; }
-            finally { conn.setAutoCommit(true); }
+    private void loadRelation(){
+        supplierCodeField.setText(relation.getSupplierProductCode()==null?"":relation.getSupplierProductCode());
+        priceField.setText(Numbers.unitText(relation.getPrice()));
+        preferredCheck.setSelected(relation.isPreferred());
+        notesArea.setText(relation.getNotes()==null?"":relation.getNotes());
+        productCombo.setEnabled(false);
+    }
+
+    private void save(){
+        try{
+            ProductDisplay product=(ProductDisplay)productCombo.getSelectedItem();
+            if(product==null)throw new IllegalArgumentException(I18n.tr("Select a product"));
+            double price=Numbers.nonNegative(priceField.getText());
+            Connection c=DatabaseManager.getInstance().getConnection();
+            DatabaseManager.beginTransaction(c);
+            try{
+                boolean preferred=preferredCheck.isSelected();
+                if(!preferred){
+                    try(PreparedStatement p=c.prepareStatement("""
+                            SELECT 1 FROM product_suppliers
+                            WHERE product_id=? AND is_preferred=1 AND id<>? LIMIT 1
+                            """)){
+                        p.setInt(1,product.id);p.setInt(2,relation==null?-1:relation.getId());
+                        try(ResultSet r=p.executeQuery()){if(!r.next())preferred=true;}
+                    }
+                }
+
+                if(relation==null){
+                    try(PreparedStatement p=c.prepareStatement("""
+                            INSERT INTO product_suppliers
+                            (product_id,supplier_id,supplier_product_code,purchase_price,is_preferred,notes)
+                            VALUES(?,?,?,?,?,?)
+                            """)){
+                        p.setInt(1,product.id);p.setInt(2,supplierId);
+                        p.setString(3,supplierCodeField.getText().trim());
+                        p.setDouble(4,price);p.setInt(5,preferred?1:0);
+                        p.setString(6,notesArea.getText().trim());p.executeUpdate();
+                    }
+                }else{
+                    try(PreparedStatement p=c.prepareStatement("""
+                            UPDATE product_suppliers SET supplier_product_code=?,purchase_price=?,
+                                is_preferred=?,notes=? WHERE id=? AND supplier_id=?
+                            """)){
+                        p.setString(1,supplierCodeField.getText().trim());p.setDouble(2,price);
+                        p.setInt(3,preferred?1:0);p.setString(4,notesArea.getText().trim());
+                        p.setInt(5,relation.getId());p.setInt(6,supplierId);
+                        if(p.executeUpdate()!=1)throw new SQLException("Supplier product no longer exists");
+                    }
+                }
+                c.commit();saved=true;
+            }catch(Exception e){c.rollback();throw e;}
+            finally{c.setAutoCommit(true);}
             dispose();
-
-        } catch (Exception e) {
-            e.printStackTrace();
-            Dialogs.showMessageDialog(this,
-                "Error saving price: " + e.getMessage(),
-                "Error", JOptionPane.ERROR_MESSAGE);
+        }catch(Exception e){
+            Dialogs.showMessageDialog(this,I18n.tr("Error saving supplier product")+": "+e.getMessage(),
+                I18n.tr("Error"),JOptionPane.ERROR_MESSAGE);
         }
     }
 
-    public boolean isPriceSaved() {
-        return priceSaved;
+    public boolean isPriceSaved(){return saved;}
+
+    private static final class ProductDisplay{
+        final int id;final String code;final String name;
+        ProductDisplay(int id,String code,String name){this.id=id;this.code=code;this.name=name;}
+        @Override public String toString(){return code+" - "+name;}
     }
 }
