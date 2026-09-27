@@ -46,7 +46,24 @@ public final class TableStyleUtil {
         table.setDefaultRenderer(Double.class, renderer);
         table.setDefaultRenderer(Float.class, renderer);
 
-        installBadges(table, false);
+        // Apply alignment per visible column, not only through JTable defaults.
+        // This also covers tables that already have a custom column renderer.
+        TableColumnModel columns = table.getColumnModel();
+        for (int view = 0; view < columns.getColumnCount(); view++) {
+            TableColumn column = columns.getColumn(view);
+            String header = headerText(column);
+            if (isBadgeColumn(header)) {
+                column.setCellRenderer(new BadgeRenderer(table));
+                continue;
+            }
+
+            TableCellRenderer delegate = column.getCellRenderer();
+            if (delegate == null) {
+                Class<?> type = table.getModel().getColumnClass(column.getModelIndex());
+                delegate = table.getDefaultRenderer(type);
+            }
+            column.setCellRenderer(new CompactColumnRenderer(table, delegate));
+        }
     }
 
     /**
@@ -56,7 +73,9 @@ public final class TableStyleUtil {
     public static void applyProductEnhancements(JTable table) {
         if (table == null) return;
 
-        styleHeader(table, true);
+        // Product cells keep their existing geometry/alignment, but the header
+        // must be graphically identical to every other WareStat table.
+        styleHeader(table, false);
         TableColumnModel columns = table.getColumnModel();
         for (int view = 0; view < columns.getColumnCount(); view++) {
             TableColumn column = columns.getColumn(view);
@@ -152,6 +171,47 @@ public final class TableStyleUtil {
             setText(display);
             setToolTipText(display.equals(fullText) || fullText.isBlank() ? null : fullText);
             return this;
+        }
+    }
+
+    private static final class CompactColumnRenderer implements TableCellRenderer {
+        private final JTable styledTable;
+        private final TableCellRenderer delegate;
+
+        CompactColumnRenderer(JTable table, TableCellRenderer delegate) {
+            styledTable = table;
+            this.delegate = delegate;
+        }
+
+        @Override
+        public Component getTableCellRendererComponent(JTable table, Object value,
+                boolean selected, boolean focus, int row, int column) {
+            Component component = delegate.getTableCellRendererComponent(
+                table, value, selected, focus, row, column);
+
+            if (component instanceof JComponent jc) jc.setOpaque(true);
+            component.setBackground(selected
+                ? table.getSelectionBackground() : rowBackground(styledTable, row));
+            if (!selected) component.setForeground(table.getForeground());
+
+            if (component instanceof JLabel label) {
+                String fullText = value == null ? "" : String.valueOf(value);
+                label.setHorizontalAlignment(alignmentFor(visibleHeader(table, column), value));
+                label.setVerticalAlignment(SwingConstants.CENTER);
+                label.setBorder(BorderFactory.createEmptyBorder(
+                    COMPACT_VERTICAL_PADDING, COMPACT_HORIZONTAL_PADDING,
+                    COMPACT_VERTICAL_PADDING, COMPACT_HORIZONTAL_PADDING));
+
+                int available = Math.max(8,
+                    table.getColumnModel().getColumn(column).getWidth()
+                        - (COMPACT_HORIZONTAL_PADDING * 2) - 2);
+                FontMetrics metrics = label.getFontMetrics(label.getFont());
+                String display = ellipsize(fullText, metrics, available);
+                label.setText(display);
+                label.setToolTipText(display.equals(fullText) || fullText.isBlank()
+                    ? null : fullText);
+            }
+            return component;
         }
     }
 
@@ -269,18 +329,59 @@ public final class TableStyleUtil {
     }
 
     private static int alignmentFor(String header, Object value) {
-        String h = normalized(header);
         if (value instanceof Number) return SwingConstants.CENTER;
-        if (h.equals("#") || containsAny(h,
-                " id", "id ", "code", "number", "sku", "date", "qty", "quantity",
-                "price", "total", "cost", "revenue", "amount", "vat", "tax", "weight",
-                "size", "stock", "physical", "reserved", "available", "on order",
-                "minimum", "min qty", "products", "%", "document")) {
-            return SwingConstants.CENTER;
-        }
-        if (h.equals("id") || h.equals("date") || h.equals("code") || h.equals("number"))
-            return SwingConstants.CENTER;
+
+        String text = value == null ? "" : String.valueOf(value).trim();
+        if (looksLikeNumberOrDate(text)) return SwingConstants.CENTER;
+
+        String h = normalized(header);
+        if (isCenteredDataHeader(h)) return SwingConstants.CENTER;
         return SwingConstants.LEFT;
+    }
+
+    private static boolean isCenteredDataHeader(String h) {
+        if (h.equals("#") || h.equals("id") || h.equals("%")) return true;
+
+        return containsAny(h,
+            // Codes / identifiers
+            "code", "codice", "código", "codigo", "kod", "sku",
+            "number", "numero", "número", "numéro", "nummer", "nr",
+            "document", "documento", "dokument",
+            // Dates
+            "date", "data", "fecha", "datum",
+            // Quantities / numeric measures
+            "qty", "quantity", "quantità", "quantita", "cantidad", "quantidade",
+            "quantité", "menge", "ilość", "ilosc",
+            "price", "prezzo", "precio", "preço", "preco", "prix", "preis", "cena",
+            "total", "totale", "gesamt", "suma",
+            "cost", "costo", "coût", "cout", "kosten", "koszt",
+            "revenue", "ricavi", "ingresos", "receita", "umsatz", "przychód", "przychod",
+            "amount", "importo", "importe", "montant", "betrag", "kwota",
+            "vat", "iva", "tva", "mwst", "tax", "imposta", "impuesto", "taxe",
+            "steuer", "podatek",
+            "weight", "peso", "poids", "gewicht", "waga",
+            "size", "dimensione", "tamaño", "tamano", "tamanho", "taille", "größe",
+            "grosse", "rozmiar",
+            "stock", "scorta", "existencia", "estoque", "lagermenge", "stan",
+            "physical", "fisico", "físico", "physique", "physisch", "fizyczny",
+            "reserved", "riservato", "reservado", "réservé", "reserve", "reserviert",
+            "zarezerwowany",
+            "available", "disponibile", "disponible", "verfügbar", "verfugbar", "dostęp",
+            "on order", "in ordine", "en pedido", "em pedido", "en commande",
+            "bestellt", "w zamówieniu", "w zamowieniu",
+            "minimum", "minimo", "mínimo", "mindest", "minimalny",
+            "products", "prodotti", "productos", "produtos", "produits", "produkte",
+            "produkty", "%");
+    }
+
+    private static boolean looksLikeNumberOrDate(String text) {
+        if (text.isEmpty()) return false;
+
+        if (text.matches("\\d{1,4}[-/.]\\d{1,2}[-/.]\\d{1,4}(?:\\s+\\d{1,2}:\\d{2}(?::\\d{2})?)?"))
+            return true;
+
+        // Numeric, monetary and percentage strings, including localized separators.
+        return text.matches("[+\\-]?\\s*[€$£¥]?\\s*\\d[\\d\\s.,']*(?:\\s*[%€$£¥])?");
     }
 
     private static boolean isBadgeColumn(String header) {
