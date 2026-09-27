@@ -290,6 +290,17 @@ public class RegressionTest {
             require("0".equals(value("SELECT COUNT(*) FROM inventory_lots WHERE source_type='LEGACY_RESTORE'")),
                 "Negative-stock rollback invented a replacement FIFO lot");
         });
+        test("legacy completed sale without FIFO history cannot be reversed", () -> {
+            fresh();
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total) VALUES(20,1,1000,'Completed',20)");
+            sql("INSERT INTO order_details(id,order_id,product_id,quantity,unit_price,cost_total) VALUES(20,20,1,2,10,NULL)");
+            boolean blocked=false;
+            try { InventoryLotManager.restoreOrder(db,20); }
+            catch(SQLException e) { blocked=true; }
+            require(blocked,"Legacy completed sale without FIFO history was reversed using an invented cost");
+            require(qty()==10 && "0".equals(value("SELECT COUNT(*) FROM inventory_lots")),
+                "Rejected legacy sale reversal changed inventory state");
+        });
         test("consumed supplier FIFO lot blocks receipt reversal", () -> {
             fresh();
             sql("DELETE FROM inventory_lot_consumptions");
