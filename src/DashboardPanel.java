@@ -368,6 +368,7 @@ public class DashboardPanel extends JPanel {
         };
 
         topProductsTable = new JTable(model);
+        TableStyleUtil.applyCompact(topProductsTable);
         topProductsTable.setFont(new Font("Arial", Font.PLAIN, 12));
         topProductsTable.getTableHeader().setFont(new Font("Arial", Font.BOLD, 12));
         topProductsTable.setRowHeight(25);
@@ -410,6 +411,7 @@ public class DashboardPanel extends JPanel {
         };
 
         abcAnalysisTable = new JTable(model);
+        TableStyleUtil.applyCompact(abcAnalysisTable);
         abcAnalysisTable.setFont(new Font("Arial", Font.PLAIN, 12));
         abcAnalysisTable.getTableHeader().setFont(new Font("Arial", Font.BOLD, 12));
         abcAnalysisTable.setRowHeight(30);
