@@ -1,9 +1,13 @@
 import javax.swing.*;
+import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.JTableHeader;
+import javax.swing.table.TableCellRenderer;
 import java.awt.*;
 import java.sql.*;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.Locale;
 import java.util.Vector;
 
 /** Main, cross-supplier purchasing panel. */
@@ -53,7 +57,54 @@ public class SupplierOrdersPanel extends JPanel {
     }
 
     private void styleSupplierOrdersTable() {
-        TableStyleUtil.applyCompact(table);
+        // Compact table: just enough breathing room without wasting vertical space.
+        table.setRowHeight(Math.max(24, table.getFontMetrics(table.getFont()).getHeight() + 5));
+        table.setIntercellSpacing(new Dimension(1, 1));
+        table.setShowVerticalLines(true);
+        table.setShowHorizontalLines(true);
+        // Almost imperceptible separators: enough to guide the eye without
+        // making the table look like a spreadsheet grid.
+        table.setGridColor(adjustColor(table.getBackground(), isLight(table.getBackground()) ? -6 : 8));
+        table.setFillsViewportHeight(true);
+
+        JTableHeader header = table.getTableHeader();
+        header.setFont(header.getFont().deriveFont(Font.BOLD));
+        header.setPreferredSize(new Dimension(header.getPreferredSize().width, 28));
+        Color headerBackground = adjustColor(table.getBackground(),
+            isLight(table.getBackground()) ? -7 : 10);
+        Color headerLine = adjustColor(table.getBackground(),
+            isLight(table.getBackground()) ? -22 : 22);
+        TableCellRenderer originalHeaderRenderer = header.getDefaultRenderer();
+        header.setDefaultRenderer((tbl, value, selected, focus, row, column) -> {
+            Component component = originalHeaderRenderer.getTableCellRendererComponent(
+                tbl, value, selected, focus, row, column);
+            component.setFont(header.getFont());
+            component.setBackground(headerBackground);
+            if (component instanceof JLabel label) {
+                label.setHorizontalAlignment(SwingConstants.CENTER);
+                label.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createMatteBorder(0, 0, 1, 0, headerLine),
+                    BorderFactory.createEmptyBorder(0, 4, 0, 4)));
+            }
+            return component;
+        });
+
+        table.getColumnModel().getColumn(0).setCellRenderer(
+            new CompactCellRenderer(SwingConstants.CENTER, false));
+        table.getColumnModel().getColumn(1).setCellRenderer(
+            new CompactCellRenderer(SwingConstants.CENTER, false));
+        table.getColumnModel().getColumn(2).setCellRenderer(
+            new CompactCellRenderer(SwingConstants.LEFT, true));
+        table.getColumnModel().getColumn(3).setCellRenderer(
+            new CompactCellRenderer(SwingConstants.CENTER, false));
+        table.getColumnModel().getColumn(4).setCellRenderer(
+            new CompactCellRenderer(SwingConstants.CENTER, false));
+        table.getColumnModel().getColumn(5).setCellRenderer(new StatusBadgeRenderer());
+        table.getColumnModel().getColumn(6).setCellRenderer(
+            new CompactCellRenderer(SwingConstants.CENTER, false));
+        table.getColumnModel().getColumn(7).setCellRenderer(
+            new CompactCellRenderer(SwingConstants.LEFT, true));
+
         setPreferredColumnWidth(0, 42);
         setPreferredColumnWidth(1, 150);
         setPreferredColumnWidth(2, 190);
@@ -66,6 +117,97 @@ public class SupplierOrdersPanel extends JPanel {
 
     private void setPreferredColumnWidth(int column, int width) {
         table.getColumnModel().getColumn(column).setPreferredWidth(width);
+    }
+
+    private Color rowBackground(int row) {
+        Color base = table.getBackground();
+        if ((row & 1) == 0) return base;
+        return adjustColor(base, isLight(base) ? -5 : 7);
+    }
+
+    private static boolean isLight(Color color) {
+        return color.getRed() + color.getGreen() + color.getBlue() >= 384;
+    }
+
+    private static Color adjustColor(Color color, int amount) {
+        return new Color(
+            Math.max(0, Math.min(255, color.getRed() + amount)),
+            Math.max(0, Math.min(255, color.getGreen() + amount)),
+            Math.max(0, Math.min(255, color.getBlue() + amount)));
+    }
+
+    private final class CompactCellRenderer extends DefaultTableCellRenderer {
+        private final int alignment;
+        private final boolean showFullTextTooltip;
+
+        CompactCellRenderer(int alignment, boolean showFullTextTooltip) {
+            this.alignment = alignment;
+            this.showFullTextTooltip = showFullTextTooltip;
+            setBorder(BorderFactory.createEmptyBorder(1, 4, 1, 4));
+        }
+
+        @Override
+        public Component getTableCellRendererComponent(JTable tbl, Object value,
+                boolean selected, boolean focus, int row, int column) {
+            super.getTableCellRendererComponent(tbl, value, selected, focus, row, column);
+            setHorizontalAlignment(alignment);
+            setBorder(BorderFactory.createEmptyBorder(1, 4, 1, 4));
+            setBackground(selected ? tbl.getSelectionBackground() : rowBackground(row));
+            setForeground(selected ? tbl.getSelectionForeground() : tbl.getForeground());
+            String text = value == null ? "" : String.valueOf(value);
+            setToolTipText(showFullTextTooltip && !text.isBlank() ? text : null);
+            return this;
+        }
+    }
+
+    private final class StatusBadgeRenderer extends JPanel implements TableCellRenderer {
+        private final JLabel badge = new JLabel("", SwingConstants.CENTER);
+
+        StatusBadgeRenderer() {
+            super(new FlowLayout(FlowLayout.CENTER, 0, 2));
+            setOpaque(true);
+            badge.setOpaque(true);
+        }
+
+        @Override
+        public Component getTableCellRendererComponent(JTable tbl, Object value,
+                boolean selected, boolean focus, int row, int column) {
+            String status = value == null ? "" : String.valueOf(value);
+            String normalized = status.toLowerCase(Locale.ROOT).trim();
+
+            Color background;
+            Color foreground;
+            if (normalized.equals("completed") || normalized.equals("completato")) {
+                background = new Color(224, 242, 229);
+                foreground = new Color(34, 105, 55);
+            } else if (normalized.equals("confirmed") || normalized.equals("confermato")) {
+                background = new Color(225, 236, 250);
+                foreground = new Color(40, 82, 135);
+            } else if (normalized.equals("in transit") || normalized.equals("in transito")) {
+                background = new Color(252, 238, 215);
+                foreground = new Color(145, 90, 18);
+            } else if (normalized.equals("cancelled") || normalized.equals("canceled")
+                    || normalized.equals("annullato")) {
+                background = new Color(247, 226, 226);
+                foreground = new Color(145, 54, 54);
+            } else {
+                background = new Color(235, 235, 235);
+                foreground = new Color(85, 85, 85);
+            }
+
+            removeAll();
+            setBackground(selected ? tbl.getSelectionBackground() : rowBackground(row));
+            badge.setText(status);
+            badge.setBackground(background);
+            badge.setForeground(foreground);
+            badge.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(adjustColor(background,
+                    isLight(background) ? -16 : 16)),
+                BorderFactory.createEmptyBorder(0, 5, 0, 5)));
+            badge.setToolTipText(status.isBlank() ? null : status);
+            add(badge);
+            return this;
+        }
     }
 
     public void loadOrders() {
