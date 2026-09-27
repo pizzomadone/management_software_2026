@@ -163,7 +163,7 @@ public class SupplierOrderDialog extends JDialog {
         tableButtonPanel.add(removeItemButton);
         JButton reprice = new JButton("Refresh Supplier Prices");
         reprice.setToolTipText(I18n.tr("Replace order prices with the current prices saved for this supplier."));
-        reprice.addActionListener(e -> applyPriceList());
+        reprice.addActionListener(e -> refreshSupplierPrices());
         tableButtonPanel.add(reprice);
 
         // Total panel
@@ -429,11 +429,11 @@ public class SupplierOrderDialog extends JDialog {
         }
     }
 
-    private void applyPriceList() {
-        applyPriceList(true);
+    private void refreshSupplierPrices() {
+        refreshSupplierPrices(true);
     }
 
-    private void applyPriceList(boolean askConfirmation) {
+    private void refreshSupplierPrices(boolean askConfirmation) {
         try {
             Numbers.commitEdits(itemsTable);
             if (askConfirmation && Dialogs.showConfirmDialog(
