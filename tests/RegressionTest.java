@@ -239,6 +239,26 @@ public class RegressionTest {
             require("5.0".equals(value("SELECT purchase_price FROM product_suppliers WHERE product_id=1 AND supplier_id=1")),
                 "Negotiated receipt silently changed supplier reference price");
         });
+        test("reversing a completed sale restores its exact FIFO layers", () -> {
+            fresh();
+            sql("UPDATE products SET quantity=0,acquisition_cost=0 WHERE id=1");
+            sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,status,total) VALUES(10,1,'PO-A',1000,'Completed',25)");
+            sql("INSERT INTO supplier_order_details(id,order_id,product_id,quantity,unit_price,total) VALUES(10,10,1,5,5,25)");
+            InventoryLotManager.receiveSupplierOrder(db,10,new java.util.Date(1000),"PO-A");
+            sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,status,total) VALUES(11,1,'PO-B',2000,'Completed',50)");
+            sql("INSERT INTO supplier_order_details(id,order_id,product_id,quantity,unit_price,total) VALUES(11,11,1,5,10,50)");
+            InventoryLotManager.receiveSupplierOrder(db,11,new java.util.Date(2000),"PO-B");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total) VALUES(20,1,3000,'Completed',105)");
+            sql("INSERT INTO order_details(id,order_id,product_id,quantity,unit_price) VALUES(20,20,1,7,15)");
+            StockManager.createOrUpdateReservation(db,1,"ORDER",20,7,"");
+            StockManager.completeReservationAndDecrementStock(db,"ORDER",20,new java.util.Date(3000),"20");
+            StockManager.deleteOrder(db,20,"Completed");
+            require(qty()==10,"Reversing sale did not restore physical stock");
+            require("5,5".equals(value("SELECT GROUP_CONCAT(remaining_quantity,',') FROM (SELECT remaining_quantity FROM inventory_lots WHERE source_type='SUPPLIER_ORDER' ORDER BY received_date,id)")),
+                "Reversing sale did not restore original FIFO lots");
+            require(value("SELECT cost_total IS NULL FROM order_details WHERE id=20").equals("1"),
+                "Reversed sale retained a historical cost");
+        });
         test("WAL import includes committed data and retains a prior copy", () -> {
             if(db!=null)db.close();Path current=AppConstants.getDatabasePath();Files.deleteIfExists(current);
             DatabaseManager.getInstance().initDatabase();db=DatabaseManager.getInstance().getConnection();
