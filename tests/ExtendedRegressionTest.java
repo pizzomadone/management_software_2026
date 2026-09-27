@@ -316,8 +316,8 @@ public class ExtendedRegressionTest extends RegressionTest {
                 "Product has more than one preferred supplier");
             require("2".equals(value("SELECT supplier_id FROM product_suppliers WHERE product_id=1 AND is_preferred=1")),
                 "Preferred supplier was not changed");
-            require(SupplierPricing.price(db,1,1,1,new java.util.Date())==5 &&
-                    SupplierPricing.price(db,2,1,1,new java.util.Date())==8,
+            require(SupplierPricing.price(db,1,1)==5 &&
+                    SupplierPricing.price(db,2,1)==8,
                 "Supplier-specific prices were not preserved");
         });
         test("legacy supplier list migration keeps the latest price even for the preferred supplier",()->{
