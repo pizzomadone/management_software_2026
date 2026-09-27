@@ -334,7 +334,7 @@ public final class InventoryLotManager {
                 }
             }
         }
-        if(needed>0) insertConsumption(c,null,null,movementId,needed,currentAcquisitionCost(c,productId));
+        if(needed>0) insertConsumption(c,null,null,movementId,needed,0.0);
     }
 
     private static void consumeWithoutHistory(Connection c,int productId,int quantity) throws SQLException {
