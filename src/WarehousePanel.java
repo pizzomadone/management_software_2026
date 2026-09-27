@@ -668,11 +668,12 @@ public class WarehousePanel extends JPanel {
         Connection conn = DatabaseManager.getInstance().getConnection();
         String query = """
             SELECT p.id, p.name, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity, sm.reorder_quantity,
-                    sm.lead_time_days, sm.preferred_supplier_id,
+                    sm.lead_time_days, ps.supplier_id AS preferred_supplier_id,
                     s.company_name as supplier_name, sm.notes
             FROM products p
             LEFT JOIN minimum_stock sm ON p.id = sm.product_id
-            LEFT JOIN suppliers s ON sm.preferred_supplier_id = s.id
+            LEFT JOIN product_suppliers ps ON ps.product_id=p.id AND ps.is_preferred=1
+            LEFT JOIN suppliers s ON ps.supplier_id = s.id
             WHERE p.code = ?
         """;
 
