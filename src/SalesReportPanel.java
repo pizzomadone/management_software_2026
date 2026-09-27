@@ -99,6 +99,7 @@ public class SalesReportPanel extends JPanel {
             }
         };
         reportTable = new JTable(tableModel);
+        TableStyleUtil.applyCompact(reportTable);
 
         // Enable column sorting with date support (column 0 is "Date")
         TableSorterUtil.enableSorting(reportTable, new int[]{0}, dateFormat);
@@ -281,6 +282,7 @@ public class SalesReportPanel extends JPanel {
             String[] columns = {"Product", "Quantity", "Unit Price", "Total", "Historical Cost", "Gross Profit"};
             DefaultTableModel detailModel = new DefaultTableModel(columns, 0);
             JTable detailTable = new JTable(detailModel);
+            TableStyleUtil.applyCompact(detailTable);
 
             try {
                 Connection conn = DatabaseManager.getInstance().getConnection();
