@@ -195,6 +195,12 @@ public class StockManager {
             Date documentDate,
             String documentNumber) throws SQLException {
 
+        // Freeze the economic cost of a completed customer sale before changing
+        // physical stock. A line may consume more than one FIFO lot.
+        if ("ORDER".equals(documentType)) {
+            InventoryLotManager.consumeOrder(conn, documentId);
+        }
+
         // Get all active reservations for this document
         String getReservationsQuery = """
             SELECT product_id, reserved_quantity
@@ -284,10 +290,19 @@ public class StockManager {
 
     public static void reverseSupplierOrder(Connection conn, List<StockItem> items,
                                             String documentNumber) throws SQLException {
-        for (StockItem item : items) {
-            decrementStock(conn, item.getProductId(), item.getQuantity());
+        try (PreparedStatement p=conn.prepareStatement(
+                "SELECT id FROM supplier_orders WHERE number=? LIMIT 1")) {
+            p.setString(1,documentNumber);
+            try (ResultSet r=p.executeQuery()) {
+                if(r.next()) {
+                    InventoryLotManager.reverseSupplierOrder(conn,r.getInt(1),documentNumber);
+                    return;
+                }
+            }
         }
-        deleteWarehouseMovements(conn, "SUPPLIER_ORDER", documentNumber);
+        // Compatibility fallback for synthetic/legacy callers without a stored supplier order.
+        for (StockItem item : items) decrementStock(conn,item.getProductId(),item.getQuantity());
+        deleteWarehouseMovements(conn,"SUPPLIER_ORDER",documentNumber);
     }
 
     /**
@@ -412,8 +427,9 @@ public class StockManager {
                 orderStatus = r.getString(1);
             }
         }
-        // If order was Completed, restore stock
+        // If order was Completed, restore the exact FIFO layers and then physical stock.
         if ("Completed".equals(orderStatus)) {
+            InventoryLotManager.restoreOrder(conn, orderId);
             restoreStockFromDocument(conn, orderId, "ORDER");
         }
 
@@ -439,18 +455,8 @@ public class StockManager {
             ordersStmt.setInt(1, supplierId);
             try (ResultSet orders = ordersStmt.executeQuery()) {
                 while (orders.next()) {
-                    List<StockItem> items = new ArrayList<>();
-                    try (PreparedStatement itemsStmt = conn.prepareStatement(
-                            "SELECT product_id, quantity FROM supplier_order_details WHERE order_id = ?")) {
-                        itemsStmt.setInt(1, orders.getInt("id"));
-                        try (ResultSet itemRows = itemsStmt.executeQuery()) {
-                            while (itemRows.next()) {
-                                items.add(new StockItem(itemRows.getInt("product_id"), "",
-                                    itemRows.getInt("quantity")));
-                            }
-                        }
-                    }
-                    reverseSupplierOrder(conn, items, orders.getString("number"));
+                    InventoryLotManager.reverseSupplierOrder(
+                        conn, orders.getInt("id"), orders.getString("number"));
                 }
             }
         }
