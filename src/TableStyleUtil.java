@@ -8,6 +8,17 @@ public final class TableStyleUtil {
     private static final int COMPACT_HORIZONTAL_PADDING = 4;
     private static final int COMPACT_VERTICAL_PADDING = 1;
 
+    // Canonical palette: copied from the Supplier Orders table version approved
+    // in commit a8206287. Keep these values in sync with that visual reference.
+    private static final int LIGHT_GRID_DELTA = -6;
+    private static final int DARK_GRID_DELTA = 8;
+    private static final int LIGHT_ZEBRA_DELTA = -5;
+    private static final int DARK_ZEBRA_DELTA = 7;
+    private static final int LIGHT_HEADER_DELTA = -7;
+    private static final int DARK_HEADER_DELTA = 10;
+    private static final int LIGHT_HEADER_LINE_DELTA = -22;
+    private static final int DARK_HEADER_LINE_DELTA = 22;
+
     private TableStyleUtil() {}
 
     /**
@@ -21,7 +32,8 @@ public final class TableStyleUtil {
         table.setIntercellSpacing(new Dimension(1, 1));
         table.setShowVerticalLines(true);
         table.setShowHorizontalLines(true);
-        table.setGridColor(adjustColor(table.getBackground(), isLight(table.getBackground()) ? -6 : 8));
+        table.setGridColor(adjustColor(table.getBackground(),
+            isLight(table.getBackground()) ? LIGHT_GRID_DELTA : DARK_GRID_DELTA));
         table.setFillsViewportHeight(true);
 
         styleHeader(table, false);
@@ -72,13 +84,13 @@ public final class TableStyleUtil {
         header.setFont(currentFont.deriveFont(Font.BOLD));
         if (!preserveAlignment) {
             Dimension preferred = header.getPreferredSize();
-            header.setPreferredSize(new Dimension(preferred.width, Math.max(28, preferred.height)));
+            header.setPreferredSize(new Dimension(preferred.width, 28));
         }
 
         Color headerBackground = adjustColor(table.getBackground(),
-            isLight(table.getBackground()) ? -7 : 10);
+            isLight(table.getBackground()) ? LIGHT_HEADER_DELTA : DARK_HEADER_DELTA);
         Color headerLine = adjustColor(table.getBackground(),
-            isLight(table.getBackground()) ? -22 : 22);
+            isLight(table.getBackground()) ? LIGHT_HEADER_LINE_DELTA : DARK_HEADER_LINE_DELTA);
 
         header.setDefaultRenderer((tbl, value, selected, focus, row, column) -> {
             Component component = delegate.getTableCellRendererComponent(
@@ -326,7 +338,8 @@ public final class TableStyleUtil {
     private static Color rowBackground(JTable table, int row) {
         Color base = table.getBackground();
         if ((row & 1) == 0) return base;
-        return adjustColor(base, isLight(base) ? -5 : 7);
+        return adjustColor(base,
+            isLight(base) ? LIGHT_ZEBRA_DELTA : DARK_ZEBRA_DELTA);
     }
 
     private static boolean isLight(Color color) {
