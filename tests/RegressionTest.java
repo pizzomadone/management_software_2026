@@ -213,10 +213,9 @@ public class RegressionTest {
         test("supplier pricing uses the current product-supplier price", () -> {
             fresh();
             sql("UPDATE product_suppliers SET purchase_price=2 WHERE product_id=1 AND supplier_id=1");
-            require(SupplierPricing.price(db,1,1,3,new java.util.Date())==2,"Wrong supplier reference price");
-            require(SupplierPricing.price(db,1,1,100,new java.util.Date())==2,"Quantity changed a simple supplier price");
+            require(SupplierPricing.price(db,1,1)==2,"Wrong supplier reference price");
             sql("INSERT INTO product_suppliers(product_id,supplier_id,purchase_price,is_preferred) VALUES(1,2,7,0)");
-            require(SupplierPricing.price(db,2,1,1,new java.util.Date())==7,"Alternate supplier price not used");
+            require(SupplierPricing.price(db,2,1)==7,"Alternate supplier price not used");
         });
         test("FIFO freezes exact historical purchase cost on customer sales", () -> {
             fresh();
