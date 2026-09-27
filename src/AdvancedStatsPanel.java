@@ -175,6 +175,7 @@ public class AdvancedStatsPanel extends JPanel {
                 }
             };
         topProductsTable = new JTable(initialModel);
+        TableStyleUtil.applyCompact(topProductsTable);
         topProductsTable.setDefaultEditor(Object.class, null);
         TableSorterUtil.enableSorting(topProductsTable);
 
@@ -576,6 +577,7 @@ public class AdvancedStatsPanel extends JPanel {
             }
         };
         JTable table = new JTable(model);
+        TableStyleUtil.applyCompact(table);
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         table.removeColumn(table.getColumnModel().getColumn(0));
         table.getColumnModel().getColumn(0).setPreferredWidth(110);
