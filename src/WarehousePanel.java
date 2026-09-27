@@ -185,11 +185,11 @@ public class WarehousePanel extends JPanel {
         lotsTable=new JTable(lotsModel);
         TableSorterUtil.enableSorting(lotsTable,new int[]{0},dateFormat);
 
-        showExhaustedLots=new JCheckBox("Show Exhausted Lots",true);
+        showExhaustedLots=new JCheckBox("Show exhausted lots",true);
         showExhaustedLots.addActionListener(e->loadLotsData());
         JButton refresh=new JButton("Refresh");refresh.addActionListener(e->loadLotsData());
         JLabel help=new JLabel("?");
-        help.setToolTipText(I18n.tr("FIFO uses the oldest available lots first. Historical sales keep the exact cost of the lots consumed when the sale was completed."));
+        help.setToolTipText(I18n.tr("FIFO uses the oldest available lots first. Historical sales keep the exact cost of the lots consumed at the time of sale."));
         JPanel controls=new JPanel(new FlowLayout(FlowLayout.LEFT));
         controls.add(showExhaustedLots);controls.add(refresh);controls.add(help);
 
