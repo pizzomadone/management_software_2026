@@ -1,51 +1,32 @@
-
-// File: SupplierPriceList.java
-import java.util.Date;
-
+/**
+ * Product/supplier relationship retained under the historical class name for source compatibility.
+ * There are no price-list periods or quantity tiers anymore.
+ */
 public class SupplierPriceList {
-    private int id;
-    private int supplierId;
-    private int productId;
-    private String supplierProductCode;
-    private double price;
-    private int minimumQuantity;
-    private Date validityStartDate;
-    private Date validityEndDate;
-    private String notes;
+    private final int id;
+    private final int supplierId;
+    private final int productId;
+    private final String supplierProductCode;
+    private final double price;
+    private final boolean preferred;
+    private final String notes;
 
     public SupplierPriceList(int id, int supplierId, int productId, String supplierProductCode,
-                            double price, int minimumQuantity, Date validityStartDate,
-                            Date validityEndDate, String notes) {
-        this.id = id;
-        this.supplierId = supplierId;
-        this.productId = productId;
-        this.supplierProductCode = supplierProductCode;
-        this.price = price;
-        this.minimumQuantity = minimumQuantity;
-        this.validityStartDate = validityStartDate;
-        this.validityEndDate = validityEndDate;
-        this.notes = notes;
+                             double price, boolean preferred, String notes) {
+        this.id=id;
+        this.supplierId=supplierId;
+        this.productId=productId;
+        this.supplierProductCode=supplierProductCode;
+        this.price=price;
+        this.preferred=preferred;
+        this.notes=notes;
     }
 
-    // Getters
-    public int getId() { return id; }
-    public int getSupplierId() { return supplierId; }
-    public int getProductId() { return productId; }
-    public String getSupplierProductCode() { return supplierProductCode; }
-    public double getPrice() { return price; }
-    public int getMinimumQuantity() { return minimumQuantity; }
-    public Date getValidityStartDate() { return validityStartDate; }
-    public Date getValidityEndDate() { return validityEndDate; }
-    public String getNotes() { return notes; }
-
-    // Setters
-    public void setId(int id) { this.id = id; }
-    public void setSupplierId(int supplierId) { this.supplierId = supplierId; }
-    public void setProductId(int productId) { this.productId = productId; }
-    public void setSupplierProductCode(String supplierProductCode) { this.supplierProductCode = supplierProductCode; }
-    public void setPrice(double price) { this.price = price; }
-    public void setMinimumQuantity(int minimumQuantity) { this.minimumQuantity = minimumQuantity; }
-    public void setValidityStartDate(Date validityStartDate) { this.validityStartDate = validityStartDate; }
-    public void setValidityEndDate(Date validityEndDate) { this.validityEndDate = validityEndDate; }
-    public void setNotes(String notes) { this.notes = notes; }
+    public int getId(){return id;}
+    public int getSupplierId(){return supplierId;}
+    public int getProductId(){return productId;}
+    public String getSupplierProductCode(){return supplierProductCode;}
+    public double getPrice(){return price;}
+    public boolean isPreferred(){return preferred;}
+    public String getNotes(){return notes;}
 }
