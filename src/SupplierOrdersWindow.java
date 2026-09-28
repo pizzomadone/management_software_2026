@@ -51,7 +51,7 @@ public class SupplierOrdersWindow extends JDialog {
 
     private void initComponents() {
         // Orders table
-        String[] columns = {"Number", "Date", "Delivery Date", "Status", "Total " + SettingsPanel.getCurrencySymbol(), "Notes"};
+        String[] columns = {"Number", "Date", "Delivery Date", "Status", "Total", "Notes"};
         tableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
