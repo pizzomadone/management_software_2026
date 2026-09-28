@@ -544,34 +544,106 @@ public class AdvancedStatsPanel extends JPanel {
             salesChartHits.add(new SalesChartHit(x, y, tooltip));
         }
 
+        Path2D curve = buildMonotoneCurve(points);
+
         if (fillArea && points.size() >= 2) {
-            Path2D area = new Path2D.Double();
             int baseline = topPadding + chartHeight;
-            area.moveTo(points.get(0).x, baseline);
-            for (Point point : points) area.lineTo(point.x, point.y);
-            area.lineTo(points.get(points.size() - 1).x, baseline);
+            Path2D area = new Path2D.Double();
+            Point first = points.get(0);
+            Point last = points.get(points.size() - 1);
+            area.moveTo(first.x, baseline);
+            area.lineTo(first.x, first.y);
+            area.append(curve, true);
+            area.lineTo(last.x, baseline);
             area.closePath();
-            g2d.setColor(new Color(color.getRed(), color.getGreen(), color.getBlue(), 18));
+            g2d.setColor(new Color(color.getRed(), color.getGreen(), color.getBlue(), 12));
             g2d.fill(area);
         }
 
         g2d.setColor(color);
-        g2d.setStroke(new BasicStroke(productSeries == null ? 2.2f : 1.9f,
+        g2d.setStroke(new BasicStroke(productSeries == null ? 2.0f : 1.8f,
             BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g2d.draw(curve);
 
-        Point previous = null;
+        // Small outlined markers read more cleanly than solid dots.
+        Color markerCenter = salesChartPanel.getBackground();
         for (Point point : points) {
-            if (previous != null)
-                g2d.drawLine(previous.x, previous.y, point.x, point.y);
-            previous = point;
-        }
-
-        for (Point point : points) {
-            int diameter = pointRadius * 2;
+            int outerDiameter = pointRadius * 2 + 1;
+            g2d.setColor(color);
             g2d.fillOval(point.x - pointRadius, point.y - pointRadius,
-                diameter, diameter);
+                outerDiameter, outerDiameter);
+
+            int innerRadius = Math.max(1, pointRadius - 1);
+            int innerDiameter = innerRadius * 2 + 1;
+            g2d.setColor(markerCenter);
+            g2d.fillOval(point.x - innerRadius, point.y - innerRadius,
+                innerDiameter, innerDiameter);
         }
         g2d.setStroke(new BasicStroke(1f));
+    }
+
+    /**
+     * Shape-preserving monotone cubic interpolation. It smooths every segment
+     * without introducing artificial peaks or dips between the measured months.
+     */
+    private Path2D buildMonotoneCurve(List<Point> points) {
+        Path2D path = new Path2D.Double();
+        if (points.isEmpty()) return path;
+
+        path.moveTo(points.get(0).x, points.get(0).y);
+        int count = points.size();
+        if (count == 1) return path;
+
+        double[] slope = new double[count - 1];
+        double[] tangent = new double[count];
+
+        for (int i = 0; i < count - 1; i++) {
+            double dx = points.get(i + 1).x - points.get(i).x;
+            slope[i] = dx == 0.0 ? 0.0
+                : (points.get(i + 1).y - points.get(i).y) / dx;
+        }
+
+        tangent[0] = slope[0];
+        tangent[count - 1] = slope[count - 2];
+        for (int i = 1; i < count - 1; i++) {
+            tangent[i] = slope[i - 1] * slope[i] <= 0.0
+                ? 0.0
+                : (slope[i - 1] + slope[i]) / 2.0;
+        }
+
+        // Fritsch-Carlson limiter: prevents the Bézier handles from overshooting
+        // the values at either side of a monotone segment.
+        for (int i = 0; i < count - 1; i++) {
+            if (Math.abs(slope[i]) < 1e-12) {
+                tangent[i] = 0.0;
+                tangent[i + 1] = 0.0;
+                continue;
+            }
+
+            double alpha = tangent[i] / slope[i];
+            double beta = tangent[i + 1] / slope[i];
+            double magnitude = Math.hypot(alpha, beta);
+            if (magnitude > 3.0) {
+                double scale = 3.0 / magnitude;
+                tangent[i] = scale * alpha * slope[i];
+                tangent[i + 1] = scale * beta * slope[i];
+            }
+        }
+
+        for (int i = 0; i < count - 1; i++) {
+            Point p0 = points.get(i);
+            Point p1 = points.get(i + 1);
+            double dx = p1.x - p0.x;
+
+            double control1X = p0.x + dx / 3.0;
+            double control1Y = p0.y + tangent[i] * dx / 3.0;
+            double control2X = p1.x - dx / 3.0;
+            double control2Y = p1.y - tangent[i + 1] * dx / 3.0;
+
+            path.curveTo(control1X, control1Y,
+                control2X, control2Y, p1.x, p1.y);
+        }
+        return path;
     }
 
     private void drawSalesLegend(Graphics2D g2d, int width, boolean showTotal) {
