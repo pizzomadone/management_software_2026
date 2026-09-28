@@ -68,7 +68,9 @@ public class SupplierOrdersPanel extends JPanel {
         table.setFillsViewportHeight(true);
 
         JTableHeader header = table.getTableHeader();
-        header.setFont(header.getFont().deriveFont(Font.BOLD));
+        header.setFont(header.getFont().deriveFont(java.util.Map.of(
+            java.awt.font.TextAttribute.WEIGHT,
+            java.awt.font.TextAttribute.WEIGHT_SEMIBOLD)));
         header.setPreferredSize(new Dimension(header.getPreferredSize().width, 28));
         Color headerBackground = adjustColor(table.getBackground(),
             isLight(table.getBackground()) ? -7 : 10);
