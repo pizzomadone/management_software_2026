@@ -148,6 +148,14 @@ public final class TableStyleUtil {
 
     private static final String SMART_SIZING_INSTALLED = "warestat.smartColumnSizingInstalled";
     private static final String SMART_SIZING_PENDING = "warestat.smartColumnSizingPending";
+    private static final String CURRENCY_CODE_PROPERTY = "warestat.currencyCode";
+
+    /** Optional document-specific currency (for example an issued invoice). */
+    public static void setCurrencyCode(JTable table, String currencyCode) {
+        if (table == null) return;
+        table.putClientProperty(CURRENCY_CODE_PROPERTY,
+            currencyCode == null || currencyCode.isBlank() ? null : currencyCode);
+    }
 
     /**
      * Keeps naturally short columns compact and gives unused width to fields
@@ -228,7 +236,7 @@ public final class TableStyleUtil {
                 Object value = table.getModel().getValueAt(
                     table.convertRowIndexToModel(row), modelColumn);
                 if (value == null || value instanceof Icon) continue;
-                String text = String.valueOf(value).trim();
+                String text = displayText(table, view, value);
                 if (text.isEmpty()) continue;
                 natural = Math.max(natural, cellMetrics.stringWidth(text) + 12);
             }
@@ -402,10 +410,10 @@ public final class TableStyleUtil {
         @Override
         public Component getTableCellRendererComponent(JTable table, Object value,
                 boolean selected, boolean focus, int row, int column) {
-            String fullText = value == null ? "" : String.valueOf(value);
+            String fullText = displayText(table, column, value);
             super.getTableCellRendererComponent(table, fullText, selected, focus, row, column);
 
-            String header = visibleHeader(table, column);
+            String header = sourceHeader(table, column);
             setHorizontalAlignment(alignmentFor(header, value));
             setVerticalAlignment(SwingConstants.CENTER);
             setBorder(BorderFactory.createEmptyBorder(
@@ -446,8 +454,8 @@ public final class TableStyleUtil {
             if (!selected) component.setForeground(table.getForeground());
 
             if (component instanceof JLabel label) {
-                String fullText = value == null ? "" : String.valueOf(value);
-                label.setHorizontalAlignment(alignmentFor(visibleHeader(table, column), value));
+                String fullText = displayText(table, column, value);
+                label.setHorizontalAlignment(alignmentFor(sourceHeader(table, column), value));
                 label.setVerticalAlignment(SwingConstants.CENTER);
                 label.setBorder(BorderFactory.createEmptyBorder(
                     COMPACT_VERTICAL_PADDING, COMPACT_HORIZONTAL_PADDING,
@@ -518,16 +526,15 @@ public final class TableStyleUtil {
             if (!selected) component.setForeground(table.getForeground());
 
             if (component instanceof JLabel label) {
-                String fullText = value == null ? "" : String.valueOf(value).trim();
-                if ((label.getToolTipText() == null || label.getToolTipText().isBlank())
-                        && !fullText.isBlank()) {
-                    int available = Math.max(8,
-                        table.getColumnModel().getColumn(column).getWidth()
-                            - label.getInsets().left - label.getInsets().right - 2);
-                    if (label.getFontMetrics(label.getFont()).stringWidth(fullText) > available) {
-                        label.setToolTipText(fullText);
-                    }
-                }
+                String fullText = displayText(table, column, value).trim();
+                int available = Math.max(8,
+                    table.getColumnModel().getColumn(column).getWidth()
+                        - label.getInsets().left - label.getInsets().right - 2);
+                FontMetrics metrics = label.getFontMetrics(label.getFont());
+                String display = ellipsize(fullText, metrics, available);
+                label.setText(display);
+                label.setToolTipText(display.equals(fullText) || fullText.isBlank()
+                    ? null : fullText);
             }
             return component;
         }
@@ -668,6 +675,74 @@ public final class TableStyleUtil {
             return new BadgeColors(new Color(252, 238, 215), new Color(145, 90, 18));
         }
         return new BadgeColors(new Color(235, 235, 235), new Color(85, 85, 85));
+    }
+
+    private static String displayText(JTable table, int viewColumn, Object value) {
+        if (value == null) return "";
+
+        String header = sourceHeader(table, viewColumn);
+        if (!isMonetaryHeader(header)) return String.valueOf(value);
+
+        Double numeric = numericValue(value);
+        if (numeric == null) return String.valueOf(value);
+
+        Object property = table.getClientProperty(CURRENCY_CODE_PROPERTY);
+        String currencyCode = property instanceof String text && !text.isBlank()
+            ? text : SettingsPanel.getCurrencyCode();
+
+        return isUnitMonetaryHeader(header)
+            ? SettingsPanel.formatUnitCurrency(numeric, currencyCode)
+            : SettingsPanel.formatCurrency(numeric, currencyCode);
+    }
+
+    private static Double numericValue(Object value) {
+        if (value instanceof Number number) return number.doubleValue();
+        if (!(value instanceof String text)) return null;
+        String trimmed = text.trim();
+        if (!trimmed.matches("[+\\-]?\\d+(?:[.,]\\d+)?")) return null;
+        try { return Double.parseDouble(trimmed.replace(',', '.')); }
+        catch (NumberFormatException exception) { return null; }
+    }
+
+    private static boolean isMonetaryHeader(String header) {
+        String h = normalized(header);
+        if (h.isEmpty()) return false;
+        if (h.contains("%") || containsAny(h, "rate", "aliquota", "tasso")) return false;
+
+        if (h.equals("vat") || h.equals("iva") || h.equals("tva") || h.equals("mwst"))
+            return true;
+
+        return containsAny(h,
+            "price", "prezzo", "precio", "preço", "preco", "prix", "preis", "cena",
+            "cost", "costo", "coût", "cout", "kosten", "koszt",
+            "total", "totale", "gesamt", "suma",
+            "revenue", "ricavi", "ingresos", "receita", "umsatz", "przychód", "przychod",
+            "sales", "vendite", "ventas", "vendas", "ventes", "umsätze", "umsatze",
+            "profit", "utile", "beneficio", "lucro", "bénéfice", "benefice", "gewinn", "zysk",
+            "amount", "importo", "importe", "montant", "betrag", "kwota");
+    }
+
+    private static boolean isUnitMonetaryHeader(String header) {
+        String h = normalized(header);
+        if (containsAny(h,
+                "historical cost", "costo storico", "coût historique", "cout historique",
+                "gross profit", "utile lordo", "total", "totale", "gesamt", "suma",
+                "revenue", "ricavi", "sales", "vendite", "profit", "utile",
+                "amount", "importo", "taxable", "imponibile", "stock at"))
+            return false;
+
+        return containsAny(h,
+            "price", "prezzo", "precio", "preço", "preco", "prix", "preis", "cena",
+            "unit cost", "costo unitario", "purchase cost", "costo acquisto",
+            "last purchase cost", "purchase price");
+    }
+
+    private static String sourceHeader(JTable table, int viewColumn) {
+        if (viewColumn < 0 || viewColumn >= table.getColumnModel().getColumnCount()) return "";
+        int modelColumn = table.convertColumnIndexToModel(viewColumn);
+        if (modelColumn < 0 || modelColumn >= table.getModel().getColumnCount()) return "";
+        String name = table.getModel().getColumnName(modelColumn);
+        return name == null ? "" : name;
     }
 
     private static String visibleHeader(JTable table, int viewColumn) {
