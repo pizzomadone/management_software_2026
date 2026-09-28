@@ -83,7 +83,7 @@ public class ProductSelectionDialog extends JDialog {
         searchPanel.add(searchInputPanel, BorderLayout.CENTER);
 
         // Products table with detailed information
-        String[] columns = {"ID", "Code", "Name", "Description", "Price " + SettingsPanel.getCurrencySymbol(), "Stock", "Status"};
+        String[] columns = {"ID", "Code", "Name", "Description", "Price", "Stock", "Status"};
         tableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
