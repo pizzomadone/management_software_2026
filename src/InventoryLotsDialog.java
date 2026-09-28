@@ -72,7 +72,7 @@ public class InventoryLotsDialog extends JDialog {
                             r.getString("number")==null?"":r.getString("number"),
                             r.getInt("initial_quantity"),r.getInt("remaining_quantity"),
                             r.getDouble("unit_cost"),
-                            r.getString("source_type"),r.getInt("id")
+                            InventoryLotManager.sourceDisplayName(r.getString("source_type")),r.getInt("id")
                         });
                     }
                 }
