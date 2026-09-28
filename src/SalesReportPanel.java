@@ -89,9 +89,7 @@ public class SalesReportPanel extends JPanel {
 
         // Report table
         String[] columns = {"Date", "Order ID", "Customer", "Status",
-            "Sales " + SettingsPanel.getCurrencySymbol(),
-            "Historical Cost " + SettingsPanel.getCurrencySymbol(),
-            "Gross Profit " + SettingsPanel.getCurrencySymbol()};
+            "Sales", "Historical Cost", "Gross Profit"};
         tableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
