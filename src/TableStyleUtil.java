@@ -214,6 +214,7 @@ public final class TableStyleUtil {
         int count = columns.getColumnCount();
         int[] widths = new int[count];
         int[] minimums = new int[count];
+        int[] maximums = new int[count];
         int[] weights = new int[count];
 
         FontMetrics headerMetrics = table.getTableHeader() == null
@@ -226,6 +227,15 @@ public final class TableStyleUtil {
             TableColumn column = columns.getColumn(view);
             String header = headerText(column);
             String normalizedHeader = normalized(header);
+
+            // Preserve deliberately hidden columns.
+            if (column.getMaxWidth() == 0) {
+                widths[view] = 0;
+                minimums[view] = 0;
+                maximums[view] = 0;
+                weights[view] = 0;
+                continue;
+            }
 
             int min = compactMinimumWidth(normalizedHeader, headerMetrics, header);
             int natural = Math.max(min, headerMetrics.stringWidth(header) + 14);
@@ -244,6 +254,7 @@ public final class TableStyleUtil {
             natural = Math.min(natural, compactNaturalCap(normalizedHeader));
             widths[view] = Math.max(min, natural);
             minimums[view] = min;
+            maximums[view] = Math.max(widths[view], compactMaximumWidth(normalizedHeader));
             weights[view] = flexibleColumnWeight(normalizedHeader);
             total += widths[view];
         }
@@ -252,7 +263,7 @@ public final class TableStyleUtil {
         int available = Math.max(1, viewportWidth - grid);
 
         if (total < available) {
-            distributeExtraWidth(widths, weights, available - total);
+            distributeExtraWidth(widths, maximums, weights, available - total);
         } else if (total > available) {
             shrinkToFit(widths, minimums, weights, total - available);
         }
@@ -268,51 +279,97 @@ public final class TableStyleUtil {
 
     private static int compactMinimumWidth(String header, FontMetrics metrics, String rawHeader) {
         int headerWidth = metrics.stringWidth(rawHeader) + 12;
-        if (isIdHeader(header)) return Math.max(42, Math.min(58, headerWidth));
-        if (isDateHeader(header)) return Math.max(92, Math.min(122, headerWidth));
-        if (isQuantityOrMoneyHeader(header)) return Math.max(76, Math.min(118, headerWidth));
-        if (isCodeHeader(header)) return Math.max(86, Math.min(145, headerWidth));
-        if (isStatusHeader(header)) return Math.max(90, Math.min(125, headerWidth));
-        return Math.max(72, Math.min(150, headerWidth));
+        if (isIdHeader(header)) return Math.max(44, Math.min(60, headerWidth));
+        if (isDateHeader(header)) return Math.max(102, Math.min(132, headerWidth));
+        if (isQuantityOrMoneyHeader(header)) return Math.max(84, Math.min(128, headerWidth));
+        if (isCodeHeader(header)) return Math.max(96, Math.min(155, headerWidth));
+        if (isStatusHeader(header)) return Math.max(98, Math.min(135, headerWidth));
+        if (isEntityReferenceHeader(header)) return Math.max(110, Math.min(180, headerWidth));
+        return Math.max(76, Math.min(155, headerWidth));
     }
 
     private static int compactNaturalCap(String header) {
-        if (isIdHeader(header)) return 62;
-        if (isDateHeader(header)) return 128;
-        if (isQuantityOrMoneyHeader(header)) return 132;
-        if (isCodeHeader(header)) return 165;
-        if (isStatusHeader(header)) return 140;
-        if (containsAny(header, "phone", "telefono", "téléphone", "telefon")) return 175;
-        if (containsAny(header, "vat", "iva", "partita iva", "tax")) return 165;
-        if (isVeryFlexibleTextHeader(header)) return 360;
-        if (isFlexibleTextHeader(header)) return 260;
-        return 220;
+        if (isIdHeader(header)) return 64;
+        if (isDateHeader(header)) return 138;
+        if (isQuantityOrMoneyHeader(header)) return 148;
+        if (isCodeHeader(header)) return 180;
+        if (isStatusHeader(header)) return 150;
+        if (isPaymentHeader(header)) return 300;
+        if (isEntityReferenceHeader(header)) return 250;
+        if (containsAny(header, "phone", "telefono", "téléphone", "telefon")) return 185;
+        if (containsAny(header, "vat", "iva", "partita iva", "tax")) return 175;
+        if (isVeryFlexibleTextHeader(header)) return 390;
+        if (containsAny(header, "email", "e-mail")) return 300;
+        if (isFlexibleTextHeader(header)) return 250;
+        return 230;
     }
 
-    private static void distributeExtraWidth(int[] widths, int[] weights, int extra) {
-        int totalWeight = 0;
-        for (int weight : weights) totalWeight += Math.max(0, weight);
+    private static int compactMaximumWidth(String header) {
+        if (isIdHeader(header)) return 68;
+        if (isDateHeader(header)) return 146;
+        if (isQuantityOrMoneyHeader(header)) return 160;
+        if (isCodeHeader(header)) return 195;
+        if (isStatusHeader(header)) return 160;
+        if (isPaymentHeader(header)) return 390;
+        if (isEntityReferenceHeader(header)) return 320;
+        if (containsAny(header, "email", "e-mail")) return 360;
+        if (isVeryFlexibleTextHeader(header)) return 480;
+        if (isFlexibleTextHeader(header)) return 320;
+        return 280;
+    }
 
-        if (totalWeight == 0) {
-            for (int i = 0; i < weights.length; i++) weights[i] = 1;
-            totalWeight = weights.length;
+    private static void distributeExtraWidth(int[] widths, int[] maximums,
+            int[] weights, int extra) {
+        int remaining = extra;
+
+        // First grow every column only up to a sensible semantic maximum.
+        while (remaining > 0) {
+            int totalWeight = 0;
+            for (int i = 0; i < widths.length; i++) {
+                if (weights[i] > 0 && widths[i] < maximums[i]) totalWeight += weights[i];
+            }
+            if (totalWeight == 0) break;
+
+            int distributed = 0;
+            for (int i = 0; i < widths.length; i++) {
+                if (weights[i] <= 0 || widths[i] >= maximums[i]) continue;
+                int share = Math.max(1,
+                    (int)Math.floor((double)remaining * weights[i] / totalWeight));
+                int add = Math.min(share, maximums[i] - widths[i]);
+                widths[i] += add;
+                distributed += add;
+                if (distributed >= remaining) break;
+            }
+            if (distributed <= 0) break;
+            remaining -= distributed;
         }
 
-        int remaining = extra;
-        for (int i = 0; i < widths.length; i++) {
-            if (weights[i] <= 0) continue;
-            int add = (int)Math.floor((double)extra * weights[i] / totalWeight);
+        if (remaining <= 0) return;
+
+        // Any truly surplus width goes only to the most useful text field(s),
+        // not to compact columns such as ID/date/amount/status.
+        int bestWeight = 0;
+        for (int weight : weights) bestWeight = Math.max(bestWeight, weight);
+        if (bestWeight <= 0) {
+            int visible = 0;
+            for (int max : maximums) if (max > 0) visible++;
+            if (visible == 0) return;
+            for (int i = 0; i < widths.length && remaining > 0; i++) {
+                if (maximums[i] <= 0) continue;
+                int add = Math.max(1, remaining / visible--);
+                widths[i] += add;
+                remaining -= add;
+            }
+            return;
+        }
+
+        int candidates = 0;
+        for (int weight : weights) if (weight == bestWeight) candidates++;
+        for (int i = 0; i < widths.length && remaining > 0; i++) {
+            if (weights[i] != bestWeight) continue;
+            int add = Math.max(1, remaining / candidates--);
             widths[i] += add;
             remaining -= add;
-        }
-
-        // Put rounding remainder into the most useful flexible columns first.
-        while (remaining-- > 0) {
-            int best = 0;
-            for (int i = 1; i < weights.length; i++) {
-                if (weights[i] > weights[best]) best = i;
-            }
-            widths[best]++;
         }
     }
 
@@ -343,11 +400,15 @@ public final class TableStyleUtil {
     }
 
     private static int flexibleColumnWeight(String header) {
-        if (isIdHeader(header) || isDateHeader(header) || isQuantityOrMoneyHeader(header)
-                || isCodeHeader(header) || isStatusHeader(header)) return 0;
+        if (isIdHeader(header)) return 0;
+        // Compact fields may grow a little, but can never consume the table.
+        if (isDateHeader(header) || isQuantityOrMoneyHeader(header)
+                || isCodeHeader(header) || isStatusHeader(header)) return 1;
         if (isVeryFlexibleTextHeader(header)) return 6;
+        if (isPaymentHeader(header)) return 5;
         if (containsAny(header, "email", "e-mail")) return 4;
-        if (isFlexibleTextHeader(header)) return 3;
+        if (isEntityReferenceHeader(header)) return 2;
+        if (isFlexibleTextHeader(header)) return 2;
         return 1;
     }
 
@@ -380,6 +441,19 @@ public final class TableStyleUtil {
 
     private static boolean isStatusHeader(String header) {
         return isBadgeColumn(header);
+    }
+
+    private static boolean isEntityReferenceHeader(String header) {
+        return containsAny(header,
+            "customer", "cliente", "client", "kunde", "klient",
+            "supplier", "fornitore", "proveedor", "fornecedor", "fournisseur",
+            "lieferant", "dostawca",
+            "product", "prodotto", "producto", "produto", "produit", "produkt");
+    }
+
+    private static boolean isPaymentHeader(String header) {
+        return containsAny(header,
+            "payment", "pagamento", "pago", "paiement", "zahlung", "płatność", "platnosc");
     }
 
     private static boolean isVeryFlexibleTextHeader(String header) {
@@ -593,7 +667,8 @@ public final class TableStyleUtil {
         if (looksLikeNumberOrDate(text)) return SwingConstants.CENTER;
 
         String h = normalized(header);
-        if (isCenteredDataHeader(h)) return SwingConstants.CENTER;
+        if (isCenteredDataHeader(h) || isEntityReferenceHeader(h))
+            return SwingConstants.CENTER;
         return SwingConstants.LEFT;
     }
 
