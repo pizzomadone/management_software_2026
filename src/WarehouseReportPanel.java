@@ -217,8 +217,8 @@ public class WarehouseReportPanel extends JPanel {
                     row.add(physicalStock);
                     row.add(reservedStock);
                     row.add(availableStock);
-                    row.add(Numbers.unitText(price));
-                    row.add(Numbers.moneyText(totalValueProduct));
+                    row.add(price);
+                    row.add(totalValueProduct);
 
                     // Stock thresholds are based on what is actually available
                     // after customer reservations. Valuation remains physical stock.
