@@ -94,7 +94,7 @@ public class SupplierOrdersPanel extends JPanel {
         table.getColumnModel().getColumn(1).setCellRenderer(
             new CompactCellRenderer(SwingConstants.CENTER, false));
         table.getColumnModel().getColumn(2).setCellRenderer(
-            new CompactCellRenderer(SwingConstants.LEFT, true));
+            new CompactCellRenderer(SwingConstants.CENTER, true));
         table.getColumnModel().getColumn(3).setCellRenderer(
             new CompactCellRenderer(SwingConstants.CENTER, false));
         table.getColumnModel().getColumn(4).setCellRenderer(
