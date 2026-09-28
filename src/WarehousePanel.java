@@ -342,7 +342,7 @@ public class WarehousePanel extends JPanel {
                         row.add(r.getString("number")==null?"":r.getString("number"));
                         row.add(r.getInt("initial_quantity"));
                         row.add(r.getInt("remaining_quantity"));
-                        row.add(SettingsPanel.formatCurrency(r.getDouble("unit_cost")));
+                        row.add(r.getDouble("unit_cost"));
                         row.add(r.getString("source_type"));
                         lotsModel.addRow(row);
                     }
