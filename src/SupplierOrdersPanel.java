@@ -26,7 +26,7 @@ public class SupplierOrdersPanel extends JPanel {
         JButton searchButton = new JButton("Search"); searchButton.addActionListener(e -> loadOrders());
         search.addActionListener(e -> loadOrders());
         searchPanel.add(new JLabel("Search:")); searchPanel.add(TableInteractionUtil.withClearButton(search, this::loadOrders)); searchPanel.add(searchButton);
-        model = new DefaultTableModel(new String[]{"ID", "Number", "Supplier", "Date", "Delivery Date", "Status", "Total " + SettingsPanel.getCurrencySymbol(), "Notes"}, 0) {
+        model = new DefaultTableModel(new String[]{"ID", "Number", "Supplier", "Date", "Delivery Date", "Status", "Total", "Notes"}, 0) {
             @Override public boolean isCellEditable(int r, int c) { return false; }
         };
         table = new JTable(model); table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
@@ -228,7 +228,7 @@ public class SupplierOrdersPanel extends JPanel {
                     Vector<Object> row = new Vector<>(); row.add(rs.getInt("id")); row.add(rs.getString("number")); row.add(rs.getString("company_name"));
                     Date date = DateUtils.parseDate(rs, "order_date"); Date delivery = DateUtils.parseDate(rs, "expected_delivery_date");
                     row.add(date == null ? "" : DateUtils.formatDate(date, dateFormat)); row.add(delivery == null ? "" : DateUtils.formatDate(delivery, dateFormat));
-                    row.add(rs.getString("status")); row.add(Numbers.moneyText(rs.getDouble("total"))); row.add(rs.getString("notes")); model.addRow(row);
+                    row.add(rs.getString("status")); row.add(SettingsPanel.formatCurrency(rs.getDouble("total"))); row.add(rs.getString("notes")); model.addRow(row);
                 }
             }
         } catch (SQLException ex) { Dialogs.showMessageDialog(this, "Error loading supplier orders: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE); }
