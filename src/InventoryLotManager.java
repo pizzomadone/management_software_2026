@@ -6,6 +6,26 @@ import java.util.Date;
  * inventory_lots keeps the economic layers used for historical cost of sales.
  */
 public final class InventoryLotManager {
+
+    public static String sourceDisplayName(String sourceType) {
+        if (sourceType == null || sourceType.isBlank()) return "";
+        return switch (sourceType.trim().toUpperCase(java.util.Locale.ROOT)) {
+            case "SUPPLIER_ORDER" -> I18n.tr("Supplier order");
+            case "LEGACY_SUPPLIER_ORDER" -> I18n.tr("Historical supplier order");
+            case "MIGRATION" -> I18n.tr("Opening stock");
+            case "DEMO_OPENING" -> I18n.tr("Demo opening stock");
+            case "MANUAL_INWARD" -> I18n.tr("Manual inward");
+            case "INVENTORY_ADJUSTMENT" -> I18n.tr("Inventory adjustment");
+            default -> humanizeSourceType(sourceType);
+        };
+    }
+
+    private static String humanizeSourceType(String sourceType) {
+        String normalized = sourceType.trim().replace('_', ' ').toLowerCase(java.util.Locale.ROOT);
+        if (normalized.isEmpty()) return "";
+        return Character.toUpperCase(normalized.charAt(0)) + normalized.substring(1);
+    }
+
     private InventoryLotManager() {}
 
     public static void receiveSupplierOrder(Connection c, int orderId, Date date, String number)
