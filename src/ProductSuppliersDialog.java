@@ -69,7 +69,7 @@ public class ProductSuppliersDialog extends JDialog {
                 try(ResultSet r=p.executeQuery()){
                     while(r.next())model.addRow(new Object[]{
                         r.getString("company_name"),r.getString("supplier_product_code"),
-                        SettingsPanel.formatCurrency(r.getDouble("purchase_price")),
+                        r.getDouble("purchase_price"),
                         r.getInt("is_preferred")==1?I18n.tr("Yes"):I18n.tr("No"),
                         r.getString("notes"),r.getInt("id"),r.getInt("supplier_id")
                     });
