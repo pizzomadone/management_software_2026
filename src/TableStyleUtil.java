@@ -106,7 +106,9 @@ public final class TableStyleUtil {
 
         TableCellRenderer delegate = header.getDefaultRenderer();
         Font currentFont = header.getFont();
-        header.setFont(currentFont.deriveFont(Font.BOLD));
+        header.setFont(currentFont.deriveFont(java.util.Map.of(
+            java.awt.font.TextAttribute.WEIGHT,
+            java.awt.font.TextAttribute.WEIGHT_SEMIBOLD)));
         if (!preserveAlignment) {
             Dimension preferred = header.getPreferredSize();
             header.setPreferredSize(new Dimension(preferred.width, 28));
