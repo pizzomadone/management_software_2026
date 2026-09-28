@@ -341,7 +341,7 @@ public class WarehousePanel extends JPanel {
                         row.add(r.getInt("initial_quantity"));
                         row.add(r.getInt("remaining_quantity"));
                         row.add(r.getDouble("unit_cost"));
-                        row.add(r.getString("source_type"));
+                        row.add(InventoryLotManager.sourceDisplayName(r.getString("source_type")));
                         lotsModel.addRow(row);
                     }
                 }
