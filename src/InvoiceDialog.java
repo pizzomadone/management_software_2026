@@ -216,10 +216,10 @@ public class InvoiceDialog extends JDialog {
         }
 
         // Products table
-        String symbol = SettingsPanel.getCurrencySymbol(currencyCode());
-        String[] columns = {"Code", "Product", "Quantity", "Unit Price " + symbol, "VAT Rate %", "Total " + symbol, "Product ID"};
+        String[] columns = {"Code", "Product", "Quantity", "Unit Price", "VAT Rate %", "Total", "Product ID"};
         itemsTableModel = new InvoiceTableModel(columns, 0);
         itemsTable = new JTable(itemsTableModel);
+        TableStyleUtil.setCurrencyCode(itemsTable, currencyCode());
         TableStyleUtil.applyCompact(itemsTable);
         itemsTable.removeColumn(itemsTable.getColumnModel().getColumn(6));
 
