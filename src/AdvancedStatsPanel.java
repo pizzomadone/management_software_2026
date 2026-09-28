@@ -5,6 +5,7 @@ import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.geom.Path2D;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -16,6 +17,9 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.format.TextStyle;
+import java.text.NumberFormat;
+import java.util.Locale;
 
 public class AdvancedStatsPanel extends JPanel {
     private static final int MAX_PRODUCT_SERIES = 5;
@@ -48,8 +52,10 @@ public class AdvancedStatsPanel extends JPanel {
     private Map<Integer, Map<String, Double>> productMonthlySales = new LinkedHashMap<>();
     private List<Object[]> productStats;
     private double productsTotalRevenue;
+    private final List<SalesChartHit> salesChartHits = new ArrayList<>();
 
     private record DateRange(LocalDate start, LocalDate end) {}
+    private record SalesChartHit(int x, int y, String tooltip) {}
 
     public AdvancedStatsPanel() {
         dateFormat = new SimpleDateFormat("MM/yyyy");
@@ -153,6 +159,25 @@ public class AdvancedStatsPanel extends JPanel {
                 drawSalesChart(g);
             }
         };
+        salesChartPanel.addMouseMotionListener(new MouseAdapter() {
+            @Override public void mouseMoved(MouseEvent e) {
+                SalesChartHit nearest = null;
+                double bestDistance = 12.0;
+                for (SalesChartHit hit : salesChartHits) {
+                    double distance = e.getPoint().distance(hit.x(), hit.y());
+                    if (distance <= bestDistance) {
+                        nearest = hit;
+                        bestDistance = distance;
+                    }
+                }
+                salesChartPanel.setToolTipText(nearest == null ? null : nearest.tooltip());
+            }
+        });
+        salesChartPanel.addMouseListener(new MouseAdapter() {
+            @Override public void mouseExited(MouseEvent e) {
+                salesChartPanel.setToolTipText(null);
+            }
+        });
         salesPanel.add(productSeriesBar, BorderLayout.NORTH);
         salesPanel.add(salesChartPanel, BorderLayout.CENTER);
 
@@ -345,15 +370,12 @@ public class AdvancedStatsPanel extends JPanel {
         try {
             g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
                 RenderingHints.VALUE_ANTIALIAS_ON);
+            g2d.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+                RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
 
             int width = salesChartPanel.getWidth();
             int height = salesChartPanel.getHeight();
-            int leftPadding = 78;
-            int rightPadding = 30;
-            int visibleSeriesCount = selectedSalesProducts.size() +
-                (showTotalSalesCheckBox.isSelected() ? 1 : 0);
-            int topPadding = visibleSeriesCount <= 1 ? 35 : 62;
-            int bottomPadding = 72;
+            salesChartHits.clear();
 
             Map<String, double[]> currentSales = monthlySales;
             if (currentSales.isEmpty()) {
@@ -373,6 +395,7 @@ public class AdvancedStatsPanel extends JPanel {
                 return;
             }
 
+            int visibleSeriesCount = selectedSalesProducts.size() + (showTotal ? 1 : 0);
             double maxSale = showTotal
                 ? currentSales.values().stream()
                     .mapToDouble(values -> values[0]).max().orElse(0)
@@ -383,72 +406,115 @@ public class AdvancedStatsPanel extends JPanel {
                         .max().orElse(0));
             }
 
+            Color background = salesChartPanel.getBackground();
+            Color foreground = salesChartPanel.getForeground();
+            Color gridColor = blend(foreground, background, 0.10);
+            Color axisColor = blend(foreground, background, 0.34);
+            Color secondaryText = blend(foreground, background, 0.70);
+
+            Font originalFont = g2d.getFont();
+            Font axisFont = originalFont.deriveFont(Math.max(10f, originalFont.getSize2D() - 1f));
+            g2d.setFont(axisFont);
+            FontMetrics axisMetrics = g2d.getFontMetrics();
+
+            double tickStep = maxSale > 0 ? niceTickStep(maxSale, 5) : 1.0;
+            double axisMax = maxSale > 0
+                ? Math.max(tickStep, Math.ceil(maxSale / tickStep) * tickStep)
+                : 1.0;
+            int tickCount = Math.max(1, (int)Math.round(axisMax / tickStep));
+
+            int widestYLabel = 0;
+            for (int i = 0; i <= tickCount; i++) {
+                widestYLabel = Math.max(widestYLabel,
+                    axisMetrics.stringWidth(formatCompactAxisValue(i * tickStep)));
+            }
+
+            boolean showLegend = visibleSeriesCount > 1;
+            int topPadding = showLegend ? 54 : 32;
+            int bottomPadding = 46;
+            int leftPadding = Math.max(58, widestYLabel + 28);
+            int rightPadding = 24;
             int chartWidth = Math.max(1, width - leftPadding - rightPadding);
             int chartHeight = Math.max(1, height - topPadding - bottomPadding);
+            int baselineY = topPadding + chartHeight;
 
-            g2d.setColor(Color.BLACK);
-            g2d.drawLine(leftPadding, topPadding,
-                leftPadding, topPadding + chartHeight);
-            g2d.drawLine(leftPadding, topPadding + chartHeight,
-                leftPadding + chartWidth, topPadding + chartHeight);
+            // Currency belongs to the axis, not to every tick label.
+            g2d.setColor(secondaryText);
+            g2d.setFont(axisFont.deriveFont(Font.BOLD));
+            g2d.drawString(SettingsPanel.getCurrencyCode(), leftPadding, topPadding - 10);
+            g2d.setFont(axisFont);
 
+            // Calm horizontal grid and compact Y labels.
+            for (int i = 0; i <= tickCount; i++) {
+                double value = i * tickStep;
+                int y = baselineY - (int)Math.round((value / axisMax) * chartHeight);
+
+                g2d.setColor(gridColor);
+                g2d.setStroke(new BasicStroke(i == 0 ? 1.0f : 0.8f));
+                g2d.drawLine(leftPadding, y, leftPadding + chartWidth, y);
+
+                String label = formatCompactAxisValue(value);
+                int textWidth = axisMetrics.stringWidth(label);
+                g2d.setColor(secondaryText);
+                g2d.drawString(label, leftPadding - textWidth - 10,
+                    y + (axisMetrics.getAscent() / 2) - 2);
+            }
+
+            // A small horizontal inset keeps first/last points off the axes.
+            int pointInset = months.size() <= 1 ? 0 : Math.min(14, Math.max(8, chartWidth / 80));
+            int plotStartX = leftPadding + pointInset;
+            int plotEndX = leftPadding + chartWidth - pointInset;
             double step = months.size() <= 1
-                ? 0.0 : chartWidth / (double)(months.size() - 1);
+                ? 0.0 : Math.max(1, plotEndX - plotStartX) / (double)(months.size() - 1);
 
             if (maxSale <= 0) {
+                g2d.setColor(secondaryText);
                 g2d.drawString(I18n.tr("No sales in this period"),
                     leftPadding + 10, topPadding + chartHeight / 2);
             } else {
                 if (showTotal) {
                     drawSalesSeries(g2d, months, currentSales, null,
-                        TOTAL_SALES_COLOR, leftPadding, topPadding,
-                        chartHeight, step, maxSale, 4);
+                        TOTAL_SALES_COLOR, plotStartX, topPadding,
+                        chartHeight, step, axisMax, 3,
+                        I18n.tr("Total sales"), true);
                 }
 
                 int colorIndex = 0;
                 for (Integer productId : selectedSalesProducts.keySet()) {
                     Map<String, Double> series = productMonthlySales.get(productId);
                     if (series == null) continue;
+                    String name = selectedSalesProducts.get(productId);
                     drawSalesSeries(g2d, months, null, series,
                         PRODUCT_SERIES_COLORS[colorIndex % PRODUCT_SERIES_COLORS.length],
-                        leftPadding, topPadding, chartHeight, step, maxSale, 3);
+                        plotStartX, topPadding, chartHeight, step, axisMax, 3,
+                        name, false);
                     colorIndex++;
                 }
             }
 
-            drawSalesLegend(g2d, width, showTotal);
+            if (showLegend) drawSalesLegend(g2d, width, showTotal);
 
-            int maxLabels = Math.max(2, chartWidth / 85);
+            // Horizontal, localized month labels.
+            int maxLabels = Math.max(2, chartWidth / 72);
             int labelEvery = Math.max(1,
                 (int)Math.ceil(months.size() / (double)maxLabels));
-            g2d.setColor(Color.BLACK);
+            boolean includeYear = spansMultipleYears(months) || months.size() > 12;
+
+            g2d.setFont(axisFont);
+            g2d.setColor(secondaryText);
+            FontMetrics xMetrics = g2d.getFontMetrics();
             for (int i = 0; i < months.size(); i++) {
                 if (i % labelEvery != 0 && i != months.size() - 1) continue;
-                String month = months.get(i);
-                String label = month.length() >= 7
-                    ? month.substring(5, 7) + "/" + month.substring(0, 4)
-                    : month;
-                int x = leftPadding + (int)Math.round(i * step);
-                Graphics2D labels = (Graphics2D)g2d.create();
-                try {
-                    labels.rotate(Math.PI / 4, x, topPadding + chartHeight + 18);
-                    labels.drawString(label, x - 12, topPadding + chartHeight + 18);
-                } finally {
-                    labels.dispose();
-                }
+                String label = formatMonthLabel(months.get(i), includeYear);
+                int x = plotStartX + (int)Math.round(i * step);
+                int textWidth = xMetrics.stringWidth(label);
+                int labelX = Math.max(leftPadding,
+                    Math.min(leftPadding + chartWidth - textWidth, x - textWidth / 2));
+                g2d.drawString(label, labelX, baselineY + 25);
             }
 
-            if (maxSale > 0) {
-                g2d.setColor(Color.BLACK);
-                for (int i = 0; i <= 5; i++) {
-                    int y = topPadding + chartHeight - (i * chartHeight / 5);
-                    double value = (maxSale * i) / 5.0;
-                    String label = SettingsPanel.formatCurrency(value);
-                    int textWidth = g2d.getFontMetrics().stringWidth(label);
-                    g2d.drawString(label,
-                        Math.max(2, leftPadding - textWidth - 6), y + 5);
-                }
-            }
+            g2d.setStroke(new BasicStroke(1f));
+            g2d.setFont(originalFont);
         } finally {
             g2d.dispose();
         }
@@ -456,11 +522,10 @@ public class AdvancedStatsPanel extends JPanel {
 
     private void drawSalesSeries(Graphics2D g2d, List<String> months,
             Map<String, double[]> totalSeries, Map<String, Double> productSeries,
-            Color color, int leftPadding, int topPadding, int chartHeight,
-            double step, double maxSale, int pointSize) {
-        Point previous = null;
-        g2d.setColor(color);
-        g2d.setStroke(new BasicStroke(productSeries == null ? 2.4f : 2.0f));
+            Color color, int startX, int topPadding, int chartHeight,
+            double step, double axisMax, int pointRadius, String seriesLabel,
+            boolean fillArea) {
+        List<Point> points = new ArrayList<>(months.size());
 
         for (int i = 0; i < months.size(); i++) {
             String month = months.get(i);
@@ -468,21 +533,50 @@ public class AdvancedStatsPanel extends JPanel {
                 ? totalSeries.getOrDefault(month, new double[]{0.0, 0.0})[0]
                 : productSeries.getOrDefault(month, 0.0);
 
-            int x = leftPadding + (int)Math.round(i * step);
+            int x = startX + (int)Math.round(i * step);
             int y = topPadding + chartHeight -
-                (int)Math.round((sale / maxSale) * chartHeight);
+                (int)Math.round((sale / axisMax) * chartHeight);
+            points.add(new Point(x, y));
 
-            int diameter = pointSize * 2;
-            g2d.fillOval(x - pointSize, y - pointSize, diameter, diameter);
-            if (previous != null) g2d.drawLine(previous.x, previous.y, x, y);
-            previous = new Point(x, y);
+            String tooltip = "<html><b>" + escapeHtml(formatMonthTooltip(month)) +
+                "</b><br>" + escapeHtml(seriesLabel) + ": " +
+                escapeHtml(SettingsPanel.formatCurrency(sale)) + "</html>";
+            salesChartHits.add(new SalesChartHit(x, y, tooltip));
+        }
+
+        if (fillArea && points.size() >= 2) {
+            Path2D area = new Path2D.Double();
+            int baseline = topPadding + chartHeight;
+            area.moveTo(points.get(0).x, baseline);
+            for (Point point : points) area.lineTo(point.x, point.y);
+            area.lineTo(points.get(points.size() - 1).x, baseline);
+            area.closePath();
+            g2d.setColor(new Color(color.getRed(), color.getGreen(), color.getBlue(), 18));
+            g2d.fill(area);
+        }
+
+        g2d.setColor(color);
+        g2d.setStroke(new BasicStroke(productSeries == null ? 2.2f : 1.9f,
+            BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+
+        Point previous = null;
+        for (Point point : points) {
+            if (previous != null)
+                g2d.drawLine(previous.x, previous.y, point.x, point.y);
+            previous = point;
+        }
+
+        for (Point point : points) {
+            int diameter = pointRadius * 2;
+            g2d.fillOval(point.x - pointRadius, point.y - pointRadius,
+                diameter, diameter);
         }
         g2d.setStroke(new BasicStroke(1f));
     }
 
     private void drawSalesLegend(Graphics2D g2d, int width, boolean showTotal) {
         int x = 82;
-        int y = 20;
+        int y = 22;
 
         if (showTotal) {
             x = drawLegendItem(g2d, x, y, TOTAL_SALES_COLOR,
@@ -504,12 +598,122 @@ public class AdvancedStatsPanel extends JPanel {
 
     private int drawLegendItem(Graphics2D g2d, int x, int y, Color color,
             String label, int width) {
+        Color originalColor = g2d.getColor();
+        Stroke originalStroke = g2d.getStroke();
         g2d.setColor(color);
-        g2d.fillRect(x, y - 8, 18, 4);
-        g2d.setColor(Color.BLACK);
-        String fitted = fitText(g2d, label, Math.min(190, Math.max(40, width - x - 35)));
-        g2d.drawString(fitted, x + 24, y);
-        return x + 24 + g2d.getFontMetrics().stringWidth(fitted) + 20;
+        g2d.setStroke(new BasicStroke(2.2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g2d.drawLine(x, y - 4, x + 18, y - 4);
+        g2d.fillOval(x + 7, y - 7, 6, 6);
+
+        g2d.setColor(salesChartPanel.getForeground());
+        String fitted = fitText(g2d, label,
+            Math.min(190, Math.max(40, width - x - 35)));
+        g2d.drawString(fitted, x + 26, y);
+        g2d.setColor(originalColor);
+        g2d.setStroke(originalStroke);
+        return x + 26 + g2d.getFontMetrics().stringWidth(fitted) + 20;
+    }
+
+    private double niceTickStep(double maximum, int targetTicks) {
+        if (!(maximum > 0) || !Double.isFinite(maximum)) return 1.0;
+        double rough = maximum / Math.max(2, targetTicks - 1);
+        double exponent = Math.floor(Math.log10(rough));
+        double scale = Math.pow(10, exponent);
+        double fraction = rough / scale;
+
+        double niceFraction;
+        if (fraction <= 1.0) niceFraction = 1.0;
+        else if (fraction <= 2.0) niceFraction = 2.0;
+        else if (fraction <= 2.5) niceFraction = 2.5;
+        else if (fraction <= 5.0) niceFraction = 5.0;
+        else niceFraction = 10.0;
+        return niceFraction * scale;
+    }
+
+    private String formatCompactAxisValue(double value) {
+        Locale locale = appLocale();
+        if (Math.abs(value) < 1000) {
+            NumberFormat format = NumberFormat.getNumberInstance(locale);
+            format.setMaximumFractionDigits(value == Math.rint(value) ? 0 : 1);
+            return format.format(value);
+        }
+
+        double divisor;
+        String suffix;
+        if (Math.abs(value) >= 1_000_000_000) {
+            divisor = 1_000_000_000d; suffix = "B";
+        } else if (Math.abs(value) >= 1_000_000) {
+            divisor = 1_000_000d; suffix = "M";
+        } else {
+            divisor = 1_000d; suffix = "k";
+        }
+
+        double compact = value / divisor;
+        NumberFormat format = NumberFormat.getNumberInstance(locale);
+        format.setMinimumFractionDigits(0);
+        format.setMaximumFractionDigits(Math.abs(compact) < 10 && compact != Math.rint(compact) ? 1 : 0);
+        return format.format(compact) + suffix;
+    }
+
+    private String formatMonthLabel(String month, boolean includeYear) {
+        try {
+            YearMonth ym = YearMonth.parse(month);
+            String name = ym.getMonth().getDisplayName(TextStyle.SHORT, appLocale());
+            if (!name.isEmpty())
+                name = Character.toUpperCase(name.charAt(0)) + name.substring(1);
+            return includeYear
+                ? name + " " + String.format("%02d", ym.getYear() % 100)
+                : name;
+        } catch (Exception ignored) {
+            return month;
+        }
+    }
+
+    private String formatMonthTooltip(String month) {
+        try {
+            YearMonth ym = YearMonth.parse(month);
+            String name = ym.getMonth().getDisplayName(TextStyle.FULL, appLocale());
+            if (!name.isEmpty())
+                name = Character.toUpperCase(name.charAt(0)) + name.substring(1);
+            return name + " " + ym.getYear();
+        } catch (Exception ignored) {
+            return month;
+        }
+    }
+
+    private boolean spansMultipleYears(List<String> months) {
+        Integer year = null;
+        for (String month : months) {
+            try {
+                int current = YearMonth.parse(month).getYear();
+                if (year == null) year = current;
+                else if (year != current) return true;
+            } catch (Exception ignored) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private Locale appLocale() {
+        String[] parts = I18n.getLanguage().split("_", 2);
+        return parts.length == 2 ? Locale.of(parts[0], parts[1]) : Locale.of(parts[0]);
+    }
+
+    private Color blend(Color foreground, Color background, double foregroundWeight) {
+        double weight = Math.max(0.0, Math.min(1.0, foregroundWeight));
+        int red = (int)Math.round(background.getRed() * (1.0 - weight) + foreground.getRed() * weight);
+        int green = (int)Math.round(background.getGreen() * (1.0 - weight) + foreground.getGreen() * weight);
+        int blue = (int)Math.round(background.getBlue() * (1.0 - weight) + foreground.getBlue() * weight);
+        return new Color(red, green, blue);
+    }
+
+    private String escapeHtml(String text) {
+        if (text == null) return "";
+        return text.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;");
     }
 
     private void refreshSelectedSeriesPanel() {
