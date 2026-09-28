@@ -31,6 +31,9 @@ public final class TableStyleUtil {
     public static void applyCompact(JTable table) {
         if (table == null) return;
 
+        // Body text stays regular; only the header carries emphasis.
+        table.setFont(table.getFont().deriveFont(Font.PLAIN));
+
         table.setRowHeight(Math.max(24, table.getFontMetrics(table.getFont()).getHeight() + 5));
         table.setIntercellSpacing(new Dimension(1, 1));
         table.setShowVerticalLines(true);
@@ -79,6 +82,9 @@ public final class TableStyleUtil {
     public static void applyProductEnhancements(JTable table) {
         if (table == null) return;
 
+        // Keep the existing product-table geometry while using regular body text.
+        table.setFont(table.getFont().deriveFont(Font.PLAIN));
+
         // Product cells keep their existing geometry/alignment, but the header
         // must be graphically identical to every other WareStat table.
         styleHeader(table, false);
@@ -106,9 +112,7 @@ public final class TableStyleUtil {
 
         TableCellRenderer delegate = header.getDefaultRenderer();
         Font currentFont = header.getFont();
-        header.setFont(currentFont.deriveFont(java.util.Map.of(
-            java.awt.font.TextAttribute.WEIGHT,
-            java.awt.font.TextAttribute.WEIGHT_SEMIBOLD)));
+        header.setFont(currentFont.deriveFont(Font.BOLD));
         if (!preserveAlignment) {
             Dimension preferred = header.getPreferredSize();
             header.setPreferredSize(new Dimension(preferred.width, 28));
