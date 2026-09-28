@@ -1,6 +1,9 @@
 import javax.swing.*;
 import javax.swing.table.*;
 import java.awt.*;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
+import javax.swing.event.TableModelEvent;
 import java.util.Locale;
 
 /** Shared visual treatment for WareStat tables. */
@@ -35,6 +38,7 @@ public final class TableStyleUtil {
         table.setGridColor(adjustColor(table.getBackground(),
             isLight(table.getBackground()) ? LIGHT_GRID_DELTA : DARK_GRID_DELTA));
         table.setFillsViewportHeight(true);
+        table.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
 
         styleHeader(table, false);
 
@@ -64,6 +68,8 @@ public final class TableStyleUtil {
             }
             column.setCellRenderer(new CompactColumnRenderer(table, delegate));
         }
+
+        installSmartColumnSizing(table);
     }
 
     /**
@@ -138,6 +144,244 @@ public final class TableStyleUtil {
                 column.setCellRenderer(new BadgeRenderer(table));
             }
         }
+    }
+
+    private static final String SMART_SIZING_INSTALLED = "warestat.smartColumnSizingInstalled";
+    private static final String SMART_SIZING_PENDING = "warestat.smartColumnSizingPending";
+
+    /**
+     * Keeps naturally short columns compact and gives unused width to fields
+     * that benefit from space (address, notes, descriptions, e-mail, names).
+     * Product table intentionally does not use this path.
+     */
+    private static void installSmartColumnSizing(JTable table) {
+        if (Boolean.TRUE.equals(table.getClientProperty(SMART_SIZING_INSTALLED))) return;
+        table.putClientProperty(SMART_SIZING_INSTALLED, Boolean.TRUE);
+
+        table.getModel().addTableModelListener(event -> {
+            // Refit after rows are loaded/removed, but do not move columns around
+            // while a user is editing an ordinary cell value.
+            if (event.getType() != TableModelEvent.UPDATE
+                    || event.getFirstRow() == TableModelEvent.HEADER_ROW) {
+                scheduleSmartColumnSizing(table);
+            }
+        });
+
+        table.addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentResized(ComponentEvent event) {
+                scheduleSmartColumnSizing(table);
+            }
+        });
+
+        scheduleSmartColumnSizing(table);
+    }
+
+    private static void scheduleSmartColumnSizing(JTable table) {
+        if (Boolean.TRUE.equals(table.getClientProperty(SMART_SIZING_PENDING))) return;
+        table.putClientProperty(SMART_SIZING_PENDING, Boolean.TRUE);
+        SwingUtilities.invokeLater(() -> {
+            table.putClientProperty(SMART_SIZING_PENDING, Boolean.FALSE);
+            fitCompactColumns(table);
+        });
+    }
+
+    private static void fitCompactColumns(JTable table) {
+        if (table.getColumnCount() == 0) return;
+
+        JViewport viewport = (JViewport)SwingUtilities.getAncestorOfClass(
+            JViewport.class, table);
+        int viewportWidth = viewport == null
+            ? table.getWidth() : viewport.getExtentSize().width;
+        if (viewportWidth <= 0) return;
+
+        TableColumnModel columns = table.getColumnModel();
+        int count = columns.getColumnCount();
+        int[] widths = new int[count];
+        int[] minimums = new int[count];
+        int[] weights = new int[count];
+
+        FontMetrics headerMetrics = table.getTableHeader() == null
+            ? table.getFontMetrics(table.getFont())
+            : table.getTableHeader().getFontMetrics(table.getTableHeader().getFont());
+        FontMetrics cellMetrics = table.getFontMetrics(table.getFont());
+
+        int total = 0;
+        for (int view = 0; view < count; view++) {
+            TableColumn column = columns.getColumn(view);
+            String header = headerText(column);
+            String normalizedHeader = normalized(header);
+
+            int min = compactMinimumWidth(normalizedHeader, headerMetrics, header);
+            int natural = Math.max(min, headerMetrics.stringWidth(header) + 14);
+
+            int modelColumn = column.getModelIndex();
+            int rowLimit = Math.min(table.getRowCount(), 160);
+            for (int row = 0; row < rowLimit; row++) {
+                Object value = table.getModel().getValueAt(
+                    table.convertRowIndexToModel(row), modelColumn);
+                if (value == null || value instanceof Icon) continue;
+                String text = String.valueOf(value).trim();
+                if (text.isEmpty()) continue;
+                natural = Math.max(natural, cellMetrics.stringWidth(text) + 12);
+            }
+
+            natural = Math.min(natural, compactNaturalCap(normalizedHeader));
+            widths[view] = Math.max(min, natural);
+            minimums[view] = min;
+            weights[view] = flexibleColumnWeight(normalizedHeader);
+            total += widths[view];
+        }
+
+        int grid = Math.max(0, count - 1) * Math.max(0, table.getIntercellSpacing().width);
+        int available = Math.max(1, viewportWidth - grid);
+
+        if (total < available) {
+            distributeExtraWidth(widths, weights, available - total);
+        } else if (total > available) {
+            shrinkToFit(widths, minimums, weights, total - available);
+        }
+
+        for (int view = 0; view < count; view++) {
+            TableColumn column = columns.getColumn(view);
+            column.setMinWidth(minimums[view]);
+            column.setPreferredWidth(widths[view]);
+            column.setWidth(widths[view]);
+        }
+        table.doLayout();
+    }
+
+    private static int compactMinimumWidth(String header, FontMetrics metrics, String rawHeader) {
+        int headerWidth = metrics.stringWidth(rawHeader) + 12;
+        if (isIdHeader(header)) return Math.max(42, Math.min(58, headerWidth));
+        if (isDateHeader(header)) return Math.max(92, Math.min(122, headerWidth));
+        if (isQuantityOrMoneyHeader(header)) return Math.max(76, Math.min(118, headerWidth));
+        if (isCodeHeader(header)) return Math.max(86, Math.min(145, headerWidth));
+        if (isStatusHeader(header)) return Math.max(90, Math.min(125, headerWidth));
+        return Math.max(72, Math.min(150, headerWidth));
+    }
+
+    private static int compactNaturalCap(String header) {
+        if (isIdHeader(header)) return 62;
+        if (isDateHeader(header)) return 128;
+        if (isQuantityOrMoneyHeader(header)) return 132;
+        if (isCodeHeader(header)) return 165;
+        if (isStatusHeader(header)) return 140;
+        if (containsAny(header, "phone", "telefono", "téléphone", "telefon")) return 175;
+        if (containsAny(header, "vat", "iva", "partita iva", "tax")) return 165;
+        if (isVeryFlexibleTextHeader(header)) return 360;
+        if (isFlexibleTextHeader(header)) return 260;
+        return 220;
+    }
+
+    private static void distributeExtraWidth(int[] widths, int[] weights, int extra) {
+        int totalWeight = 0;
+        for (int weight : weights) totalWeight += Math.max(0, weight);
+
+        if (totalWeight == 0) {
+            for (int i = 0; i < weights.length; i++) weights[i] = 1;
+            totalWeight = weights.length;
+        }
+
+        int remaining = extra;
+        for (int i = 0; i < widths.length; i++) {
+            if (weights[i] <= 0) continue;
+            int add = (int)Math.floor((double)extra * weights[i] / totalWeight);
+            widths[i] += add;
+            remaining -= add;
+        }
+
+        // Put rounding remainder into the most useful flexible columns first.
+        while (remaining-- > 0) {
+            int best = 0;
+            for (int i = 1; i < weights.length; i++) {
+                if (weights[i] > weights[best]) best = i;
+            }
+            widths[best]++;
+        }
+    }
+
+    private static void shrinkToFit(int[] widths, int[] minimums, int[] weights, int overflow) {
+        int remaining = overflow;
+
+        // First reclaim space from wide/flexible text fields, preserving compact
+        // numeric/date/code columns at their natural sizes as long as possible.
+        while (remaining > 0) {
+            int best = -1;
+            int bestRoom = 0;
+            int bestWeight = -1;
+            for (int i = 0; i < widths.length; i++) {
+                int room = widths[i] - minimums[i];
+                if (room <= 0) continue;
+                if (weights[i] > bestWeight || (weights[i] == bestWeight && room > bestRoom)) {
+                    best = i;
+                    bestRoom = room;
+                    bestWeight = weights[i];
+                }
+            }
+            if (best < 0) break;
+
+            int step = Math.min(remaining, Math.max(1, bestRoom / 3));
+            widths[best] -= step;
+            remaining -= step;
+        }
+    }
+
+    private static int flexibleColumnWeight(String header) {
+        if (isIdHeader(header) || isDateHeader(header) || isQuantityOrMoneyHeader(header)
+                || isCodeHeader(header) || isStatusHeader(header)) return 0;
+        if (isVeryFlexibleTextHeader(header)) return 6;
+        if (containsAny(header, "email", "e-mail")) return 4;
+        if (isFlexibleTextHeader(header)) return 3;
+        return 1;
+    }
+
+    private static boolean isIdHeader(String header) {
+        return header.equals("id") || header.endsWith(" id") || header.startsWith("id ")
+            || header.contains(" id ") || header.equals("#");
+    }
+
+    private static boolean isDateHeader(String header) {
+        return containsAny(header, "date", "data", "fecha", "datum");
+    }
+
+    private static boolean isCodeHeader(String header) {
+        return containsAny(header,
+            "code", "codice", "código", "codigo", "kod", "sku",
+            "number", "numero", "número", "numéro", "nummer", "document",
+            "documento", "dokument", "vat no", "partita iva");
+    }
+
+    private static boolean isQuantityOrMoneyHeader(String header) {
+        return containsAny(header,
+            "qty", "quantity", "quantità", "quantita", "cantidad", "quantidade",
+            "quantité", "menge", "ilość", "ilosc",
+            "price", "prezzo", "precio", "preço", "preco", "prix", "preis", "cena",
+            "total", "totale", "gesamt", "suma", "cost", "costo", "coût", "cout",
+            "kosten", "koszt", "revenue", "ricavi", "amount", "importo", "importe",
+            "vat", "iva", "tax", "stock", "physical", "reserved", "available",
+            "minimum", "min ", "%");
+    }
+
+    private static boolean isStatusHeader(String header) {
+        return isBadgeColumn(header);
+    }
+
+    private static boolean isVeryFlexibleTextHeader(String header) {
+        return containsAny(header,
+            "address", "indirizzo", "direccion", "dirección", "endereço", "endereco",
+            "adresse", "adres", "notes", "note", "notas", "description", "descrizione",
+            "descripción", "descricao", "description", "beschreibung", "opis",
+            "message", "messaggio", "mensaje", "mensagem", "nachricht", "wiadomość",
+            "path", "percorso", "chemin", "pfad", "ścieżka");
+    }
+
+    private static boolean isFlexibleTextHeader(String header) {
+        return containsAny(header,
+            "name", "nome", "ragione sociale", "company", "azienda",
+            "product", "prodotto", "customer", "cliente", "supplier", "fornitore",
+            "email", "e-mail", "reason", "motivo", "source", "origine", "fonte",
+            "file", "category", "categoria");
     }
 
     private static final class SmartCellRenderer extends DefaultTableCellRenderer {
