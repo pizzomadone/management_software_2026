@@ -58,6 +58,7 @@ public class SupplierOrdersPanel extends JPanel {
 
     private void styleSupplierOrdersTable() {
         // Compact table: just enough breathing room without wasting vertical space.
+        table.setFont(table.getFont().deriveFont(Font.PLAIN));
         table.setRowHeight(Math.max(24, table.getFontMetrics(table.getFont()).getHeight() + 5));
         table.setIntercellSpacing(new Dimension(1, 1));
         table.setShowVerticalLines(true);
@@ -68,9 +69,7 @@ public class SupplierOrdersPanel extends JPanel {
         table.setFillsViewportHeight(true);
 
         JTableHeader header = table.getTableHeader();
-        header.setFont(header.getFont().deriveFont(java.util.Map.of(
-            java.awt.font.TextAttribute.WEIGHT,
-            java.awt.font.TextAttribute.WEIGHT_SEMIBOLD)));
+        header.setFont(header.getFont().deriveFont(Font.BOLD));
         header.setPreferredSize(new Dimension(header.getPreferredSize().width, 28));
         Color headerBackground = adjustColor(table.getBackground(),
             isLight(table.getBackground()) ? -7 : 10);
