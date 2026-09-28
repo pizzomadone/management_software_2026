@@ -46,7 +46,7 @@ public class OrdersPanel extends JPanel {
         searchPanel.add(searchButton);
 
         // Orders table
-        String[] columns = {"ID", "Customer", "Date", "Status", "Total " + SettingsPanel.getCurrencySymbol(), "Payment"};
+        String[] columns = {"ID", "Customer", "Date", "Status", "Total", "Payment"};
         tableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
