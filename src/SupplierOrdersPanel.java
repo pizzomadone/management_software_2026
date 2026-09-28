@@ -113,6 +113,10 @@ public class SupplierOrdersPanel extends JPanel {
         setPreferredColumnWidth(5, 115);
         setPreferredColumnWidth(6, 105);
         setPreferredColumnWidth(7, 220);
+
+        // Keep the approved visual styling, but let column widths rebalance
+        // automatically so compact fields do not steal space from long text.
+        TableStyleUtil.applySmartColumnSizing(table);
     }
 
     private void setPreferredColumnWidth(int column, int width) {
