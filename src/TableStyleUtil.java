@@ -3,7 +3,10 @@ import javax.swing.table.*;
 import java.awt.*;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import javax.swing.event.TableModelEvent;
+import java.util.Arrays;
 import java.util.Locale;
 
 /** Shared visual treatment for WareStat tables. */
@@ -154,6 +157,10 @@ public final class TableStyleUtil {
 
     private static final String SMART_SIZING_INSTALLED = "warestat.smartColumnSizingInstalled";
     private static final String SMART_SIZING_PENDING = "warestat.smartColumnSizingPending";
+    private static final String COLUMN_PERSISTENCE_INSTALLED =
+        "warestat.columnPersistenceInstalled";
+    private static final String COLUMN_PERSISTENCE_KEY =
+        "warestat.columnPersistenceKey";
     private static final String CURRENCY_CODE_PROPERTY = "warestat.currencyCode";
 
     /** Optional document-specific currency (for example an issued invoice). */
@@ -161,6 +168,16 @@ public final class TableStyleUtil {
         if (table == null) return;
         table.putClientProperty(CURRENCY_CODE_PROPERTY,
             currencyCode == null || currencyCode.isBlank() ? null : currencyCode);
+    }
+
+    /**
+     * Optional explicit persistence key for tables that need to share or isolate
+     * column layouts. Normally WareStat derives a stable key automatically.
+     */
+    public static void setColumnPersistenceKey(JTable table, String key) {
+        if (table == null) return;
+        table.putClientProperty(COLUMN_PERSISTENCE_KEY,
+            key == null || key.isBlank() ? null : key.trim());
     }
 
     /**
@@ -178,6 +195,8 @@ public final class TableStyleUtil {
     private static void installSmartColumnSizing(JTable table) {
         if (Boolean.TRUE.equals(table.getClientProperty(SMART_SIZING_INSTALLED))) return;
         table.putClientProperty(SMART_SIZING_INSTALLED, Boolean.TRUE);
+
+        installColumnWidthPersistence(table);
 
         table.getModel().addTableModelListener(event -> {
             // Refit after rows are loaded/removed, but do not move columns around
@@ -263,6 +282,26 @@ public final class TableStyleUtil {
             maximums[view] = Math.max(widths[view], compactMaximumWidth(normalizedHeader));
             weights[view] = flexibleColumnWeight(normalizedHeader);
             total += widths[view];
+        }
+
+        int[] persisted = loadPersistedColumnWidths(table);
+        if (persisted != null) {
+            total = 0;
+            for (int view = 0; view < count; view++) {
+                TableColumn column = columns.getColumn(view);
+                int modelColumn = column.getModelIndex();
+                if (modelColumn < 0 || modelColumn >= persisted.length
+                        || persisted[modelColumn] <= 0 || maximums[view] == 0) {
+                    total += widths[view];
+                    continue;
+                }
+
+                int saved = Math.max(minimums[view], persisted[modelColumn]);
+                widths[view] = saved;
+                // A user's deliberate width is allowed to exceed the automatic cap.
+                maximums[view] = Math.max(maximums[view], saved);
+                total += saved;
+            }
         }
 
         int grid = Math.max(0, count - 1) * Math.max(0, table.getIntercellSpacing().width);
@@ -477,6 +516,115 @@ public final class TableStyleUtil {
             "product", "prodotto", "customer", "cliente", "supplier", "fornitore",
             "email", "e-mail", "reason", "motivo", "source", "origine", "fonte",
             "file", "category", "categoria");
+    }
+
+    private static void installColumnWidthPersistence(JTable table) {
+        if (Boolean.TRUE.equals(table.getClientProperty(COLUMN_PERSISTENCE_INSTALLED))) return;
+        table.putClientProperty(COLUMN_PERSISTENCE_INSTALLED, Boolean.TRUE);
+
+        JTableHeader header = table.getTableHeader();
+        if (header == null) return;
+
+        // Header release happens once after a resize gesture, avoiding disk writes
+        // for every pixel while the divider is being dragged.
+        header.addMouseListener(new MouseAdapter() {
+            @Override public void mouseReleased(MouseEvent event) {
+                if (!SwingUtilities.isLeftMouseButton(event)) return;
+                SwingUtilities.invokeLater(() -> savePersistedColumnWidths(table));
+            }
+        });
+    }
+
+    private static void savePersistedColumnWidths(JTable table) {
+        if (table == null || table.getColumnCount() == 0) return;
+
+        int modelCount = table.getModel().getColumnCount();
+        int[] widths = new int[modelCount];
+        Arrays.fill(widths, -1);
+
+        TableColumnModel columns = table.getColumnModel();
+        for (int view = 0; view < columns.getColumnCount(); view++) {
+            TableColumn column = columns.getColumn(view);
+            int modelColumn = column.getModelIndex();
+            if (modelColumn < 0 || modelColumn >= widths.length || column.getMaxWidth() == 0)
+                continue;
+            widths[modelColumn] = Math.max(1, column.getWidth());
+        }
+
+        StringBuilder value = new StringBuilder();
+        for (int model = 0; model < widths.length; model++) {
+            if (widths[model] <= 0) continue;
+            if (value.length() > 0) value.append(';');
+            value.append(model).append('=').append(widths[model]);
+        }
+        if (value.length() == 0) return;
+
+        SettingsPanel.setGlobalSetting(columnPersistenceSettingKey(table), value.toString());
+    }
+
+    private static int[] loadPersistedColumnWidths(JTable table) {
+        if (table == null || table.getModel().getColumnCount() == 0) return null;
+
+        String raw = SettingsPanel.getGlobalSetting(
+            columnPersistenceSettingKey(table), "").trim();
+        if (raw.isEmpty()) return null;
+
+        int[] widths = new int[table.getModel().getColumnCount()];
+        boolean found = false;
+        try {
+            for (String entry : raw.split(";")) {
+                int separator = entry.indexOf('=');
+                if (separator <= 0 || separator >= entry.length() - 1) continue;
+                int model = Integer.parseInt(entry.substring(0, separator).trim());
+                int width = Integer.parseInt(entry.substring(separator + 1).trim());
+                if (model < 0 || model >= widths.length || width <= 0) continue;
+                widths[model] = width;
+                found = true;
+            }
+        } catch (NumberFormatException exception) {
+            return null;
+        }
+        return found ? widths : null;
+    }
+
+    private static String columnPersistenceSettingKey(JTable table) {
+        Object explicit = table.getClientProperty(COLUMN_PERSISTENCE_KEY);
+        if (explicit instanceof String text && !text.isBlank())
+            return "table.column_widths." + sanitizeSettingKey(text);
+
+        String owner = tableOwnerName(table);
+        StringBuilder signature = new StringBuilder();
+        for (int model = 0; model < table.getModel().getColumnCount(); model++) {
+            if (model > 0) signature.append('|');
+            String name = table.getModel().getColumnName(model);
+            signature.append(name == null ? "" : name.trim().toLowerCase(Locale.ROOT));
+        }
+
+        String hash = Integer.toUnsignedString(signature.toString().hashCode(), 36);
+        return "table.column_widths." + sanitizeSettingKey(owner) + "." + hash;
+    }
+
+    private static String tableOwnerName(JTable table) {
+        Component current = table.getParent();
+        while (current != null) {
+            Class<?> type = current.getClass();
+            String className = type.getName();
+            if (!className.startsWith("javax.swing.")
+                    && !className.startsWith("java.awt.")
+                    && !type.isAnonymousClass()
+                    && !type.isSynthetic()) {
+                String simple = type.getSimpleName();
+                if (simple != null && !simple.isBlank()) return simple;
+            }
+            current = current.getParent();
+        }
+        return "table";
+    }
+
+    private static String sanitizeSettingKey(String value) {
+        String sanitized = value == null ? "" :
+            value.trim().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9._-]+", "_");
+        return sanitized.isBlank() ? "table" : sanitized;
     }
 
     private static final class SmartCellRenderer extends DefaultTableCellRenderer {
