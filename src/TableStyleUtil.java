@@ -154,6 +154,13 @@ public final class TableStyleUtil {
      * that benefit from space (address, notes, descriptions, e-mail, names).
      * Product table intentionally does not use this path.
      */
+    /** Applies only automatic column-width balancing, without changing table colors or renderers. */
+    public static void applySmartColumnSizing(JTable table) {
+        if (table == null) return;
+        table.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
+        installSmartColumnSizing(table);
+    }
+
     private static void installSmartColumnSizing(JTable table) {
         if (Boolean.TRUE.equals(table.getClientProperty(SMART_SIZING_INSTALLED))) return;
         table.putClientProperty(SMART_SIZING_INSTALLED, Boolean.TRUE);
