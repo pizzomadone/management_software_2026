@@ -92,7 +92,7 @@ public class SupplierProductsWindow extends JDialog {
                         Vector<Object> row=new Vector<>();
                         row.add(r.getString("code")+" - "+r.getString("name"));
                         row.add(r.getString("supplier_product_code"));
-                        row.add(SettingsPanel.formatCurrency(r.getDouble("purchase_price")));
+                        row.add(r.getDouble("purchase_price"));
                         row.add(r.getInt("is_preferred")==1?I18n.tr("Yes"):I18n.tr("No"));
                         row.add(r.getString("notes"));
                         row.add(r.getInt("id"));
