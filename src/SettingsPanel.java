@@ -804,6 +804,32 @@ public class SettingsPanel extends JPanel {
         }
     }
 
+    /**
+     * Currency formatting for unit prices/costs. Unlike totals, unit values may
+     * legitimately carry more than two decimal places, so their stored precision
+     * remains visible while the currency is still shown in the cell.
+     */
+    public static String formatUnitCurrency(double amount) {
+        return formatUnitCurrency(amount, getCurrencyCode());
+    }
+
+    public static String formatUnitCurrency(double amount, String currencyCode) {
+        if (currencyCode == null || currencyCode.isBlank()) currencyCode = getCurrencyCode();
+        try {
+            NumberFormat formatter = NumberFormat.getCurrencyInstance(Locale.getDefault());
+            Currency currency = Currency.getInstance(currencyCode);
+            formatter.setCurrency(currency);
+            formatter.setRoundingMode(java.math.RoundingMode.HALF_UP);
+            BigDecimal decimal = BigDecimal.valueOf(Numbers.nonNegative(amount)).stripTrailingZeros();
+            int fractionDigits = Math.max(2, Math.min(8, Math.max(0, decimal.scale())));
+            formatter.setMinimumFractionDigits(2);
+            formatter.setMaximumFractionDigits(fractionDigits);
+            return formatter.format(decimal);
+        } catch (IllegalArgumentException e) {
+            return getCurrencySymbol(currencyCode) + " " + Numbers.unitText(amount);
+        }
+    }
+
     public static double getDefaultVatRate() {
         try {
             return Numbers.vat(getGlobalSetting("default_vat", "22.0"));
