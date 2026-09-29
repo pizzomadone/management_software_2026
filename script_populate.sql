@@ -391,6 +391,53 @@ SET paid_amount = CASE payment_status
     ELSE 0
 END;
 
+-- Completed demo sales have explicit historical FIFO layers. They are exhausted
+-- and separate from current opening stock, so the demo report can show historical
+-- cost/profit without altering today's physical quantity.
+INSERT INTO inventory_lots(
+    id,product_id,supplier_id,received_date,
+    initial_quantity,remaining_quantity,unit_cost,source_type
+)
+SELECT
+    -(100000 + d.id),
+    d.product_id,
+    pref.supplier_id,
+    o.order_date,
+    d.quantity,
+    0,
+    p.acquisition_cost,
+    'DEMO_SALE_HISTORY'
+FROM order_details d
+JOIN orders o ON o.id=d.order_id
+JOIN products p ON p.id=d.product_id
+LEFT JOIN product_suppliers pref
+       ON pref.product_id=p.id AND pref.is_preferred=1
+WHERE o.status='Completed';
+
+INSERT INTO inventory_lot_consumptions(
+    lot_id,order_detail_id,warehouse_movement_id,quantity,unit_cost
+)
+SELECT
+    -(100000 + d.id),
+    d.id,
+    NULL,
+    d.quantity,
+    p.acquisition_cost
+FROM order_details d
+JOIN orders o ON o.id=d.order_id
+JOIN products p ON p.id=d.product_id
+WHERE o.status='Completed';
+
+UPDATE order_details
+SET cost_total = ROUND(quantity * (
+    SELECT p.acquisition_cost
+    FROM products p
+    WHERE p.id=order_details.product_id
+), 2)
+WHERE order_id IN (
+    SELECT id FROM orders WHERE status='Completed'
+);
+
 -- Active reservations for open orders.
 INSERT INTO stock_reservations(
     product_id, document_type, document_id, reserved_quantity,
