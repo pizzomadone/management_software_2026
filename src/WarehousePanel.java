@@ -302,7 +302,7 @@ public class WarehousePanel extends JPanel {
                     } else {
                         status = availableStock <= 0 ? "OUT OF STOCK" : "OK";
                     }
-                    row.add(StockManager.displayWarehouseText(status));
+                    row.add(status);
 
                     row.add(rs.getString("supplier_name"));
                     stockModel.addRow(row);
@@ -433,7 +433,7 @@ public class WarehousePanel extends JPanel {
                     row.add(rs.getString("product_name"));
                     row.add(StockManager.displayWarehouseText(rs.getString("type")));
                     row.add(StockManager.displayWarehouseText(rs.getString("message")));
-                    row.add(StockManager.displayWarehouseText(rs.getString("status")));
+                    row.add(rs.getString("status"));
                     row.add(rs.getInt("id"));
                     notificationsModel.addRow(row);
                 }
