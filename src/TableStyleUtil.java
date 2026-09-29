@@ -786,8 +786,9 @@ public final class TableStyleUtil {
         @Override
         public Component getTableCellRendererComponent(JTable table, Object value,
                 boolean selected, boolean focus, int row, int column) {
-            String text = value == null ? "" : String.valueOf(value);
-            BadgeColors colors = badgeColors(text);
+            String rawText = value == null ? "" : String.valueOf(value);
+            String text = I18n.tr(rawText);
+            BadgeColors colors = badgeColors(rawText);
 
             removeAll();
             setBackground(selected ? table.getSelectionBackground() : rowBackground(styledTable, row));
@@ -854,8 +855,9 @@ public final class TableStyleUtil {
                 table, value, selected, focus, row, column);
             int alignment = base instanceof JLabel label
                 ? label.getHorizontalAlignment() : SwingConstants.LEFT;
-            String text = value == null ? "" : String.valueOf(value);
-            BadgeColors colors = badgeColors(text);
+            String rawText = value == null ? "" : String.valueOf(value);
+            String text = I18n.tr(rawText);
+            BadgeColors colors = badgeColors(rawText);
 
             JPanel panel = new JPanel(new FlowLayout(flowAlignment(alignment), 0, 0));
             panel.setOpaque(true);
