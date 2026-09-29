@@ -169,6 +169,12 @@ public class SalesReportPanel extends JPanel {
                     WHERE order_detail_id IS NOT NULL
                     GROUP BY order_detail_id
                 ),
+                demo_mode AS (
+                    SELECT CASE WHEN EXISTS(
+                        SELECT 1 FROM inventory_lots
+                        WHERE source_type='DEMO_OPENING'
+                    ) THEN 1 ELSE 0 END AS enabled
+                ),
                 detail_cost AS (
                     SELECT d.order_id,
                            CASE
@@ -177,10 +183,14 @@ public class SalesReportPanel extends JPanel {
                                     AND f.consumed_qty = d.quantity
                                     AND f.unknown_qty = 0
                                THEN f.fifo_cost
+                               WHEN dm.enabled = 1
+                               THEN d.quantity * COALESCE(p.acquisition_cost,0)
                                ELSE NULL
                            END AS effective_cost
                     FROM order_details d
                     LEFT JOIN fifo_cost f ON f.order_detail_id = d.id
+                    LEFT JOIN products p ON p.id = d.product_id
+                    CROSS JOIN demo_mode dm
                 ),
                 cg AS (
                     SELECT order_id,
@@ -324,6 +334,12 @@ public class SalesReportPanel extends JPanel {
                         FROM inventory_lot_consumptions
                         WHERE order_detail_id IS NOT NULL
                         GROUP BY order_detail_id
+                    ),
+                    demo_mode AS (
+                        SELECT CASE WHEN EXISTS(
+                            SELECT 1 FROM inventory_lots
+                            WHERE source_type='DEMO_OPENING'
+                        ) THEN 1 ELSE 0 END AS enabled
                     )
                     SELECT COALESCE(p.name, 'Product N/A') as product_name,
                            d.quantity, d.unit_price,
@@ -333,12 +349,15 @@ public class SalesReportPanel extends JPanel {
                                     AND f.consumed_qty = d.quantity
                                     AND f.unknown_qty = 0
                                THEN f.fifo_cost
+                               WHEN dm.enabled = 1
+                               THEN d.quantity * COALESCE(p.acquisition_cost,0)
                                ELSE NULL
                            END AS effective_cost,
                            warestat_line_total(d.quantity,d.unit_price) as total
                     FROM order_details d
                     LEFT JOIN products p ON d.product_id = p.id
                     LEFT JOIN fifo_cost f ON f.order_detail_id = d.id
+                    CROSS JOIN demo_mode dm
                     WHERE d.order_id = ?
                 """;
                 try (PreparedStatement pstmt = conn.prepareStatement(query)) {
