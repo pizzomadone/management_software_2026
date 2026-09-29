@@ -150,7 +150,7 @@ public class ProductDialog extends JDialog {
         preferredSupplierPriceField = new JTextField(10);
         setFieldWidth(preferredSupplierPriceField, 115);
         preferredSupplierPriceField.setText("0.0");
-        preferredSupplierPriceField.setToolTipText(I18n.tr("Current reference price from the preferred supplier. It is proposed in purchase orders but can be changed."));
+        preferredSupplierPriceField.setToolTipText(I18n.tr("Current purchase price from the preferred supplier. It is used as the default in new supplier orders and can still be changed in the order."));
 
         acquisitionCostField = new JTextField(10);
         setFieldWidth(acquisitionCostField, 115);
@@ -173,7 +173,7 @@ public class ProductDialog extends JDialog {
 
         addFormRow(stockPanel, 0, "Price:", priceField);
         addFormRow(stockPanel, 1, "Preferred Supplier Price:", withHelp(preferredSupplierPriceField,
-            "Current reference price from the preferred supplier. It is proposed in purchase orders but can be changed."));
+            "Current purchase price from the preferred supplier. It is used as the default in new supplier orders and can still be changed in the order."));
         addFormRow(stockPanel, 2, "Last Purchase Cost:", withHelp(acquisitionCostField,
             "Last actual purchase cost. Historical sales retain their original FIFO cost."));
         addFormRow(stockPanel, 3, "Quantity:", quantitySpinner);
