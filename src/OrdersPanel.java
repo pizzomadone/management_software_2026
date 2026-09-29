@@ -55,6 +55,7 @@ public class OrdersPanel extends JPanel {
         };
         ordersTable = new JTable(tableModel);
         TableStyleUtil.applyCompact(ordersTable);
+        I18n.localize(ordersTable);
         ordersTable.getSelectionModel().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         ordersTable.getSelectionModel().addListSelectionListener(e -> updateButtonStates());
 
@@ -638,13 +639,13 @@ public class OrdersPanel extends JPanel {
      */
     private String formatPaymentStatus(String paymentStatus, double paidAmount, double total) {
         if (paymentStatus == null || "NOT_PAID".equals(paymentStatus)) {
-            return "Not Paid";
+            return I18n.tr("Not Paid");
         } else if ("PAID".equals(paymentStatus)) {
-            return "Paid";
+            return I18n.tr("Paid");
         } else if ("PARTIALLY_PAID".equals(paymentStatus)) {
-            return "Partial (" + SettingsPanel.formatCurrency(paidAmount) + ")";
+            return I18n.tr("Partial") + " (" + SettingsPanel.formatCurrency(paidAmount) + ")";
         }
-        return "Not Paid";
+        return I18n.tr("Not Paid");
     }
 
     /**
