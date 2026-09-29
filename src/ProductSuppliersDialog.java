@@ -221,12 +221,11 @@ public class ProductSuppliersDialog extends JDialog {
     }
 
     private boolean confirmPreferredChange(String supplierName,double purchasePrice){
-        String message=I18n.format("Set {0} as the preferred supplier?",supplierName)
-            +"\n\n"+I18n.format(
-                "Its current purchase price ({0}) will become the default purchase price proposed for this product in new supplier orders.",
+        String message=I18n.format("New preferred supplier: {0}.",supplierName)
+            +"\n"+I18n.format(
+                "The default purchase price will be aligned with the new supplier's price ({0}).",
                 SettingsPanel.formatUnitCurrency(purchasePrice))
-            +"\n"+I18n.tr(
-                "The product sale price and historical FIFO costs will not be changed.");
+            +"\n\n"+I18n.tr("Confirm?");
         return Dialogs.showConfirmDialog(this,message,I18n.tr("Set Preferred Supplier"),
             JOptionPane.YES_NO_OPTION,JOptionPane.WARNING_MESSAGE)==JOptionPane.YES_OPTION;
     }
