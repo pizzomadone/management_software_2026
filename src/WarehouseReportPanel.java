@@ -236,7 +236,7 @@ public class WarehouseReportPanel extends JPanel {
                     } else {
                         status = "OK";
                     }
-                    row.add(StockManager.displayWarehouseText(status));
+                    row.add(status);
 
                     productsModel.addRow(row);
                     totalProducts++;
