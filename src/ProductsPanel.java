@@ -176,6 +176,14 @@ public class ProductsPanel extends JPanel {
         lotsButton = new JButton("Lots");
         deleteButton = new JButton("Delete");
         refreshButton = new JButton("Refresh");
+
+        searchButton.setToolTipText(I18n.tr("Search products by code, name or description."));
+        addButton.setToolTipText(I18n.tr("Create a new product."));
+        detailsButton.setToolTipText(I18n.tr("Open the selected product details."));
+        editButton.setToolTipText(I18n.tr("Edit the selected product."));
+        lotsButton.setToolTipText(I18n.tr("View FIFO lots for the selected product."));
+        deleteButton.setToolTipText(I18n.tr("Delete the selected product."));
+        refreshButton.setToolTipText(I18n.tr("Reload the product list."));
         
         addButton.addActionListener(e -> showProductDialog(null));
         detailsButton.addActionListener(e -> viewSelectedProduct());
