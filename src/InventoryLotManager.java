@@ -14,6 +14,7 @@ public final class InventoryLotManager {
             case "LEGACY_SUPPLIER_ORDER" -> I18n.tr("Historical supplier order");
             case "MIGRATION" -> I18n.tr("Opening stock");
             case "DEMO_OPENING" -> I18n.tr("Demo opening stock");
+            case "DEMO_SALE_HISTORY" -> I18n.tr("Demo sales history");
             case "MANUAL_INWARD" -> I18n.tr("Manual inward");
             case "INVENTORY_ADJUSTMENT" -> I18n.tr("Inventory adjustment");
             default -> humanizeSourceType(sourceType);
