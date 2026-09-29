@@ -67,6 +67,7 @@ public class WarehousePanel extends JPanel {
         };
         stockTable = new JTable(stockModel);
         TableStyleUtil.applyCompact(stockTable);
+        I18n.localize(stockTable);
 
         // Enable column sorting
         TableSorterUtil.enableSorting(stockTable);
@@ -121,6 +122,7 @@ public class WarehousePanel extends JPanel {
         };
         movementsTable = new JTable(movementsModel);
         TableStyleUtil.applyCompact(movementsTable);
+        I18n.localize(movementsTable);
 
         // Enable column sorting with date support (column 1 is "Date")
         TableSorterUtil.enableSorting(movementsTable, new int[]{1}, dateFormat);
@@ -186,6 +188,7 @@ public class WarehousePanel extends JPanel {
         },0){@Override public boolean isCellEditable(int r,int c){return false;}};
         lotsTable=new JTable(lotsModel);
         TableStyleUtil.applyCompact(lotsTable);
+        I18n.localize(lotsTable);
         TableSorterUtil.enableSorting(lotsTable,new int[]{0},dateFormat);
 
         showExhaustedLots=new JCheckBox("Show exhausted lots",true);
@@ -212,6 +215,7 @@ public class WarehousePanel extends JPanel {
         };
         notificationsTable = new JTable(notificationsModel);
         TableStyleUtil.applyCompact(notificationsTable);
+        I18n.localize(notificationsTable);
         notificationsTable.removeColumn(notificationsTable.getColumnModel().getColumn(5));
 
         // Enable column sorting with date support (column 0 is "Date")
@@ -298,7 +302,7 @@ public class WarehousePanel extends JPanel {
                     } else {
                         status = availableStock <= 0 ? "OUT OF STOCK" : "OK";
                     }
-                    row.add(status);
+                    row.add(StockManager.displayWarehouseText(status));
 
                     row.add(rs.getString("supplier_name"));
                     stockModel.addRow(row);
@@ -380,17 +384,17 @@ public class WarehousePanel extends JPanel {
                     }
 
                     row.add(rs.getString("product_name"));
-                    row.add(rs.getString("type"));
+                    row.add(StockManager.displayWarehouseText(rs.getString("type")));
                     row.add(rs.getInt("quantity"));
-                    row.add(rs.getString("reason"));
+                    row.add(StockManager.displayWarehouseText(rs.getString("reason")));
 
                     String document = rs.getString("document_type");
                     if (document != null && !document.isEmpty()) {
-                        document += " " + rs.getString("document_number");
+                        document = StockManager.displayWarehouseText(document) + " " + rs.getString("document_number");
                     }
                     row.add(document);
 
-                    row.add(rs.getString("notes"));
+                    row.add(StockManager.displayWarehouseText(rs.getString("notes")));
                     movementsModel.addRow(row);
                 }
             }
@@ -427,9 +431,9 @@ public class WarehousePanel extends JPanel {
                     }
 
                     row.add(rs.getString("product_name"));
-                    row.add(rs.getString("type"));
-                    row.add(rs.getString("message"));
-                    row.add(rs.getString("status"));
+                    row.add(StockManager.displayWarehouseText(rs.getString("type")));
+                    row.add(StockManager.displayWarehouseText(rs.getString("message")));
+                    row.add(StockManager.displayWarehouseText(rs.getString("status")));
                     row.add(rs.getInt("id"));
                     notificationsModel.addRow(row);
                 }
@@ -548,17 +552,17 @@ public class WarehousePanel extends JPanel {
                         }
 
                         row.add(rs.getString("product_name"));
-                        row.add(rs.getString("type"));
+                        row.add(StockManager.displayWarehouseText(rs.getString("type")));
                         row.add(rs.getInt("quantity"));
-                        row.add(rs.getString("reason"));
+                        row.add(StockManager.displayWarehouseText(rs.getString("reason")));
 
                         String document = rs.getString("document_type");
                         if (document != null && !document.isEmpty()) {
-                            document += " " + rs.getString("document_number");
+                            document = StockManager.displayWarehouseText(document) + " " + rs.getString("document_number");
                         }
                         row.add(document);
 
-                        row.add(rs.getString("notes"));
+                        row.add(StockManager.displayWarehouseText(rs.getString("notes")));
                         movementsModel.addRow(row);
                     }
                 }
