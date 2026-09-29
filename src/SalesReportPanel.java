@@ -159,13 +159,44 @@ public class SalesReportPanel extends JPanel {
             Date end = DateUtils.parseDate(endDateField.getText(),dateFormat);
             if (start!=null && end!=null && start.after(end)) throw new IllegalArgumentException("Start date must not follow end date");
             Connection conn = DatabaseManager.getInstance().getConnection();
-            String query = "SELECT o.id,o.order_date,o.status,o.total,COALESCE(c.first_name || ' ' || c.last_name,'N/A') customer_name, " +
-                "cg.cost_total,cg.missing_cost " +
-                "FROM orders o LEFT JOIN customers c ON c.id=o.customer_id " +
-                "LEFT JOIN (SELECT order_id,SUM(cost_total) cost_total, " +
-                "SUM(CASE WHEN cost_total IS NULL THEN 1 ELSE 0 END) missing_cost " +
-                "FROM order_details GROUP BY order_id) cg ON cg.order_id=o.id " +
-                "WHERE o.status='Completed'";
+            String query = """
+                WITH fifo_cost AS (
+                    SELECT order_detail_id,
+                           SUM(quantity) AS consumed_qty,
+                           SUM(CASE WHEN lot_id IS NULL THEN quantity ELSE 0 END) AS unknown_qty,
+                           SUM(quantity * unit_cost) AS fifo_cost
+                    FROM inventory_lot_consumptions
+                    WHERE order_detail_id IS NOT NULL
+                    GROUP BY order_detail_id
+                ),
+                detail_cost AS (
+                    SELECT d.order_id,
+                           CASE
+                               WHEN d.cost_total IS NOT NULL THEN d.cost_total
+                               WHEN f.order_detail_id IS NOT NULL
+                                    AND f.consumed_qty = d.quantity
+                                    AND f.unknown_qty = 0
+                               THEN f.fifo_cost
+                               ELSE NULL
+                           END AS effective_cost
+                    FROM order_details d
+                    LEFT JOIN fifo_cost f ON f.order_detail_id = d.id
+                ),
+                cg AS (
+                    SELECT order_id,
+                           SUM(effective_cost) AS cost_total,
+                           SUM(CASE WHEN effective_cost IS NULL THEN 1 ELSE 0 END) AS missing_cost
+                    FROM detail_cost
+                    GROUP BY order_id
+                )
+                SELECT o.id,o.order_date,o.status,o.total,
+                       COALESCE(c.first_name || ' ' || c.last_name,'N/A') customer_name,
+                       cg.cost_total,cg.missing_cost
+                FROM orders o
+                LEFT JOIN customers c ON c.id=o.customer_id
+                LEFT JOIN cg ON cg.order_id=o.id
+                WHERE o.status='Completed'
+                """;
             if (start!=null) query += " AND " + DateUtils.sqlDate("o.order_date") + ">=?";
             if (end!=null) query += " AND " + DateUtils.sqlDate("o.order_date") + "<=?";
             query += " ORDER BY " + DateUtils.sqlDate("o.order_date") + " DESC,o.id DESC";
@@ -285,11 +316,29 @@ public class SalesReportPanel extends JPanel {
             try {
                 Connection conn = DatabaseManager.getInstance().getConnection();
                 String query = """
+                    WITH fifo_cost AS (
+                        SELECT order_detail_id,
+                               SUM(quantity) AS consumed_qty,
+                               SUM(CASE WHEN lot_id IS NULL THEN quantity ELSE 0 END) AS unknown_qty,
+                               SUM(quantity * unit_cost) AS fifo_cost
+                        FROM inventory_lot_consumptions
+                        WHERE order_detail_id IS NOT NULL
+                        GROUP BY order_detail_id
+                    )
                     SELECT COALESCE(p.name, 'Product N/A') as product_name,
-                           d.quantity, d.unit_price, d.cost_total,
+                           d.quantity, d.unit_price,
+                           CASE
+                               WHEN d.cost_total IS NOT NULL THEN d.cost_total
+                               WHEN f.order_detail_id IS NOT NULL
+                                    AND f.consumed_qty = d.quantity
+                                    AND f.unknown_qty = 0
+                               THEN f.fifo_cost
+                               ELSE NULL
+                           END AS effective_cost,
                            warestat_line_total(d.quantity,d.unit_price) as total
                     FROM order_details d
                     LEFT JOIN products p ON d.product_id = p.id
+                    LEFT JOIN fifo_cost f ON f.order_detail_id = d.id
                     WHERE d.order_id = ?
                 """;
                 try (PreparedStatement pstmt = conn.prepareStatement(query)) {
@@ -302,11 +351,11 @@ public class SalesReportPanel extends JPanel {
                             row.add(Numbers.unitText(rs.getDouble("unit_price")));
                             double lineTotal=rs.getDouble("total");
                             row.add(Numbers.moneyText(lineTotal));
-                            Object historicalCost=rs.getObject("cost_total");
+                            Object historicalCost=rs.getObject("effective_cost");
                             if(historicalCost==null){
                                 row.add("N/A");row.add("N/A");
                             }else{
-                                double cost=rs.getDouble("cost_total");
+                                double cost=rs.getDouble("effective_cost");
                                 row.add(Numbers.moneyText(cost));
                                 row.add(Numbers.moneyText(Numbers.money(
                                     java.math.BigDecimal.valueOf(lineTotal-cost))));
