@@ -98,6 +98,7 @@ public class ProductDialog extends JDialog {
             "Lab Supplies", "Other"};
         categoryComboBox = new JComboBox<>(categories);
         categoryComboBox.setEditable(true);
+        installLocalizedEditableCombo(categoryComboBox, categories);
         setFieldWidth(categoryComboBox, 235);
 
         alternativeSkuField = new JTextField(16);
@@ -106,9 +107,10 @@ public class ProductDialog extends JDialog {
         String[] units = {"pcs", "kg", "m", "liters", "box", "pack"};
         unitOfMeasureComboBox = new JComboBox<>(units);
         unitOfMeasureComboBox.setEditable(true);
+        installLocalizedEditableCombo(unitOfMeasureComboBox, units);
         setFieldWidth(unitOfMeasureComboBox, 135);
 
-        selectSupplierButton = new JButton("Click to select supplier...");
+        selectSupplierButton = new JButton(I18n.tr("Click to select supplier..."));
         selectSupplierButton.putClientProperty("i18n.literal", true);
         selectSupplierButton.setHorizontalAlignment(SwingConstants.LEFT);
         setFieldWidth(selectSupplierButton, 235);
@@ -260,7 +262,11 @@ public class ProductDialog extends JDialog {
         label.gridy = row;
         label.anchor = GridBagConstraints.WEST;
         label.insets = new Insets(4, 6, 4, 8);
-        panel.add(new JLabel(labelText), label);
+        String labelKey = labelText != null && labelText.endsWith(":")
+            ? labelText.substring(0, labelText.length() - 1) : labelText;
+        JLabel labelComponent = new JLabel(I18n.tr(labelKey) + ":");
+        labelComponent.putClientProperty("i18n.literal", true);
+        panel.add(labelComponent, label);
 
         GridBagConstraints field = new GridBagConstraints();
         field.gridx = 1;
@@ -515,9 +521,20 @@ public class ProductDialog extends JDialog {
     }
 
     private void showPhotoError(Exception e) {
-        Dialogs.showMessageDialog(this,
-            I18n.tr("Unable to update product photos") + ": " + e.getMessage(),
+        String message = photoErrorMessage(e);
+        Dialogs.showMessageDialog(this, message,
             I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
+    }
+
+    private String photoErrorMessage(Exception e) {
+        String technical = e == null ? null : e.getMessage();
+        if ("Image file not found".equals(technical))
+            return I18n.tr("The selected image file could not be found.");
+        if ("Unsupported or invalid image".equals(technical))
+            return I18n.tr("The selected file is not a supported or valid image.");
+        if ("Unable to create product image directory".equals(technical))
+            return I18n.tr("The product image folder could not be created.");
+        return I18n.tr("Unable to update product photos");
     }
 
     private List<String> pendingPhotos() {
@@ -642,9 +659,9 @@ public class ProductDialog extends JDialog {
         if (selectedSupplier != null) {
             String buttonText = selectedSupplier.getCompanyName();
             if (selectedSupplier.getVatNumber() != null && !selectedSupplier.getVatNumber().isEmpty())
-                buttonText += " (VAT: " + selectedSupplier.getVatNumber() + ")";
+                buttonText += " (" + I18n.tr("VAT") + ": " + selectedSupplier.getVatNumber() + ")";
             selectSupplierButton.setText(buttonText);
-            selectSupplierButton.setToolTipText("Supplier: " + buttonText);
+            selectSupplierButton.setToolTipText(I18n.tr("Supplier") + ": " + buttonText);
         }
     }
 
@@ -653,8 +670,8 @@ public class ProductDialog extends JDialog {
         dialog.setVisible(true);
         if (dialog.isSupplierSaved()) {
             Dialogs.showMessageDialog(this,
-                "Supplier created successfully. Please select it from the list.",
-                "Success", JOptionPane.INFORMATION_MESSAGE);
+                I18n.tr("Supplier created successfully. Please select it from the list."),
+                I18n.tr("Success"), JOptionPane.INFORMATION_MESSAGE);
         }
     }
 
@@ -666,36 +683,42 @@ public class ProductDialog extends JDialog {
     private void saveProduct() {
         try {
             initializePhotoDraft();
-            quantitySpinner.commitEdit();
-            minimumQuantitySpinner.commitEdit();
+            try {
+                quantitySpinner.commitEdit();
+                minimumQuantitySpinner.commitEdit();
+            } catch (java.text.ParseException parseException) {
+                throw new IllegalArgumentException(
+                    I18n.tr("Quantity and minimum quantity must be whole numbers."));
+            }
 
             String code = codeField.getText().trim();
             String name = nameField.getText().trim();
             String description = descriptionArea.getText().trim();
-            double price = Numbers.nonNegative(priceField.getText());
-            int quantity = (int)quantitySpinner.getValue();
-            String category = String.valueOf(categoryComboBox.getSelectedItem());
+
+            if (code.isEmpty())
+                throw new IllegalArgumentException(I18n.tr("Product code is required."));
+            if (name.isEmpty())
+                throw new IllegalArgumentException(I18n.tr("Product name is required."));
+
+            double price = readNonNegativeField(priceField, "Price");
+            int quantity = Numbers.quantity(quantitySpinner.getValue());
+            String category = canonicalComboValue(categoryComboBox);
             String alternativeSku = alternativeSkuField.getText().trim();
-            double weight = Numbers.nonNegative(weightField.getText());
-            String unitOfMeasure = String.valueOf(unitOfMeasureComboBox.getSelectedItem());
+            double weight = readNonNegativeField(weightField, "Weight (kg)");
+            String unitOfMeasure = canonicalComboValue(unitOfMeasureComboBox);
             int minimumQuantity = Numbers.quantity(minimumQuantitySpinner.getValue());
-            if (minimumQuantity < 0) throw new IllegalArgumentException("Minimum stock cannot be negative");
+            if (minimumQuantity < 0)
+                throw new IllegalArgumentException(I18n.tr("Minimum stock cannot be negative."));
             boolean active = activeCheckBox.isSelected();
             Integer supplierId = selectedSupplier != null ? selectedSupplier.getId() : null;
             double preferredSupplierPrice = supplierId != null
-                ? Numbers.nonNegative(preferredSupplierPriceField.getText()) : 0.0;
+                ? readNonNegativeField(preferredSupplierPriceField, "Preferred Supplier Price") : 0.0;
             // A supplier reference price is not an actual purchase. New products have
             // no last purchase cost until a supplier order is completed.
             double acquisitionCost = product == null
-                ? 0.0 : Numbers.nonNegative(acquisitionCostField.getText());
+                ? 0.0 : readNonNegativeField(acquisitionCostField, "Last Purchase Cost");
             String warehousePosition = warehousePositionField.getText().trim();
-            double vatRate = Numbers.vat(vatRateField.getText());
-
-            if (code.isEmpty() || name.isEmpty()) {
-                Dialogs.showMessageDialog(this, "Code and Name fields are required",
-                    "Error", JOptionPane.ERROR_MESSAGE);
-                return;
-            }
+            double vatRate = readVatRate();
 
             List<String> removedOriginalPhotos = new ArrayList<>();
             if (product != null && photoDraftChanged()) {
@@ -709,11 +732,17 @@ public class ProductDialog extends JDialog {
             try {
                 int productId = product == null ? 0 : product.getId();
                 int oldQuantity = 0;
+
+                if (productCodeExists(conn, code, productId))
+                    throw new IllegalArgumentException(
+                        I18n.tr("A product with this code already exists."));
+
                 if (product != null) {
                     try (PreparedStatement previous = conn.prepareStatement("SELECT quantity FROM products WHERE id=?")) {
                         previous.setInt(1,productId);
                         try (ResultSet r = previous.executeQuery()) {
-                            if (!r.next()) throw new SQLException("Product no longer exists");
+                            if (!r.next()) throw new IllegalArgumentException(
+                                I18n.tr("The product no longer exists. It may have been deleted."));
                             oldQuantity = r.getInt(1);
                         }
                     }
@@ -814,13 +843,102 @@ public class ProductDialog extends JDialog {
             } finally { conn.setAutoCommit(true); }
 
             dispose();
-        } catch (IllegalArgumentException | java.text.ParseException e) {
-            Dialogs.showMessageDialog(this, e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+        } catch (IllegalArgumentException e) {
+            Dialogs.showMessageDialog(this, e.getMessage(),
+                I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
         } catch (Exception e) {
+            e.printStackTrace();
             Dialogs.showMessageDialog(this,
-                "Error while saving product: " + e.getMessage(),
-                "Error", JOptionPane.ERROR_MESSAGE);
+                I18n.tr("The product could not be saved. No changes were applied."),
+                I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
         }
+    }
+
+    private void resetSupplierButton() {
+        selectedSupplier = null;
+        selectSupplierButton.setText(I18n.tr("Click to select supplier..."));
+        selectSupplierButton.setToolTipText(I18n.tr("Click to select supplier..."));
+    }
+
+    private double readNonNegativeField(JTextField field, String fieldKey) {
+        try {
+            return Numbers.nonNegative(field.getText());
+        } catch (IllegalArgumentException exception) {
+            String label = I18n.tr(fieldKey);
+            String message = exception.getMessage();
+            if (message != null && message.startsWith("Value must be between 0 and "))
+                throw new IllegalArgumentException(I18n.format(
+                    "{0} must be between 0 and {1}.", label, "999999999999.99"));
+            if ("The value has more precision than the database can preserve".equals(message))
+                throw new IllegalArgumentException(I18n.format(
+                    "{0} has too many decimal places to be stored safely.", label));
+            throw new IllegalArgumentException(I18n.format(
+                "{0} must be a valid number.", label));
+        }
+    }
+
+    private double readVatRate() {
+        try {
+            return Numbers.vat(vatRateField.getText());
+        } catch (IllegalArgumentException exception) {
+            String message = exception.getMessage();
+            if ("VAT must be between 0 and 100".equals(message))
+                throw new IllegalArgumentException(
+                    I18n.tr("VAT rate must be between 0 and 100."));
+            throw new IllegalArgumentException(
+                I18n.tr("VAT rate must be a valid number between 0 and 100."));
+        }
+    }
+
+    private boolean productCodeExists(Connection conn, String code, int currentProductId)
+            throws SQLException {
+        try (PreparedStatement statement = conn.prepareStatement(
+                "SELECT 1 FROM products WHERE code=? AND id<>? LIMIT 1")) {
+            statement.setString(1, code);
+            statement.setInt(2, currentProductId);
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next();
+            }
+        }
+    }
+
+    private String canonicalComboValue(JComboBox<String> comboBox) {
+        Object item = comboBox.getEditor().getItem();
+        return item == null ? "" : item.toString().trim();
+    }
+
+    private void installLocalizedEditableCombo(JComboBox<String> comboBox,
+            String[] canonicalValues) {
+        ComboBoxEditor delegate = comboBox.getEditor();
+        comboBox.setEditor(new ComboBoxEditor() {
+            @Override public Component getEditorComponent() {
+                return delegate.getEditorComponent();
+            }
+
+            @Override public void setItem(Object item) {
+                if (item instanceof String text) delegate.setItem(I18n.tr(text));
+                else delegate.setItem(item);
+            }
+
+            @Override public Object getItem() {
+                Object item = delegate.getItem();
+                if (item == null) return "";
+                String text = item.toString();
+                for (String canonical : canonicalValues) {
+                    if (text.equals(canonical) || text.equals(I18n.tr(canonical)))
+                        return canonical;
+                }
+                return text;
+            }
+
+            @Override public void selectAll() { delegate.selectAll(); }
+            @Override public void addActionListener(java.awt.event.ActionListener listener) {
+                delegate.addActionListener(listener);
+            }
+            @Override public void removeActionListener(java.awt.event.ActionListener listener) {
+                delegate.removeActionListener(listener);
+            }
+        });
     }
 
     private void savePreferredSupplierRelation(Connection c,int productId,Integer supplierId,
