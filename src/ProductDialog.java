@@ -6,6 +6,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class ProductDialog extends JDialog {
+    private static final String PHOTO_DIRECTORY_SETTING = "products.last_photo_directory";
+
     private JTextField codeField;
     private JTextField nameField;
     private JTextArea descriptionArea;
@@ -482,14 +484,28 @@ public class ProductDialog extends JDialog {
         }
 
         JFileChooser chooser = new JFileChooser();
+        String lastDirectory = SettingsPanel.getGlobalSetting(
+            PHOTO_DIRECTORY_SETTING, "").trim();
+        if (!lastDirectory.isEmpty()) {
+            File directory = new File(lastDirectory);
+            if (directory.isDirectory()) chooser.setCurrentDirectory(directory);
+        }
+
         chooser.setDialogTitle(I18n.tr("Add Photo"));
         chooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
             I18n.tr("Image files"), "jpg", "jpeg", "png", "gif", "bmp"));
         if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
 
+        File selectedPhoto = chooser.getSelectedFile();
+        File parentDirectory = selectedPhoto == null ? null : selectedPhoto.getParentFile();
+        if (parentDirectory != null && parentDirectory.isDirectory()) {
+            SettingsPanel.setGlobalSetting(
+                PHOTO_DIRECTORY_SETTING, parentDirectory.getAbsolutePath());
+        }
+
         try {
             String filename =
-                ProductImageStore.getInstance().storeOptimizedImage(chooser.getSelectedFile());
+                ProductImageStore.getInstance().storeOptimizedImage(selectedPhoto);
             pendingPhotos().add(filename);
             if (pendingPhotos().size() == 1) pendingPrimaryFilename = filename;
             refreshPhotosPanel();
