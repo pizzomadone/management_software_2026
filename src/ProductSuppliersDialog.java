@@ -22,11 +22,22 @@ public class ProductSuppliersDialog extends JDialog {
         table=new JTable(model);table.setAutoCreateRowSorter(true);
         TableStyleUtil.applyCompact(table);
         hide(5);hide(6);
+        table.addMouseListener(new java.awt.event.MouseAdapter(){
+            @Override public void mouseClicked(java.awt.event.MouseEvent e){
+                if(e.getClickCount()==2 && SwingUtilities.isLeftMouseButton(e) && table.getSelectedRow()>=0)
+                    editSelected();
+            }
+        });
 
         JLabel help=new JLabel("?");
-        help.setToolTipText(I18n.tr("Supplier prices are current reference prices. Each supplier order stores the actual price paid separately."));
-        JPanel top=new JPanel(new FlowLayout(FlowLayout.LEFT));
-        top.add(new JLabel(I18n.tr("Suppliers for this product")));top.add(help);
+        help.setFont(help.getFont().deriveFont(Font.BOLD));
+        help.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        help.setToolTipText(I18n.tr("Click for help"));
+        help.addMouseListener(new java.awt.event.MouseAdapter(){
+            @Override public void mouseClicked(java.awt.event.MouseEvent e){ showHelp(); }
+        });
+        JPanel top=new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        top.add(help);
 
         JButton add=new JButton("Add Supplier");
         JButton edit=new JButton("Edit");
@@ -141,6 +152,7 @@ public class ProductSuppliersDialog extends JDialog {
             double purchasePrice=Numbers.nonNegative(price.getText());
             Connection c=DatabaseManager.getInstance().getConnection();DatabaseManager.beginTransaction(c);
             try{
+                boolean wasPreferred = relationId != null && isPreferredRelation(c, relationId);
                 boolean makePreferred=preferred.isSelected();
                 if(!makePreferred){
                     try(PreparedStatement q=c.prepareStatement("""
@@ -150,6 +162,11 @@ public class ProductSuppliersDialog extends JDialog {
                         q.setInt(1,productId);q.setInt(2,relationId==null?-1:relationId);
                         try(ResultSet r=q.executeQuery()){if(!r.next())makePreferred=true;}
                     }
+                }
+                if(makePreferred && !wasPreferred &&
+                        !confirmPreferredChange(supplier.getCompanyName(), purchasePrice)){
+                    c.rollback();
+                    return;
                 }
                 if(relationId==null){
                     try(PreparedStatement p=c.prepareStatement("""
@@ -182,13 +199,40 @@ public class ProductSuppliersDialog extends JDialog {
         int view=table.getSelectedRow();if(view<0)return;
         int row=table.convertRowIndexToModel(view);
         int id=((Number)model.getValueAt(row,5)).intValue();
+        String supplierName=String.valueOf(model.getValueAt(row,0));
+        double purchasePrice=((Number)model.getValueAt(row,2)).doubleValue();
         try{
             Connection c=DatabaseManager.getInstance().getConnection();
+            if(isPreferredRelation(c,id))return;
+            if(!confirmPreferredChange(supplierName,purchasePrice))return;
             try(PreparedStatement p=c.prepareStatement("UPDATE product_suppliers SET is_preferred=1 WHERE id=?")){
                 p.setInt(1,id);p.executeUpdate();
             }
             load();
         }catch(SQLException e){showError(e);}
+    }
+
+    private boolean isPreferredRelation(Connection c,int relationId) throws SQLException{
+        try(PreparedStatement p=c.prepareStatement(
+                "SELECT is_preferred FROM product_suppliers WHERE id=?")){
+            p.setInt(1,relationId);
+            try(ResultSet r=p.executeQuery()){return r.next() && r.getInt(1)==1;}
+        }
+    }
+
+    private boolean confirmPreferredChange(String supplierName,double purchasePrice){
+        String message=I18n.format(
+            "Set {0} as the preferred supplier?\n\nIts current purchase price ({1}) will become the default purchase price proposed for this product in new supplier orders.\nThe product sale price and historical FIFO costs will not be changed.",
+            supplierName,SettingsPanel.formatUnitCurrency(purchasePrice));
+        return Dialogs.showConfirmDialog(this,message,I18n.tr("Set Preferred Supplier"),
+            JOptionPane.YES_NO_OPTION,JOptionPane.WARNING_MESSAGE)==JOptionPane.YES_OPTION;
+    }
+
+    private void showHelp(){
+        String message=I18n.tr(
+            "A product can have multiple suppliers, but only one preferred supplier.\n\nThe purchase price shown here is the supplier's current reference price. It is proposed automatically in new supplier orders and can still be changed in the order, for example for discounts or negotiated prices.\n\nWhen you set a different preferred supplier, that supplier's purchase price becomes the default purchase price proposed for this product. The product sale price and historical FIFO costs are not changed.\n\nDouble-click a row to edit the supplier relationship.");
+        Dialogs.showMessageDialog(this,message,I18n.tr("Product Suppliers Help"),
+            JOptionPane.INFORMATION_MESSAGE);
     }
 
     private void removeSelected(){
