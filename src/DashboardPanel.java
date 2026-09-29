@@ -211,31 +211,58 @@ public class DashboardPanel extends JPanel {
         card.add(valueLabel, BorderLayout.CENTER);
 
         JLabel help = new JLabel("?", SwingConstants.CENTER) {
-            private Integer previousDismissDelay;
+            private Popup helpPopup;
 
             {
+                setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
                 addHierarchyListener(event -> {
-                    if (!isShowing()) restoreDismissDelay();
+                    if (!isShowing()) hideHelpPopup();
+                });
+                addMouseListener(new java.awt.event.MouseAdapter() {
+                    @Override public void mouseClicked(java.awt.event.MouseEvent event) {
+                        if (SwingUtilities.isLeftMouseButton(event))
+                            showHelpPopup();
+                    }
+
+                    @Override public void mouseExited(java.awt.event.MouseEvent event) {
+                        hideHelpPopup();
+                    }
                 });
             }
 
+            // Keep the tooltip text available for localization/accessibility,
+            // but suppress Swing's ordinary hover-triggered tooltip.
             @Override
-            protected void processMouseEvent(java.awt.event.MouseEvent event) {
-                if (event.getID() == java.awt.event.MouseEvent.MOUSE_ENTERED
-                        && previousDismissDelay == null) {
-                    ToolTipManager manager = ToolTipManager.sharedInstance();
-                    previousDismissDelay = manager.getDismissDelay();
-                    manager.setDismissDelay(Integer.MAX_VALUE);
-                }
-                super.processMouseEvent(event);
-                if (event.getID() == java.awt.event.MouseEvent.MOUSE_EXITED)
-                    restoreDismissDelay();
+            public String getToolTipText(java.awt.event.MouseEvent event) {
+                return null;
             }
 
-            private void restoreDismissDelay() {
-                if (previousDismissDelay != null) {
-                    ToolTipManager.sharedInstance().setDismissDelay(previousDismissDelay);
-                    previousDismissDelay = null;
+            private void showHelpPopup() {
+                hideHelpPopup();
+                String text = getToolTipText();
+                if (text == null || text.isBlank() || !isShowing()) return;
+
+                JToolTip tip = createToolTip();
+                tip.setTipText(text);
+                Dimension size = tip.getPreferredSize();
+                Point location;
+                try {
+                    location = getLocationOnScreen();
+                } catch (IllegalComponentStateException exception) {
+                    return;
+                }
+
+                int x = location.x + getWidth() - size.width;
+                int y = location.y + getHeight() + 4;
+                helpPopup = PopupFactory.getSharedInstance()
+                    .getPopup(this, tip, x, y);
+                helpPopup.show();
+            }
+
+            private void hideHelpPopup() {
+                if (helpPopup != null) {
+                    helpPopup.hide();
+                    helpPopup = null;
                 }
             }
         };
