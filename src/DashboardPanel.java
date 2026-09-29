@@ -62,7 +62,7 @@ public class DashboardPanel extends JPanel {
         setBorder(BorderFactory.createEmptyBorder(10, 12, 12, 12));
         setBackground(LIGHT_COLOR);
 
-        JPanel mainContainer = new JPanel();
+        JPanel mainContainer = new ViewportWidthPanel();
         mainContainer.setLayout(new BoxLayout(mainContainer, BoxLayout.Y_AXIS));
         mainContainer.setBackground(LIGHT_COLOR);
 
@@ -78,6 +78,7 @@ public class DashboardPanel extends JPanel {
         JPanel middlePanel = new JPanel(new GridLayout(1, 2, 12, 0));
         middlePanel.setOpaque(false);
         middlePanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        middlePanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
         middlePanel.add(createPendingOrdersSection());
         middlePanel.add(createTopProductsSection());
         mainContainer.add(middlePanel);
@@ -88,6 +89,7 @@ public class DashboardPanel extends JPanel {
         JScrollPane scrollPane = new JScrollPane(mainContainer);
         scrollPane.setBorder(null);
         scrollPane.setViewportBorder(null);
+        scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         scrollPane.getViewport().setBackground(LIGHT_COLOR);
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
         routeNestedMouseWheel(mainContainer, scrollPane);
@@ -114,6 +116,8 @@ public class DashboardPanel extends JPanel {
     private JPanel createHeaderPanel() {
         JPanel panel = new JPanel(new BorderLayout(10, 0));
         panel.setOpaque(false);
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
         panel.setBorder(BorderFactory.createEmptyBorder(3, 2, 1, 2));
 
         JLabel titleLabel = new JLabel("Dashboard - Management Overview");
@@ -284,7 +288,7 @@ public class DashboardPanel extends JPanel {
     private JPanel createQuickActionsPanel() {
         JPanel panel = createSectionPanel("Quick Actions", PRIMARY_COLOR);
 
-        JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 1));
+        JPanel actions = new JPanel(new GridLayout(1, 0, 8, 0));
         actions.setOpaque(false);
         actions.add(createQuickActionButton("New Customer Order", ACCENT_COLOR, this::createNewOrder));
         actions.add(createQuickActionButton("New Invoice", SUCCESS_COLOR, this::createNewInvoice));
@@ -415,6 +419,7 @@ public class DashboardPanel extends JPanel {
             new BorderLayout(0, 8), SURFACE_COLOR, BORDER_COLOR, null, 12);
         panel.setBorder(BorderFactory.createEmptyBorder(9, 10, 10, 10));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
 
         JLabel titleLabel = new JLabel(title);
         titleLabel.setFont(dashboardFont(Font.BOLD, 14f));
@@ -955,6 +960,36 @@ public class DashboardPanel extends JPanel {
 
         } catch (SQLException e) {
             e.printStackTrace();
+        }
+    }
+
+    private static final class ViewportWidthPanel extends JPanel
+            implements Scrollable {
+        @Override
+        public Dimension getPreferredScrollableViewportSize() {
+            return getPreferredSize();
+        }
+
+        @Override
+        public int getScrollableUnitIncrement(Rectangle visibleRect,
+                int orientation, int direction) {
+            return 16;
+        }
+
+        @Override
+        public int getScrollableBlockIncrement(Rectangle visibleRect,
+                int orientation, int direction) {
+            return Math.max(48, visibleRect.height - 48);
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportWidth() {
+            return true;
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportHeight() {
+            return false;
         }
     }
 
