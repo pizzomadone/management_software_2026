@@ -9,15 +9,20 @@ import java.util.*;
 import java.util.List;
 
 public class DashboardPanel extends JPanel {
-    // Color palette - Sober blue-gray theme
-    private static final Color PRIMARY_COLOR = new Color(44, 62, 80);      // Dark blue-gray
-    private static final Color SECONDARY_COLOR = new Color(52, 73, 94);    // Medium blue-gray
-    private static final Color ACCENT_COLOR = new Color(52, 152, 219);     // Blue
-    private static final Color SUCCESS_COLOR = new Color(39, 174, 96);     // Green
-    private static final Color WARNING_COLOR = new Color(230, 126, 34);    // Orange
-    private static final Color DANGER_COLOR = new Color(231, 76, 60);      // Red
-    private static final Color LIGHT_COLOR = new Color(236, 240, 241);     // Light gray
-    private static final Color BORDER_COLOR = new Color(189, 195, 199);    // Gray
+    // Calm dashboard palette: strong colors are reserved for meaning, not framing.
+    private static final Color PRIMARY_COLOR = new Color(48, 65, 82);
+    private static final Color SECONDARY_COLOR = new Color(82, 96, 110);
+    private static final Color ACCENT_COLOR = new Color(52, 126, 180);
+    private static final Color SUCCESS_COLOR = new Color(42, 155, 96);
+    private static final Color WARNING_COLOR = new Color(210, 132, 50);
+    private static final Color DANGER_COLOR = new Color(205, 78, 68);
+    private static final Color LIGHT_COLOR = new Color(245, 247, 249);
+    private static final Color SURFACE_COLOR = new Color(252, 252, 253);
+    private static final Color BORDER_COLOR = new Color(218, 223, 228);
+    private static final Color MUTED_TEXT_COLOR = new Color(102, 111, 120);
+    private static final Color SOFT_DANGER_COLOR = new Color(255, 249, 248);
+    private static final Color SOFT_WARNING_COLOR = new Color(255, 251, 245);
+    private static final Color SOFT_ACCENT_COLOR = new Color(244, 249, 253);
 
     private JLabel warehouseValueLabel;
     private JLabel warehouseSaleValueLabel;
@@ -53,42 +58,37 @@ public class DashboardPanel extends JPanel {
     }
 
     private void setupPanel() {
-        setLayout(new BorderLayout(10, 10));
-        setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+        setLayout(new BorderLayout());
+        setBorder(BorderFactory.createEmptyBorder(10, 12, 12, 12));
+        setBackground(LIGHT_COLOR);
 
-        // Main container with vertical scroll
         JPanel mainContainer = new JPanel();
         mainContainer.setLayout(new BoxLayout(mainContainer, BoxLayout.Y_AXIS));
+        mainContainer.setBackground(LIGHT_COLOR);
 
-        // Header
         mainContainer.add(createHeaderPanel());
-        mainContainer.add(Box.createVerticalStrut(15));
-
-        // KPI Cards
+        mainContainer.add(Box.createVerticalStrut(12));
         mainContainer.add(createKPIPanel());
-        mainContainer.add(Box.createVerticalStrut(15));
-
-        // Quick Actions
+        mainContainer.add(Box.createVerticalStrut(12));
         mainContainer.add(createQuickActionsPanel());
-        mainContainer.add(Box.createVerticalStrut(15));
-
-        // Alerts Section
+        mainContainer.add(Box.createVerticalStrut(12));
         mainContainer.add(createAlertsSection());
-        mainContainer.add(Box.createVerticalStrut(15));
+        mainContainer.add(Box.createVerticalStrut(12));
 
-        // Two columns: Pending Orders | Top Products
-        JPanel middlePanel = new JPanel(new GridLayout(1, 2, 10, 0));
+        JPanel middlePanel = new JPanel(new GridLayout(1, 2, 12, 0));
+        middlePanel.setOpaque(false);
+        middlePanel.setAlignmentX(Component.LEFT_ALIGNMENT);
         middlePanel.add(createPendingOrdersSection());
         middlePanel.add(createTopProductsSection());
         mainContainer.add(middlePanel);
-        mainContainer.add(Box.createVerticalStrut(15));
+        mainContainer.add(Box.createVerticalStrut(12));
 
-        // ABC Analysis
         mainContainer.add(createABCAnalysisSection());
 
-        // Wrap in scroll pane
         JScrollPane scrollPane = new JScrollPane(mainContainer);
         scrollPane.setBorder(null);
+        scrollPane.setViewportBorder(null);
+        scrollPane.getViewport().setBackground(LIGHT_COLOR);
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
         routeNestedMouseWheel(mainContainer, scrollPane);
 
@@ -112,38 +112,37 @@ public class DashboardPanel extends JPanel {
     }
 
     private JPanel createHeaderPanel() {
-        JPanel panel = new JPanel(new BorderLayout());
+        JPanel panel = new JPanel(new BorderLayout(10, 0));
+        panel.setOpaque(false);
+        panel.setBorder(BorderFactory.createEmptyBorder(3, 2, 1, 2));
 
         JLabel titleLabel = new JLabel("Dashboard - Management Overview");
-        titleLabel.setFont(new Font("Arial", Font.BOLD, 24));
+        titleLabel.setFont(dashboardFont(Font.BOLD, 21f));
         titleLabel.setForeground(PRIMARY_COLOR);
 
         JButton refreshButton = new JButton("Refresh");
-        refreshButton.setFont(new Font("Arial", Font.PLAIN, 12));
+        refreshButton.setFont(dashboardFont(Font.PLAIN, 12f));
         refreshButton.setFocusPainted(false);
-        refreshButton.setBackground(ACCENT_COLOR);
-        refreshButton.setForeground(Color.WHITE);
-        refreshButton.setBorderPainted(false);
+        refreshButton.setBackground(SOFT_ACCENT_COLOR);
+        refreshButton.setForeground(ACCENT_COLOR.darker());
+        refreshButton.setContentAreaFilled(true);
+        refreshButton.setOpaque(true);
+        refreshButton.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(BORDER_COLOR),
+            BorderFactory.createEmptyBorder(5, 12, 5, 12)
+        ));
         refreshButton.addActionListener(e -> loadData());
 
         panel.add(titleLabel, BorderLayout.WEST);
         panel.add(refreshButton, BorderLayout.EAST);
-
         return panel;
     }
 
     private JPanel createKPIPanel() {
-        JPanel panel = new JPanel(new BorderLayout(10, 10));
-        panel.setBorder(BorderFactory.createTitledBorder(
-            BorderFactory.createLineBorder(BORDER_COLOR),
-            "Key Performance Indicators",
-            TitledBorder.LEFT,
-            TitledBorder.TOP,
-            new Font("Arial", Font.BOLD, 14),
-            PRIMARY_COLOR
-        ));
+        JPanel panel = createSectionPanel("Key Performance Indicators", PRIMARY_COLOR);
 
         JPanel cards = new JPanel(new GridLayout(2, 4, 10, 10));
+        cards.setOpaque(false);
         cards.add(createKPICard("Stock at last purchase cost", "—", SECONDARY_COLOR, "warehouseValue"));
         cards.add(createKPICard("Stock at sale price", "—", SECONDARY_COLOR, "warehouseSaleValue"));
         cards.add(createKPICard("Low Stock Products", "—", DANGER_COLOR, "lowStock"));
@@ -154,7 +153,9 @@ public class DashboardPanel extends JPanel {
         cards.add(createKPICard("Potential stock margin", "—", ACCENT_COLOR, "avgMargin"));
         panel.add(cards, BorderLayout.CENTER);
 
-        JPanel notes = new JPanel(new GridLayout(0, 1, 0, 4));
+        JPanel notes = new JPanel(new GridLayout(0, 1, 0, 3));
+        notes.setOpaque(false);
+        notes.setBorder(BorderFactory.createEmptyBorder(9, 2, 0, 2));
         zeroCostCountLabel = new JLabel("—");
         negativeStockCountLabel = new JLabel("—");
         notes.add(createKPINote("In-stock products with zero purchase cost", zeroCostCountLabel));
@@ -165,30 +166,31 @@ public class DashboardPanel extends JPanel {
     }
 
     private JPanel createKPINote(String title, JLabel value) {
-        JPanel note = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
-        note.add(new JLabel(title));
+        JPanel note = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        note.setOpaque(false);
+        JLabel titleLabel = new JLabel(title);
+        titleLabel.setFont(dashboardFont(Font.PLAIN, 11.5f));
+        titleLabel.setForeground(MUTED_TEXT_COLOR);
+        value.setFont(dashboardFont(Font.BOLD, 11.5f));
+        value.setForeground(PRIMARY_COLOR);
+        note.add(titleLabel);
         note.add(value);
         return note;
     }
 
     private JPanel createKPICard(String title, String defaultValue, Color color, String type) {
-        JPanel card = new JPanel();
-        card.setLayout(new BorderLayout(5, 5));
-        card.setBorder(BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(color, 2),
-            BorderFactory.createEmptyBorder(10, 10, 10, 10)
-        ));
-        card.setBackground(Color.WHITE);
+        JPanel card = new DashboardSurfacePanel(
+            new BorderLayout(5, 5), SURFACE_COLOR, BORDER_COLOR, color, 12);
+        card.setBorder(BorderFactory.createEmptyBorder(10, 13, 8, 11));
 
         JLabel titleLabel = new JLabel(title);
-        titleLabel.setFont(new Font("Arial", Font.BOLD, 11));
-        titleLabel.setForeground(new Color(100, 100, 100));
+        titleLabel.setFont(dashboardFont(Font.BOLD, 11f));
+        titleLabel.setForeground(MUTED_TEXT_COLOR);
 
         JLabel valueLabel = new JLabel(defaultValue);
-        valueLabel.setFont(new Font("Arial", Font.BOLD, 20));
+        valueLabel.setFont(dashboardFont(Font.BOLD, 20f));
         valueLabel.setForeground(color);
 
-        // Store reference based on type
         switch (type) {
             case "warehouseValue" -> warehouseValueLabel = valueLabel;
             case "warehouseSaleValue" -> warehouseSaleValueLabel = valueLabel;
@@ -219,14 +221,15 @@ public class DashboardPanel extends JPanel {
 
             @Override
             protected void processMouseEvent(java.awt.event.MouseEvent event) {
-                if (event.getID() == java.awt.event.MouseEvent.MOUSE_ENTERED && previousDismissDelay == null) {
+                if (event.getID() == java.awt.event.MouseEvent.MOUSE_ENTERED
+                        && previousDismissDelay == null) {
                     ToolTipManager manager = ToolTipManager.sharedInstance();
                     previousDismissDelay = manager.getDismissDelay();
                     manager.setDismissDelay(Integer.MAX_VALUE);
                 }
-                // Set the delay before Swing handles entry, including immediately reshown tooltips.
                 super.processMouseEvent(event);
-                if (event.getID() == java.awt.event.MouseEvent.MOUSE_EXITED) restoreDismissDelay();
+                if (event.getID() == java.awt.event.MouseEvent.MOUSE_EXITED)
+                    restoreDismissDelay();
             }
 
             private void restoreDismissDelay() {
@@ -236,11 +239,12 @@ public class DashboardPanel extends JPanel {
                 }
             }
         };
-        help.setFont(new Font("Arial", Font.BOLD, 11));
-        help.setForeground(new Color(100, 100, 100));
-        help.setPreferredSize(new Dimension(18, 18));
+        help.setFont(dashboardFont(Font.BOLD, 10f));
+        help.setForeground(MUTED_TEXT_COLOR);
+        help.setPreferredSize(new Dimension(16, 16));
         help.setBorder(BorderFactory.createLineBorder(BORDER_COLOR, 1, true));
         help.setToolTipText(explanation);
+
         JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
         footer.setOpaque(false);
         footer.add(help);
@@ -251,179 +255,196 @@ public class DashboardPanel extends JPanel {
     }
 
     private JPanel createQuickActionsPanel() {
-        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 5));
-        panel.setBorder(BorderFactory.createTitledBorder(
-            BorderFactory.createLineBorder(BORDER_COLOR),
-            "Quick Actions",
-            TitledBorder.LEFT,
-            TitledBorder.TOP,
-            new Font("Arial", Font.BOLD, 14),
-            PRIMARY_COLOR
-        ));
+        JPanel panel = createSectionPanel("Quick Actions", PRIMARY_COLOR);
 
-        panel.add(createQuickActionButton("New Customer Order", ACCENT_COLOR, this::createNewOrder));
-        panel.add(createQuickActionButton("New Invoice", SUCCESS_COLOR, this::createNewInvoice));
-        panel.add(createQuickActionButton("Warehouse Movement", SECONDARY_COLOR, this::createWarehouseMovement));
-        panel.add(createQuickActionButton("Manage Customers", ACCENT_COLOR, this::openCustomers));
-        panel.add(createQuickActionButton("Sales Report", SECONDARY_COLOR, this::openSalesReport));
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 1));
+        actions.setOpaque(false);
+        actions.add(createQuickActionButton("New Customer Order", ACCENT_COLOR, this::createNewOrder));
+        actions.add(createQuickActionButton("New Invoice", SUCCESS_COLOR, this::createNewInvoice));
+        actions.add(createQuickActionButton("Warehouse Movement", SECONDARY_COLOR, this::createWarehouseMovement));
+        actions.add(createQuickActionButton("Manage Customers", ACCENT_COLOR, this::openCustomers));
+        actions.add(createQuickActionButton("Sales Report", SECONDARY_COLOR, this::openSalesReport));
 
+        panel.add(actions, BorderLayout.CENTER);
         return panel;
     }
 
     private JButton createQuickActionButton(String text, Color color, Runnable action) {
         JButton button = new JButton(text);
-        button.setFont(new Font("Arial", Font.BOLD, 13));
-        button.setBackground(color);
-        button.setForeground(Color.WHITE);
+        button.setFont(dashboardFont(Font.BOLD, 12f));
+        button.setForeground(color.darker());
+        button.setBackground(tint(color, 0.90));
         button.setFocusPainted(false);
-        button.setBorderPainted(true);
-        button.setContentAreaFilled(true);  // Critical: ensures background color is painted
+        button.setContentAreaFilled(true);
         button.setOpaque(true);
         button.setCursor(new Cursor(Cursor.HAND_CURSOR));
+
         int translatedTextWidth = button.getFontMetrics(button.getFont())
             .stringWidth(I18n.tr(text));
-        button.setPreferredSize(new Dimension(Math.max(170, translatedTextWidth + 48), 38));
+        button.setPreferredSize(new Dimension(
+            Math.max(155, translatedTextWidth + 34), 34));
         button.setBorder(BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(color.darker(), 1),
-            BorderFactory.createEmptyBorder(5, 12, 5, 12)
+            BorderFactory.createLineBorder(tint(color, 0.58)),
+            BorderFactory.createEmptyBorder(4, 11, 4, 11)
         ));
         button.addActionListener(e -> action.run());
 
-        // Hover effect
+        Color normal = button.getBackground();
+        Color hover = tint(color, 0.84);
         button.addMouseListener(new java.awt.event.MouseAdapter() {
-            public void mouseEntered(java.awt.event.MouseEvent evt) {
-                button.setBackground(color.brighter());
+            @Override public void mouseEntered(java.awt.event.MouseEvent evt) {
+                button.setBackground(hover);
             }
-            public void mouseExited(java.awt.event.MouseEvent evt) {
-                button.setBackground(color);
+            @Override public void mouseExited(java.awt.event.MouseEvent evt) {
+                button.setBackground(normal);
             }
         });
-
         return button;
     }
 
     private JPanel createAlertsSection() {
-        JPanel panel = new JPanel(new BorderLayout());
-        panel.setBorder(BorderFactory.createTitledBorder(
-            BorderFactory.createLineBorder(DANGER_COLOR, 2),
-            "Alerts - Products Below Minimum Stock",
-            TitledBorder.LEFT,
-            TitledBorder.TOP,
-            new Font("Arial", Font.BOLD, 14),
-            DANGER_COLOR
-        ));
+        JPanel panel = createSectionPanel(
+            "Alerts - Products Below Minimum Stock", DANGER_COLOR);
 
         alertsPanel = new JPanel();
         alertsPanel.setLayout(new BoxLayout(alertsPanel, BoxLayout.Y_AXIS));
+        alertsPanel.setOpaque(false);
+        alertsPanel.setBorder(BorderFactory.createEmptyBorder(1, 1, 1, 1));
 
         JScrollPane scrollPane = new JScrollPane(alertsPanel);
-        scrollPane.setPreferredSize(new Dimension(0, 120));
-        scrollPane.setBorder(null);
-
+        configureDashboardScrollPane(scrollPane);
+        scrollPane.setPreferredSize(new Dimension(0, 132));
         panel.add(scrollPane, BorderLayout.CENTER);
-
         return panel;
     }
 
     private JPanel createPendingOrdersSection() {
-        JPanel panel = new JPanel(new BorderLayout());
-        panel.setBorder(BorderFactory.createTitledBorder(
-            BorderFactory.createLineBorder(BORDER_COLOR),
-            "Pending Customer Orders",
-            TitledBorder.LEFT,
-            TitledBorder.TOP,
-            new Font("Arial", Font.BOLD, 14),
-            PRIMARY_COLOR
-        ));
+        JPanel panel = createSectionPanel("Pending Customer Orders", PRIMARY_COLOR);
 
         pendingOrdersPanel = new JPanel();
         pendingOrdersPanel.setLayout(new BoxLayout(pendingOrdersPanel, BoxLayout.Y_AXIS));
+        pendingOrdersPanel.setOpaque(false);
+        pendingOrdersPanel.setBorder(BorderFactory.createEmptyBorder(1, 1, 1, 1));
 
         JScrollPane scrollPane = new JScrollPane(pendingOrdersPanel);
+        configureDashboardScrollPane(scrollPane);
         scrollPane.setPreferredSize(new Dimension(0, 250));
-        scrollPane.setBorder(null);
-
         panel.add(scrollPane, BorderLayout.CENTER);
-
         return panel;
     }
 
     private JPanel createTopProductsSection() {
-        JPanel panel = new JPanel(new BorderLayout());
-        panel.setBorder(BorderFactory.createTitledBorder(
-            BorderFactory.createLineBorder(BORDER_COLOR),
-            "Top 10 Best-Selling Products",
-            TitledBorder.LEFT,
-            TitledBorder.TOP,
-            new Font("Arial", Font.BOLD, 14),
-            PRIMARY_COLOR
-        ));
+        JPanel panel = createSectionPanel("Top 10 Best-Selling Products", PRIMARY_COLOR);
 
         String[] columns = {"#", "Product", "Qty Sold", "Revenue"};
         DefaultTableModel model = new DefaultTableModel(columns, 0) {
-            @Override
-            public boolean isCellEditable(int row, int column) {
+            @Override public boolean isCellEditable(int row, int column) {
                 return false;
             }
         };
 
         topProductsTable = new JTable(model);
-        topProductsTable.setFont(new Font("Arial", Font.PLAIN, 12));
-        topProductsTable.getTableHeader().setFont(new Font("Arial", Font.BOLD, 12));
         TableStyleUtil.applyCompact(topProductsTable);
         topProductsTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-
-        // Enable column sorting
         TableSorterUtil.enableSorting(topProductsTable);
 
-        // Column widths
         topProductsTable.getColumnModel().getColumn(0).setPreferredWidth(30);
         topProductsTable.getColumnModel().getColumn(1).setPreferredWidth(200);
         topProductsTable.getColumnModel().getColumn(2).setPreferredWidth(80);
         topProductsTable.getColumnModel().getColumn(3).setPreferredWidth(90);
 
         JScrollPane scrollPane = new JScrollPane(topProductsTable);
+        configureDashboardScrollPane(scrollPane);
         scrollPane.setPreferredSize(new Dimension(0, 250));
-
         panel.add(scrollPane, BorderLayout.CENTER);
-
         return panel;
     }
 
     private JPanel createABCAnalysisSection() {
-        JPanel panel = new JPanel(new BorderLayout());
-        panel.setBorder(BorderFactory.createTitledBorder(
-            BorderFactory.createLineBorder(BORDER_COLOR),
+        JPanel panel = createSectionPanel(
             "ABC (Pareto) Analysis - Product Classification by Revenue",
-            TitledBorder.LEFT,
-            TitledBorder.TOP,
-            new Font("Arial", Font.BOLD, 14),
-            PRIMARY_COLOR
-        ));
+            PRIMARY_COLOR);
 
         String[] columns = {"Class", "# Products", "% Products", "Total Revenue", "% Revenue", "Description"};
         DefaultTableModel model = new DefaultTableModel(columns, 0) {
-            @Override
-            public boolean isCellEditable(int row, int column) {
+            @Override public boolean isCellEditable(int row, int column) {
                 return false;
             }
         };
 
         abcAnalysisTable = new JTable(model);
-        abcAnalysisTable.setFont(new Font("Arial", Font.PLAIN, 12));
-        abcAnalysisTable.getTableHeader().setFont(new Font("Arial", Font.BOLD, 12));
         TableStyleUtil.applyCompact(abcAnalysisTable);
-
-        // Enable column sorting
         TableSorterUtil.enableSorting(abcAnalysisTable);
 
         JScrollPane scrollPane = new JScrollPane(abcAnalysisTable);
+        configureDashboardScrollPane(scrollPane);
         scrollPane.setPreferredSize(new Dimension(0, 150));
-
         panel.add(scrollPane, BorderLayout.CENTER);
-
         return panel;
     }
+
+    private JPanel createSectionPanel(String title, Color titleColor) {
+        JPanel panel = new DashboardSurfacePanel(
+            new BorderLayout(0, 8), SURFACE_COLOR, BORDER_COLOR, null, 12);
+        panel.setBorder(BorderFactory.createEmptyBorder(9, 10, 10, 10));
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel titleLabel = new JLabel(title);
+        titleLabel.setFont(dashboardFont(Font.BOLD, 14f));
+        titleLabel.setForeground(titleColor);
+
+        JPanel header = new JPanel(new BorderLayout());
+        header.setOpaque(false);
+        header.setBorder(BorderFactory.createEmptyBorder(0, 1, 1, 1));
+        header.add(titleLabel, BorderLayout.WEST);
+        panel.add(header, BorderLayout.NORTH);
+
+        I18n.localize(panel);
+        return panel;
+    }
+
+    private void configureDashboardScrollPane(JScrollPane scrollPane) {
+        scrollPane.setBorder(null);
+        scrollPane.setViewportBorder(null);
+        scrollPane.getViewport().setBackground(SURFACE_COLOR);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(14);
+    }
+
+    private JButton createCompactActionButton(String text, Runnable action) {
+        JButton button = new JButton(text);
+        button.setFont(dashboardFont(Font.PLAIN, 11f));
+        button.setForeground(ACCENT_COLOR.darker());
+        button.setBackground(SOFT_ACCENT_COLOR);
+        button.setFocusPainted(false);
+        button.setContentAreaFilled(true);
+        button.setOpaque(true);
+        button.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        button.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(tint(ACCENT_COLOR, 0.62)),
+            BorderFactory.createEmptyBorder(3, 10, 3, 10)
+        ));
+        int width = Math.max(82,
+            button.getFontMetrics(button.getFont()).stringWidth(text) + 24);
+        button.setPreferredSize(new Dimension(width, 28));
+        button.addActionListener(e -> action.run());
+        return button;
+    }
+
+    private Font dashboardFont(int style, float size) {
+        Font base = UIManager.getFont("Label.font");
+        if (base == null) base = new Font(Font.SANS_SERIF, Font.PLAIN, 12);
+        return base.deriveFont(style, size);
+    }
+
+    private static Color tint(Color color, double whiteAmount) {
+        double amount = Math.max(0.0, Math.min(1.0, whiteAmount));
+        int r = (int)Math.round(color.getRed() * (1.0 - amount) + 255 * amount);
+        int g = (int)Math.round(color.getGreen() * (1.0 - amount) + 255 * amount);
+        int b = (int)Math.round(color.getBlue() * (1.0 - amount) + 255 * amount);
+        return new Color(r, g, b);
+    }
+
+    // Data loading methods
 
     // Data loading methods
     public void loadData() {
@@ -636,38 +657,41 @@ public class DashboardPanel extends JPanel {
         alertsPanel.repaint();
     }
 
-    private JPanel createAlertItem(String code, String name, int availableQuantity, int minQuantity, long shortage) {
-        JPanel panel = new JPanel(new BorderLayout(10, 5));
-        panel.setBorder(BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(DANGER_COLOR),
-            BorderFactory.createEmptyBorder(5, 10, 5, 10)
-        ));
-        panel.setBackground(new Color(255, 245, 245));
-        panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
+    private JPanel createAlertItem(String code, String name, int availableQuantity,
+            int minQuantity, long shortage) {
+        JPanel panel = new DashboardSurfacePanel(
+            new BorderLayout(12, 0), SOFT_DANGER_COLOR, BORDER_COLOR, DANGER_COLOR, 10);
+        panel.setBorder(BorderFactory.createEmptyBorder(7, 12, 7, 9));
+        panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 56));
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JPanel textPanel = new JPanel();
+        textPanel.setLayout(new BoxLayout(textPanel, BoxLayout.Y_AXIS));
+        textPanel.setOpaque(false);
 
         JLabel productLabel = new JLabel(String.format("%s - %s", code, name));
-        productLabel.setFont(new Font("Arial", Font.BOLD, 12));
+        productLabel.setFont(dashboardFont(Font.BOLD, 12f));
+        productLabel.setForeground(PRIMARY_COLOR);
 
         JLabel stockLabel = new JLabel(String.format("%s: %d / %s: %d (%s: %d)",
             I18n.tr("Available"), availableQuantity, I18n.tr("Min"), minQuantity,
             I18n.tr("Short"), shortage));
-        stockLabel.setFont(new Font("Arial", Font.PLAIN, 11));
-        stockLabel.setForeground(new Color(100, 40, 40));
+        stockLabel.setFont(dashboardFont(Font.PLAIN, 11f));
+        stockLabel.setForeground(DANGER_COLOR.darker());
 
-        JButton actionButton = new JButton(I18n.tr("View"));
-        actionButton.setFont(new Font("Arial", Font.PLAIN, 11));
-        actionButton.setFocusPainted(false);
-        actionButton.setBackground(ACCENT_COLOR);
-        actionButton.setForeground(Color.WHITE);
-        actionButton.setContentAreaFilled(true);  // Critical: ensures background is painted
-        actionButton.setOpaque(true);
-        actionButton.setBorderPainted(false);
-        actionButton.addActionListener(e -> openProductAndHighlight(code));
+        textPanel.add(productLabel);
+        textPanel.add(Box.createVerticalStrut(2));
+        textPanel.add(stockLabel);
 
-        panel.add(productLabel, BorderLayout.WEST);
-        panel.add(stockLabel, BorderLayout.CENTER);
-        panel.add(actionButton, BorderLayout.EAST);
+        JButton actionButton = createCompactActionButton(
+            I18n.tr("View"), () -> openProductAndHighlight(code));
 
+        JPanel actionWrap = new JPanel(new GridBagLayout());
+        actionWrap.setOpaque(false);
+        actionWrap.add(actionButton);
+
+        panel.add(textPanel, BorderLayout.CENTER);
+        panel.add(actionWrap, BorderLayout.EAST);
         return panel;
     }
 
@@ -721,18 +745,16 @@ public class DashboardPanel extends JPanel {
         pendingOrdersPanel.repaint();
     }
 
-    private JPanel createPendingOrderItem(int id, String date, String status, double total, String customer, int daysOld) {
-        JPanel panel = new JPanel(new BorderLayout(5, 5));
+    private JPanel createPendingOrderItem(int id, String date, String status,
+            double total, String customer, int daysOld) {
+        Color accent = daysOld > 7 ? DANGER_COLOR : WARNING_COLOR;
+        Color surface = daysOld > 7 ? SOFT_DANGER_COLOR : SOFT_WARNING_COLOR;
 
-        Color borderColor = daysOld > 7 ? DANGER_COLOR : WARNING_COLOR;
-        Color bgColor = daysOld > 7 ? new Color(255, 245, 245) : new Color(255, 250, 240);
-
-        panel.setBorder(BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(borderColor),
-            BorderFactory.createEmptyBorder(5, 10, 5, 10)
-        ));
-        panel.setBackground(bgColor);
-        panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 50));
+        JPanel panel = new DashboardSurfacePanel(
+            new BorderLayout(10, 0), surface, BORDER_COLOR, accent, 10);
+        panel.setBorder(BorderFactory.createEmptyBorder(7, 12, 7, 9));
+        panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 60));
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JPanel infoPanel = new JPanel();
         infoPanel.setLayout(new BoxLayout(infoPanel, BoxLayout.Y_AXIS));
@@ -740,7 +762,8 @@ public class DashboardPanel extends JPanel {
 
         JLabel idLabel = new JLabel(String.format("%s #%d - %s",
             I18n.tr("Customer Order"), id, I18n.tr(status)));
-        idLabel.setFont(new Font("Arial", Font.BOLD, 12));
+        idLabel.setFont(dashboardFont(Font.BOLD, 12f));
+        idLabel.setForeground(PRIMARY_COLOR);
 
         String dateStr = date;
         try {
@@ -749,35 +772,29 @@ public class DashboardPanel extends JPanel {
         } catch (Exception ignored) {}
 
         JLabel detailsLabel = new JLabel(String.format("%s - %s - %d %s",
-            customer != null ? customer : "N/A", dateStr, daysOld, I18n.tr("days old")));
-        detailsLabel.setFont(new Font("Arial", Font.PLAIN, 11));
-        detailsLabel.setForeground(new Color(100, 100, 100));
+            customer != null ? customer : "N/A", dateStr, daysOld,
+            I18n.tr("days old")));
+        detailsLabel.setFont(dashboardFont(Font.PLAIN, 11f));
+        detailsLabel.setForeground(MUTED_TEXT_COLOR);
 
         infoPanel.add(idLabel);
+        infoPanel.add(Box.createVerticalStrut(2));
         infoPanel.add(detailsLabel);
 
         JLabel totalLabel = new JLabel(SettingsPanel.formatCurrency(total));
-        totalLabel.setFont(new Font("Arial", Font.BOLD, 14));
-        totalLabel.setForeground(SUCCESS_COLOR);
+        totalLabel.setFont(dashboardFont(Font.BOLD, 13f));
+        totalLabel.setForeground(SUCCESS_COLOR.darker());
 
-        JButton viewButton = new JButton(I18n.tr("View"));
-        viewButton.setFont(new Font("Arial", Font.PLAIN, 11));
-        viewButton.setFocusPainted(false);
-        viewButton.setBackground(ACCENT_COLOR);
-        viewButton.setForeground(Color.WHITE);
-        viewButton.setContentAreaFilled(true);  // Fix: ensures background is painted
-        viewButton.setOpaque(true);
-        viewButton.setBorderPainted(false);
-        viewButton.addActionListener(e -> openOrderAndHighlight(id));
+        JButton viewButton = createCompactActionButton(
+            I18n.tr("View"), () -> openOrderAndHighlight(id));
 
-        JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 5));
         rightPanel.setOpaque(false);
         rightPanel.add(totalLabel);
         rightPanel.add(viewButton);
 
-        panel.add(infoPanel, BorderLayout.WEST);
+        panel.add(infoPanel, BorderLayout.CENTER);
         panel.add(rightPanel, BorderLayout.EAST);
-
         return panel;
     }
 
@@ -911,6 +928,56 @@ public class DashboardPanel extends JPanel {
 
         } catch (SQLException e) {
             e.printStackTrace();
+        }
+    }
+
+    private static final class DashboardSurfacePanel extends JPanel {
+        private final Color fill;
+        private final Color outline;
+        private final Color accent;
+        private final int radius;
+
+        DashboardSurfacePanel(LayoutManager layout, Color fill,
+                Color outline, Color accent, int radius) {
+            super(layout);
+            this.fill = fill;
+            this.outline = outline;
+            this.accent = accent;
+            this.radius = radius;
+            setOpaque(false);
+        }
+
+        @Override
+        protected void paintComponent(Graphics graphics) {
+            Graphics2D g = (Graphics2D)graphics.create();
+            try {
+                g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                    RenderingHints.VALUE_ANTIALIAS_ON);
+                g.setColor(fill);
+                g.fillRoundRect(0, 0, Math.max(0, getWidth() - 1),
+                    Math.max(0, getHeight() - 1), radius, radius);
+                if (accent != null && getHeight() > 12) {
+                    g.setColor(accent);
+                    g.fillRoundRect(1, 6, 4, Math.max(4, getHeight() - 12), 4, 4);
+                }
+            } finally {
+                g.dispose();
+            }
+            super.paintComponent(graphics);
+        }
+
+        @Override
+        protected void paintBorder(Graphics graphics) {
+            Graphics2D g = (Graphics2D)graphics.create();
+            try {
+                g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                    RenderingHints.VALUE_ANTIALIAS_ON);
+                g.setColor(outline);
+                g.drawRoundRect(0, 0, Math.max(0, getWidth() - 1),
+                    Math.max(0, getHeight() - 1), radius, radius);
+            } finally {
+                g.dispose();
+            }
         }
     }
 
