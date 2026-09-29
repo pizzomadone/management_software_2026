@@ -223,7 +223,7 @@ public class ProductSuppliersDialog extends JDialog {
     private boolean confirmPreferredChange(String supplierName,double purchasePrice){
         String message=I18n.format("New preferred supplier: {0}.",supplierName)
             +"\n"+I18n.format(
-                "The default purchase price will be aligned with the new supplier's price ({0}).",
+                "The product purchase price will be aligned with the new preferred supplier's price ({0}).",
                 SettingsPanel.formatUnitCurrency(purchasePrice))
             +"\n\n"+I18n.tr("Confirm?");
         return Dialogs.showConfirmDialog(this,message,I18n.tr("Set Preferred Supplier"),
