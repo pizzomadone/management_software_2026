@@ -11,6 +11,8 @@ import java.util.Vector;
 public class ProductsPanel extends JPanel {
     private static final String PRODUCT_COLUMN_WIDTHS_SETTING =
         "products.column_widths";
+    private static final String PRODUCT_COLUMN_ORDER_SETTING =
+        "products.column_order";
     private static final String[] PRODUCT_COLUMN_KEYS = {
         "id", "code", "name", "description", "price", "physical",
         "reserved", "available", "on_order", "category", "unit",
@@ -94,12 +96,16 @@ public class ProductsPanel extends JPanel {
         productsTable = new JTable(tableModel);
         productsTable.setRowHeight(34);
         productsTable.setRowMargin(0);
+        if (!restoreProductColumnOrder()) {
+            int defaultPhotoView = productsTable.convertColumnIndexToView(16);
+            if (defaultPhotoView >= 0) productsTable.moveColumn(defaultPhotoView, 0);
+        }
         int photoViewColumn = productsTable.convertColumnIndexToView(16);
-        productsTable.moveColumn(photoViewColumn, 0);
-        productsTable.getColumnModel().getColumn(0).setMinWidth(52);
-        productsTable.getColumnModel().getColumn(0).setPreferredWidth(52);
-        productsTable.getColumnModel().getColumn(0).setMaxWidth(Integer.MAX_VALUE);
-        productsTable.getColumnModel().getColumn(0).setCellRenderer(new DefaultTableCellRenderer() {
+        TableColumn photoColumn = productsTable.getColumnModel().getColumn(photoViewColumn);
+        photoColumn.setMinWidth(52);
+        photoColumn.setPreferredWidth(52);
+        photoColumn.setMaxWidth(Integer.MAX_VALUE);
+        photoColumn.setCellRenderer(new DefaultTableCellRenderer() {
             @Override
             public Component getTableCellRendererComponent(JTable table, Object value,
                     boolean selected, boolean focus, int row, int column) {
@@ -260,7 +266,7 @@ public class ProductsPanel extends JPanel {
         TableCellRenderer textRenderer =
             new AdaptiveProductCellRenderer(SwingConstants.LEFT);
 
-        int[] numericModelColumns = {0, 4, 5, 6, 7, 8, 11, 15};
+        int[] numericModelColumns = {0, 4, 5, 6, 7, 8, 11, 12, 15};
         for (int modelColumn : numericModelColumns) {
             int viewColumn = productsTable.convertColumnIndexToView(modelColumn);
             if (viewColumn >= 0) {
@@ -269,7 +275,7 @@ public class ProductsPanel extends JPanel {
             }
         }
 
-        int[] textModelColumns = {1, 2, 3, 9, 10, 12, 13, 14};
+        int[] textModelColumns = {1, 2, 3, 9, 10, 13, 14};
         for (int modelColumn : textModelColumns) {
             int viewColumn = productsTable.convertColumnIndexToView(modelColumn);
             if (viewColumn >= 0) {
@@ -282,7 +288,10 @@ public class ProductsPanel extends JPanel {
             @Override
             public void mouseReleased(MouseEvent e) {
                 if (SwingUtilities.isLeftMouseButton(e)) {
-                    SwingUtilities.invokeLater(() -> saveProductColumnWidths());
+                    SwingUtilities.invokeLater(() -> {
+                        saveProductColumnWidths();
+                        saveProductColumnOrder();
+                    });
                 }
             }
         });
@@ -461,6 +470,54 @@ public class ProductsPanel extends JPanel {
 
         SettingsPanel.setGlobalSetting(PRODUCT_COLUMN_WIDTHS_SETTING,
             value.toString());
+    }
+
+    private boolean restoreProductColumnOrder() {
+        String raw = SettingsPanel.getGlobalSetting(
+            PRODUCT_COLUMN_ORDER_SETTING, "").trim();
+        if (raw.isEmpty()) return false;
+
+        String[] keys = raw.split(",");
+        if (keys.length != PRODUCT_COLUMN_KEYS.length) return false;
+
+        boolean[] seen = new boolean[PRODUCT_COLUMN_KEYS.length];
+        int[] modelOrder = new int[PRODUCT_COLUMN_KEYS.length];
+        for (int view = 0; view < keys.length; view++) {
+            int model = productModelColumnForKey(keys[view].trim());
+            if (model < 0 || seen[model]) return false;
+            seen[model] = true;
+            modelOrder[view] = model;
+        }
+
+        for (int targetView = 0; targetView < modelOrder.length; targetView++) {
+            int currentView = productsTable.convertColumnIndexToView(modelOrder[targetView]);
+            if (currentView < 0) return false;
+            if (currentView != targetView)
+                productsTable.moveColumn(currentView, targetView);
+        }
+        return true;
+    }
+
+    private void saveProductColumnOrder() {
+        if (productsTable == null || tableModel == null) return;
+
+        StringBuilder value = new StringBuilder();
+        for (int view = 0; view < productsTable.getColumnCount(); view++) {
+            int model = productsTable.convertColumnIndexToModel(view);
+            if (model < 0 || model >= PRODUCT_COLUMN_KEYS.length) continue;
+            if (value.length() > 0) value.append(',');
+            value.append(PRODUCT_COLUMN_KEYS[model]);
+        }
+        if (value.length() > 0)
+            SettingsPanel.setGlobalSetting(PRODUCT_COLUMN_ORDER_SETTING,
+                value.toString());
+    }
+
+    private int productModelColumnForKey(String key) {
+        for (int i = 0; i < PRODUCT_COLUMN_KEYS.length; i++) {
+            if (PRODUCT_COLUMN_KEYS[i].equals(key)) return i;
+        }
+        return -1;
     }
 
     private int[] fitWidthsToViewport(int[] requested, int viewportWidth) {
