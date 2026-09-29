@@ -107,6 +107,7 @@ public class SupplierProductDialog extends JDialog {
             Connection c=DatabaseManager.getInstance().getConnection();
             DatabaseManager.beginTransaction(c);
             try{
+                boolean wasPreferred=relation!=null && relation.isPreferred();
                 boolean preferred=preferredCheck.isSelected();
                 if(!preferred){
                     try(PreparedStatement p=c.prepareStatement("""
@@ -115,6 +116,20 @@ public class SupplierProductDialog extends JDialog {
                             """)){
                         p.setInt(1,product.id);p.setInt(2,relation==null?-1:relation.getId());
                         try(ResultSet r=p.executeQuery()){if(!r.next())preferred=true;}
+                    }
+                }
+
+                if(preferred && !wasPreferred){
+                    String message=I18n.format("Set {0} as the preferred supplier?",supplierName)
+                        +"\n\n"+I18n.format(
+                            "Its current purchase price ({0}) will become the default purchase price proposed for this product in new supplier orders.",
+                            SettingsPanel.formatUnitCurrency(price))
+                        +"\n"+I18n.tr(
+                            "The product sale price and historical FIFO costs will not be changed.");
+                    if(Dialogs.showConfirmDialog(this,message,I18n.tr("Set Preferred Supplier"),
+                            JOptionPane.YES_NO_OPTION,JOptionPane.WARNING_MESSAGE)!=JOptionPane.YES_OPTION){
+                        c.rollback();
+                        return;
                     }
                 }
 
