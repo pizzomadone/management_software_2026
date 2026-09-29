@@ -725,7 +725,7 @@ public class ProductDialog extends JDialog {
                 String message = I18n.format("New preferred supplier: {0}.",
                         selectedSupplier.getCompanyName())
                     + "\n" + I18n.format(
-                        "The default purchase price will be aligned with the new supplier's price ({0}).",
+                        "The product purchase price will be aligned with the new preferred supplier's price ({0}).",
                         SettingsPanel.formatUnitCurrency(preferredSupplierPrice))
                     + "\n\n" + I18n.tr("Confirm?");
                 if (Dialogs.showConfirmDialog(this, message, I18n.tr("Set Preferred Supplier"),
