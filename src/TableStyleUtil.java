@@ -196,7 +196,7 @@ public final class TableStyleUtil {
         if (Boolean.TRUE.equals(table.getClientProperty(SMART_SIZING_INSTALLED))) return;
         table.putClientProperty(SMART_SIZING_INSTALLED, Boolean.TRUE);
 
-        installColumnWidthPersistence(table);
+        installColumnLayoutPersistence(table);
 
         table.getModel().addTableModelListener(event -> {
             // Refit after rows are loaded/removed, but do not move columns around
@@ -518,19 +518,24 @@ public final class TableStyleUtil {
             "file", "category", "categoria");
     }
 
-    private static void installColumnWidthPersistence(JTable table) {
+    private static void installColumnLayoutPersistence(JTable table) {
         if (Boolean.TRUE.equals(table.getClientProperty(COLUMN_PERSISTENCE_INSTALLED))) return;
         table.putClientProperty(COLUMN_PERSISTENCE_INSTALLED, Boolean.TRUE);
 
         JTableHeader header = table.getTableHeader();
         if (header == null) return;
 
-        // Header release happens once after a resize gesture, avoiding disk writes
-        // for every pixel while the divider is being dragged.
+        restorePersistedColumnOrder(table);
+
+        // Header release happens once after a resize or reorder gesture, avoiding
+        // disk writes for every pixel while the divider/column is being dragged.
         header.addMouseListener(new MouseAdapter() {
             @Override public void mouseReleased(MouseEvent event) {
                 if (!SwingUtilities.isLeftMouseButton(event)) return;
-                SwingUtilities.invokeLater(() -> savePersistedColumnWidths(table));
+                SwingUtilities.invokeLater(() -> {
+                    savePersistedColumnWidths(table);
+                    savePersistedColumnOrder(table);
+                });
             }
         });
     }
@@ -585,6 +590,61 @@ public final class TableStyleUtil {
             return null;
         }
         return found ? widths : null;
+    }
+
+    private static void savePersistedColumnOrder(JTable table) {
+        if (table == null || table.getColumnCount() == 0) return;
+
+        StringBuilder value = new StringBuilder();
+        TableColumnModel columns = table.getColumnModel();
+        for (int view = 0; view < columns.getColumnCount(); view++) {
+            int model = columns.getColumn(view).getModelIndex();
+            if (model < 0) continue;
+            if (value.length() > 0) value.append(',');
+            value.append(model);
+        }
+        if (value.length() == 0) return;
+
+        SettingsPanel.setGlobalSetting(columnOrderPersistenceSettingKey(table),
+            value.toString());
+    }
+
+    private static void restorePersistedColumnOrder(JTable table) {
+        String raw = SettingsPanel.getGlobalSetting(
+            columnOrderPersistenceSettingKey(table), "").trim();
+        if (raw.isEmpty()) return;
+
+        TableColumnModel columns = table.getColumnModel();
+        int count = columns.getColumnCount();
+        String[] entries = raw.split(",");
+        if (entries.length != count) return;
+
+        int[] desired = new int[count];
+        boolean[] seen = new boolean[Math.max(count, table.getModel().getColumnCount())];
+        try {
+            for (int i = 0; i < count; i++) {
+                int model = Integer.parseInt(entries[i].trim());
+                if (model < 0 || model >= seen.length || seen[model]) return;
+                if (table.convertColumnIndexToView(model) < 0) return;
+                seen[model] = true;
+                desired[i] = model;
+            }
+        } catch (NumberFormatException exception) {
+            return;
+        }
+
+        for (int targetView = 0; targetView < count; targetView++) {
+            int currentView = table.convertColumnIndexToView(desired[targetView]);
+            if (currentView < 0) return;
+            if (currentView != targetView)
+                table.moveColumn(currentView, targetView);
+        }
+    }
+
+    private static String columnOrderPersistenceSettingKey(JTable table) {
+        String widthKey = columnPersistenceSettingKey(table);
+        return widthKey.replaceFirst("^table\\.column_widths\\.",
+            "table.column_order.");
     }
 
     private static String columnPersistenceSettingKey(JTable table) {
