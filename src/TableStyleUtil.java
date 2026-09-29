@@ -127,8 +127,9 @@ public final class TableStyleUtil {
             isLight(table.getBackground()) ? LIGHT_HEADER_LINE_DELTA : DARK_HEADER_LINE_DELTA);
 
         header.setDefaultRenderer((tbl, value, selected, focus, row, column) -> {
+            Object localizedHeaderValue = value instanceof String text ? I18n.tr(text) : value;
             Component component = delegate.getTableCellRendererComponent(
-                tbl, value, selected, focus, row, column);
+                tbl, localizedHeaderValue, selected, focus, row, column);
             component.setFont(header.getFont());
             component.setBackground(headerBackground);
             if (component instanceof JLabel label) {
