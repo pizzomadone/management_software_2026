@@ -720,6 +720,19 @@ public class ProductDialog extends JDialog {
             String warehousePosition = warehousePositionField.getText().trim();
             double vatRate = readVatRate();
 
+            if (product != null && supplierId != null &&
+                    preferredSupplierChanged(supplierId)) {
+                String message = I18n.format("New preferred supplier: {0}.",
+                        selectedSupplier.getCompanyName())
+                    + "\n" + I18n.format(
+                        "The default purchase price will be aligned with the new supplier's price ({0}).",
+                        SettingsPanel.formatUnitCurrency(preferredSupplierPrice))
+                    + "\n\n" + I18n.tr("Confirm?");
+                if (Dialogs.showConfirmDialog(this, message, I18n.tr("Set Preferred Supplier"),
+                        JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE)
+                        != JOptionPane.YES_OPTION) return;
+            }
+
             List<String> removedOriginalPhotos = new ArrayList<>();
             if (product != null && photoDraftChanged()) {
                 for (String filename : originalPhotoFilenames) {
@@ -887,6 +900,16 @@ public class ProductDialog extends JDialog {
                     I18n.tr("VAT rate must be between 0 and 100."));
             throw new IllegalArgumentException(
                 I18n.tr("VAT rate must be a valid number between 0 and 100."));
+        }
+    }
+
+    private boolean preferredSupplierChanged(int newSupplierId) throws SQLException {
+        try (PreparedStatement statement = DatabaseManager.getInstance().getConnection().prepareStatement(
+                "SELECT supplier_id FROM product_suppliers WHERE product_id=? AND is_preferred=1 LIMIT 1")) {
+            statement.setInt(1, product.getId());
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next() && result.getInt(1) != newSupplierId;
+            }
         }
     }
 
