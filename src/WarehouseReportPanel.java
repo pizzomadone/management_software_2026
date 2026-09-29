@@ -50,7 +50,7 @@ public class WarehouseReportPanel extends JPanel {
         JPanel panel = new JPanel(new BorderLayout());
 
         // General Statistics
-        JPanel statsPanel = new JPanel(new GridLayout(1, 4, 10, 10));
+        JPanel statsPanel = new JPanel(new GridLayout(2, 2, 10, 4));
         statsPanel.setBorder(BorderFactory.createTitledBorder("General Statistics"));
 
         JLabel totalProductsLabel = new JLabel("Total Products: 0");
@@ -73,7 +73,9 @@ public class WarehouseReportPanel extends JPanel {
             }
         };
         productsTable = new JTable(productsModel);
+        TableStyleUtil.setColumnPersistenceKey(productsTable, "warehouse_report.products.v2");
         TableStyleUtil.applyCompact(productsTable);
+        I18n.localize(productsTable);
 
         // Enable column sorting
         TableSorterUtil.enableSorting(productsTable);
@@ -144,7 +146,9 @@ public class WarehouseReportPanel extends JPanel {
             }
         };
         movementsTable = new JTable(movementsModel);
+        TableStyleUtil.setColumnPersistenceKey(movementsTable, "warehouse_report.movements.v2");
         TableStyleUtil.applyCompact(movementsTable);
+        I18n.localize(movementsTable);
 
         // Enable column sorting with date support (column 0 is "Date")
         TableSorterUtil.enableSorting(movementsTable, new int[]{0}, dateFormat);
@@ -232,7 +236,7 @@ public class WarehouseReportPanel extends JPanel {
                     } else {
                         status = "OK";
                     }
-                    row.add(status);
+                    row.add(StockManager.displayWarehouseText(status));
 
                     productsModel.addRow(row);
                     totalProducts++;
@@ -346,15 +350,15 @@ public class WarehouseReportPanel extends JPanel {
 
                     String productName = rs.getString("product_name");
                     row.add(productName != null ? productName : "Product N/A");
-                    row.add(rs.getString("type"));
+                    row.add(StockManager.displayWarehouseText(rs.getString("type")));
                     row.add(rs.getInt("quantity"));
-                    row.add(rs.getString("reason"));
+                    row.add(StockManager.displayWarehouseText(rs.getString("reason")));
 
                     String document = rs.getString("document_type");
                     if (document != null && !document.isEmpty()) {
                         String docNumber = rs.getString("document_number");
                         if (docNumber != null && !docNumber.isEmpty()) {
-                            document += " " + docNumber;
+                            document = StockManager.displayWarehouseText(document) + " " + docNumber;
                         }
                     } else {
                         document = "";
