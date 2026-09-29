@@ -251,7 +251,7 @@ public final class TableStyleUtil {
         for (int view = 0; view < count; view++) {
             TableColumn column = columns.getColumn(view);
             String header = headerText(column);
-            String normalizedHeader = normalized(header);
+            String normalizedHeader = normalized(sourceHeader(table, view));
 
             // Preserve deliberately hidden columns.
             if (column.getMaxWidth() == 0) {
