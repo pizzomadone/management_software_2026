@@ -221,16 +221,25 @@ public class ProductSuppliersDialog extends JDialog {
     }
 
     private boolean confirmPreferredChange(String supplierName,double purchasePrice){
-        String message=I18n.format(
-            "Set {0} as the preferred supplier?\n\nIts current purchase price ({1}) will become the default purchase price proposed for this product in new supplier orders.\nThe product sale price and historical FIFO costs will not be changed.",
-            supplierName,SettingsPanel.formatUnitCurrency(purchasePrice));
+        String message=I18n.format("Set {0} as the preferred supplier?",supplierName)
+            +"\n\n"+I18n.format(
+                "Its current purchase price ({0}) will become the default purchase price proposed for this product in new supplier orders.",
+                SettingsPanel.formatUnitCurrency(purchasePrice))
+            +"\n"+I18n.tr(
+                "The product sale price and historical FIFO costs will not be changed.");
         return Dialogs.showConfirmDialog(this,message,I18n.tr("Set Preferred Supplier"),
             JOptionPane.YES_NO_OPTION,JOptionPane.WARNING_MESSAGE)==JOptionPane.YES_OPTION;
     }
 
     private void showHelp(){
         String message=I18n.tr(
-            "A product can have multiple suppliers, but only one preferred supplier.\n\nThe purchase price shown here is the supplier's current reference price. It is proposed automatically in new supplier orders and can still be changed in the order, for example for discounts or negotiated prices.\n\nWhen you set a different preferred supplier, that supplier's purchase price becomes the default purchase price proposed for this product. The product sale price and historical FIFO costs are not changed.\n\nDouble-click a row to edit the supplier relationship.");
+                "A product can have multiple suppliers, but only one preferred supplier.")
+            +"\n\n"+I18n.tr(
+                "The purchase price shown here is the supplier's current reference price. It is proposed automatically in new supplier orders and can still be changed in the order, for example for discounts or negotiated prices.")
+            +"\n\n"+I18n.tr(
+                "When you set a different preferred supplier, that supplier's purchase price becomes the default purchase price proposed for this product. The product sale price and historical FIFO costs are not changed.")
+            +"\n\n"+I18n.tr(
+                "Double-click a row to edit the supplier relationship.");
         Dialogs.showMessageDialog(this,message,I18n.tr("Product Suppliers Help"),
             JOptionPane.INFORMATION_MESSAGE);
     }
