@@ -227,6 +227,7 @@ public final class I18n {
             }
         }
         if (component instanceof JTable table) {
+            installLocalizedHeaderRenderer(table);
             for (Enumeration<TableColumn> columns = table.getColumnModel().getColumns();
                     columns.hasMoreElements();) {
                 TableColumn column = columns.nextElement();
@@ -359,6 +360,27 @@ public final class I18n {
                 displayValue = value;
             }
             return delegate.getListCellRendererComponent(list, displayValue, index, selected, focus);
+        }
+    }
+
+    private static void installLocalizedHeaderRenderer(JTable table) {
+        if (table == null || table.getTableHeader() == null) return;
+        JComponent header = table.getTableHeader();
+        if (Boolean.TRUE.equals(header.getClientProperty("i18n.header.renderer"))) return;
+        TableCellRenderer delegate = table.getTableHeader().getDefaultRenderer();
+        table.getTableHeader().setDefaultRenderer(new LocalizedHeaderRenderer(delegate));
+        header.putClientProperty("i18n.header.renderer", Boolean.TRUE);
+    }
+
+    private static final class LocalizedHeaderRenderer implements TableCellRenderer {
+        private final TableCellRenderer delegate;
+        private LocalizedHeaderRenderer(TableCellRenderer delegate) { this.delegate = delegate; }
+        @Override
+        public Component getTableCellRendererComponent(JTable table, Object value,
+                boolean selected, boolean focus, int row, int column) {
+            Object displayValue = value instanceof String text ? tr(text) : value;
+            return delegate.getTableCellRendererComponent(table, displayValue,
+                selected, focus, row, column);
         }
     }
 
