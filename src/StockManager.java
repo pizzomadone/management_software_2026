@@ -8,6 +8,18 @@ import java.util.Date;
  */
 public class StockManager {
 
+    public static String displayWarehouseText(String value) {
+        if (value == null || value.isBlank()) return "";
+        String translated = I18n.tr(value);
+        if (!translated.equals(value)) return translated;
+        if (value.matches("[A-Z0-9_]+")) {
+            String human = value.toLowerCase(java.util.Locale.ROOT).replace('_', ' ');
+            return Character.toUpperCase(human.charAt(0)) + human.substring(1);
+        }
+        return value;
+    }
+
+
     /**
      * Check if there is sufficient stock for products in an order/invoice
      *
