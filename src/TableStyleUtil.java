@@ -326,6 +326,7 @@ public final class TableStyleUtil {
         int headerWidth = metrics.stringWidth(rawHeader) + 12;
         if (isIdHeader(header)) return Math.max(44, Math.min(60, headerWidth));
         if (isDateHeader(header)) return Math.max(102, Math.min(132, headerWidth));
+        if (isInventoryValueHeader(header)) return Math.max(150, Math.min(205, headerWidth));
         if (isQuantityOrMoneyHeader(header)) return Math.max(84, Math.min(128, headerWidth));
         if (isCodeHeader(header)) return Math.max(96, Math.min(155, headerWidth));
         if (isStatusHeader(header)) return Math.max(98, Math.min(135, headerWidth));
@@ -336,6 +337,7 @@ public final class TableStyleUtil {
     private static int compactNaturalCap(String header) {
         if (isIdHeader(header)) return 64;
         if (isDateHeader(header)) return 138;
+        if (isInventoryValueHeader(header)) return 220;
         if (isQuantityOrMoneyHeader(header)) return 148;
         if (isCodeHeader(header)) return 180;
         if (isStatusHeader(header)) return 150;
@@ -352,6 +354,7 @@ public final class TableStyleUtil {
     private static int compactMaximumWidth(String header) {
         if (isIdHeader(header)) return 68;
         if (isDateHeader(header)) return 146;
+        if (isInventoryValueHeader(header)) return 250;
         if (isQuantityOrMoneyHeader(header)) return 160;
         if (isCodeHeader(header)) return 195;
         if (isStatusHeader(header)) return 160;
@@ -471,6 +474,13 @@ public final class TableStyleUtil {
             "code", "codice", "código", "codigo", "kod", "sku",
             "number", "numero", "número", "numéro", "nummer", "document",
             "documento", "dokument", "vat no", "partita iva");
+    }
+
+    private static boolean isInventoryValueHeader(String header) {
+        return containsAny(header,
+            "stock at last purchase cost",
+            "warehouse at last purchase cost",
+            "warehouse value at last purchase cost");
     }
 
     private static boolean isQuantityOrMoneyHeader(String header) {
