@@ -581,7 +581,7 @@ public class ProductDialog extends JDialog {
                 }
             }
         } catch (SQLException e) {
-            selectSupplierButton.setText("Click to select supplier...");
+            resetSupplierButton();
         }
     }
 
@@ -602,7 +602,7 @@ public class ProductDialog extends JDialog {
                 }
             }
         } catch (SQLException e) {
-            selectSupplierButton.setText("Click to select supplier...");
+            resetSupplierButton();
         }
     }
 
@@ -651,7 +651,7 @@ public class ProductDialog extends JDialog {
         ProductSuppliersDialog dialog=new ProductSuppliersDialog(this,product.getId(),product.getName());
         dialog.setVisible(true);
         selectedSupplier=null;
-        selectSupplierButton.setText("Click to select supplier...");
+        resetSupplierButton();
         loadPreferredSupplierRelation();
     }
 
