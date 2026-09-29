@@ -178,6 +178,7 @@ public class SupplierOrdersPanel extends JPanel {
         public Component getTableCellRendererComponent(JTable tbl, Object value,
                 boolean selected, boolean focus, int row, int column) {
             String status = value == null ? "" : String.valueOf(value);
+            String displayStatus = I18n.tr(status);
             String normalized = status.toLowerCase(Locale.ROOT).trim();
 
             Color background;
@@ -202,14 +203,14 @@ public class SupplierOrdersPanel extends JPanel {
 
             removeAll();
             setBackground(selected ? tbl.getSelectionBackground() : rowBackground(row));
-            badge.setText(status);
+            badge.setText(displayStatus);
             badge.setBackground(background);
             badge.setForeground(foreground);
             badge.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(adjustColor(background,
                     isLight(background) ? -16 : 16)),
                 BorderFactory.createEmptyBorder(0, 5, 0, 5)));
-            badge.setToolTipText(status.isBlank() ? null : status);
+            badge.setToolTipText(displayStatus.isBlank() ? null : displayStatus);
             add(badge);
             return this;
         }
