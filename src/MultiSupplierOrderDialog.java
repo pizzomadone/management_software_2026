@@ -30,7 +30,7 @@ public class MultiSupplierOrderDialog extends JDialog {
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(5, 5, 5, 5);
         gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.gridx = 0; gbc.gridy = 0; header.add(new JLabel("Order Date:"), gbc);
+        gbc.gridx = 0; gbc.gridy = 0; header.add(new JLabel("Order Date *:"), gbc);
         orderDate = new DatePickerField(DateUtils.formatDate(new java.util.Date(), dateFormat));
         gbc.gridx = 1; header.add(orderDate, gbc);
         gbc.gridx = 2; header.add(new JLabel("Delivery Date:"), gbc);
@@ -44,7 +44,7 @@ public class MultiSupplierOrderDialog extends JDialog {
         notes.setLineWrap(true); notes.setWrapStyleWord(true);
         gbc.gridx = 3; header.add(new JScrollPane(notes), gbc);
 
-        model = new DefaultTableModel(new String[]{"Product ID", "Code", "Product", "Supplier ID", "Supplier", "Quantity", "Unit Price", "Total", "Notes"}, 0) {
+        model = new DefaultTableModel(new String[]{"Product ID", "Code", "Product", "Supplier ID", "Supplier *", "Quantity *", "Unit Price *", "Total", "Notes"}, 0) {
             @Override public boolean isCellEditable(int row, int column) { return column == 5 || column == 6 || column == 8; }
         };
         table = new JTable(model);
@@ -76,7 +76,10 @@ public class MultiSupplierOrderDialog extends JDialog {
         review.addActionListener(e -> reviewAndSave());
         cancel.addActionListener(e -> dispose());
         JPanel actions = new JPanel(); actions.add(review); actions.add(cancel);
-        root.add(header, BorderLayout.NORTH); root.add(center, BorderLayout.CENTER); root.add(actions, BorderLayout.SOUTH);
+        JPanel footer = new JPanel(new BorderLayout());
+        footer.add(Dialogs.requiredLegendPanel(), BorderLayout.WEST);
+        footer.add(actions, BorderLayout.EAST);
+        root.add(header, BorderLayout.NORTH); root.add(center, BorderLayout.CENTER); root.add(footer, BorderLayout.SOUTH);
         setContentPane(root);
         I18n.localize(this);
         Dialogs.centerWindow(this);
@@ -136,8 +139,11 @@ public class MultiSupplierOrderDialog extends JDialog {
         productTable.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override public void mouseClicked(java.awt.event.MouseEvent e) { if (e.getClickCount() == 2) choose.doClick(); }
         });
-        JPanel bottom = new JPanel(); bottom.add(new JLabel("Quantity:")); bottom.add(quantity); bottom.add(choose);
-        picker.add(searchPanel, BorderLayout.NORTH); picker.add(new JScrollPane(productTable), BorderLayout.CENTER); picker.add(bottom, BorderLayout.SOUTH);
+        JPanel bottom = new JPanel(); bottom.add(new JLabel("Quantity *:")); bottom.add(quantity); bottom.add(choose);
+        JPanel pickerFooter = new JPanel(new BorderLayout());
+        pickerFooter.add(Dialogs.requiredLegendPanel(), BorderLayout.WEST);
+        pickerFooter.add(bottom, BorderLayout.EAST);
+        picker.add(searchPanel, BorderLayout.NORTH); picker.add(new JScrollPane(productTable), BorderLayout.CENTER); picker.add(pickerFooter, BorderLayout.SOUTH);
         picker.setSize(760, 480); I18n.localize(picker); Dialogs.centerWindow(picker); load.run(); picker.setVisible(true);
     }
 
