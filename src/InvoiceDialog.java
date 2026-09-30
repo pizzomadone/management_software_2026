@@ -153,7 +153,7 @@ public class InvoiceDialog extends JDialog {
 
         // Date
         gbc.gridx = 2;
-        invoicePanel.add(new JLabel("Date *:"), gbc);
+        invoicePanel.add(new JLabel("Date:"), gbc);
 
         gbc.gridx = 3;
         dateField = new DatePickerField(10);
@@ -216,7 +216,7 @@ public class InvoiceDialog extends JDialog {
         }
 
         // Products table
-        String[] columns = {"Code", "Product", "Quantity *", "Unit Price *", "VAT Rate % *", "Total", "Product ID"};
+        String[] columns = {"Code", "Product", "Quantity *", "Unit Price", "VAT Rate %", "Total", "Product ID"};
         itemsTableModel = new InvoiceTableModel(columns, 0);
         itemsTable = new JTable(itemsTableModel);
         TableStyleUtil.setCurrencyCode(itemsTable, currencyCode());
