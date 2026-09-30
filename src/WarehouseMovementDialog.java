@@ -71,7 +71,7 @@ public class WarehouseMovementDialog extends JDialog {
         // Product Selection - Using button instead of combo
         gbc.gridx = 0; gbc.gridy = 0;
         gbc.weightx = 0.0;
-        formPanel.add(new JLabel("* Product:"), gbc);
+        formPanel.add(new JLabel("Product *:"), gbc);
 
         gbc.gridx = 1;
         gbc.weightx = 1.0;
@@ -85,7 +85,7 @@ public class WarehouseMovementDialog extends JDialog {
         // Movement type
         gbc.gridx = 0; gbc.gridy = 1;
         gbc.weightx = 0.0;
-        formPanel.add(new JLabel("* Type:"), gbc);
+        formPanel.add(new JLabel("Type *:"), gbc);
 
         gbc.gridx = 1;
         gbc.weightx = 1.0;
@@ -98,7 +98,7 @@ public class WarehouseMovementDialog extends JDialog {
         // Quantity
         gbc.gridx = 0; gbc.gridy = 2;
         gbc.weightx = 0.0;
-        formPanel.add(new JLabel("* Quantity:"), gbc);
+        formPanel.add(new JLabel("Quantity *:"), gbc);
 
         gbc.gridx = 1;
         gbc.weightx = 1.0;
@@ -131,7 +131,7 @@ public class WarehouseMovementDialog extends JDialog {
         // Reason
         gbc.gridx = 0; gbc.gridy = 4;
         gbc.weightx = 0.0;
-        formPanel.add(new JLabel("* Reason:"), gbc);
+        formPanel.add(new JLabel("Reason *:"), gbc);
 
         gbc.gridx = 1;
         gbc.weightx = 1.0;
@@ -203,20 +203,13 @@ public class WarehouseMovementDialog extends JDialog {
         buttonPanel.add(saveButton);
         buttonPanel.add(cancelButton);
 
-        // Legend panel
-        JPanel legendPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        JLabel legendLabel = new JLabel("* Required fields");
-        legendLabel.setFont(legendLabel.getFont().deriveFont(Font.ITALIC));
-        legendLabel.setForeground(Color.GRAY);
-        legendPanel.add(legendLabel);
-
         // Assembly with proper layout
         JScrollPane formScrollPane = new JScrollPane(formPanel);
         formScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
         formScrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         formScrollPane.setBorder(null);
 
-        mainPanel.add(legendPanel, BorderLayout.NORTH);
+        mainPanel.add(Dialogs.requiredLegendPanel(), BorderLayout.NORTH);
         mainPanel.add(formScrollPane, BorderLayout.CENTER);
         mainPanel.add(buttonPanel, BorderLayout.SOUTH);
 
