@@ -37,22 +37,30 @@ public class SupplierProductDialog extends JDialog {
         notesArea=new JTextArea(3,22);notesArea.setLineWrap(true);notesArea.setWrapStyleWord(true);
 
         addRow(form,g,0,"Supplier:",supplier);
-        addRow(form,g,1,"Product:",productCombo);
-        addRow(form,g,2,"Supplier Code:",supplierCodeField);
-        addRow(form,g,3,"Purchase Price:",priceField);
+        addRow(form,g,1,"Product *:",productCombo);
+        addRow(form,g,2,"Supplier Product Code (optional):",supplierCodeField);
+        addRow(form,g,3,"Purchase Price *:",priceField);
         addRow(form,g,4,"Preferred:",preferredCheck);
         addRow(form,g,5,"Notes:",new JScrollPane(notesArea));
 
         JLabel help=new JLabel("?");
-        help.setToolTipText(I18n.tr("This is the supplier's current reference price. The actual price paid is stored in each supplier order."));
-        JPanel helpPanel=new JPanel(new FlowLayout(FlowLayout.LEFT));
-        helpPanel.add(help);helpPanel.add(new JLabel(I18n.tr("Current supplier price")));
+        help.setFont(help.getFont().deriveFont(Font.BOLD));
+        help.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        help.setToolTipText(I18n.tr("Click for help"));
+        help.addMouseListener(new java.awt.event.MouseAdapter(){
+            @Override public void mouseClicked(java.awt.event.MouseEvent e){ showFieldHelp(); }
+        });
+        JPanel helpPanel=new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        helpPanel.add(help);
 
         JButton save=new JButton("Save"),cancel=new JButton("Cancel");
         save.addActionListener(e->save());cancel.addActionListener(e->dispose());
         JPanel actions=new JPanel();actions.add(save);actions.add(cancel);
+        JPanel footer=new JPanel(new BorderLayout());
+        footer.add(Dialogs.requiredLegendPanel(),BorderLayout.WEST);
+        footer.add(actions,BorderLayout.EAST);
 
-        add(helpPanel,BorderLayout.NORTH);add(form,BorderLayout.CENTER);add(actions,BorderLayout.SOUTH);
+        add(helpPanel,BorderLayout.NORTH);add(form,BorderLayout.CENTER);add(footer,BorderLayout.SOUTH);
         setSize(520,390);Dialogs.centerWindow(this);I18n.localize(this);
     }
 
@@ -62,6 +70,21 @@ public class SupplierProductDialog extends JDialog {
         g.gridx=1;g.weightx=1;
         if(field instanceof JScrollPane){g.fill=GridBagConstraints.BOTH;g.weighty=1;}
         p.add(field,g);
+    }
+
+    private void showFieldHelp(){
+        String message=I18n.tr(
+                "Supplier: the supplier associated with this product.")
+            +"\n\n"+I18n.tr(
+                "Supplier product code (optional): the code this supplier uses for the product in its catalog, quotes, invoices or portal. Leave it blank if the supplier does not provide one.")
+            +"\n\n"+I18n.tr(
+                "Purchase price: the supplier's current reference purchase price. It is proposed in new supplier orders and can be changed in the order.")
+            +"\n\n"+I18n.tr(
+                "Preferred: makes this the preferred supplier for the product. Its purchase price becomes the product's default purchase price; historical FIFO costs and the sale price are not changed.")
+            +"\n\n"+I18n.tr(
+                "Notes: optional notes about this product-supplier relationship.");
+        Dialogs.showMessageDialog(this,message,I18n.tr("Supplier product fields"),
+            JOptionPane.INFORMATION_MESSAGE);
     }
 
     private void loadProducts(){
