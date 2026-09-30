@@ -136,8 +136,8 @@ public class ProductDialog extends JDialog {
         supplierPanel.add(supplierActions, BorderLayout.EAST);
         setFieldWidth(supplierPanel, 330);
 
-        addFormRow(productPanel, 0, "Code:", codeField);
-        addFormRow(productPanel, 1, "Name:", nameField);
+        addFormRow(productPanel, 0, "Code *:", codeField);
+        addFormRow(productPanel, 1, "Name *:", nameField);
         addFormRow(productPanel, 2, "Description:", descriptionScroll);
         addFormRow(productPanel, 3, "Category:", categoryComboBox);
         addFormRow(productPanel, 4, "Alternative SKU:", alternativeSkuField);
@@ -171,7 +171,7 @@ public class ProductDialog extends JDialog {
         vatRateField.setText(String.valueOf(SettingsPanel.getDefaultVatRate()));
         activeCheckBox = new JCheckBox("", true);
 
-        addFormRow(stockPanel, 0, "Price:", priceField);
+        addFormRow(stockPanel, 0, "Price *:", priceField);
         addFormRow(stockPanel, 1, "Preferred Supplier Price:", withHelp(preferredSupplierPriceField,
             "Current purchase price from the preferred supplier. It is used as the default in new supplier orders and can still be changed in the order."));
         addFormRow(stockPanel, 2, "Last Purchase Cost:", withHelp(acquisitionCostField,
@@ -229,8 +229,12 @@ public class ProductDialog extends JDialog {
         scroll.getVerticalScrollBar().setUnitIncrement(16);
         scroll.getViewport().setBackground(content.getBackground());
 
+        JPanel footer = new JPanel(new BorderLayout());
+        footer.add(Dialogs.requiredLegendPanel(), BorderLayout.WEST);
+        footer.add(buttonPanel, BorderLayout.EAST);
+
         add(scroll, BorderLayout.CENTER);
-        add(buttonPanel, BorderLayout.SOUTH);
+        add(footer, BorderLayout.SOUTH);
 
         // Localize before measuring: translated labels can be substantially wider
         // than their English counterparts.
