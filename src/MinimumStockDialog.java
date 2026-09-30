@@ -66,7 +66,7 @@ public class MinimumStockDialog extends JDialog {
 
         // Minimum quantity
         gbc.gridx = 0; gbc.gridy = 1;
-        formPanel.add(new JLabel("* Minimum Quantity:"), gbc);
+        formPanel.add(new JLabel("Minimum Quantity *:"), gbc);
 
         gbc.gridx = 1;
         SpinnerNumberModel minModel = new SpinnerNumberModel(0, 0, 99999, 1);
@@ -75,7 +75,7 @@ public class MinimumStockDialog extends JDialog {
 
         // Reorder quantity
         gbc.gridx = 0; gbc.gridy = 2;
-        formPanel.add(new JLabel("* Reorder Quantity:"), gbc);
+        formPanel.add(new JLabel("Reorder Quantity *:"), gbc);
 
         gbc.gridx = 1;
         SpinnerNumberModel reorderModel = new SpinnerNumberModel(0, 0, 99999, 1);
@@ -126,12 +126,8 @@ public class MinimumStockDialog extends JDialog {
         buttonPanel.add(saveButton);
         buttonPanel.add(cancelButton);
 
-        // Legend panel
-        JPanel legendPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        legendPanel.add(new JLabel("* Required fields"));
-
         // Assembly
-        mainPanel.add(legendPanel, BorderLayout.NORTH);
+        mainPanel.add(Dialogs.requiredLegendPanel(), BorderLayout.NORTH);
         mainPanel.add(formPanel, BorderLayout.CENTER);
         mainPanel.add(buttonPanel, BorderLayout.SOUTH);
 
