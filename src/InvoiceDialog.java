@@ -153,7 +153,7 @@ public class InvoiceDialog extends JDialog {
 
         // Date
         gbc.gridx = 2;
-        invoicePanel.add(new JLabel("Date:"), gbc);
+        invoicePanel.add(new JLabel("Date *:"), gbc);
 
         gbc.gridx = 3;
         dateField = new DatePickerField(10);
@@ -162,7 +162,7 @@ public class InvoiceDialog extends JDialog {
 
         // Customer Selection
         gbc.gridx = 0; gbc.gridy = 1;
-        invoicePanel.add(new JLabel("* Customer:"), gbc);
+        invoicePanel.add(new JLabel("Customer *:"), gbc);
 
         gbc.gridx = 1; gbc.gridwidth = 2;
         selectCustomerButton = new JButton("Click to select customer...");
@@ -216,7 +216,7 @@ public class InvoiceDialog extends JDialog {
         }
 
         // Products table
-        String[] columns = {"Code", "Product", "Quantity", "Unit Price", "VAT Rate %", "Total", "Product ID"};
+        String[] columns = {"Code", "Product", "Quantity *", "Unit Price *", "VAT Rate % *", "Total", "Product ID"};
         itemsTableModel = new InvoiceTableModel(columns, 0);
         itemsTable = new JTable(itemsTableModel);
         TableStyleUtil.setCurrencyCode(itemsTable, currencyCode());
@@ -294,9 +294,13 @@ public class InvoiceDialog extends JDialog {
         bottomPanel.add(totalsPanel, BorderLayout.EAST);
         centerPanel.add(bottomPanel, BorderLayout.SOUTH);
 
+        JPanel footer = new JPanel(new BorderLayout());
+        footer.add(Dialogs.requiredLegendPanel(), BorderLayout.WEST);
+        footer.add(buttonPanel, BorderLayout.EAST);
+
         mainPanel.add(invoicePanel, BorderLayout.NORTH);
         mainPanel.add(centerPanel, BorderLayout.CENTER);
-        mainPanel.add(buttonPanel, BorderLayout.SOUTH);
+        mainPanel.add(footer, BorderLayout.SOUTH);
 
         add(mainPanel);
     }
