@@ -141,7 +141,7 @@ public class ProductSuppliersDialog extends JDialog {
         JPanel form=new JPanel(new GridLayout(0,2,6,6));
         form.add(new JLabel(I18n.tr("Supplier")));form.add(new JLabel(supplier.getCompanyName()));
         form.add(new JLabel(I18n.tr("Supplier Product Code (optional)")));form.add(code);
-        form.add(new JLabel(I18n.tr("Purchase Price")));form.add(price);
+        form.add(new JLabel(I18n.tr("Purchase Price") + " *"));form.add(price);
         form.add(new JLabel(I18n.tr("Preferred")));form.add(preferred);
         form.add(new JLabel(I18n.tr("Notes")));form.add(new JScrollPane(notes));
 
@@ -158,6 +158,7 @@ public class ProductSuppliersDialog extends JDialog {
         JPanel content=new JPanel(new BorderLayout(0,8));
         content.add(helpBar,BorderLayout.NORTH);
         content.add(form,BorderLayout.CENTER);
+        content.add(Dialogs.requiredLegendPanel(),BorderLayout.SOUTH);
 
         if(Dialogs.showConfirmDialog(this,content,
                 I18n.tr(relationId==null?"Add Supplier":"Edit Supplier"),
