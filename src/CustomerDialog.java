@@ -49,7 +49,7 @@ public class CustomerDialog extends JDialog {
 
         // First Name
         gbc.gridx = 0; gbc.gridy = 0;
-        formPanel.add(new JLabel("First Name:"), gbc);
+        formPanel.add(new JLabel("First Name *:"), gbc);
 
         gbc.gridx = 1;
         firstNameField = new JTextField(20);
@@ -57,7 +57,7 @@ public class CustomerDialog extends JDialog {
 
         // Last Name
         gbc.gridx = 0; gbc.gridy = 1;
-        formPanel.add(new JLabel("Last Name:"), gbc);
+        formPanel.add(new JLabel("Last Name *:"), gbc);
 
         gbc.gridx = 1;
         lastNameField = new JTextField(20);
@@ -101,6 +101,7 @@ public class CustomerDialog extends JDialog {
         buttonPanel.add(cancelButton);
 
         // Main layout
+        add(Dialogs.requiredLegendPanel(), BorderLayout.NORTH);
         add(new JScrollPane(formPanel), BorderLayout.CENTER);
         add(buttonPanel, BorderLayout.SOUTH);
 
