@@ -107,7 +107,7 @@ public class OrderDialog extends JDialog {
         
         // Date
         gbc.gridx = 0; gbc.gridy = 1; gbc.gridwidth = 1;
-        orderPanel.add(new JLabel("Date *:"), gbc);
+        orderPanel.add(new JLabel("Date:"), gbc);
         
         gbc.gridx = 1;
         dateField = new DatePickerField(dateFormat.format(new Date()));
@@ -143,7 +143,7 @@ public class OrderDialog extends JDialog {
         orderPanel.add(paidAmountField, gbc);
 
         // Products table
-        String[] columns = {"ID", "Product", "Quantity *", "Unit Price *", "Total"};
+        String[] columns = {"ID", "Product", "Quantity *", "Unit Price", "Total"};
         itemsTableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
