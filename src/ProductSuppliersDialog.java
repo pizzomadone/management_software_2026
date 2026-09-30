@@ -17,7 +17,7 @@ public class ProductSuppliersDialog extends JDialog {
         setSize(760,480);
 
         model=new DefaultTableModel(new String[]{
-            "Supplier","Supplier Code","Purchase Price","Preferred","Notes","ID","Supplier ID"
+            "Supplier","Supplier Product Code","Purchase Price","Preferred","Notes","ID","Supplier ID"
         },0){@Override public boolean isCellEditable(int r,int c){return false;}};
         table=new JTable(model);table.setAutoCreateRowSorter(true);
         TableStyleUtil.applyCompact(table);
@@ -140,12 +140,26 @@ public class ProductSuppliersDialog extends JDialog {
 
         JPanel form=new JPanel(new GridLayout(0,2,6,6));
         form.add(new JLabel(I18n.tr("Supplier")));form.add(new JLabel(supplier.getCompanyName()));
-        form.add(new JLabel(I18n.tr("Supplier Code")));form.add(code);
+        form.add(new JLabel(I18n.tr("Supplier Product Code (optional)")));form.add(code);
         form.add(new JLabel(I18n.tr("Purchase Price")));form.add(price);
         form.add(new JLabel(I18n.tr("Preferred")));form.add(preferred);
         form.add(new JLabel(I18n.tr("Notes")));form.add(new JScrollPane(notes));
 
-        if(Dialogs.showConfirmDialog(this,form,
+        JLabel fieldHelp=new JLabel("?");
+        fieldHelp.setFont(fieldHelp.getFont().deriveFont(Font.BOLD));
+        fieldHelp.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        fieldHelp.setToolTipText(I18n.tr("Click for help"));
+        fieldHelp.addMouseListener(new java.awt.event.MouseAdapter(){
+            @Override public void mouseClicked(java.awt.event.MouseEvent e){ showRelationHelp(); }
+        });
+        JPanel helpBar=new JPanel(new FlowLayout(FlowLayout.RIGHT,0,0));
+        helpBar.add(fieldHelp);
+
+        JPanel content=new JPanel(new BorderLayout(0,8));
+        content.add(helpBar,BorderLayout.NORTH);
+        content.add(form,BorderLayout.CENTER);
+
+        if(Dialogs.showConfirmDialog(this,content,
                 I18n.tr(relationId==null?"Add Supplier":"Edit Supplier"),
                 JOptionPane.OK_CANCEL_OPTION,JOptionPane.PLAIN_MESSAGE)!=JOptionPane.OK_OPTION)return;
         try{
@@ -218,6 +232,21 @@ public class ProductSuppliersDialog extends JDialog {
             p.setInt(1,relationId);
             try(ResultSet r=p.executeQuery()){return r.next() && r.getInt(1)==1;}
         }
+    }
+
+    private void showRelationHelp(){
+        String message=I18n.tr(
+                "Supplier: the supplier associated with this product.")
+            +"\n\n"+I18n.tr(
+                "Supplier product code (optional): the code this supplier uses for the product in its catalog, quotes, invoices or portal. Leave it blank if the supplier does not provide one.")
+            +"\n\n"+I18n.tr(
+                "Purchase price: the supplier's current reference purchase price. It is proposed in new supplier orders and can be changed in the order.")
+            +"\n\n"+I18n.tr(
+                "Preferred: makes this the preferred supplier for the product. Its purchase price becomes the product's default purchase price; historical FIFO costs and the sale price are not changed.")
+            +"\n\n"+I18n.tr(
+                "Notes: optional notes about this product-supplier relationship.");
+        Dialogs.showMessageDialog(this,message,I18n.tr("Supplier product fields"),
+            JOptionPane.INFORMATION_MESSAGE);
     }
 
     private boolean confirmPreferredChange(String supplierName,double purchasePrice){
