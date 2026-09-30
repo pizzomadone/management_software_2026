@@ -59,6 +59,17 @@ public final class Dialogs {
         window.setLocation(x, y);
     }
 
+    /** Creates the standard legend used by forms that contain required fields. */
+    public static JPanel requiredLegendPanel() {
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+        panel.setOpaque(false);
+        JLabel label = new JLabel("* Required fields");
+        label.setFont(label.getFont().deriveFont(Font.ITALIC));
+        label.setForeground(Color.GRAY);
+        panel.add(label);
+        return panel;
+    }
+
     private static Object message(Object value) {
         if (value instanceof String text) return I18n.tr(text);
         if (value instanceof Object[] values) {
