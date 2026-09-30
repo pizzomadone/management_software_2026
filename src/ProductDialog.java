@@ -685,10 +685,15 @@ public class ProductDialog extends JDialog {
             initializePhotoDraft();
             try {
                 quantitySpinner.commitEdit();
+            } catch (java.text.ParseException parseException) {
+                throw new IllegalArgumentException(
+                    I18n.tr("Quantity must be a whole number between 0 and 999999."));
+            }
+            try {
                 minimumQuantitySpinner.commitEdit();
             } catch (java.text.ParseException parseException) {
                 throw new IllegalArgumentException(
-                    I18n.tr("Quantity and minimum quantity must be whole numbers."));
+                    I18n.tr("Minimum quantity must be a whole number between 0 and 999999."));
             }
 
             String code = codeField.getText().trim();
@@ -859,6 +864,13 @@ public class ProductDialog extends JDialog {
         } catch (IllegalArgumentException e) {
             Dialogs.showMessageDialog(this, e.getMessage(),
                 I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
+        } catch (SQLException e) {
+            e.printStackTrace();
+            String message = isDuplicateProductCodeError(e)
+                ? I18n.tr("A product with this code already exists.")
+                : I18n.tr("The product could not be saved. No changes were applied.");
+            Dialogs.showMessageDialog(this, message,
+                I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
         } catch (Exception e) {
             e.printStackTrace();
             Dialogs.showMessageDialog(this,
@@ -911,6 +923,17 @@ public class ProductDialog extends JDialog {
                 return result.next() && result.getInt(1) != newSupplierId;
             }
         }
+    }
+
+    private boolean isDuplicateProductCodeError(SQLException exception) {
+        for (SQLException current = exception; current != null;
+                current = current.getNextException()) {
+            String message = current.getMessage();
+            if (message != null && message.toLowerCase(java.util.Locale.ROOT)
+                    .contains("unique constraint failed: products.code"))
+                return true;
+        }
+        return false;
     }
 
     private boolean productCodeExists(Connection conn, String code, int currentProductId)
