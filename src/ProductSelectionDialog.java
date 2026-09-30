@@ -198,7 +198,7 @@ public class ProductSelectionDialog extends JDialog {
         infoPanel.add(Box.createHorizontalStrut(30), gbc);
 
         gbc.gridx = 3;
-        infoPanel.add(new JLabel("VAT Rate % *:"), gbc);
+        infoPanel.add(new JLabel("VAT Rate %:"), gbc);
 
         gbc.gridx = 4;
         vatRateField = new JTextField(String.valueOf(SettingsPanel.getDefaultVatRate()));
