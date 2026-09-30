@@ -169,7 +169,7 @@ public class SettingsPanel extends JPanel {
 
         // Default VAT
         gbc.gridx = 0; gbc.gridy = 2;
-        panel.add(new JLabel("Default VAT Rate (%):"), gbc);
+        panel.add(new JLabel("Default VAT Rate (%) *:"), gbc);
 
         gbc.gridx = 1;
         defaultVatField = new JTextField(getSetting("default_vat", "22.0"));
@@ -185,8 +185,13 @@ public class SettingsPanel extends JPanel {
         languageCombo.setSelectedItem(I18n.nameForCode(getSetting("language", "it")));
         panel.add(languageCombo, gbc);
 
+        // Required-fields legend
+        gbc.gridx = 0; gbc.gridy = 4; gbc.gridwidth = 2; gbc.weighty = 0.0;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        panel.add(Dialogs.requiredLegendPanel(), gbc);
+
         // Add vertical glue to push components to top
-        gbc.gridx = 0; gbc.gridy = 4; gbc.gridwidth = 2; gbc.weighty = 1.0;
+        gbc.gridx = 0; gbc.gridy = 5; gbc.gridwidth = 2; gbc.weighty = 1.0;
         gbc.fill = GridBagConstraints.VERTICAL;
         panel.add(Box.createVerticalGlue(), gbc);
 
@@ -240,7 +245,7 @@ public class SettingsPanel extends JPanel {
 
         // Company Name
         gbc.gridx = 0; gbc.gridy = 0;
-        formPanel.add(new JLabel("* Company Name:"), gbc);
+        formPanel.add(new JLabel("Company Name *:"), gbc);
 
         gbc.gridx = 1; gbc.weightx = 1.0;
         companyNameField = new JTextField(25);
@@ -337,10 +342,7 @@ public class SettingsPanel extends JPanel {
         formPanel.add(Box.createVerticalGlue(), gbc);
 
         // Legend
-        JPanel legendPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        legendPanel.add(new JLabel("* Required fields"));
-
-        panel.add(legendPanel, BorderLayout.NORTH);
+        panel.add(Dialogs.requiredLegendPanel(), BorderLayout.NORTH);
         panel.add(new JScrollPane(formPanel), BorderLayout.CENTER);
 
         return panel;
