@@ -175,7 +175,7 @@ public class ProductSelectionDialog extends JDialog {
     private JPanel createDetailsPanel() {
         JPanel panel = new JPanel(new BorderLayout(10, 5));
         panel.setBorder(BorderFactory.createTitledBorder("Selected Product Details"));
-        panel.setPreferredSize(new Dimension(900, 120)); // Fixed height
+        panel.setPreferredSize(new Dimension(900, 145)); // Includes required-fields legend
 
         // Product information panel with improved layout
         JPanel infoPanel = new JPanel(new GridBagLayout());
@@ -185,7 +185,7 @@ public class ProductSelectionDialog extends JDialog {
 
         // First row: Quantity and VAT Rate
         gbc.gridx = 0; gbc.gridy = 0;
-        infoPanel.add(new JLabel("Quantity:"), gbc);
+        infoPanel.add(new JLabel("Quantity *:"), gbc);
 
         gbc.gridx = 1;
         SpinnerNumberModel spinnerModel = new SpinnerNumberModel(1, 1, 9999, 1);
@@ -198,7 +198,7 @@ public class ProductSelectionDialog extends JDialog {
         infoPanel.add(Box.createHorizontalStrut(30), gbc);
 
         gbc.gridx = 3;
-        infoPanel.add(new JLabel("VAT Rate %:"), gbc);
+        infoPanel.add(new JLabel("VAT Rate % *:"), gbc);
 
         gbc.gridx = 4;
         vatRateField = new JTextField(String.valueOf(SettingsPanel.getDefaultVatRate()));
@@ -229,6 +229,7 @@ public class ProductSelectionDialog extends JDialog {
         infoPanel.add(noteLabel, gbc);
         
         panel.add(infoPanel, BorderLayout.CENTER);
+        panel.add(Dialogs.requiredLegendPanel(), BorderLayout.SOUTH);
         
         return panel;
     }
