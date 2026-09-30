@@ -76,6 +76,8 @@ public class SupplierProductDialog extends JDialog {
         String message=I18n.tr(
                 "Supplier: the supplier associated with this product.")
             +"\n\n"+I18n.tr(
+                "Product: the WareStat product supplied by this supplier.")
+            +"\n\n"+I18n.tr(
                 "Supplier product code (optional): the code this supplier uses for the product in its catalog, quotes, invoices or portal. Leave it blank if the supplier does not provide one.")
             +"\n\n"+I18n.tr(
                 "Purchase price: the supplier's current reference purchase price. It is proposed in new supplier orders and can be changed in the order.")
