@@ -21,6 +21,7 @@ public class OrderDialog extends JDialog {
     private JComboBox<String> statusCombo;
     private JComboBox<String> paymentStatusCombo;
     private JTextField paidAmountField;
+    private JLabel paidAmountLabel;
     private JPanel paymentPanel;
     private JTable itemsTable;
     private DefaultTableModel itemsTableModel;
@@ -89,7 +90,7 @@ public class OrderDialog extends JDialog {
         
         // Customer Selection
         gbc.gridx = 0; gbc.gridy = 0;
-        orderPanel.add(new JLabel("* Customer:"), gbc);
+        orderPanel.add(new JLabel("Customer *:"), gbc);
         
         gbc.gridx = 1; gbc.gridwidth = 2;
         selectCustomerButton = new JButton("Click to select customer...");
@@ -106,7 +107,7 @@ public class OrderDialog extends JDialog {
         
         // Date
         gbc.gridx = 0; gbc.gridy = 1; gbc.gridwidth = 1;
-        orderPanel.add(new JLabel("Date:"), gbc);
+        orderPanel.add(new JLabel("Date *:"), gbc);
         
         gbc.gridx = 1;
         dateField = new DatePickerField(dateFormat.format(new Date()));
@@ -133,7 +134,8 @@ public class OrderDialog extends JDialog {
 
         // Paid Amount
         gbc.gridx = 2;
-        orderPanel.add(new JLabel("Paid Amount:"), gbc);
+        paidAmountLabel = new JLabel("Paid Amount:");
+        orderPanel.add(paidAmountLabel, gbc);
 
         gbc.gridx = 3;
         paidAmountField = new JTextField("0.00");
@@ -141,7 +143,7 @@ public class OrderDialog extends JDialog {
         orderPanel.add(paidAmountField, gbc);
 
         // Products table
-        String[] columns = {"ID", "Product", "Quantity", "Unit Price", "Total"};
+        String[] columns = {"ID", "Product", "Quantity *", "Unit Price *", "Total"};
         itemsTableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -211,9 +213,13 @@ public class OrderDialog extends JDialog {
         centerPanel.add(new JScrollPane(itemsTable), BorderLayout.CENTER);
         centerPanel.add(totalPanel, BorderLayout.SOUTH);
         
+        JPanel footer = new JPanel(new BorderLayout());
+        footer.add(Dialogs.requiredLegendPanel(), BorderLayout.WEST);
+        footer.add(buttonPanel, BorderLayout.EAST);
+
         mainPanel.add(orderPanel, BorderLayout.NORTH);
         mainPanel.add(centerPanel, BorderLayout.CENTER);
-        mainPanel.add(buttonPanel, BorderLayout.SOUTH);
+        mainPanel.add(footer, BorderLayout.SOUTH);
         
         add(mainPanel);
     }
@@ -405,7 +411,9 @@ public class OrderDialog extends JDialog {
     
     private void updatePaymentAmountField() {
         String selectedPayment = (String) paymentStatusCombo.getSelectedItem();
-        if ("Partially Paid".equals(selectedPayment)) {
+        boolean required = "Partially Paid".equals(selectedPayment);
+        paidAmountLabel.setText(required ? "Paid Amount *:" : "Paid Amount:");
+        if (required) {
             paidAmountField.setEnabled(true);
         } else {
             paidAmountField.setEnabled(false);
