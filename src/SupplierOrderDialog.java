@@ -92,7 +92,7 @@ public class SupplierOrderDialog extends JDialog {
 
         // Order date
         gbc.gridx = 0; gbc.gridy = 1;
-        orderPanel.add(new JLabel("Order Date *:"), gbc);
+        orderPanel.add(new JLabel("Order Date:"), gbc);
 
         gbc.gridx = 1;
         dateField = new DatePickerField(10);
@@ -132,7 +132,7 @@ public class SupplierOrderDialog extends JDialog {
         orderPanel.add(new JScrollPane(notesArea), gbc);
 
         // Products table
-        String[] columns = {"Code", "Product", "Quantity *", "Unit Price *", "Total", "Notes", "Product ID"};
+        String[] columns = {"Code", "Product", "Quantity *", "Unit Price", "Total", "Notes", "Product ID"};
         itemsTableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
