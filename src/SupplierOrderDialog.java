@@ -92,7 +92,7 @@ public class SupplierOrderDialog extends JDialog {
 
         // Order date
         gbc.gridx = 0; gbc.gridy = 1;
-        orderPanel.add(new JLabel("Order Date:"), gbc);
+        orderPanel.add(new JLabel("Order Date *:"), gbc);
 
         gbc.gridx = 1;
         dateField = new DatePickerField(10);
@@ -132,7 +132,7 @@ public class SupplierOrderDialog extends JDialog {
         orderPanel.add(new JScrollPane(notesArea), gbc);
 
         // Products table
-        String[] columns = {"Code", "Product", "Quantity", "Unit Price", "Total", "Notes", "Product ID"};
+        String[] columns = {"Code", "Product", "Quantity *", "Unit Price *", "Total", "Notes", "Product ID"};
         itemsTableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -190,9 +190,13 @@ public class SupplierOrderDialog extends JDialog {
         centerPanel.add(new JScrollPane(itemsTable), BorderLayout.CENTER);
         centerPanel.add(totalPanel, BorderLayout.SOUTH);
 
+        JPanel footer = new JPanel(new BorderLayout());
+        footer.add(Dialogs.requiredLegendPanel(), BorderLayout.WEST);
+        footer.add(buttonPanel, BorderLayout.EAST);
+
         mainPanel.add(orderPanel, BorderLayout.NORTH);
         mainPanel.add(centerPanel, BorderLayout.CENTER);
-        mainPanel.add(buttonPanel, BorderLayout.SOUTH);
+        mainPanel.add(footer, BorderLayout.SOUTH);
 
         add(mainPanel);
         pack();
@@ -295,7 +299,7 @@ public class SupplierOrderDialog extends JDialog {
 
         // Product
         gbc.gridx = 0; gbc.gridy = 0;
-        panel.add(new JLabel("Product:"), gbc);
+        panel.add(new JLabel("Product *:"), gbc);
 
         gbc.gridx = 1;
         gbc.fill = GridBagConstraints.HORIZONTAL;
@@ -312,7 +316,7 @@ public class SupplierOrderDialog extends JDialog {
         gbc.gridx = 0; gbc.gridy = 1;
         gbc.weightx = 0;
         gbc.fill = GridBagConstraints.NONE;
-        panel.add(new JLabel("Quantity:"), gbc);
+        panel.add(new JLabel("Quantity *:"), gbc);
 
         gbc.gridx = 1;
         SpinnerNumberModel spinnerModel = new SpinnerNumberModel(1, 1, 9999, 1);
@@ -395,8 +399,12 @@ public class SupplierOrderDialog extends JDialog {
         buttonPanel.add(addButton);
         buttonPanel.add(cancelButton);
 
+        JPanel dialogFooter = new JPanel(new BorderLayout());
+        dialogFooter.add(Dialogs.requiredLegendPanel(), BorderLayout.WEST);
+        dialogFooter.add(buttonPanel, BorderLayout.EAST);
+
         dialog.add(panel, BorderLayout.CENTER);
-        dialog.add(buttonPanel, BorderLayout.SOUTH);
+        dialog.add(dialogFooter, BorderLayout.SOUTH);
         I18n.localize(dialog);
         dialog.pack();
         dialog.setResizable(false);
