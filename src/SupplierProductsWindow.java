@@ -32,7 +32,7 @@ public class SupplierProductsWindow extends JDialog {
         setSize(780,520);
 
         model=new DefaultTableModel(new String[]{
-            "Product","Supplier Code","Purchase Price","Preferred","Notes","ID"
+            "Product","Supplier Product Code","Purchase Price","Preferred","Notes","ID"
         },0){
             @Override public boolean isCellEditable(int r,int c){return false;}
         };
