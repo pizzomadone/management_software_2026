@@ -106,6 +106,18 @@ public final class I18n {
             String translated = tr(source.substring(2));
             return translated.equals(source.substring(2)) ? source : "* " + translated;
         }
+        // Required-field markers are displayed after the field name (for example
+        // "Customer *:"). Translate the field name while preserving the marker.
+        if (source.endsWith(" *:")) {
+            String base = source.substring(0, source.length() - 3).trim();
+            String translated = translations.get(base);
+            if (translated != null) return translated + " *:";
+        }
+        if (source.endsWith(" *")) {
+            String base = source.substring(0, source.length() - 2).trim();
+            String translated = translations.get(base);
+            if (translated != null) return translated + " *";
+        }
         if (source.endsWith(":")) {
             String base = source.substring(0, source.length() - 1).trim();
             String translated = translations.get(base);
