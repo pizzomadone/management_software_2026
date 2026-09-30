@@ -30,7 +30,7 @@ public class MultiSupplierOrderDialog extends JDialog {
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(5, 5, 5, 5);
         gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.gridx = 0; gbc.gridy = 0; header.add(new JLabel("Order Date *:"), gbc);
+        gbc.gridx = 0; gbc.gridy = 0; header.add(new JLabel("Order Date:"), gbc);
         orderDate = new DatePickerField(DateUtils.formatDate(new java.util.Date(), dateFormat));
         gbc.gridx = 1; header.add(orderDate, gbc);
         gbc.gridx = 2; header.add(new JLabel("Delivery Date:"), gbc);
@@ -44,7 +44,7 @@ public class MultiSupplierOrderDialog extends JDialog {
         notes.setLineWrap(true); notes.setWrapStyleWord(true);
         gbc.gridx = 3; header.add(new JScrollPane(notes), gbc);
 
-        model = new DefaultTableModel(new String[]{"Product ID", "Code", "Product", "Supplier ID", "Supplier *", "Quantity *", "Unit Price *", "Total", "Notes"}, 0) {
+        model = new DefaultTableModel(new String[]{"Product ID", "Code", "Product", "Supplier ID", "Supplier", "Quantity *", "Unit Price", "Total", "Notes"}, 0) {
             @Override public boolean isCellEditable(int row, int column) { return column == 5 || column == 6 || column == 8; }
         };
         table = new JTable(model);
