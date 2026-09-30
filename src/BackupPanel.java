@@ -33,7 +33,7 @@ public class BackupPanel extends JPanel {
         gbc.fill = GridBagConstraints.HORIZONTAL;
 
         gbc.gridx = 0; gbc.gridy = 0;
-        configPanel.add(new JLabel("Backup Directory:"), gbc);
+        configPanel.add(new JLabel("Backup Directory *:"), gbc);
         gbc.gridx = 1; gbc.weightx = 1;
         backupDirField = new JTextField(backupManager.getBackupDirectory(), 24);
         configPanel.add(backupDirField, gbc);
@@ -71,6 +71,9 @@ public class BackupPanel extends JPanel {
         JLabel autoInfo = new JLabel(I18n.tr("Automatic backups include the database and product photos."));
         autoInfo.setFont(autoInfo.getFont().deriveFont(Font.PLAIN, autoInfo.getFont().getSize2D() - 1f));
         configPanel.add(autoInfo, gbc);
+
+        gbc.gridy = 5;
+        configPanel.add(Dialogs.requiredLegendPanel(), gbc);
         gbc.gridwidth = 1;
 
         String[] columns = {"Registry ID", "Date", "File Name", "Size", "Path", "Status"};
