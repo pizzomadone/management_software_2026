@@ -215,8 +215,8 @@ public class ProductDialog extends JDialog {
         content.add(photosPanel, BorderLayout.CENTER);
 
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 6));
-        JButton saveButton = new JButton("Save");
-        JButton cancelButton = new JButton("Cancel");
+        JButton saveButton = new JButton(I18n.tr("Save"));
+        JButton cancelButton = new JButton(I18n.tr("Cancel"));
         saveButton.addActionListener(e -> saveProduct());
         cancelButton.addActionListener(e -> dispose());
         buttonPanel.add(saveButton);
