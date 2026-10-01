@@ -197,9 +197,35 @@ public class WarehousePanel extends JPanel {
         JPanel controls=new JPanel(new FlowLayout(FlowLayout.LEFT));
         controls.add(showExhaustedLots);controls.add(refresh);
 
-        panel.add(controls,BorderLayout.NORTH);
+        JLabel help=new JLabel("?");
+        help.setFont(help.getFont().deriveFont(Font.BOLD));
+        help.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        help.setToolTipText(I18n.tr("Click for help"));
+        help.addMouseListener(new java.awt.event.MouseAdapter(){
+            @Override public void mouseClicked(java.awt.event.MouseEvent e){ showLotsHelp(); }
+        });
+        JPanel top=new JPanel(new BorderLayout());
+        top.add(controls,BorderLayout.WEST);
+        JPanel helpPanel=new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        helpPanel.add(help);top.add(helpPanel,BorderLayout.EAST);
+
+        panel.add(top,BorderLayout.NORTH);
         panel.add(new JScrollPane(lotsTable),BorderLayout.CENTER);
         return panel;
+    }
+
+    private void showLotsHelp() {
+        String message=I18n.tr(
+                "Each stock entry creates a FIFO lot with its own quantity and unit cost.")
+            +"\n"+I18n.tr(
+                "When stock leaves the warehouse, WareStat consumes the oldest available lot first.")
+            +"\n"+I18n.tr(
+                "Initial Qty is the quantity received; Remaining Qty is what is still available in that lot.")
+            +"\n\n"+I18n.tr("Example:")
+            +"\n"+I18n.tr(
+                "5 units at cost 5.00, then 5 units at cost 10.00. If 7 units are sold, FIFO uses all 5 units from the first lot and 2 from the second: historical cost = 45.00. The second lot keeps 3 units at cost 10.00.");
+        Dialogs.showMessageDialog(this,message,I18n.tr("FIFO Lots Help"),
+            JOptionPane.INFORMATION_MESSAGE);
     }
 
     private JPanel createNotificationsPanel() {
