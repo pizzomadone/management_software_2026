@@ -960,8 +960,9 @@ public final class TableStyleUtil {
 
         // Negative states first: words such as "inactive" contain "active".
         if (containsAny(text, "cancelled", "canceled", "annullato", "inactive",
-                "inattivo", "missing", "error", "out of stock", "overdue", "no",
-                "nein", "non", "nie")) {
+                "inattivo", "reversed", "stornata", "storniert", "revertida",
+                "contre-passee", "contre-passée", "estornada", "missing", "error",
+                "out of stock", "overdue", "no", "nein", "non", "nie")) {
             return new BadgeColors(new Color(247, 226, 226), new Color(145, 54, 54));
         }
         if (containsAny(text, "completed", "completato", "complete",
