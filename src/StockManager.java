@@ -428,10 +428,9 @@ public class StockManager {
                 orderStatus = r.getString(1);
             }
         }
-        // If order was Completed, restore the exact FIFO layers and then physical stock.
-        if ("Completed".equals(orderStatus)) {
-            InventoryLotManager.restoreOrder(conn, orderId);
-            restoreStockFromDocument(conn, orderId, "ORDER");
+        if ("Completed".equals(orderStatus) || "Reversed".equals(orderStatus)) {
+            throw new SQLException(
+                "Completed or reversed customer sales cannot be deleted. Reverse completed sales instead.");
         }
 
         // If order was New or In Progress, cancel active reservations
