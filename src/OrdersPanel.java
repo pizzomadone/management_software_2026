@@ -122,10 +122,22 @@ public class OrdersPanel extends JPanel {
     }
 
     private void updateButtonStates() {
-        boolean isRowSelected = ordersTable.getSelectedRow() != -1;
-        editButton.setEnabled(isRowSelected);
-        deleteButton.setEnabled(isRowSelected);
-        generateInvoiceButton.setEnabled(isRowSelected);
+        int viewRow = ordersTable.getSelectedRow();
+        boolean isRowSelected = viewRow != -1;
+        String status = null;
+        if (isRowSelected) {
+            int modelRow = ordersTable.convertRowIndexToModel(viewRow);
+            status = String.valueOf(tableModel.getValueAt(modelRow, 3));
+        }
+
+        boolean historical = "Completed".equals(status) || "Reversed".equals(status);
+        editButton.setEnabled(isRowSelected && !historical);
+        deleteButton.setEnabled(isRowSelected && !"Reversed".equals(status));
+        deleteButton.setText(I18n.tr("Completed".equals(status) ? "Reverse Sale" : "Delete"));
+        deleteButton.setToolTipText("Completed".equals(status)
+            ? I18n.tr("Reverse the completed sale while preserving FIFO history.")
+            : null);
+        generateInvoiceButton.setEnabled(isRowSelected && "Completed".equals(status));
     }
 
     private void loadOrders() {
