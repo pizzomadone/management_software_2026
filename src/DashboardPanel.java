@@ -34,6 +34,8 @@ public class DashboardPanel extends JPanel {
     private JLabel monthInvoicedLabel;
     private JLabel avgMarginLabel;
     private JLabel zeroStockLabel;
+    private JLabel costCompletenessNoteLabel;
+    private JLabel historicalSalesCostNoteLabel;
 
     private JPanel alertsPanel;
     private JPanel pendingOrdersPanel;
@@ -162,8 +164,16 @@ public class DashboardPanel extends JPanel {
         notes.setBorder(BorderFactory.createEmptyBorder(9, 2, 0, 2));
         zeroCostCountLabel = new JLabel("—");
         negativeStockCountLabel = new JLabel("—");
-        notes.add(createKPINote("In-stock products with zero purchase cost", zeroCostCountLabel));
+        notes.add(createKPINote("In-stock products with missing purchase cost", zeroCostCountLabel));
         notes.add(createKPINote("Negative-stock products (excluded from valuation)", negativeStockCountLabel));
+        costCompletenessNoteLabel = new JLabel();
+        costCompletenessNoteLabel.setFont(dashboardFont(Font.PLAIN, 11f));
+        costCompletenessNoteLabel.setForeground(MUTED_TEXT_COLOR);
+        historicalSalesCostNoteLabel = new JLabel();
+        historicalSalesCostNoteLabel.setFont(dashboardFont(Font.PLAIN, 11f));
+        historicalSalesCostNoteLabel.setForeground(MUTED_TEXT_COLOR);
+        notes.add(costCompletenessNoteLabel);
+        notes.add(historicalSalesCostNoteLabel);
         panel.add(notes, BorderLayout.SOUTH);
 
         return panel;
@@ -563,9 +573,9 @@ public class DashboardPanel extends JPanel {
                     .divide(java.math.BigDecimal.valueOf(warehouseSaleValue), 1, java.math.RoundingMode.HALF_UP))
                 : "—";
 
-            // Out of stock includes deficits, matching the warehouse report.
+            // Operational stock uses available stock: physical quantity minus reservations.
             int zeroStockCount = 0;
-            String zeroStockQuery = "SELECT COUNT(*) as count FROM products WHERE active = 1 AND quantity <= 0";
+            String zeroStockQuery = "SELECT COUNT(*) as count FROM products WHERE active = 1 AND (quantity - reserved_quantity) <= 0";
             try (Statement stmt = conn.createStatement();
                  ResultSet rs = stmt.executeQuery(zeroStockQuery)) {
                 if (rs.next()) {
@@ -573,8 +583,11 @@ public class DashboardPanel extends JPanel {
                 }
             }
 
+            CostIntegrity.Audit costAudit = CostIntegrity.audit(conn);
+
             // Publish only after every query succeeds, so a failed refresh cannot mix old and new KPIs.
-            warehouseValueLabel.setText(SettingsPanel.formatCurrency(warehouseValue));
+            String incompleteMarker = zeroCostCount > 0 ? " *" : "";
+            warehouseValueLabel.setText(SettingsPanel.formatCurrency(warehouseValue) + incompleteMarker);
             warehouseSaleValueLabel.setText(SettingsPanel.formatCurrency(warehouseSaleValue));
             zeroCostCountLabel.setText(String.valueOf(zeroCostCount));
             negativeStockCountLabel.setText(String.valueOf(negativeStockCount));
@@ -583,8 +596,14 @@ public class DashboardPanel extends JPanel {
             pendingOrdersLabel.setText(String.valueOf(pendingOrders));
             monthRevenueLabel.setText(SettingsPanel.formatCurrency(monthlySales));
             monthInvoicedLabel.setText(monthlyInvoiced);
-            avgMarginLabel.setText(margin);
+            avgMarginLabel.setText(margin + (zeroCostCount > 0 && !"—".equals(margin) ? " *" : ""));
             zeroStockLabel.setText(String.valueOf(zeroStockCount));
+            costCompletenessNoteLabel.setText(zeroCostCount > 0
+                ? I18n.tr("* Some in-stock products have no purchase cost; warehouse cost value and potential margin are incomplete.")
+                : "");
+            historicalSalesCostNoteLabel.setText(costAudit.salesWithoutHistoricalCost() > 0
+                ? I18n.tr("* Some imported sales have no reconstructable historical cost and are excluded from historical cost and gross profit calculations.")
+                : "");
 
         } catch (SQLException | IllegalArgumentException e) {
             for (JLabel label : new JLabel[]{warehouseValueLabel, warehouseSaleValueLabel, zeroCostCountLabel,
@@ -592,6 +611,8 @@ public class DashboardPanel extends JPanel {
                     monthInvoicedLabel, avgMarginLabel, zeroStockLabel}) {
                 label.setText("—");
             }
+            if (costCompletenessNoteLabel != null) costCompletenessNoteLabel.setText("");
+            if (historicalSalesCostNoteLabel != null) historicalSalesCostNoteLabel.setText("");
             e.printStackTrace();
             Dialogs.showMessageDialog(this,
                 "Error loading KPI data: " + e.getMessage(),
