@@ -13,21 +13,52 @@ public final class CostIntegrity {
 
     private CostIntegrity() {}
 
+    /** Only frozen sale costs or complete, priced FIFO consumption snapshots are evidence. */
+    public static String historicalCostSql(String detailAlias) {
+        if (!"d".equals(detailAlias)) throw new IllegalArgumentException("Unsupported detail alias");
+        return """
+            COALESCE(d.cost_total, (
+                SELECT CASE WHEN SUM(x.quantity)=d.quantity
+                    AND SUM(CASE WHEN x.lot_id IS NULL
+                        OR (l.source_type='MIGRATION' AND x.unit_cost=0)
+                        THEN 1 ELSE 0 END)=0
+                    THEN SUM(x.quantity*x.unit_cost) ELSE NULL END
+                FROM inventory_lot_consumptions x
+                LEFT JOIN inventory_lots l ON l.id=x.lot_id
+                WHERE x.order_detail_id=d.id
+            ))
+            """;
+    }
+
+    public static void requirePurchaseCost(Connection c, Collection<Integer> ids) throws SQLException {
+        String message = missingPurchaseCostMessage(c, ids);
+        if (message != null) throw new SQLException(message);
+    }
+
+    public static String summary(Audit audit) {
+        String message = I18n.format(
+            "Import completed: {0} product(s) without purchase cost, {1} sale(s) with historical cost that cannot be reconstructed.",
+            audit.productsWithoutPurchaseCost(), audit.salesWithoutHistoricalCost());
+        if (audit.productsWithoutPurchaseCost() > 0) message += "\n" + I18n.tr(
+            "Products without purchase cost are highlighted in orange and cannot be purchased or sold until the cost is entered in the product sheet.");
+        if (audit.salesWithoutHistoricalCost() > 0) message += "\n" + I18n.tr(
+            "Sales without reconstructable historical cost remain visible but are excluded from historical cost, gross profit and other calculations that require that cost.");
+        return message;
+    }
+
     public static Audit audit(Connection c) throws SQLException {
         int products = 0;
         try (PreparedStatement p = c.prepareStatement(
-                "SELECT COUNT(*) FROM products WHERE active=1 AND acquisition_cost<=0");
+                "SELECT COUNT(*) FROM products WHERE acquisition_cost IS NULL OR acquisition_cost<=0");
              ResultSet r = p.executeQuery()) {
             if (r.next()) products = r.getInt(1);
         }
 
         int sales = 0;
-        try (PreparedStatement p = c.prepareStatement("""
-                SELECT COUNT(DISTINCT o.id)
-                FROM orders o
-                JOIN order_details d ON d.order_id=o.id
-                WHERE o.status='Completed' AND d.cost_total IS NULL
-                """);
+        try (PreparedStatement p = c.prepareStatement(
+                "SELECT COUNT(DISTINCT o.id) FROM orders o " +
+                "JOIN order_details d ON d.order_id=o.id " +
+                "WHERE o.status='Completed' AND (" + historicalCostSql("d") + ") IS NULL");
              ResultSet r = p.executeQuery()) {
             if (r.next()) sales = r.getInt(1);
         }
@@ -113,3 +144,4 @@ public final class CostIntegrity {
         }
     }
 }
+

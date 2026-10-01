@@ -26,6 +26,9 @@ public class SalesReportPanel extends JPanel {
     private JLabel totalCostLabel;
     private JLabel grossProfitLabel;
     private JLabel historicalCostNoteLabel;
+    private double summarySales, summaryCost, summaryProfit;
+    private int summaryOrders;
+    private boolean summaryCostsKnown;
     private SimpleDateFormat dateFormat;
     private JButton detailsButton;
 
@@ -102,23 +105,7 @@ public class SalesReportPanel extends JPanel {
         };
         reportTable = new JTable(tableModel);
         TableStyleUtil.applyCompact(reportTable);
-        javax.swing.table.TableCellRenderer headerDelegate =
-            reportTable.getTableHeader().getDefaultRenderer();
-        reportTable.getTableHeader().setDefaultRenderer((table, value, selected, focus, row, column) -> {
-            Component component = headerDelegate.getTableCellRendererComponent(
-                table, value, selected, focus, row, column);
-            if (component instanceof JLabel label) {
-                int modelColumn = reportTable.convertColumnIndexToModel(column);
-                if (modelColumn == 5) {
-                    label.setText("<html><u>" + I18n.tr("Historical Cost") + "</u></html>");
-                    label.setToolTipText(I18n.tr(
-                        "Historical cost is the actual cost of the products sold, determined from the FIFO lots used when the sale was completed."));
-                } else {
-                    label.setToolTipText(null);
-                }
-            }
-            return component;
-        });
+        installCostHeaders(reportTable, 5, 6);
 
         // Enable column sorting with date support (column 0 is "Date")
         TableSorterUtil.enableSorting(reportTable, new int[]{0}, dateFormat);
@@ -185,27 +172,9 @@ public class SalesReportPanel extends JPanel {
             if (start!=null && end!=null && start.after(end)) throw new IllegalArgumentException("Start date must not follow end date");
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
-                WITH fifo_cost AS (
-                    SELECT order_detail_id,
-                           SUM(quantity) AS consumed_qty,
-                           SUM(CASE WHEN lot_id IS NULL THEN quantity ELSE 0 END) AS unknown_qty,
-                           SUM(quantity * unit_cost) AS fifo_cost
-                    FROM inventory_lot_consumptions
-                    WHERE order_detail_id IS NOT NULL
-                    GROUP BY order_detail_id
-                ),
-                detail_cost AS (
-                    SELECT d.order_id,
-                           CASE
-                               WHEN d.cost_total IS NOT NULL THEN d.cost_total
-                               WHEN f.order_detail_id IS NOT NULL
-                                    AND f.consumed_qty = d.quantity
-                                    AND f.unknown_qty = 0
-                               THEN f.fifo_cost
-                               ELSE NULL
-                           END AS effective_cost
+                WITH detail_cost AS (
+                    SELECT d.order_id, %s AS effective_cost
                     FROM order_details d
-                    LEFT JOIN fifo_cost f ON f.order_detail_id = d.id
                 ),
                 cg AS (
                     SELECT order_id,
@@ -221,7 +190,7 @@ public class SalesReportPanel extends JPanel {
                 LEFT JOIN customers c ON c.id=o.customer_id
                 LEFT JOIN cg ON cg.order_id=o.id
                 WHERE o.status='Completed'
-                """;
+                """.formatted(CostIntegrity.historicalCostSql("d"));
             if (start!=null) query += " AND " + DateUtils.sqlDate("o.order_date") + ">=?";
             if (end!=null) query += " AND " + DateUtils.sqlDate("o.order_date") + "<=?";
             query += " ORDER BY " + DateUtils.sqlDate("o.order_date") + " DESC,o.id DESC";
@@ -266,8 +235,8 @@ public class SalesReportPanel extends JPanel {
                         totalCost = Numbers.add(totalCost,cost);
                         totalGrossProfit = Numbers.add(totalGrossProfit,profit);
                     } else {
-                        row.add("N/A");
-                        row.add("N/A");
+                        row.add(I18n.tr("Historical cost unavailable"));
+                        row.add(I18n.tr("Historical cost unavailable"));
                         allCostsKnown = false;
                     }
 
@@ -295,6 +264,8 @@ public class SalesReportPanel extends JPanel {
 
     private void updateStatistics(double totalSales,int totalOrders,double totalCost,
                                   double grossProfit,boolean allCostsKnown) {
+        summarySales=totalSales;summaryCost=totalCost;summaryProfit=grossProfit;
+        summaryOrders=totalOrders;summaryCostsKnown=allCostsKnown;
         double averageOrder = totalOrders > 0 ? totalSales / totalOrders : 0;
         totalSalesLabel.setText("Total Sales: " + SettingsPanel.formatCurrency(totalSales));
         totalOrdersLabel.setText("Number of Orders: " + totalOrders);
@@ -312,6 +283,24 @@ public class SalesReportPanel extends JPanel {
         I18n.localize(averageOrderLabel);
         I18n.localize(totalCostLabel);
         I18n.localize(grossProfitLabel);
+    }
+
+    private static void installCostHeaders(JTable target, int costColumn, int profitColumn) {
+        javax.swing.table.TableCellRenderer delegate = target.getTableHeader().getDefaultRenderer();
+        target.getTableHeader().setDefaultRenderer((table, value, selected, focus, row, column) -> {
+            Component component = delegate.getTableCellRendererComponent(table, value, selected, focus, row, column);
+            if (component instanceof JLabel label) {
+                int modelColumn = target.convertColumnIndexToModel(column);
+                label.setToolTipText(null);
+                if (modelColumn == costColumn || modelColumn == profitColumn) {
+                    label.setText("<html><u>" + I18n.tr(modelColumn == costColumn ? "Historical Cost" : "Gross Profit") + "</u></html>");
+                    label.setToolTipText(I18n.tr(modelColumn == costColumn
+                        ? "Historical cost is the actual cost of the products sold, determined from the FIFO lots used when the sale was completed."
+                        : "Gross profit = historical sales revenue - historical FIFO purchase cost. Sales without reconstructable historical cost are excluded."));
+                }
+            }
+            return component;
+        });
     }
 
     private void showOrderDetails() {
@@ -340,44 +329,19 @@ public class SalesReportPanel extends JPanel {
             DefaultTableModel detailModel = new DefaultTableModel(columns, 0);
             JTable detailTable = new JTable(detailModel);
             TableStyleUtil.applyCompact(detailTable);
+            installCostHeaders(detailTable, 4, 5);
 
             try {
                 Connection conn = DatabaseManager.getInstance().getConnection();
                 String query = """
-                    WITH fifo_cost AS (
-                        SELECT order_detail_id,
-                               SUM(quantity) AS consumed_qty,
-                               SUM(CASE WHEN lot_id IS NULL THEN quantity ELSE 0 END) AS unknown_qty,
-                               SUM(quantity * unit_cost) AS fifo_cost
-                        FROM inventory_lot_consumptions
-                        WHERE order_detail_id IS NOT NULL
-                        GROUP BY order_detail_id
-                    ),
-                    demo_mode AS (
-                        SELECT CASE WHEN EXISTS(
-                            SELECT 1 FROM inventory_lots
-                            WHERE source_type='DEMO_OPENING'
-                        ) THEN 1 ELSE 0 END AS enabled
-                    )
                     SELECT COALESCE(p.name, 'Product N/A') as product_name,
                            d.quantity, d.unit_price,
-                           CASE
-                               WHEN d.cost_total IS NOT NULL THEN d.cost_total
-                               WHEN f.order_detail_id IS NOT NULL
-                                    AND f.consumed_qty = d.quantity
-                                    AND f.unknown_qty = 0
-                               THEN f.fifo_cost
-                               WHEN dm.enabled = 1
-                               THEN d.quantity * COALESCE(p.acquisition_cost,0)
-                               ELSE NULL
-                           END AS effective_cost,
+                           %s AS effective_cost,
                            warestat_line_total(d.quantity,d.unit_price) as total
                     FROM order_details d
                     LEFT JOIN products p ON d.product_id = p.id
-                    LEFT JOIN fifo_cost f ON f.order_detail_id = d.id
-                    CROSS JOIN demo_mode dm
                     WHERE d.order_id = ?
-                """;
+                """.formatted(CostIntegrity.historicalCostSql("d"));
                 try (PreparedStatement pstmt = conn.prepareStatement(query)) {
                     pstmt.setInt(1, orderId);
                     try (ResultSet rs = pstmt.executeQuery()) {
@@ -390,7 +354,7 @@ public class SalesReportPanel extends JPanel {
                             row.add(Numbers.moneyText(lineTotal));
                             Object historicalCost=rs.getObject("effective_cost");
                             if(historicalCost==null){
-                                row.add("N/A");row.add("N/A");
+                                row.add(I18n.tr("Historical cost unavailable"));row.add(I18n.tr("Historical cost unavailable"));
                             }else{
                                 double cost=rs.getDouble("effective_cost");
                                 row.add(Numbers.moneyText(cost));
@@ -413,6 +377,8 @@ public class SalesReportPanel extends JPanel {
             JPanel buttonPanel = new JPanel();
             buttonPanel.add(closeButton);
             detailDialog.add(buttonPanel, BorderLayout.SOUTH);
+            I18n.localize(detailDialog);
+            Dialogs.centerWindow(detailDialog);
             detailDialog.setVisible(true);
         }
     }
@@ -465,12 +431,15 @@ public class SalesReportPanel extends JPanel {
                 }
 
                 writer.println();
-                writer.println("Summary");
-                writer.println("Total Sales," + Csv.cell(totalSalesLabel.getText().replace("Total Sales: ", "")));
-                writer.println("Number of Orders," + Csv.cell(totalOrdersLabel.getText().replace("Number of Orders: ", "")));
-                writer.println("Average per Order," + Csv.cell(averageOrderLabel.getText().replace("Average per Order: ", "")));
-                writer.println("Historical Cost," + Csv.cell(totalCostLabel.getText().replace("Historical Cost: ", "")));
-                writer.println("Gross Profit," + Csv.cell(grossProfitLabel.getText().replace("Gross Profit: ", "")));
+                writer.println(Csv.cell(I18n.tr("Summary")));
+                writer.println(Csv.cell(I18n.tr("Total Sales"))+","+Numbers.moneyText(summarySales));
+                writer.println(Csv.cell(I18n.tr("Number of Orders"))+","+summaryOrders);
+                writer.println(Csv.cell(I18n.tr("Average per Order"))+","+Numbers.moneyText(summaryOrders>0 ? summarySales/summaryOrders : 0));
+                String marker=summaryCostsKnown ? "" : " *";
+                writer.println(Csv.cell(I18n.tr("Historical Cost"))+","+Csv.cell(Numbers.moneyText(summaryCost)+marker));
+                writer.println(Csv.cell(I18n.tr("Gross Profit"))+","+Csv.cell(Numbers.moneyText(summaryProfit)+marker));
+                if (!summaryCostsKnown) writer.println(Csv.cell(I18n.tr(
+                    "* Sales without reconstructable historical cost are excluded from historical cost and gross profit calculations.")));
 
                 Csv.finish(writer);
                 Dialogs.showMessageDialog(this,
@@ -487,3 +456,4 @@ public class SalesReportPanel extends JPanel {
     }
     public void refreshData() { loadReportData(); }
 }
+

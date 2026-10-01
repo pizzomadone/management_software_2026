@@ -369,6 +369,24 @@ public class StockManager {
      * to the exact original layers and a compensating inward movement is posted.
      */
     public static void reverseCompletedOrder(Connection conn,int orderId) throws SQLException {
+        boolean ownTransaction=conn.getAutoCommit();
+        if (ownTransaction) DatabaseManager.beginTransaction(conn);
+        Savepoint checkpoint=conn.setSavepoint();
+        try {
+            reverseCompletedOrderInTransaction(conn,orderId);
+            conn.releaseSavepoint(checkpoint);
+            if (ownTransaction) conn.commit();
+        } catch (SQLException | RuntimeException e) {
+            conn.rollback(checkpoint);
+            conn.releaseSavepoint(checkpoint);
+            if (ownTransaction) conn.rollback();
+            throw e;
+        } finally {
+            if (ownTransaction) conn.setAutoCommit(true);
+        }
+    }
+
+    private static void reverseCompletedOrderInTransaction(Connection conn,int orderId) throws SQLException {
         String status;
         try(PreparedStatement p=conn.prepareStatement("SELECT status FROM orders WHERE id=?")) {
             p.setInt(1,orderId);
@@ -496,7 +514,8 @@ public class StockManager {
             p.setInt(1, movementId);
             try (ResultSet r = p.executeQuery()) {
                 if (!r.next()) throw new SQLException("Movement no longer exists");
-                if ("ORDER".equals(r.getString(1)) || "SUPPLIER_ORDER".equals(r.getString(1)) || "INVENTORY_ADJUSTMENT".equals(r.getString(1)))
+                if ("ORDER".equals(r.getString(1)) || "SUPPLIER_ORDER".equals(r.getString(1)) || "INVENTORY_ADJUSTMENT".equals(r.getString(1))
+                        || "ORDER_REVERSAL".equals(r.getString(1)) || "MOVEMENT_REVERSAL".equals(r.getString(1)))
                     throw new SQLException("Edit the source document to change this automatic movement");
             }
         }
@@ -566,3 +585,4 @@ public class StockManager {
         }
     }
 }
+

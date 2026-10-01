@@ -71,7 +71,7 @@ public class OperationalRegressionTest extends RegressionTest {
             WarehouseReportPanel report=new WarehouseReportPanel();DefaultTableModel model=(DefaultTableModel)get(report,"productsModel");require(model.getRowCount()==1,"Inactive catalog included");
             DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
             require(((JLabel)get(dash,"warehouseValueLabel")).getText().equals(SettingsPanel.formatCurrency(Numbers.nonNegative(model.getValueAt(0,6)))),"Valuation rounding differs");
-            sql("UPDATE products SET acquisition_cost=0 WHERE id=1");call(dash,"loadKPIData");require(((JLabel)get(dash,"avgMarginLabel")).getText().equals("100.0%"),"Zero cost margin is not 100%");
+            sql("UPDATE products SET acquisition_cost=0 WHERE id=1");call(dash,"loadKPIData");require(((JLabel)get(dash,"avgMarginLabel")).getText().equals("100.0% *"),"Zero cost margin is not 100%");
         });
         test("monthly invoiced total includes the exact first millisecond",()->{
             fresh();Calendar month=Calendar.getInstance();month.set(Calendar.DAY_OF_MONTH,1);month.set(Calendar.HOUR_OF_DAY,0);month.set(Calendar.MINUTE,0);month.set(Calendar.SECOND,0);month.set(Calendar.MILLISECOND,0);
@@ -82,7 +82,7 @@ public class OperationalRegressionTest extends RegressionTest {
             fresh();sql("UPDATE products SET quantity=10,acquisition_cost=0,price=12.50 WHERE id=1");
             sql("UPDATE products SET active=0,quantity=100,acquisition_cost=99 WHERE id=2");
             DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
-            require(kpi(dash,"warehouseValueLabel").equals(SettingsPanel.formatCurrency(0)),"Invented an acquisition cost");
+            require(kpi(dash,"warehouseValueLabel").equals(SettingsPanel.formatCurrency(0)+" *"),"Invented an acquisition cost");
             require(kpi(dash,"warehouseSaleValueLabel").equals(SettingsPanel.formatCurrency(125)),"Sale value missing or inactive stock included");
             require(kpi(dash,"zeroCostCountLabel").equals("1"),"Zero cost is not explained");
             sql("UPDATE products SET acquisition_cost=5 WHERE id=1");call(dash,"loadKPIData");
@@ -96,7 +96,7 @@ public class OperationalRegressionTest extends RegressionTest {
             DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");call(dash,"loadAlerts");
             require(kpi(dash,"warehouseValueLabel").equals(SettingsPanel.formatCurrency(1.01)),"Deficit cancelled another product's cost value");
             require(kpi(dash,"warehouseSaleValueLabel").equals(SettingsPanel.formatCurrency(7.01)),"Deficit cancelled another product's sale value");
-            require(kpi(dash,"negativeStockCountLabel").equals("1") && kpi(dash,"lowStockCountLabel").equals("1"),"Negative stock without a minimum was hidden");
+            require(kpi(dash,"negativeStockCountLabel").equals("1") && kpi(dash,"lowStockCountLabel").equals("0"),"Negative stock without a minimum was hidden");
             require(labels((JPanel)get(dash,"alertsPanel")).stream().anyMatch(l->l.getText().contains("-100")),"No deficit alert");
             WarehouseReportPanel report=new WarehouseReportPanel();DefaultTableModel rows=(DefaultTableModel)get(report,"productsModel");
             require(rows.getValueAt(0,6).equals("1.01") && rows.getValueAt(1,6).equals("0.00"),"Report valuation differs from dashboard");
@@ -110,16 +110,18 @@ public class OperationalRegressionTest extends RegressionTest {
             sql("UPDATE products SET quantity=0 WHERE id=1");call(dash,"loadKPIData");
             require(kpi(dash,"warehouseValueLabel").equals(SettingsPanel.formatCurrency(0)) && kpi(dash,"warehouseSaleValueLabel").equals(SettingsPanel.formatCurrency(0)),"All depleted stock produced a negative value");
         });
-        test("monthly sales follow completed order edits resaves and cancellations without an invoice",()->{
-            fresh();call(order(false,3,"Completed"),"saveOrder");DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
+        test("monthly revenue excludes reversals and retains the original sale history",()->{
+            fresh();seedOpeningLots();call(order(false,3,"Completed"),"saveOrder");
+            DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
             require(kpi(dash,"monthRevenueLabel").equals(SettingsPanel.formatCurrency(30)),"Uninvoiced sale disappeared");
-            require(kpi(dash,"monthInvoicedLabel").equals(SettingsPanel.formatCurrency(0)),"An order became a phantom invoice");
-            for(int i=0;i<2;i++) {call(order(true,5,"Completed"),"saveOrder");call(dash,"loadKPIData");
-                require(kpi(dash,"monthRevenueLabel").equals(SettingsPanel.formatCurrency(50)),"Edit/resave duplicated or retained stale sales");}
-            SalesReportPanel report=new SalesReportPanel();call(report,"loadReportData");DefaultTableModel rows=(DefaultTableModel)get(report,"tableModel");
-            require(rows.getRowCount()==1 && rows.getValueAt(0,4).equals("50.00"),"Sales report disagrees with dashboard");
-            call(order(true,5,"Cancelled"),"saveOrder");call(dash,"loadKPIData");
-            require(kpi(dash,"monthRevenueLabel").equals(SettingsPanel.formatCurrency(0)) && qty()==10,"Cancelled sale remained in the KPI");
+            require(kpi(dash,"monthInvoicedLabel").equals(SettingsPanel.formatCurrency(0)),"Phantom invoice");
+            rejectedSave(order(true,5,"Completed"),"saveOrder","orderSaved");
+            SalesReportPanel report=new SalesReportPanel();call(report,"loadReportData");
+            DefaultTableModel rows=(DefaultTableModel)get(report,"tableModel");
+            require(rows.getRowCount()==1 && rows.getValueAt(0,4).equals("30.00"),"Rejected rewrite changed revenue");
+            StockManager.reverseCompletedOrder(db,1);call(dash,"loadKPIData");call(report,"loadReportData");
+            require(kpi(dash,"monthRevenueLabel").equals(SettingsPanel.formatCurrency(0)) && qty()==10,"Reversed sale remained in net revenue");
+            require(rows.getRowCount()==0 && "1".equals(value("SELECT COUNT(*) FROM orders")),"Historical order lost");
         });
         test("monthly orders and invoices respect statuses date formats and local month boundaries",()->{
             TimeZone previous=TimeZone.getDefault();
@@ -166,7 +168,7 @@ public class OperationalRegressionTest extends RegressionTest {
             sql("UPDATE products SET quantity=9,active=0 WHERE id=2");call(dash,"loadKPIData");
             require(kpi(dash,"avgMarginLabel").equals("10.0%"),"Inactive stock changed potential margin");
             sql("UPDATE products SET acquisition_cost=0 WHERE id=1");call(dash,"loadKPIData");
-            require(kpi(dash,"avgMarginLabel").equals("100.0%"),"Free purchase has the wrong margin");
+            require(kpi(dash,"avgMarginLabel").equals("100.0% *"),"Missing purchase cost must mark the margin incomplete");
             sql("UPDATE products SET acquisition_cost=150 WHERE id=1");call(dash,"loadKPIData");
             require(kpi(dash,"avgMarginLabel").equals("-50.0%"),"Loss was hidden or confused with markup");
             sql("UPDATE products SET price=0 WHERE id=1");call(dash,"loadKPIData");
@@ -181,10 +183,10 @@ public class OperationalRegressionTest extends RegressionTest {
             sql("INSERT INTO minimum_stock(product_id,minimum_quantity,reorder_quantity) VALUES(1,3,0),(4,10,0),(5,10,0)");
             sql("INSERT INTO orders(customer_id,order_date,status,total) VALUES(1,'2000-01-01','In Progress',0),(1,'2000-01-01','Completed',0),(1,'2000-01-01','Cancelled',0)");
             DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
-            require(kpi(dash,"lowStockCountLabel").equals("3"),"Low stock omitted a deficit, ignored reservations, counted inactive products or mishandled a disabled threshold");
+            require(kpi(dash,"lowStockCountLabel").equals("2"),"Low stock omitted a deficit, ignored reservations, counted inactive products or mishandled a disabled threshold");
             require(kpi(dash,"zeroStockLabel").equals("2"),"Out of stock omitted a negative balance or included inactive products");
             require(kpi(dash,"pendingOrdersLabel").equals("2"),"Pending orders used the monthly filter or included closed documents");
-            require(kpi(dash,"warehouseValueLabel").equals(SettingsPanel.formatCurrency(50)) && kpi(dash,"warehouseSaleValueLabel").equals(SettingsPanel.formatCurrency(150)),"Reservations reduced physical stock value");
+            require(kpi(dash,"warehouseValueLabel").equals(SettingsPanel.formatCurrency(50)+" *") && kpi(dash,"warehouseSaleValueLabel").equals(SettingsPanel.formatCurrency(150)),"Reservations reduced physical stock value");
             WarehouseReportPanel report=new WarehouseReportPanel();DefaultTableModel rows=(DefaultTableModel)get(report,"productsModel");
             int outOfStock=0;for(int row=0;row<rows.getRowCount();row++)if(rows.getValueAt(row,7).equals("OUT OF STOCK"))outOfStock++;
             require(outOfStock==2,"Warehouse report and dashboard disagree on out of stock");
@@ -192,7 +194,7 @@ public class OperationalRegressionTest extends RegressionTest {
         test("KPI titles notes and explanations translate in every supported language",()->{
             fresh();DashboardPanel dash=new DashboardPanel(null);JPanel panel=(JPanel)call(dash,"createKPIPanel");
             String[] titles={"Stock at last purchase cost","Stock at sale price","Monthly order sales (excl. VAT)","Monthly invoiced (excl. VAT)","Potential stock margin",
-                "In-stock products with zero purchase cost","Negative-stock products (excluded from valuation)"};
+                "In-stock products with missing purchase cost","Negative-stock products (excluded from valuation)"};
             Map<String,String> fields=Map.of("warehouseValue","warehouseValueLabel","warehouseSaleValue","warehouseSaleValueLabel",
                 "lowStock","lowStockCountLabel","zeroStock","zeroStockLabel","monthRevenue","monthRevenueLabel",
                 "monthInvoiced","monthInvoicedLabel","pendingOrders","pendingOrdersLabel","avgMargin","avgMarginLabel");
@@ -305,3 +307,4 @@ public class OperationalRegressionTest extends RegressionTest {
         });
     }
 }
+

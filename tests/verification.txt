@@ -1,25 +1,32 @@
-JDK 21; SQLite JDBC 3.50.3.0; PDFBox 3.0.6; synthetic databases; headless Swing.
-
 PASS completed saves are idempotent
-PASS editing and cancelling restores original quantity
+PASS completed sale rejects rewriting and reverses with preserved history
 PASS all customer order state transitions preserve balances
-PASS changing product reverses the original product
+PASS completed sale rejects replacement of its product
 PASS cancelled rows do not create phantom availability
 PASS active table editor is committed before totals and persistence
 PASS invalid quantities and non-finite payments never persist
 PASS new invoice product resolves despite empty cache
-PASS supplier reassignment preserves existing purchase rows and stock
+PASS preferred supplier reassignment preserves existing purchase rows and stock
 PASS automatic movements cannot be edited independently
+PASS manual inward and outward movements preserve FIFO exactly
+PASS legacy manual movements without FIFO history cannot be reversed
 PASS overflow aborts the entire receiving transaction
 PASS dates reject impossible days and trailing text
 PASS decimal calculations preserve unit precision
 PASS supplier sequence excludes year digits
-PASS supplier pricing respects dates and minimum quantities
+PASS supplier pricing uses the current product-supplier price
+PASS FIFO freezes exact historical purchase cost on customer sales
+PASS reversing a completed sale restores its exact FIFO layers
+PASS negative stock stays unpriced and incomplete FIFO reversal is rejected
+PASS legacy completed sale without FIFO history cannot be reversed
+PASS consumed supplier FIFO lot blocks receipt reversal
 PASS WAL import includes committed data and retains a prior copy
 PASS incompatible imports leave live data intact
 PASS retention only removes managed backup files
+PASS product photos are optimized ordered and included only in complete backups
 PASS all supplier order state transitions preserve receipts
 PASS invoice rounding agrees between lines and saved header
+PASS accounting rounding agrees in Java SQL reports and visible unit values
 PASS completed sales exclude cancelled documents and have no 1000 row cap
 PASS dominant product belongs to ABC class A
 PASS top ten percentages include all products in the denominator
@@ -36,21 +43,39 @@ PASS movement reports include timestamp and SQL text dates
 PASS business text is never translated
 PASS numeric and formatted currency sorting is numeric
 PASS CSV preserves quotes commas and newlines and detects write failure
-PASS price list lookup identifies the selected period by ID
+PASS product supplier relation keeps one preferred supplier and independent prices
+PASS legacy supplier list migration keeps the latest price even for the preferred supplier
+PASS legacy supplier list migration prefers an applicable price over a future row
+PASS migration 012 rerun does not duplicate exhausted opening FIFO layers
 PASS legacy supplier migration preserves referenced products
 PASS invoice source order foreign key survives migration
 PASS database rejects non-finite and invalid persisted numbers
-PASS changing currency cannot relabel an existing database
+PASS dashboard can be recreated after currency refresh
+PASS currency change explanations translate in every supported language
+PASS currency relabel changes operational currency without touching finalized invoices
+PASS currency conversion updates all operational values and preserves finalized invoices
+PASS currency conversion preserves sub-cent unit precision and recalculates cents consistently
+PASS all report line totals use the same HALF_UP accounting rule
+PASS currency conversion refuses to silently repair inconsistent documents
+PASS every non-Draft invoice is treated as finalized regardless of currency
+PASS currency conversion keeps cents consistent with high quantities VAT and partial payments
+PASS currency conversion refuses to repair inconsistent documents silently
+PASS currency conversion is atomic and historical foreign invoice only changes status
 PASS invoice snapshots survive later party and catalog changes
+PASS invoice PDF covers statuses languages sparse parties and VAT variants
 PASS fifty line invoice prints every row and totals within page bounds
 PASS empty and long report PDFs remain complete and readable
+PASS startup reconciles active reservation cache
+PASS manual outward availability honors reservations and edit reversal
+PASS linked invoice freezes its source order
+PASS only completed customer orders are invoice eligible
 PASS inventory correction records only the physical delta
 PASS notification actions target selected database IDs
 PASS warehouse valuation agrees with dashboard and zero cost margin
 PASS monthly invoiced total includes the exact first millisecond
 PASS stock at zero cost is distinct from sale value and an empty warehouse
 PASS negative stock cannot cancel positive assets and stays visible after restocking
-PASS monthly sales follow completed order edits resaves and cancellations without an invoice
+PASS monthly revenue excludes reversals and retains the original sale history
 PASS monthly orders and invoices respect statuses date formats and local month boundaries
 PASS invoicing a sale keeps net orders and net invoiced revenue separate
 PASS potential stock margin is value weighted and handles loss free cost and no denominator
@@ -62,4 +87,17 @@ PASS IMMEDIATE transactions serialize stock availability checks
 PASS legacy import requires and preserves the declared original currency
 PASS SQL and UI use the same calendar day across time zones
 PASS startup refuses an empty existing database without replacing it
-Regression checks: 62 passed, 0 failed
+PASS storno preserves later sale cost and exact original FIFO layers
+PASS sale reversal rolls back all lots if restoring physical quantity overflows
+PASS manual reversal preserves history even after later FIFO sales
+PASS incomplete and overflowed manual reversals leave all balances intact
+PASS manual inbound layer with reversed historical sales remains protected
+PASS unknown opening snapshots stay unknown after today's purchase cost correction
+PASS demo lots cannot invent historical cost in reports or hide revenue
+PASS unpriced migration layers remain unavailable even after a supplier receipt
+PASS cost requirement blocks both purchase and sale saves before data changes
+PASS supplier receipt is linked to its exact warehouse movement
+PASS replacement supplier uses lowest price then oldest relationship without repricing stock
+PASS stock reductions retain FIFO history and reject silent zero-cost additions
+PASS new FIFO messages are translated in every supported language
+Regression checks: 102 passed, 0 failed

@@ -526,8 +526,8 @@ public class DashboardPanel extends JPanel {
             int lowStockCount = 0;
             String lowStockQuery = "SELECT COUNT(*) as count FROM products p " +
                 "LEFT JOIN minimum_stock sm ON sm.product_id = p.id WHERE p.active = 1 AND " +
-                "((p.quantity - p.reserved_quantity) < 0 OR " +
-                "((p.quantity - p.reserved_quantity) < sm.minimum_quantity AND sm.minimum_quantity > 0))";
+                "(p.quantity - p.reserved_quantity) > 0 AND " +
+                "(p.quantity - p.reserved_quantity) < sm.minimum_quantity AND sm.minimum_quantity > 0";
             try (Statement stmt = conn.createStatement();
                  ResultSet rs = stmt.executeQuery(lowStockQuery)) {
                 if (rs.next()) {
@@ -1146,3 +1146,4 @@ public class DashboardPanel extends JPanel {
         }
     }
 }
+

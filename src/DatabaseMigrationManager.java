@@ -36,7 +36,9 @@ public final class DatabaseMigrationManager {
         new Migration("012", "Replace supplier price lists with product suppliers and add FIFO cost history",
             DatabaseMigrationManager::migrateProductSuppliersAndFifo),
         new Migration("013", "Mark unreconstructable zero-cost migration sales as unknown",
-            DatabaseMigrationManager::markUnknownHistoricalCosts)
+            DatabaseMigrationManager::markUnknownHistoricalCosts),
+        new Migration("014", "Preserve manual FIFO reversals and unknown cost snapshots",
+            DatabaseMigrationManager::migrateFifoReversals)
     );
 
     private DatabaseMigrationManager() {}
@@ -222,6 +224,22 @@ public final class DatabaseMigrationManager {
         }
     }
 
+
+    private static void migrateFifoReversals(Connection c) throws SQLException {
+        addColumnIfMissing(c, "warehouse_movements", "reversal_of_movement_id",
+            "ALTER TABLE warehouse_movements ADD COLUMN reversal_of_movement_id INTEGER REFERENCES warehouse_movements(id)");
+        try (Statement s = c.createStatement()) {
+            s.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_movement_reversal ON warehouse_movements(reversal_of_movement_id) WHERE reversal_of_movement_id IS NOT NULL");
+            // A later correction of an opening layer must not price a previous sale.
+            s.executeUpdate("""
+                UPDATE order_details SET cost_total=NULL WHERE id IN (
+                    SELECT x.order_detail_id FROM inventory_lot_consumptions x
+                    JOIN inventory_lots l ON l.id=x.lot_id
+                    WHERE l.source_type='MIGRATION' AND x.unit_cost=0
+                )
+                """);
+        }
+    }
 
     private static void markUnknownHistoricalCosts(Connection c) throws SQLException {
         if (!hasTable(c, "inventory_lots") || !hasTable(c, "inventory_lot_consumptions")
@@ -565,3 +583,4 @@ public final class DatabaseMigrationManager {
         }
     }
 }
+

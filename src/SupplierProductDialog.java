@@ -149,6 +149,7 @@ public class SupplierProductDialog extends JDialog {
                         +"\n"+I18n.format(
                             "The new preferred supplier's price ({0}) will become the default reference price proposed in new supplier orders.",
                             SettingsPanel.formatUnitCurrency(price))
+                        +"\n"+I18n.tr("The last actual purchase cost, historical costs and existing FIFO lots will not change.")
                         +"\n\n"+I18n.tr("Confirm?");
                     if(Dialogs.showConfirmDialog(this,message,I18n.tr("Set Preferred Supplier"),
                             JOptionPane.YES_NO_OPTION,JOptionPane.WARNING_MESSAGE)!=JOptionPane.YES_OPTION){
@@ -197,3 +198,4 @@ public class SupplierProductDialog extends JDialog {
         @Override public String toString(){return code+" - "+name;}
     }
 }
+

@@ -135,6 +135,7 @@ public class WarehousePanel extends JPanel {
             new TableInteractionUtil.TableAction("New Movement", () -> showMovementDialog(null), false),
             new TableInteractionUtil.TableAction("Edit", this::editSelectedMovement),
             new TableInteractionUtil.TableAction("Delete", this::deleteSelectedMovement),
+            new TableInteractionUtil.TableAction("Reverse Movement", this::reverseSelectedMovement),
             null, // Separator
             new TableInteractionUtil.TableAction("Refresh", this::loadMovementsData, false)
         );
@@ -166,6 +167,9 @@ public class WarehousePanel extends JPanel {
         newButton.addActionListener(e -> showMovementDialog(null));
         editButton.addActionListener(e -> editSelectedMovement());
         deleteButton.addActionListener(e -> deleteSelectedMovement());
+        JButton reverseButton=new JButton(I18n.tr("Reverse Movement"));
+        reverseButton.addActionListener(e -> reverseSelectedMovement());
+        buttonPanel.add(reverseButton);
         refreshButton.addActionListener(e -> loadMovementsData());
 
         buttonPanel.add(newButton);
@@ -370,7 +374,8 @@ public class WarehousePanel extends JPanel {
                         row.add(r.getString("number")==null?"":r.getString("number"));
                         row.add(r.getInt("initial_quantity"));
                         row.add(r.getInt("remaining_quantity"));
-                        row.add(r.getDouble("unit_cost"));
+                        row.add(r.getDouble("unit_cost")==0 && "MIGRATION".equals(r.getString("source_type"))
+                            ? I18n.tr("Historical cost unavailable") : Numbers.unitText(r.getDouble("unit_cost")));
                         row.add(InventoryLotManager.sourceDisplayName(r.getString("source_type")));
                         lotsModel.addRow(row);
                     }
@@ -732,6 +737,23 @@ public class WarehousePanel extends JPanel {
         );
     }
 
+    private void reverseSelectedMovement() {
+        int selected=movementsTable.getSelectedRow();
+        if (selected<0) return;
+        int id=((Number)movementsModel.getValueAt(movementsTable.convertRowIndexToModel(selected),0)).intValue();
+        if (Dialogs.showConfirmDialog(this, I18n.tr(
+                "Reverse this outward movement? The original remains in history, quantities return to their original FIFO lots and later sales are not changed."),
+                I18n.tr("Reverse Movement"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE)!=JOptionPane.YES_OPTION) return;
+        try {
+            InventoryLotManager.reverseOutwardMovement(DatabaseManager.getInstance().getConnection(),id);
+            loadData();
+            Dialogs.showMessageDialog(this,I18n.tr("Movement reversed successfully."),
+                I18n.tr("Success"),JOptionPane.INFORMATION_MESSAGE);
+        } catch (SQLException | RuntimeException e) {
+            Dialogs.showMessageDialog(this,I18n.tr(e.getMessage()),I18n.tr("Error"),JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
     private void editSelectedMovement() {
         int selectedRow = movementsTable.getSelectedRow();
         if (selectedRow != -1) {
@@ -753,6 +775,9 @@ public class WarehousePanel extends JPanel {
                     ResultSet rs = pstmt.executeQuery();
 
                     if (rs.next()) {
+                        StockManager.requireManualMovement(conn,movementId);
+                        if ("OUTWARD".equals(rs.getString("type"))) throw new SQLException(
+                            "Posted outward movements cannot be edited or deleted. Use Reverse Movement.");
                         WarehouseMovement movement = new WarehouseMovement(
                             rs.getInt("id"),
                             rs.getInt("product_id"),
@@ -772,7 +797,7 @@ public class WarehousePanel extends JPanel {
             } catch (SQLException e) {
                 e.printStackTrace();
                 Dialogs.showMessageDialog(this,
-                    "Error loading movement: " + e.getMessage(),
+                    I18n.tr("Error loading movement") + ": " + I18n.tr(e.getMessage()),
                     "Error", JOptionPane.ERROR_MESSAGE);
             }
         }
@@ -851,7 +876,7 @@ public class WarehousePanel extends JPanel {
                 } catch (SQLException e) {
                     e.printStackTrace();
                     Dialogs.showMessageDialog(this,
-                        "Error deleting movement: " + e.getMessage(),
+                        I18n.tr("Error deleting movement") + ": " + I18n.tr(e.getMessage()),
                         "Error", JOptionPane.ERROR_MESSAGE);
                 }
             }
@@ -859,3 +884,4 @@ public class WarehousePanel extends JPanel {
     }
     public void refreshData() { loadData(); }
 }
+

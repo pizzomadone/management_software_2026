@@ -99,7 +99,8 @@ public class InventoryLotsDialog extends JDialog {
                             r.getString("company_name")==null?"":r.getString("company_name"),
                             r.getString("number")==null?"":r.getString("number"),
                             r.getInt("initial_quantity"),r.getInt("remaining_quantity"),
-                            r.getDouble("unit_cost"),
+                            r.getDouble("unit_cost")==0 && "MIGRATION".equals(r.getString("source_type"))
+                                ? I18n.tr("Historical cost unavailable") : Numbers.unitText(r.getDouble("unit_cost")),
                             InventoryLotManager.sourceDisplayName(r.getString("source_type")),r.getInt("id")
                         });
                     }
@@ -111,3 +112,4 @@ public class InventoryLotsDialog extends JDialog {
         }
     }
 }
+

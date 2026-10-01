@@ -69,7 +69,11 @@ public class RegressionTest {
     }
     static Customer customer(){return new Customer(1,"Test","Customer","","","");}
     static String today(){return new SimpleDateFormat("dd/MM/yyyy").format(new java.util.Date());}
+    static void seedOpeningLots() throws Exception {
+        sql("INSERT INTO inventory_lots(product_id,received_date,initial_quantity,remaining_quantity,unit_cost,source_type) SELECT id,1,quantity,quantity,acquisition_cost,'MIGRATION' FROM products WHERE quantity>0 AND NOT EXISTS(SELECT 1 FROM inventory_lots l WHERE l.product_id=products.id)");
+    }
     static void completed()throws Exception{
+        seedOpeningLots();
         sql("INSERT INTO orders(id,customer_id,order_date,status,total) VALUES(1,1,"+System.currentTimeMillis()+",'Completed',30)");
         sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(1,1,3,10)");
         StockManager.createOrUpdateReservation(db,1,"ORDER",1,3,"");
@@ -78,8 +82,9 @@ public class RegressionTest {
     }
     static OD order(boolean existing,Object quantity,String status)throws Exception{
         OD d=empty(OD.class);
-        put(d,"order",existing?new Order(1,1,"Test Customer",new java.util.Date(),"Completed",30):null);
-        put(d,"previousStatus",existing?"Completed":null);
+        String actualStatus=existing?value("SELECT status FROM orders WHERE id=1"):null;
+        put(d,"order",existing?new Order(1,1,"Test Customer",new java.util.Date(),actualStatus,30):null);
+        put(d,"previousStatus",actualStatus);
         put(d,"selectedCustomer",customer());put(d,"dateField",new DatePickerField(today()));
         put(d,"dateFormat",new SimpleDateFormat("dd/MM/yyyy"));
         put(d,"statusCombo",new JComboBox<>(new String[]{status}));
@@ -123,27 +128,38 @@ public class RegressionTest {
     static void runAll() throws Exception {
         test("completed saves are idempotent", () -> {
             fresh(); completed();
-            for(int i=0;i<3;i++) { call(order(true,3,"Completed"),"saveOrder"); require(qty()==7,"Repeated stock decrement"); }
+            for(int i=0;i<3;i++) { rejectedSave(order(true,3,"Completed"),"saveOrder","orderSaved"); require(qty()==7,"Repeated stock decrement"); }
             require("1".equals(value("SELECT COUNT(*) FROM warehouse_movements")),"Duplicated movement");
         });
-        test("editing and cancelling restores original quantity", () -> {
-            fresh(); completed(); call(order(true,5,"Cancelled"),"saveOrder"); require(qty()==10,"Wrong stock reversal");
-            require("0".equals(value("SELECT COUNT(*) FROM warehouse_movements")),"Stale movement");
+        test("completed sale rejects rewriting and reverses with preserved history", () -> {
+            fresh(); completed(); rejectedSave(order(true,5,"Cancelled"),"saveOrder","orderSaved");
+            require(qty()==7,"Rejected rewrite changed stock");
+            StockManager.reverseCompletedOrder(db,1);
+            require(qty()==10,"Wrong stock reversal");
+            require("2".equals(value("SELECT COUNT(*) FROM warehouse_movements")),"Sale or reversal movement missing");
+            require("Reversed".equals(value("SELECT status FROM orders WHERE id=1")),"Missing reversal status");
+            require("15.0".equals(value("SELECT cost_total FROM order_details WHERE order_id=1")),"Original cost lost");
         });
         test("all customer order state transitions preserve balances", () -> {
             for(String from:List.of("New","In Progress","Completed","Cancelled"))
                 for(String to:List.of("New","In Progress","Completed","Cancelled")) {
-                    fresh(); call(order(false,3,from),"saveOrder");
-                    OD changed=order(true,5,to);call(changed,"saveOrder");
+                    fresh(); seedOpeningLots(); call(order(false,3,from),"saveOrder");
+                    OD changed=order(true,5,to);
+                    if (from.equals("Completed")) {
+                        rejectedSave(changed,"saveOrder","orderSaved");
+                        require(qty()==7 && "Completed".equals(value("SELECT status FROM orders WHERE id=1")),"Historical sale changed");
+                        continue;
+                    }
+                    call(changed,"saveOrder");
                     require(qty()==("Completed".equals(to)?5:10), from+" -> "+to+" wrong physical stock");
                     require(value("SELECT reserved_quantity FROM products WHERE id=1").equals(
                         ("New".equals(to)||"In Progress".equals(to))?"5":"0"), "Wrong reserved quantity");
                 }
         });
-        test("changing product reverses the original product", () -> {
+        test("completed sale rejects replacement of its product", () -> {
             fresh();completed();OD d=order(true,5,"Completed");DefaultTableModel m=(DefaultTableModel)get(d,"itemsTableModel");
-            m.setValueAt(2,0,0);m.setValueAt("Product B",0,1);call(d,"saveOrder");
-            require(qty()==10 && "5".equals(value("SELECT quantity FROM products WHERE id=2")),"Wrong product stock");
+            m.setValueAt(2,0,0);m.setValueAt("Product B",0,1);rejectedSave(d,"saveOrder","orderSaved");
+            require(qty()==7 && "10".equals(value("SELECT quantity FROM products WHERE id=2")),"Historical product stock changed");
         });
         test("cancelled rows do not create phantom availability", () -> {
             fresh();sql("UPDATE products SET quantity=3 WHERE id=1");call(order(false,8,"Cancelled"),"saveOrder");
@@ -206,9 +222,9 @@ public class RegressionTest {
                 "Manual outward did not consume FIFO");
             require("40|3|5.0".equals(value("SELECT lot_id||'|'||quantity||'|'||unit_cost FROM inventory_lot_consumptions WHERE warehouse_movement_id=51")),
                 "Manual outward did not preserve its FIFO consumption");
-            InventoryLotManager.reverseManualMovement(db,51,1,"OUTWARD",3);
+            InventoryLotManager.reverseOutwardMovement(db,51);
             require(qty()==10 && "10".equals(value("SELECT remaining_quantity FROM inventory_lots WHERE id=40")) &&
-                    "0".equals(value("SELECT COUNT(*) FROM inventory_lot_consumptions WHERE warehouse_movement_id=51")),
+                    "1".equals(value("SELECT COUNT(*) FROM inventory_lot_consumptions WHERE warehouse_movement_id=51")),
                 "Manual outward reversal did not restore the exact FIFO layer");
         });
         test("legacy manual movements without FIFO history cannot be reversed", () -> {
@@ -299,14 +315,14 @@ public class RegressionTest {
             sql("INSERT INTO order_details(id,order_id,product_id,quantity,unit_price) VALUES(20,20,1,7,15)");
             StockManager.createOrUpdateReservation(db,1,"ORDER",20,7,"");
             StockManager.completeReservationAndDecrementStock(db,"ORDER",20,new java.util.Date(3000),"20");
-            StockManager.deleteOrder(db,20,"Completed");
+            StockManager.reverseCompletedOrder(db,20);
             require(qty()==10,"Reversing sale did not restore physical stock");
             require("5,5".equals(value("SELECT GROUP_CONCAT(remaining_quantity,',') FROM (SELECT remaining_quantity FROM inventory_lots WHERE source_type='SUPPLIER_ORDER' ORDER BY received_date,id)")),
                 "Reversing sale did not restore original FIFO lots");
-            require(value("SELECT cost_total IS NULL FROM order_details WHERE id=20").equals("1"),
-                "Reversed sale retained a historical cost");
+            require("45.0".equals(value("SELECT cost_total FROM order_details WHERE id=20")),
+                "Reversal changed the original frozen historical cost");
         });
-        test("negative stock keeps historical FIFO cost unavailable and rolls back cleanly", () -> {
+        test("negative stock stays unpriced and incomplete FIFO reversal is rejected", () -> {
             fresh();
             sql("DELETE FROM inventory_lot_consumptions");
             sql("DELETE FROM inventory_lots");
@@ -320,10 +336,11 @@ public class RegressionTest {
                 "Unknown FIFO units were assigned an invented historical cost");
             require("2|1".equals(value("SELECT quantity||'|'||(lot_id IS NULL) FROM inventory_lot_consumptions WHERE order_detail_id=20")),
                 "Unknown FIFO quantity was not marked for exact rollback");
-            StockManager.deleteOrder(db,20,"Completed");
-            require(qty()==0,"Negative-stock sale rollback did not restore physical stock");
-            require("0".equals(value("SELECT COUNT(*) FROM inventory_lot_consumptions WHERE order_detail_id=20")),
-                "Negative-stock sale rollback left FIFO consumption rows");
+            boolean blocked=false;
+            try { StockManager.reverseCompletedOrder(db,20); } catch (SQLException expected) { blocked=true; }
+            require(blocked && qty()==-2,"Incomplete FIFO reversal changed physical stock");
+            require("1".equals(value("SELECT COUNT(*) FROM inventory_lot_consumptions WHERE order_detail_id=20")),
+                "Rejected reversal removed historical consumption rows");
             require("0".equals(value("SELECT COUNT(*) FROM inventory_lots WHERE source_type='LEGACY_RESTORE'")),
                 "Negative-stock rollback invented a replacement FIFO lot");
         });
@@ -477,8 +494,9 @@ public class RegressionTest {
         Locale.setDefault(Locale.US);TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
         Files.createDirectories(OUT);
         Field f=sun.misc.Unsafe.class.getDeclaredField("theUnsafe");f.setAccessible(true);unsafe=(sun.misc.Unsafe)f.get(null);
-        SwingUtilities.invokeAndWait(()->{try{runAll();ExtendedRegressionTest.extended();OperationalRegressionTest.operational();}catch(Exception e){e.printStackTrace();failures++;}});
+        SwingUtilities.invokeAndWait(()->{try{runAll();ExtendedRegressionTest.extended();OperationalRegressionTest.operational();FifoCompletionTest.completion();}catch(Exception e){e.printStackTrace();failures++;}});
         System.out.println("Regression checks: " + checks + " passed, " + failures + " failed");
         System.exit(failures==0?0:1);
     }
 }
+

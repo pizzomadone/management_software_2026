@@ -1027,6 +1027,9 @@ public class MainWindow extends JFrame {
             try {
                 MainWindow mainWindow = new MainWindow();
                 mainWindow.setVisible(true);
+                CostIntegrity.Audit audit=DatabaseManager.getInstance().takeStartupCostAudit();
+                if (audit != null) Dialogs.showMessageDialog(mainWindow,
+                    CostIntegrity.summary(audit), I18n.tr("Database Updated"), JOptionPane.INFORMATION_MESSAGE);
             } catch (RuntimeException error) {
                 Dialogs.showMessageDialog(null,error.getMessage(),"WareStat",JOptionPane.ERROR_MESSAGE);
                 System.exit(1);
@@ -1034,3 +1037,4 @@ public class MainWindow extends JFrame {
         });
     }
 }
+

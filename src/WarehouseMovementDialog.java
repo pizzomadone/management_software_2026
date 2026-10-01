@@ -77,7 +77,7 @@ public class WarehouseMovementDialog extends JDialog {
 
         gbc.gridx = 1;
         gbc.weightx = 1.0;
-        selectProductButton = new JButton("Click to select product...");
+        selectProductButton = new JButton(I18n.tr("Click to select product..."));
         selectProductButton.putClientProperty("i18n.literal", true);
         selectProductButton.setPreferredSize(new Dimension(300, 35));
         selectProductButton.setHorizontalAlignment(SwingConstants.LEFT);
@@ -183,6 +183,7 @@ public class WarehouseMovementDialog extends JDialog {
         documentTypeCombo = new JComboBox<>(new String[]{
             "", "DDT", "INVOICE", "OTHER", "INVENTORY"
         });
+        documentTypeCombo.putClientProperty("i18n.values", true);
         documentTypeCombo.setPreferredSize(new Dimension(300, 28));
         formPanel.add(documentTypeCombo, gbc);
 
@@ -321,7 +322,7 @@ public class WarehouseMovementDialog extends JDialog {
     }
 
     private void loadCurrentPurchaseCost() {
-        if (selectedProduct == null || inboundCostField == null || movement != null) return;
+        if (selectedProduct == null || inboundCostField == null) return;
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             try (PreparedStatement p = conn.prepareStatement(
@@ -602,3 +603,4 @@ public class WarehouseMovementDialog extends JDialog {
         return movementSaved;
     }
 }
+

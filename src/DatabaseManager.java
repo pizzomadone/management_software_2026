@@ -33,6 +33,14 @@ public class DatabaseManager {
         return instance;
     }
 
+    private CostIntegrity.Audit startupCostAudit;
+
+    public synchronized CostIntegrity.Audit takeStartupCostAudit() {
+        CostIntegrity.Audit audit=startupCostAudit;
+        startupCostAudit=null;
+        return audit;
+    }
+
     public synchronized void initDatabase() {
         try {
             // Load the SQLite JDBC driver
@@ -55,10 +63,20 @@ public class DatabaseManager {
                 stmt.execute("PRAGMA busy_timeout = 10000");
             }
 
+            boolean upgraded=false;
+            if (existing) {
+                try (Statement s=connection.createStatement(); ResultSet r=s.executeQuery(
+                        "SELECT 1 FROM schema_migrations WHERE version='014'")) {
+                    upgraded=!r.next();
+                } catch (SQLException missingMigrationHistory) {
+                    upgraded=true;
+                }
+            }
             // Create tables if they do not exist
             createTables();
             DatabaseIntegrity.validate(connection, false);
             DatabaseCurrency.bind(connection);
+            startupCostAudit=upgraded ? CostIntegrity.audit(connection) : null;
 
             System.out.println("Database initialized successfully");
 
@@ -586,3 +604,4 @@ public class DatabaseManager {
         return String.format("%d/%04d", year, nextNumber);
     }
 }
+

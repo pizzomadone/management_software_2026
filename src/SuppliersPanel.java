@@ -392,29 +392,12 @@ public class SuppliersPanel extends JPanel {
                 // Reassign the preferred supplier for every affected product to
                 // the remaining relation with the lowest current purchase price.
                 for (java.util.Map.Entry<Integer,String> affected : preferredProducts.entrySet()) {
-                    try (PreparedStatement q = conn.prepareStatement("""
-                            SELECT ps.id,s.company_name,ps.purchase_price
-                            FROM product_suppliers ps
-                            JOIN suppliers s ON s.id=ps.supplier_id
-                            WHERE ps.product_id=?
-                            ORDER BY ps.purchase_price ASC,ps.id ASC
-                            LIMIT 1
-                            """)) {
-                        q.setInt(1,affected.getKey());
-                        try (ResultSet r=q.executeQuery()) {
-                            if (r.next()) {
-                                try (PreparedStatement u=conn.prepareStatement(
-                                        "UPDATE product_suppliers SET is_preferred=1 WHERE id=?")) {
-                                    u.setInt(1,r.getInt("id"));
-                                    u.executeUpdate();
-                                }
-                                preferredChanges.add(affected.getValue()+" → "+
-                                    r.getString("company_name")+" ("+
-                                    SettingsPanel.formatUnitCurrency(r.getDouble("purchase_price"))+")");
-                            } else {
-                                productsWithoutAlternative++;
-                            }
-                        }
+                    SupplierPricing.PreferredSupplier selected=SupplierPricing.preferCheapestRemaining(conn,affected.getKey());
+                    if (selected!=null) {
+                        preferredChanges.add(affected.getValue()+": "+name+" → "+selected.name()+" ("+
+                            SettingsPanel.formatUnitCurrency(selected.price())+")");
+                    } else {
+                        productsWithoutAlternative++;
                     }
                 }
 
@@ -565,3 +548,4 @@ public class SuppliersPanel extends JPanel {
     }
     public void refreshData() { loadSuppliers(); }
 }
+

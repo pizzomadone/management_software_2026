@@ -64,20 +64,9 @@ public final class InventoryLotManager {
                         if(u.executeUpdate()!=1) throw new SQLException("Product no longer exists");
                     }
 
-                    try(PreparedStatement lot=c.prepareStatement("""
-                            INSERT INTO inventory_lots
-                            (product_id,supplier_id,supplier_order_detail_id,received_date,
-                             initial_quantity,remaining_quantity,unit_cost,source_type)
-                            VALUES(?,?,?,?,?,?,?,'SUPPLIER_ORDER')
-                            """)) {
-                        lot.setInt(1,productId);lot.setInt(2,supplierId);lot.setInt(3,detailId);
-                        lot.setTimestamp(4,DateUtils.toSqlTimestamp(date));
-                        lot.setInt(5,quantity);lot.setInt(6,remaining);lot.setDouble(7,cost);
-                        lot.executeUpdate();
-                    }
-
-                    insertMovement(c,productId,date,"INWARD",quantity,"PURCHASE",number,
+                    int movementId = insertMovement(c,productId,date,"INWARD",quantity,"PURCHASE",number,
                         "SUPPLIER_ORDER","Supplier order "+number);
+                    insertLot(c,productId,supplierId,detailId,movementId,date,quantity,remaining,cost,"SUPPLIER_ORDER");
                 }
             }
         }
@@ -173,8 +162,11 @@ public final class InventoryLotManager {
                 "SELECT id,product_id,quantity FROM order_details WHERE order_id=? ORDER BY id")) {
             p.setInt(1,orderId);
             try(ResultSet r=p.executeQuery()) {
-                while(r.next()) consumeOrderDetail(c,r.getInt("id"),r.getInt("product_id"),
-                    Numbers.positiveQuantity(r.getObject("quantity")));
+                while(r.next()) {
+                    CostIntegrity.requirePurchaseCost(c, java.util.List.of(r.getInt("product_id")));
+                    consumeOrderDetail(c,r.getInt("id"),r.getInt("product_id"),
+                        Numbers.positiveQuantity(r.getObject("quantity")));
+                }
             }
         }
     }
@@ -185,7 +177,7 @@ public final class InventoryLotManager {
         double costTotal=0;
         boolean costKnown=true;
         try(PreparedStatement lots=c.prepareStatement("""
-                SELECT id,remaining_quantity,unit_cost
+                SELECT id,remaining_quantity,unit_cost,source_type
                 FROM inventory_lots
                 WHERE product_id=? AND remaining_quantity>0
                 ORDER BY received_date,id
@@ -196,6 +188,7 @@ public final class InventoryLotManager {
                     int available=r.getInt("remaining_quantity");
                     int take=Math.min(needed,available);
                     double cost=Numbers.nonNegative(r.getObject("unit_cost"));
+                    if (cost == 0 && "MIGRATION".equals(r.getString("source_type"))) costKnown=false;
                     updateLotRemaining(c,r.getInt("id"),-take);
                     insertConsumption(c,r.getInt("id"),detailId,null,take,cost);
                     costTotal=Numbers.add(costTotal,Numbers.lineTotal(take,cost));
@@ -291,9 +284,12 @@ public final class InventoryLotManager {
                         SELECT 1 FROM inventory_lot_consumptions x
                         WHERE x.order_detail_id=d.id
                     )
+                    OR COALESCE((SELECT SUM(x.quantity) FROM inventory_lot_consumptions x
+                        WHERE x.order_detail_id=d.id),0)<>d.quantity
                     OR EXISTS (
                         SELECT 1 FROM inventory_lot_consumptions x
-                        WHERE x.order_detail_id=d.id AND x.lot_id IS NULL
+                        LEFT JOIN inventory_lots l ON l.id=x.lot_id
+                        WHERE x.order_detail_id=d.id AND (l.id IS NULL OR l.product_id<>d.product_id)
                     )
                   )
                 LIMIT 1
@@ -367,6 +363,14 @@ public final class InventoryLotManager {
                         throw new SQLException("This inward movement has no FIFO lot history and cannot be reversed safely");
                     if(r.getInt("remaining_quantity")!=r.getInt("initial_quantity"))
                         throw new SQLException("This inward movement cannot be changed because part of its FIFO lot has already been consumed");
+                    try (PreparedStatement history=c.prepareStatement(
+                            "SELECT 1 FROM inventory_lot_consumptions WHERE lot_id=? LIMIT 1")) {
+                        history.setInt(1,r.getInt("id"));
+                        try (ResultSet used=history.executeQuery()) {
+                            if (used.next()) throw new SQLException(
+                                "This inward movement has historical FIFO consumption records and cannot be changed.");
+                        }
+                    }
                     try(PreparedStatement d=c.prepareStatement("DELETE FROM inventory_lots WHERE id=?")) {
                         d.setInt(1,r.getInt("id"));d.executeUpdate();
                     }
@@ -376,36 +380,72 @@ public final class InventoryLotManager {
                 u.setInt(1,quantity);u.setInt(2,productId);u.executeUpdate();
             }
         } else if("OUTWARD".equals(type)) {
-            int lastConsumptionId=0;
-            try(PreparedStatement p=c.prepareStatement(
-                    "SELECT MAX(id) FROM inventory_lot_consumptions WHERE warehouse_movement_id=?")) {
-                p.setInt(1,movementId);
-                try(ResultSet r=p.executeQuery()) {
-                    if(r.next()) lastConsumptionId=r.getInt(1);
-                }
-            }
-            if(lastConsumptionId<=0)
-                throw new SQLException("This outward movement has no FIFO history and cannot be reversed safely");
-            try(PreparedStatement p=c.prepareStatement("""
-                    SELECT 1
-                    FROM inventory_lot_consumptions x
-                    LEFT JOIN order_details d ON d.id=x.order_detail_id
-                    LEFT JOIN warehouse_movements m ON m.id=x.warehouse_movement_id
-                    WHERE x.id>?
-                      AND COALESCE(d.product_id,m.product_id)=?
-                    LIMIT 1
-                    """)) {
-                p.setInt(1,lastConsumptionId);p.setInt(2,productId);
-                try(ResultSet r=p.executeQuery()) {
-                    if(r.next())
-                        throw new SQLException("This outward movement cannot be changed because later FIFO movements exist for the same product");
-                }
-            }
-            restoreMovementConsumptions(c,movementId);
-            try(PreparedStatement u=c.prepareStatement("UPDATE products SET quantity=quantity+? WHERE id=?")) {
-                u.setInt(1,quantity);u.setInt(2,productId);u.executeUpdate();
-            }
+            throw new SQLException("Posted outward movements cannot be edited or deleted. Use Reverse Movement.");
         } else throw new SQLException("Unsupported movement type: "+type);
+    }
+
+    /** Append a compensating entry; the original movement and consumption snapshots remain intact. */
+    public static void reverseOutwardMovement(Connection c, int movementId) throws SQLException {
+        boolean ownTransaction=c.getAutoCommit();
+        if (ownTransaction) DatabaseManager.beginTransaction(c);
+        Savepoint checkpoint=c.setSavepoint();
+        try {
+            int productId,quantity;
+            try (PreparedStatement p=c.prepareStatement("""
+                    SELECT m.product_id,m.quantity,m.type,m.document_type,
+                           EXISTS(SELECT 1 FROM warehouse_movements r WHERE r.reversal_of_movement_id=m.id) AS reversed
+                    FROM warehouse_movements m WHERE m.id=?
+                    """)) {
+                p.setInt(1,movementId);
+                try (ResultSet r=p.executeQuery()) {
+                    if (!r.next()) throw new SQLException("Movement no longer exists");
+                    String document=r.getString("document_type");
+                    if (!"OUTWARD".equals(r.getString("type")) || "ORDER".equals(document)
+                            || "SUPPLIER_ORDER".equals(document) || "ORDER_REVERSAL".equals(document)
+                            || "MOVEMENT_REVERSAL".equals(document))
+                        throw new SQLException("Only manual outward movements or stock reductions can be reversed here.");
+                    if (r.getBoolean("reversed")) throw new SQLException("This movement has already been reversed.");
+                    productId=r.getInt("product_id"); quantity=r.getInt("quantity");
+                }
+            }
+            try (PreparedStatement p=c.prepareStatement("""
+                    SELECT SUM(x.quantity) AS quantity,
+                           SUM(CASE WHEN l.id IS NULL OR l.product_id<>? THEN 1 ELSE 0 END) AS invalid
+                    FROM inventory_lot_consumptions x LEFT JOIN inventory_lots l ON l.id=x.lot_id
+                    WHERE x.warehouse_movement_id=?
+                    """)) {
+                p.setInt(1,productId);p.setInt(2,movementId);
+                try (ResultSet r=p.executeQuery()) {
+                    if (!r.next() || r.getLong("quantity")!=quantity || r.getInt("invalid")!=0)
+                        throw new SQLException("This outward movement has incomplete FIFO history and cannot be reversed safely.");
+                }
+            }
+            try (PreparedStatement p=c.prepareStatement(
+                    "SELECT lot_id,quantity FROM inventory_lot_consumptions WHERE warehouse_movement_id=?")) {
+                p.setInt(1,movementId);
+                try (ResultSet r=p.executeQuery()) {
+                    while(r.next()) updateLotRemaining(c,r.getInt(1),r.getInt(2));
+                }
+            }
+            try (PreparedStatement p=c.prepareStatement("UPDATE products SET quantity=quantity+? WHERE id=?")) {
+                p.setInt(1,quantity);p.setInt(2,productId);p.executeUpdate();
+            }
+            int reversalId=insertMovement(c,productId,new Date(),"INWARD",quantity,
+                "MOVEMENT_REVERSAL",String.valueOf(movementId),"MOVEMENT_REVERSAL",null);
+            try (PreparedStatement p=c.prepareStatement(
+                    "UPDATE warehouse_movements SET reversal_of_movement_id=? WHERE id=?")) {
+                p.setInt(1,movementId);p.setInt(2,reversalId);p.executeUpdate();
+            }
+            c.releaseSavepoint(checkpoint);
+            if (ownTransaction) c.commit();
+        } catch (SQLException | RuntimeException e) {
+            c.rollback(checkpoint);
+            c.releaseSavepoint(checkpoint);
+            if (ownTransaction) c.rollback();
+            throw e;
+        } finally {
+            if (ownTransaction) c.setAutoCommit(true);
+        }
     }
 
     public static void adjustProductStock(Connection c,int movementId,int productId,int delta,
@@ -413,6 +453,7 @@ public final class InventoryLotManager {
         if(delta==0)return;
         int oldStock=physicalStock(c,productId);
         if(delta>0) {
+            if (Numbers.nonNegative(cost) <= 0) throw new SQLException(I18n.tr("Purchase cost must be greater than zero."));
             int remaining=Math.max(0,Math.min(delta,Math.addExact(oldStock,delta)));
             try(PreparedStatement u=c.prepareStatement("UPDATE products SET quantity=quantity+? WHERE id=?")) {
                 u.setInt(1,delta);u.setInt(2,productId);u.executeUpdate();
@@ -581,17 +622,22 @@ public final class InventoryLotManager {
         }
     }
 
-    private static void insertMovement(Connection c,int productId,Date date,String type,int quantity,
+    private static int insertMovement(Connection c,int productId,Date date,String type,int quantity,
                                        String reason,String number,String documentType,String notes)
             throws SQLException {
         try(PreparedStatement p=c.prepareStatement("""
                 INSERT INTO warehouse_movements
                 (product_id,date,type,quantity,reason,document_number,document_type,notes)
                 VALUES(?,?,?,?,?,?,?,?)
-                """)) {
+                """, Statement.RETURN_GENERATED_KEYS)) {
             p.setInt(1,productId);p.setTimestamp(2,DateUtils.toSqlTimestamp(date));p.setString(3,type);
             p.setInt(4,quantity);p.setString(5,reason);p.setString(6,number);
             p.setString(7,documentType);p.setString(8,notes);p.executeUpdate();
+            try (ResultSet keys=p.getGeneratedKeys()) {
+                if (!keys.next()) throw new SQLException("Unable to create warehouse movement");
+                return keys.getInt(1);
+            }
         }
     }
 }
+
