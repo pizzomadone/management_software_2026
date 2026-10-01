@@ -12,6 +12,8 @@ public class WarehouseMovementDialog extends JDialog {
     private Product selectedProduct;
     private JComboBox<String> typeCombo;
     private JSpinner quantitySpinner;
+    private JLabel inboundCostLabel;
+    private JTextField inboundCostField;
     private JComboBox<String> reasonCombo;
     private JTextField documentNumberField;
     private JComboBox<String> documentTypeCombo;
@@ -21,7 +23,7 @@ public class WarehouseMovementDialog extends JDialog {
 
     // Constructor for JFrame parent
     public WarehouseMovementDialog(JFrame parent, WarehouseMovement movement) {
-        super(parent, movement == null ? "New Movement" : "Edit Movement", true);
+        super(parent, I18n.tr(movement == null ? "New Movement" : "Edit Movement"), true);
         this.movement = movement;
         this.dateFormat = new SimpleDateFormat("dd/MM/yyyy HH:mm");
 
@@ -36,7 +38,7 @@ public class WarehouseMovementDialog extends JDialog {
 
     // Constructor for JDialog parent
     public WarehouseMovementDialog(JDialog parent, WarehouseMovement movement) {
-        super(parent, movement == null ? "New Movement" : "Edit Movement", true);
+        super(parent, I18n.tr(movement == null ? "New Movement" : "Edit Movement"), true);
         this.movement = movement;
         this.dateFormat = new SimpleDateFormat("dd/MM/yyyy HH:mm");
 
@@ -92,7 +94,10 @@ public class WarehouseMovementDialog extends JDialog {
         typeCombo = new JComboBox<>(new String[]{"INWARD", "OUTWARD"});
         typeCombo.putClientProperty("i18n.values", true);
         typeCombo.setPreferredSize(new Dimension(300, 28));
-        typeCombo.addActionListener(e -> updateAvailabilityCheck());
+        typeCombo.addActionListener(e -> {
+            updateInboundCostVisibility();
+            updateAvailabilityCheck();
+        });
         formPanel.add(typeCombo, gbc);
 
         // Quantity
@@ -113,8 +118,22 @@ public class WarehouseMovementDialog extends JDialog {
 
         formPanel.add(quantitySpinner, gbc);
 
-        // Availability info label
+        // Unit cost applies only to manual inward movements.
         gbc.gridx = 0; gbc.gridy = 3;
+        gbc.weightx = 0.0;
+        inboundCostLabel = new JLabel("Inbound Unit Cost *:");
+        formPanel.add(inboundCostLabel, gbc);
+
+        gbc.gridx = 1;
+        gbc.weightx = 1.0;
+        inboundCostField = new JTextField(12);
+        inboundCostField.setPreferredSize(new Dimension(300, 28));
+        inboundCostField.setToolTipText(I18n.tr(
+            "Unit cost of this inward movement. It becomes the cost of the FIFO lot and can be changed before saving."));
+        formPanel.add(inboundCostField, gbc);
+
+        // Availability info label
+        gbc.gridx = 0; gbc.gridy = 4;
         gbc.gridwidth = 2;
         gbc.weightx = 1.0;
         availabilityLabel = new JLabel("Select a product to see availability information");
@@ -129,7 +148,7 @@ public class WarehouseMovementDialog extends JDialog {
         gbc.gridwidth = 1; // Reset
 
         // Reason
-        gbc.gridx = 0; gbc.gridy = 4;
+        gbc.gridx = 0; gbc.gridy = 5;
         gbc.weightx = 0.0;
         formPanel.add(new JLabel("Reason *:"), gbc);
 
@@ -144,7 +163,7 @@ public class WarehouseMovementDialog extends JDialog {
         formPanel.add(reasonCombo, gbc);
 
         // Document number
-        gbc.gridx = 0; gbc.gridy = 5;
+        gbc.gridx = 0; gbc.gridy = 6;
         gbc.weightx = 0.0;
         formPanel.add(new JLabel("Document N°:"), gbc);
 
@@ -155,7 +174,7 @@ public class WarehouseMovementDialog extends JDialog {
         formPanel.add(documentNumberField, gbc);
 
         // Document type
-        gbc.gridx = 0; gbc.gridy = 6;
+        gbc.gridx = 0; gbc.gridy = 7;
         gbc.weightx = 0.0;
         formPanel.add(new JLabel("Document Type:"), gbc);
 
@@ -168,7 +187,7 @@ public class WarehouseMovementDialog extends JDialog {
         formPanel.add(documentTypeCombo, gbc);
 
         // Notes
-        gbc.gridx = 0; gbc.gridy = 7;
+        gbc.gridx = 0; gbc.gridy = 8;
         gbc.weightx = 0.0;
         gbc.anchor = GridBagConstraints.NORTHWEST;
         formPanel.add(new JLabel("Notes:"), gbc);
@@ -214,6 +233,8 @@ public class WarehouseMovementDialog extends JDialog {
         mainPanel.add(buttonPanel, BorderLayout.SOUTH);
 
         add(mainPanel);
+        updateInboundCostVisibility();
+        I18n.localize(this);
     }
 
     // Method to show ProductSelectionDialog
@@ -224,6 +245,7 @@ public class WarehouseMovementDialog extends JDialog {
         if (dialog.isProductSelected()) {
             selectedProduct = dialog.getSelectedProduct();
             updateProductButton();
+            loadCurrentPurchaseCost();
             updateAvailabilityCheck();
         }
     }
@@ -246,7 +268,7 @@ public class WarehouseMovementDialog extends JDialog {
         try {
             if (availabilityLabel == null || selectedProduct == null) {
                 if (availabilityLabel != null) {
-                    availabilityLabel.setText("Select a product to see availability information");
+                    availabilityLabel.setText(I18n.tr("Select a product to see availability information"));
                     availabilityLabel.setForeground(Color.GRAY);
                     availabilityLabel.setBackground(new Color(245, 245, 245));
                 }
@@ -262,31 +284,82 @@ public class WarehouseMovementDialog extends JDialog {
             if ("OUTWARD".equals(type)) {
                 int available=availableForOutward(DatabaseManager.getInstance().getConnection(),selectedProduct.getId());
                 if (requestedQuantity > available) {
-                    availabilityLabel.setText(String.format(
-                        "⚠️ Insufficient stock! Available: %d, Requested: %d",
+                    availabilityLabel.setText(I18n.format(
+                        "Insufficient stock! Available: {0}, Requested: {1}",
                         available, requestedQuantity));
                     availabilityLabel.setForeground(Color.RED);
                     availabilityLabel.setBackground(new Color(255, 240, 240));
                 } else {
-                    availabilityLabel.setText(String.format(
-                        "✓ Available: %d, After movement: %d",
+                    availabilityLabel.setText(I18n.format(
+                        "Available: {0}, After movement: {1}",
                         available, available - requestedQuantity));
                     availabilityLabel.setForeground(new Color(0, 120, 0));
                     availabilityLabel.setBackground(new Color(240, 255, 240));
                 }
             } else {
-                availabilityLabel.setText(String.format(
-                    "➕ Current: %d, After movement: %d",
+                availabilityLabel.setText(I18n.format(
+                    "Current: {0}, After movement: {1}",
                     currentStock, currentStock + requestedQuantity));
                 availabilityLabel.setForeground(new Color(0, 120, 0));
                 availabilityLabel.setBackground(new Color(240, 255, 240));
             }
         } catch (Exception e) {
             if (availabilityLabel != null) {
-                availabilityLabel.setText("Error checking availability");
+                availabilityLabel.setText(I18n.tr("Error checking availability"));
                 availabilityLabel.setForeground(Color.RED);
             }
         }
+    }
+
+    private void updateInboundCostVisibility() {
+        if (inboundCostLabel == null || inboundCostField == null || typeCombo == null) return;
+        boolean inward = "INWARD".equals(typeCombo.getSelectedItem());
+        inboundCostLabel.setVisible(inward);
+        inboundCostField.setVisible(inward);
+        revalidate();
+        repaint();
+    }
+
+    private void loadCurrentPurchaseCost() {
+        if (selectedProduct == null || inboundCostField == null || movement != null) return;
+        try {
+            Connection conn = DatabaseManager.getInstance().getConnection();
+            try (PreparedStatement p = conn.prepareStatement(
+                    "SELECT acquisition_cost FROM products WHERE id=?")) {
+                p.setInt(1, selectedProduct.getId());
+                try (ResultSet r = p.executeQuery()) {
+                    if (r.next()) {
+                        double cost = Numbers.nonNegative(r.getObject(1));
+                        inboundCostField.setText(cost > 0 ? Numbers.unitText(cost) : "");
+                    }
+                }
+            }
+        } catch (Exception e) {
+            inboundCostField.setText("");
+        }
+    }
+
+    private void loadMovementUnitCost() {
+        if (movement == null || inboundCostField == null) return;
+        if (!"INWARD".equals(movement.getType())) {
+            inboundCostField.setText("");
+            updateInboundCostVisibility();
+            return;
+        }
+        try {
+            Connection conn = DatabaseManager.getInstance().getConnection();
+            try (PreparedStatement p = conn.prepareStatement(
+                    "SELECT unit_cost FROM inventory_lots WHERE warehouse_movement_id=? LIMIT 1")) {
+                p.setInt(1, movement.getId());
+                try (ResultSet r = p.executeQuery()) {
+                    if (r.next()) inboundCostField.setText(Numbers.unitText(r.getDouble(1)));
+                    else loadCurrentPurchaseCost();
+                }
+            }
+        } catch (Exception e) {
+            loadCurrentPurchaseCost();
+        }
+        updateInboundCostVisibility();
     }
 
     // Method to get current stock from database
@@ -328,6 +401,7 @@ public class WarehouseMovementDialog extends JDialog {
 
         typeCombo.setSelectedItem(movement.getType());
         quantitySpinner.setValue(movement.getQuantity());
+        loadMovementUnitCost();
         reasonCombo.setSelectedItem(movement.getReason());
         documentNumberField.setText(movement.getDocumentNumber() != null ? movement.getDocumentNumber() : "");
         documentTypeCombo.setSelectedItem(movement.getDocumentType() != null ? movement.getDocumentType() : "");
@@ -373,8 +447,8 @@ public class WarehouseMovementDialog extends JDialog {
             // Validation
             if (selectedProduct == null) {
                 Dialogs.showMessageDialog(this,
-                    "Select a product",
-                    "Error", JOptionPane.ERROR_MESSAGE);
+                    I18n.tr("Select a product"),
+                    I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
                 return;
             }
 
@@ -383,6 +457,31 @@ public class WarehouseMovementDialog extends JDialog {
             String reason = (String)reasonCombo.getSelectedItem();
 
             Connection conn = DatabaseManager.getInstance().getConnection();
+            if (!CostIntegrity.hasPurchaseCost(conn, selectedProduct.getId())) {
+                Dialogs.showMessageDialog(this,
+                    CostIntegrity.missingPurchaseCostMessage(
+                        conn, java.util.List.of(selectedProduct.getId())),
+                    I18n.tr("Purchase Cost Required"), JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+
+            double inboundUnitCost = 0.0;
+            if ("INWARD".equals(type)) {
+                if (inboundCostField.getText().trim().isEmpty()) {
+                    Dialogs.showMessageDialog(this, I18n.tr("Inbound unit cost is required."),
+                        I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
+                    return;
+                }
+                try {
+                    inboundUnitCost = Numbers.nonNegative(inboundCostField.getText());
+                } catch (IllegalArgumentException invalidCost) {
+                    Dialogs.showMessageDialog(this,
+                        I18n.tr("Inbound unit cost must be a valid non-negative number."),
+                        I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
+                    return;
+                }
+            }
+
             DatabaseManager.beginTransaction(conn);
             try {
                 if (movement != null) StockManager.requireManualMovement(conn, movement.getId());
@@ -391,12 +490,9 @@ public class WarehouseMovementDialog extends JDialog {
                 int availability = availableForOutward(conn,selectedProduct.getId());
                 if (quantity > availability) {
                     int choice = Dialogs.showConfirmDialog(this,
-                        String.format("Insufficient quantity. Current availability: %d\n" +
-                                     "Requested: %d\n\n" +
-                                     "Do you want to proceed anyway?\n" +
-                                     I18n.tr("This will result in negative stock."),
+                        I18n.format("Insufficient quantity. Current availability: {0}\nRequested: {1}\n\nDo you want to proceed anyway?\nThis will result in negative stock.",
                                      availability, quantity),
-                        "Insufficient Stock",
+                        I18n.tr("Insufficient Stock"),
                         JOptionPane.YES_NO_OPTION,
                         JOptionPane.WARNING_MESSAGE);
 
@@ -474,14 +570,14 @@ public class WarehouseMovementDialog extends JDialog {
 
                 InventoryLotManager.applyManualMovement(
                     conn,movementId,selectedProduct.getId(),type,quantity,
-                    movement == null ? new Date() : movement.getDate());
+                    movement == null ? new Date() : movement.getDate(),inboundUnitCost);
 
                 conn.commit();
                 movementSaved = true;
 
                 Dialogs.showMessageDialog(this,
-                    "Movement saved successfully!",
-                    "Success", JOptionPane.INFORMATION_MESSAGE);
+                    I18n.tr("Movement saved successfully!"),
+                    I18n.tr("Success"), JOptionPane.INFORMATION_MESSAGE);
 
                 dispose();
 
@@ -495,8 +591,8 @@ public class WarehouseMovementDialog extends JDialog {
         } catch (Exception e) {
             e.printStackTrace();
             Dialogs.showMessageDialog(this,
-                "Error saving movement: " + e.getMessage(),
-                "Error", JOptionPane.ERROR_MESSAGE);
+                I18n.tr("Error saving movement") + ": " + I18n.tr(e.getMessage()),
+                I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
         }
     }
 
