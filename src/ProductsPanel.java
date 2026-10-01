@@ -7,6 +7,8 @@ import java.awt.*;
 import java.awt.event.*;
 import java.sql.*;
 import java.util.Vector;
+import java.util.HashSet;
+import java.util.Set;
 
 public class ProductsPanel extends JPanel {
     private static final String PRODUCT_COLUMN_WIDTHS_SETTING =
@@ -59,6 +61,7 @@ public class ProductsPanel extends JPanel {
     private Timer photoPreviewTimer;
     private JWindow photoPreviewWindow;
     private boolean photoPreviewVisible;
+    private final Set<Integer> missingPurchaseCostProductIds = new HashSet<>();
     
     public ProductsPanel() {
         setupPanel();
@@ -93,7 +96,27 @@ public class ProductsPanel extends JPanel {
                 return columnIndex == 16 ? ImageIcon.class : Object.class;
             }
         };
-        productsTable = new JTable(tableModel);
+        productsTable = new JTable(tableModel) {
+            @Override
+            public Component prepareRenderer(TableCellRenderer renderer, int row, int column) {
+                Component component = super.prepareRenderer(renderer, row, column);
+                int modelRow = convertRowIndexToModel(row);
+                Object idValue = tableModel.getValueAt(modelRow, 0);
+                boolean missingCost = idValue instanceof Number
+                    && missingPurchaseCostProductIds.contains(((Number)idValue).intValue());
+                if (!isCellSelected(row, column) && missingCost) {
+                    component.setBackground(new Color(255, 226, 170));
+                }
+                if (component instanceof JComponent jc && missingCost) {
+                    String current = jc.getToolTipText();
+                    String warning = I18n.tr(
+                        "Purchase cost is missing. Purchases and sales are blocked until the product is corrected.");
+                    jc.setToolTipText(current == null || current.isBlank()
+                        ? warning : current + " — " + warning);
+                }
+                return component;
+            }
+        };
         productsTable.setRowHeight(34);
         productsTable.setRowMargin(0);
         if (!restoreProductColumnOrder()) {
@@ -669,6 +692,7 @@ public class ProductsPanel extends JPanel {
     
     public void loadProducts() {
         tableModel.setRowCount(0);
+        missingPurchaseCostProductIds.clear();
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
@@ -717,6 +741,10 @@ public class ProductsPanel extends JPanel {
                     row.add(trimCellText(rs.getString("warehouse_position")));
                     row.add(rs.getDouble("vat_rate"));
                     row.add(ProductImageStore.getInstance().iconCover(rs.getString("primary_image"), 48, 30));
+                    if (rs.getObject("acquisition_cost") == null ||
+                            Numbers.nonNegative(rs.getObject("acquisition_cost")) <= 0) {
+                        missingPurchaseCostProductIds.add(rs.getInt("id"));
+                    }
                     tableModel.addRow(row);
                 }
             }
@@ -736,6 +764,7 @@ public class ProductsPanel extends JPanel {
         }
 
         tableModel.setRowCount(0);
+        missingPurchaseCostProductIds.clear();
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
@@ -791,7 +820,11 @@ public class ProductsPanel extends JPanel {
                         row.add(trimCellText(rs.getString("warehouse_position")));
                         row.add(rs.getDouble("vat_rate"));
                         row.add(ProductImageStore.getInstance().iconCover(rs.getString("primary_image"), 48, 30));
-                        tableModel.addRow(row);
+                        if (rs.getObject("acquisition_cost") == null ||
+                            Numbers.nonNegative(rs.getObject("acquisition_cost")) <= 0) {
+                        missingPurchaseCostProductIds.add(rs.getInt("id"));
+                    }
+                    tableModel.addRow(row);
                     }
                 }
             }
