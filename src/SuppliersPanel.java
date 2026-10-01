@@ -250,28 +250,28 @@ public class SuppliersPanel extends JPanel {
 
                 if (hasOrders || hasSupplierProducts) {
                     StringBuilder message = new StringBuilder();
-                    message.append("Supplier '").append(name).append("' has related business records:\n");
+                    message.append(I18n.format(
+                        "Supplier '{0}' has related business records:", name)).append("\n");
 
-                    if (hasOrders) message.append("- Existing orders\n");
+                    if (hasOrders) message.append("- ").append(I18n.tr("Existing orders")).append("\n");
                     if (hasSupplierProducts) {
-                        message.append("- ").append(suppliedProductCount)
-                            .append(" supplied product(s) will be disassociated\n");
+                        message.append("- ").append(I18n.format(
+                            "{0} supplied product(s) will be disassociated", suppliedProductCount)).append("\n");
                         if (preferredProductCount > 0) {
-                            message.append("- For ").append(preferredProductCount)
-                                .append(" product(s), this is the preferred supplier. ")
-                                .append("WareStat will automatically choose the remaining supplier with the lowest purchase price; ")
-                                .append("if no alternative exists, the product will remain without a preferred supplier.\n");
+                            message.append("- ").append(I18n.format(
+                                "For {0} product(s), this is the preferred supplier. WareStat will automatically choose the remaining supplier with the lowest purchase price; if no alternative exists, the product will remain without a preferred supplier.",
+                                preferredProductCount)).append("\n");
                         }
                     }
 
-                    message.append("\nChoose what should happen:\n");
-                    message.append("- Keep: nothing is deleted; supplier, orders, stock and references remain unchanged.\n");
-                    message.append("- Delete all: supplier orders and product associations are permanently deleted; stock received from completed orders is reversed and related movements are deleted.");
+                    message.append("\n").append(I18n.tr("Choose what should happen:")).append("\n");
+                    message.append("- ").append(I18n.tr("Keep: nothing is deleted; supplier, orders, stock and references remain unchanged.")).append("\n");
+                    message.append("- ").append(I18n.tr("Delete all: supplier orders and product associations are permanently deleted; stock received from completed orders is reversed and related movements are deleted."));
 
-                    String[] options = {"Keep Supplier and Records", "Delete Supplier and All Related Data"};
+                    String[] options = {I18n.tr("Keep Supplier and Records"), I18n.tr("Delete Supplier and All Related Data")};
                     int choice = Dialogs.showOptionDialog(this,
                         message.toString(),
-                        "Cannot Delete Supplier",
+                        I18n.tr("Cannot Delete Supplier"),
                         JOptionPane.YES_NO_OPTION,
                         JOptionPane.WARNING_MESSAGE,
                         null, options, options[0]);
@@ -312,16 +312,19 @@ public class SuppliersPanel extends JPanel {
     }
 
     private void performCascadeDelete(Connection conn, int id, String name) {
+        String finalWarning = I18n.format(
+            "WARNING: This will permanently delete supplier '{0}' and ALL related data:", name)
+            + "\n- " + I18n.tr("All orders from this supplier")
+            + "\n- " + I18n.tr("All supplied-product associations")
+            + "\n- " + I18n.tr("Preferred-supplier references linked to those products")
+            + "\n- " + I18n.tr("All related warehouse movements")
+            + "\n\n" + I18n.tr("Stock received from completed supplier orders will be removed before deletion.")
+            + "\n" + I18n.tr("If preferred suppliers change, the lowest-cost remaining supplier will be selected automatically.")
+            + "\n\n" + I18n.tr("This action CANNOT be undone!")
+            + "\n\n" + I18n.tr("Are you absolutely sure?");
         int confirmResult = Dialogs.showConfirmDialog(this,
-            "WARNING: This will permanently delete supplier '" + name + "' and ALL related data:\n" +
-            "- All orders from this supplier\n" +
-            "- All supplied-product associations\n" +
-            "- Preferred-supplier references linked to those products\n" +
-            "- All related warehouse movements\n\n" +
-            "Stock received from completed supplier orders will be removed before deletion.\n\n" +
-            "This action CANNOT be undone!\n\n" +
-            "Are you absolutely sure?",
-            "FORCE DELETE - Final Confirmation",
+            finalWarning,
+            I18n.tr("FORCE DELETE - Final Confirmation"),
             JOptionPane.YES_NO_OPTION,
             JOptionPane.ERROR_MESSAGE);
 
