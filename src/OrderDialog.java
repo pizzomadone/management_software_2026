@@ -486,6 +486,13 @@ public class OrderDialog extends JDialog {
 
     private void saveOrder() {
         try {
+            if (order != null &&
+                    ("Completed".equals(order.getStatus()) || "Reversed".equals(order.getStatus()))) {
+                Dialogs.showMessageDialog(this,
+                    I18n.tr("Completed or reversed sales cannot be modified. Use the reversal function for a completed sale so FIFO history is preserved."),
+                    I18n.tr("Historical Sale"), JOptionPane.WARNING_MESSAGE);
+                return;
+            }
             validateRows();
             if (selectedCustomer == null) {
                 Dialogs.showMessageDialog(this,
@@ -553,6 +560,14 @@ public class OrderDialog extends JDialog {
             }
 
             Connection conn = DatabaseManager.getInstance().getConnection();
+            java.util.List<Integer> productIds = new java.util.ArrayList<>();
+            for (StockManager.StockItem item : stockItems) productIds.add(item.getProductId());
+            String missingCost = CostIntegrity.missingPurchaseCostMessage(conn, productIds);
+            if (missingCost != null) {
+                Dialogs.showMessageDialog(this, missingCost,
+                    I18n.tr("Purchase Cost Required"), JOptionPane.WARNING_MESSAGE);
+                return;
+            }
             DatabaseManager.beginTransaction(conn);
             try {
             if (order != null) {
