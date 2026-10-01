@@ -120,6 +120,19 @@ public class MultiSupplierOrderDialog extends JDialog {
             if (row < 0) { showWarning(picker, "Please select a product"); return; }
             row = productTable.convertRowIndexToModel(row);
             int id = (int) products.getValueAt(row, 0);
+            try {
+                Connection c = DatabaseManager.getInstance().getConnection();
+                String missingCost = CostIntegrity.missingPurchaseCostMessage(
+                    c, java.util.List.of(id));
+                if (missingCost != null) {
+                    Dialogs.showMessageDialog(picker, missingCost,
+                        I18n.tr("Purchase Cost Required"), JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
+            } catch (SQLException ex) {
+                showWarning(picker, I18n.tr(ex.getMessage()));
+                return;
+            }
             for (int i = 0; i < model.getRowCount(); i++) {
                 if ((int) model.getValueAt(i, 0) == id) { showWarning(picker, "This product is already in the order"); return; }
             }
@@ -212,6 +225,23 @@ public class MultiSupplierOrderDialog extends JDialog {
             updateTotals();
         } catch (IllegalArgumentException e) { showWarning(this,e.getMessage()); return; }
         if (model.getRowCount() == 0) { showWarning(this, "Add at least one product to the order"); return; }
+
+        try {
+            java.util.List<Integer> productIds = new java.util.ArrayList<>();
+            for (int row=0; row<model.getRowCount(); row++)
+                productIds.add(((Number)model.getValueAt(row,0)).intValue());
+            String missingCost = CostIntegrity.missingPurchaseCostMessage(
+                DatabaseManager.getInstance().getConnection(), productIds);
+            if (missingCost != null) {
+                Dialogs.showMessageDialog(this, missingCost,
+                    I18n.tr("Purchase Cost Required"), JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+        } catch (SQLException ex) {
+            showWarning(this, I18n.tr(ex.getMessage()));
+            return;
+        }
+
         java.util.Date date;
         java.util.Date expected = null;
         try {
