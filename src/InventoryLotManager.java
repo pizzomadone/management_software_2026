@@ -99,6 +99,20 @@ public final class InventoryLotManager {
             }
         }
         try(PreparedStatement p=c.prepareStatement("""
+                SELECT 1
+                FROM inventory_lot_consumptions x
+                JOIN inventory_lots l ON l.id=x.lot_id
+                JOIN supplier_order_details d ON d.id=l.supplier_order_detail_id
+                WHERE d.order_id=?
+                LIMIT 1
+                """)) {
+            p.setInt(1,orderId);
+            try(ResultSet r=p.executeQuery()) {
+                if(r.next())
+                    throw new SQLException("This supplier receipt cannot be reversed because its FIFO lot has historical consumption records");
+            }
+        }
+        try(PreparedStatement p=c.prepareStatement("""
                 SELECT l.id,l.product_id,l.initial_quantity,l.remaining_quantity
                 FROM inventory_lots l
                 JOIN supplier_order_details d ON d.id=l.supplier_order_detail_id
