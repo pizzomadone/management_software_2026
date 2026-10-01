@@ -147,7 +147,7 @@ public class SupplierProductDialog extends JDialog {
                 if(preferred && !wasPreferred){
                     String message=I18n.format("New preferred supplier: {0}.",supplierName)
                         +"\n"+I18n.format(
-                            "The product purchase price will be aligned with the new preferred supplier's price ({0}).",
+                            "The new preferred supplier's price ({0}) will become the default reference price proposed in new supplier orders.",
                             SettingsPanel.formatUnitCurrency(price))
                         +"\n\n"+I18n.tr("Confirm?");
                     if(Dialogs.showConfirmDialog(this,message,I18n.tr("Set Preferred Supplier"),
