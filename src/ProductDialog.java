@@ -154,9 +154,8 @@ public class ProductDialog extends JDialog {
 
         acquisitionCostField = new JTextField(10);
         setFieldWidth(acquisitionCostField, 115);
-        acquisitionCostField.setText("0.0");
-        acquisitionCostField.setEditable(false);
-        acquisitionCostField.setToolTipText(I18n.tr("Last actual purchase cost. Historical sales retain their original FIFO cost."));
+        acquisitionCostField.setText("");
+        acquisitionCostField.setToolTipText(I18n.tr("Current purchase cost of the product. It is required for stock valuation and future FIFO movements. Historical sales retain their original FIFO cost."));
         quantitySpinner = new JSpinner(new SpinnerNumberModel(0, 0, 999999, 1));
         setFieldWidth(quantitySpinner, 110);
         minimumQuantitySpinner = new JSpinner(new SpinnerNumberModel(0, 0, 999999, 1));
@@ -174,8 +173,8 @@ public class ProductDialog extends JDialog {
         addFormRow(stockPanel, 0, "Price *:", priceField);
         addFormRow(stockPanel, 1, "Preferred Supplier Price:", withHelp(preferredSupplierPriceField,
             "Current purchase price from the preferred supplier. It is used as the default in new supplier orders and can still be changed in the order."));
-        addFormRow(stockPanel, 2, "Last Purchase Cost:", withHelp(acquisitionCostField,
-            "Last actual purchase cost. Historical sales retain their original FIFO cost."));
+        addFormRow(stockPanel, 2, "Purchase Cost *:", withHelp(acquisitionCostField,
+            "Current purchase cost of the product. It is required for stock valuation and future FIFO movements. Historical sales retain their original FIFO cost."));
         addFormRow(stockPanel, 3, "Quantity:", quantitySpinner);
         addFormRow(stockPanel, 4, "Minimum Quantity:", minimumQuantitySpinner);
         addFormRow(stockPanel, 5, "Weight (kg):", weightField);
@@ -722,10 +721,11 @@ public class ProductDialog extends JDialog {
             Integer supplierId = selectedSupplier != null ? selectedSupplier.getId() : null;
             double preferredSupplierPrice = supplierId != null
                 ? readNonNegativeField(preferredSupplierPriceField, "Preferred Supplier Price") : 0.0;
-            // A supplier reference price is not an actual purchase. New products have
-            // no last purchase cost until a supplier order is completed.
-            double acquisitionCost = product == null
-                ? 0.0 : readNonNegativeField(acquisitionCostField, "Last Purchase Cost");
+            if (acquisitionCostField.getText().trim().isEmpty())
+                throw new IllegalArgumentException(I18n.tr("Purchase cost is required."));
+            double acquisitionCost = readNonNegativeField(acquisitionCostField, "Purchase Cost");
+            if (acquisitionCost <= 0)
+                throw new IllegalArgumentException(I18n.tr("Purchase cost must be greater than zero."));
             String warehousePosition = warehousePositionField.getText().trim();
             double vatRate = readVatRate();
 
@@ -734,7 +734,7 @@ public class ProductDialog extends JDialog {
                 String message = I18n.format("New preferred supplier: {0}.",
                         selectedSupplier.getCompanyName())
                     + "\n" + I18n.format(
-                        "The product purchase price will be aligned with the new preferred supplier's price ({0}).",
+                        "The new preferred supplier's price ({0}) will become the default reference price proposed in new supplier orders.",
                         SettingsPanel.formatUnitCurrency(preferredSupplierPrice))
                     + "\n\n" + I18n.tr("Confirm?");
                 if (Dialogs.showConfirmDialog(this, message, I18n.tr("Set Preferred Supplier"),
@@ -754,18 +754,21 @@ public class ProductDialog extends JDialog {
             try {
                 int productId = product == null ? 0 : product.getId();
                 int oldQuantity = 0;
+                double previousAcquisitionCost = 0.0;
 
                 if (productCodeExists(conn, code, productId))
                     throw new IllegalArgumentException(
                         I18n.tr("A product with this code already exists."));
 
                 if (product != null) {
-                    try (PreparedStatement previous = conn.prepareStatement("SELECT quantity FROM products WHERE id=?")) {
+                    try (PreparedStatement previous = conn.prepareStatement(
+                            "SELECT quantity,acquisition_cost FROM products WHERE id=?")) {
                         previous.setInt(1,productId);
                         try (ResultSet r = previous.executeQuery()) {
                             if (!r.next()) throw new IllegalArgumentException(
                                 I18n.tr("The product no longer exists. It may have been deleted."));
-                            oldQuantity = r.getInt(1);
+                            oldQuantity = r.getInt("quantity");
+                            previousAcquisitionCost = Numbers.nonNegative(r.getObject("acquisition_cost"));
                         }
                     }
                 }
@@ -811,20 +814,34 @@ public class ProductDialog extends JDialog {
                     }
                 }
 
+                CostIntegrity.updateUnpricedOpeningLots(
+                    conn, productId, previousAcquisitionCost, acquisitionCost);
+
                 long delta = (long)quantity - oldQuantity;
                 if (delta != 0) {
                     int intDelta=Math.toIntExact(delta);
-                    InventoryLotManager.adjustProductStock(
-                        conn,productId,intDelta,new java.util.Date(),acquisitionCost);
                     int change = Math.toIntExact(Math.abs(delta));
-                    try (PreparedStatement movement = conn.prepareStatement("INSERT INTO warehouse_movements " +
-                            "(product_id,type,quantity,reason,document_type,notes) VALUES(?,?,?,?,?,?)")) {
-                        movement.setInt(1,productId); movement.setString(2,delta>0?"INWARD":"OUTWARD");
-                        movement.setInt(3,change); movement.setString(4,"Inventory adjustment");
+                    int movementId;
+                    try (PreparedStatement movement = conn.prepareStatement("""
+                            INSERT INTO warehouse_movements
+                            (product_id,date,type,quantity,reason,document_type,notes)
+                            VALUES(?,CURRENT_TIMESTAMP,?,?,?,?,?)
+                            """, Statement.RETURN_GENERATED_KEYS)) {
+                        movement.setInt(1,productId);
+                        movement.setString(2,delta>0?"INWARD":"OUTWARD");
+                        movement.setInt(3,change);
+                        movement.setString(4,"Inventory adjustment");
                         movement.setString(5,"INVENTORY_ADJUSTMENT");
                         movement.setString(6,"Stock count: " + oldQuantity + " -> " + quantity);
                         movement.executeUpdate();
+                        try (ResultSet keys = movement.getGeneratedKeys()) {
+                            if (!keys.next()) throw new SQLException(
+                                "Unable to create inventory adjustment movement");
+                            movementId = keys.getInt(1);
+                        }
                     }
+                    InventoryLotManager.adjustProductStock(
+                        conn,movementId,productId,intDelta,new java.util.Date(),acquisitionCost);
                 }
 
                 try (PreparedStatement minimum = conn.prepareStatement("""
