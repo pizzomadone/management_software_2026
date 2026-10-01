@@ -244,14 +244,25 @@ public class SuppliersPanel extends JPanel {
 
                 // Check for existing dependencies
                 boolean hasOrders = hasSupplierOrders(conn, id);
-                boolean hasSupplierProducts = hasSupplierProducts(conn, id);
+                int suppliedProductCount = countSupplierProducts(conn, id);
+                int preferredProductCount = countPreferredSupplierProducts(conn, id);
+                boolean hasSupplierProducts = suppliedProductCount > 0;
 
                 if (hasOrders || hasSupplierProducts) {
                     StringBuilder message = new StringBuilder();
                     message.append("Supplier '").append(name).append("' has related business records:\n");
 
                     if (hasOrders) message.append("- Existing orders\n");
-                    if (hasSupplierProducts) message.append("- Supplied products will be disassociated\n");
+                    if (hasSupplierProducts) {
+                        message.append("- ").append(suppliedProductCount)
+                            .append(" supplied product(s) will be disassociated\n");
+                        if (preferredProductCount > 0) {
+                            message.append("- For ").append(preferredProductCount)
+                                .append(" product(s), this is the preferred supplier. ")
+                                .append("WareStat will automatically choose the remaining supplier with the lowest purchase price; ")
+                                .append("if no alternative exists, the product will remain without a preferred supplier.\n");
+                        }
+                    }
 
                     message.append("\nChoose what should happen:\n");
                     message.append("- Keep: nothing is deleted; supplier, orders, stock and references remain unchanged.\n");
@@ -322,6 +333,26 @@ public class SuppliersPanel extends JPanel {
             DatabaseManager.beginTransaction(conn);
 
             try {
+                java.util.LinkedHashMap<Integer,String> preferredProducts =
+                    new java.util.LinkedHashMap<>();
+                try (PreparedStatement q = conn.prepareStatement("""
+                        SELECT p.id,p.code,p.name
+                        FROM product_suppliers ps
+                        JOIN products p ON p.id=ps.product_id
+                        WHERE ps.supplier_id=? AND ps.is_preferred=1
+                        ORDER BY p.name,p.code
+                        """)) {
+                    q.setInt(1,id);
+                    try (ResultSet r=q.executeQuery()) {
+                        while(r.next()) {
+                            String productName=r.getString("code")+" - "+r.getString("name");
+                            preferredProducts.put(r.getInt("id"),productName);
+                        }
+                    }
+                }
+                java.util.List<String> preferredChanges = new java.util.ArrayList<>();
+                int productsWithoutAlternative = 0;
+
                 StockManager.reverseCompletedSupplierOrders(conn, id);
                 // Delete in order to respect foreign key constraints
 
@@ -353,6 +384,35 @@ public class SuppliersPanel extends JPanel {
                     pstmt.setInt(1, id);
                     int deleted = pstmt.executeUpdate();
                     System.out.println("Deleted " + deleted + " supplied-product associations");
+                }
+
+                // Reassign the preferred supplier for every affected product to
+                // the remaining relation with the lowest current purchase price.
+                for (java.util.Map.Entry<Integer,String> affected : preferredProducts.entrySet()) {
+                    try (PreparedStatement q = conn.prepareStatement("""
+                            SELECT ps.id,s.company_name,ps.purchase_price
+                            FROM product_suppliers ps
+                            JOIN suppliers s ON s.id=ps.supplier_id
+                            WHERE ps.product_id=?
+                            ORDER BY ps.purchase_price ASC,ps.id ASC
+                            LIMIT 1
+                            """)) {
+                        q.setInt(1,affected.getKey());
+                        try (ResultSet r=q.executeQuery()) {
+                            if (r.next()) {
+                                try (PreparedStatement u=conn.prepareStatement(
+                                        "UPDATE product_suppliers SET is_preferred=1 WHERE id=?")) {
+                                    u.setInt(1,r.getInt("id"));
+                                    u.executeUpdate();
+                                }
+                                preferredChanges.add(affected.getValue()+" → "+
+                                    r.getString("company_name")+" ("+
+                                    SettingsPanel.formatUnitCurrency(r.getDouble("purchase_price"))+")");
+                            } else {
+                                productsWithoutAlternative++;
+                            }
+                        }
+                    }
                 }
 
                 // 4. Remove any remaining legacy minimum-stock cache references
@@ -390,9 +450,23 @@ public class SuppliersPanel extends JPanel {
                 conn.commit();
                 loadSuppliers();
 
+                StringBuilder completedMessage = new StringBuilder(
+                    I18n.format("Supplier '{0}' and all related records deleted successfully.", name));
+                if (!preferredChanges.isEmpty()) {
+                    completedMessage.append("\n\n")
+                        .append(I18n.tr("Preferred supplier changed automatically to the lowest-cost remaining supplier for:"))
+                        .append("\n");
+                    for (String change : preferredChanges)
+                        completedMessage.append("- ").append(change).append("\n");
+                }
+                if (productsWithoutAlternative > 0) {
+                    completedMessage.append("\n").append(I18n.format(
+                        "{0} product(s) now have no preferred supplier because no alternative supplier remained.",
+                        productsWithoutAlternative));
+                }
                 Dialogs.showMessageDialog(this,
-                    "Supplier '" + name + "' and all related records deleted successfully",
-                    "Force Delete Completed",
+                    completedMessage.toString(),
+                    I18n.tr("Supplier Deleted"),
                     JOptionPane.INFORMATION_MESSAGE);
 
             } catch (SQLException e) {
@@ -419,12 +493,23 @@ public class SuppliersPanel extends JPanel {
         }
     }
 
-    private boolean hasSupplierProducts(Connection conn, int supplierId) throws SQLException {
-        String query = "SELECT COUNT(*) FROM product_suppliers WHERE supplier_id = ?";
-        try (PreparedStatement pstmt = conn.prepareStatement(query)) {
+    private int countSupplierProducts(Connection conn, int supplierId) throws SQLException {
+        try (PreparedStatement pstmt = conn.prepareStatement(
+                "SELECT COUNT(*) FROM product_suppliers WHERE supplier_id=?")) {
             pstmt.setInt(1, supplierId);
-            ResultSet rs = pstmt.executeQuery();
-            return rs.next() && rs.getInt(1) > 0;
+            try (ResultSet rs = pstmt.executeQuery()) {
+                return rs.next() ? rs.getInt(1) : 0;
+            }
+        }
+    }
+
+    private int countPreferredSupplierProducts(Connection conn, int supplierId) throws SQLException {
+        try (PreparedStatement pstmt = conn.prepareStatement(
+                "SELECT COUNT(*) FROM product_suppliers WHERE supplier_id=? AND is_preferred=1")) {
+            pstmt.setInt(1, supplierId);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                return rs.next() ? rs.getInt(1) : 0;
+            }
         }
     }
 
