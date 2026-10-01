@@ -902,6 +902,16 @@ public class InvoiceDialog extends JDialog {
                     Integer sourceOrderId = null;
                     if (createCompletedOrder) {
                         List<StockManager.StockItem> stockItems = invoiceStockItems(conn);
+                        java.util.List<Integer> productIds = new java.util.ArrayList<>();
+                        for (StockManager.StockItem item : stockItems)
+                            productIds.add(item.getProductId());
+                        String missingCost = CostIntegrity.missingPurchaseCostMessage(conn, productIds);
+                        if (missingCost != null) {
+                            conn.rollback();
+                            Dialogs.showMessageDialog(this, missingCost,
+                                I18n.tr("Purchase Cost Required"), JOptionPane.WARNING_MESSAGE);
+                            return;
+                        }
                         Map<String, StockManager.StockAvailability> insufficient =
                             StockManager.checkStockAvailability(conn, stockItems, null, "ORDER");
 
