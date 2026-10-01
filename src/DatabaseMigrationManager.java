@@ -34,7 +34,9 @@ public final class DatabaseMigrationManager {
         new Migration("011", "Add product image metadata and constraints",
             DatabaseMigrationManager::migrateProductImages),
         new Migration("012", "Replace supplier price lists with product suppliers and add FIFO cost history",
-            DatabaseMigrationManager::migrateProductSuppliersAndFifo)
+            DatabaseMigrationManager::migrateProductSuppliersAndFifo),
+        new Migration("013", "Mark unreconstructable zero-cost migration sales as unknown",
+            DatabaseMigrationManager::markUnknownHistoricalCosts)
     );
 
     private DatabaseMigrationManager() {}
@@ -220,6 +222,25 @@ public final class DatabaseMigrationManager {
         }
     }
 
+
+    private static void markUnknownHistoricalCosts(Connection c) throws SQLException {
+        if (!hasTable(c, "inventory_lots") || !hasTable(c, "inventory_lot_consumptions")
+                || !hasColumn(c, "order_details", "cost_total")) return;
+        try (Statement s = c.createStatement()) {
+            s.executeUpdate("""
+                UPDATE order_details
+                SET cost_total=NULL
+                WHERE id IN (
+                    SELECT DISTINCT x.order_detail_id
+                    FROM inventory_lot_consumptions x
+                    JOIN inventory_lots l ON l.id=x.lot_id
+                    WHERE x.order_detail_id IS NOT NULL
+                      AND l.source_type='MIGRATION'
+                      AND l.unit_cost=0
+                )
+                """);
+        }
+    }
 
     private static void migrateProductSuppliersAndFifo(Connection c) throws SQLException {
         addColumnIfMissing(c, "order_details", "cost_total",
