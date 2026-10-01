@@ -82,7 +82,7 @@ public class SupplierProductDialog extends JDialog {
             +"\n\n"+I18n.tr(
                 "Purchase price: the supplier's current reference purchase price. It is proposed in new supplier orders and can be changed in the order.")
             +"\n\n"+I18n.tr(
-                "Preferred: makes this the preferred supplier for the product. Its purchase price becomes the product's default purchase price; historical FIFO costs and the sale price are not changed.")
+                "Preferred: makes this the preferred supplier for the product. Its purchase price becomes the default reference price proposed in new supplier orders; historical FIFO costs and the sale price are not changed.")
             +"\n\n"+I18n.tr(
                 "Notes: optional notes about this product-supplier relationship.");
         Dialogs.showMessageDialog(this,message,I18n.tr("Supplier product fields"),
