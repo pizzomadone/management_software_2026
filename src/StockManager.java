@@ -364,6 +364,59 @@ public class StockManager {
     }
 
     /**
+     * Reverse a completed customer sale without deleting or rewriting its history.
+     * Original FIFO consumptions and cost_total remain frozen; stock is returned
+     * to the exact original layers and a compensating inward movement is posted.
+     */
+    public static void reverseCompletedOrder(Connection conn,int orderId) throws SQLException {
+        String status;
+        try(PreparedStatement p=conn.prepareStatement("SELECT status FROM orders WHERE id=?")) {
+            p.setInt(1,orderId);
+            try(ResultSet r=p.executeQuery()) {
+                if(!r.next()) throw new SQLException("Order no longer exists");
+                status=r.getString(1);
+            }
+        }
+        if("Reversed".equals(status))
+            throw new SQLException("This completed sale has already been reversed");
+        if(!"Completed".equals(status))
+            throw new SQLException("Only completed customer orders can be reversed");
+
+        InventoryLotManager.reverseOrderKeepingHistory(conn,orderId);
+        restoreStockFromDocument(conn,orderId,"ORDER");
+
+        try(PreparedStatement p=conn.prepareStatement("""
+                SELECT product_id,SUM(quantity) AS quantity
+                FROM order_details
+                WHERE order_id=?
+                GROUP BY product_id
+                """)) {
+            p.setInt(1,orderId);
+            try(ResultSet r=p.executeQuery()) {
+                while(r.next()) {
+                    try(PreparedStatement m=conn.prepareStatement("""
+                            INSERT INTO warehouse_movements
+                            (product_id,date,type,quantity,reason,document_number,document_type,notes)
+                            VALUES(?,CURRENT_TIMESTAMP,'INWARD',?,'SALE_REVERSAL',?,'ORDER_REVERSAL',?)
+                            """)) {
+                        m.setInt(1,r.getInt("product_id"));
+                        m.setInt(2,r.getInt("quantity"));
+                        m.setString(3,String.valueOf(orderId));
+                        m.setString(4,"Reversal of customer order #"+orderId);
+                        m.executeUpdate();
+                    }
+                }
+            }
+        }
+
+        try(PreparedStatement p=conn.prepareStatement(
+                "UPDATE orders SET status='Reversed' WHERE id=?")) {
+            p.setInt(1,orderId);
+            if(p.executeUpdate()!=1) throw new SQLException("Order no longer exists");
+        }
+    }
+
+    /**
      * Delete an order and restore stock based on its status
      * Handles: restoring stock if Completed, cancelling reservations if New or In Progress
      */
