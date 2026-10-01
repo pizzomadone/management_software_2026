@@ -262,6 +262,59 @@ public final class InventoryLotManager {
         }
     }
 
+    /**
+     * Restore the FIFO layers of a completed sale while keeping its original
+     * consumption history and frozen cost. Used by a storno/reversal: the old
+     * sale remains historical and a new compensating stock event is recorded.
+     */
+    public static void reverseOrderKeepingHistory(Connection c,int orderId) throws SQLException {
+        try(PreparedStatement check=c.prepareStatement("""
+                SELECT d.id
+                FROM order_details d
+                WHERE d.order_id=?
+                  AND (
+                    NOT EXISTS (
+                        SELECT 1 FROM inventory_lot_consumptions x
+                        WHERE x.order_detail_id=d.id
+                    )
+                    OR EXISTS (
+                        SELECT 1 FROM inventory_lot_consumptions x
+                        WHERE x.order_detail_id=d.id AND x.lot_id IS NULL
+                    )
+                  )
+                LIMIT 1
+                """)) {
+            check.setInt(1,orderId);
+            try(ResultSet r=check.executeQuery()) {
+                if(r.next())
+                    throw new SQLException("This completed sale has incomplete FIFO history and cannot be reversed safely");
+            }
+        }
+
+        try(PreparedStatement details=c.prepareStatement(
+                "SELECT id FROM order_details WHERE order_id=? ORDER BY id")) {
+            details.setInt(1,orderId);
+            try(ResultSet d=details.executeQuery()) {
+                while(d.next()) {
+                    int detailId=d.getInt(1);
+                    try(PreparedStatement p=c.prepareStatement("""
+                            SELECT lot_id,quantity
+                            FROM inventory_lot_consumptions
+                            WHERE order_detail_id=?
+                            ORDER BY id
+                            """)) {
+                        p.setInt(1,detailId);
+                        try(ResultSet r=p.executeQuery()) {
+                            while(r.next()) {
+                                updateLotRemaining(c,r.getInt("lot_id"),r.getInt("quantity"));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     public static void applyManualMovement(Connection c,int movementId,int productId,String type,
                                            int quantity,Date date,double inboundUnitCost)
             throws SQLException {
