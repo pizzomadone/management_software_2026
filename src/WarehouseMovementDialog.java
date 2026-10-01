@@ -490,8 +490,10 @@ public class WarehouseMovementDialog extends JDialog {
                 int availability = availableForOutward(conn,selectedProduct.getId());
                 if (quantity > availability) {
                     int choice = Dialogs.showConfirmDialog(this,
-                        I18n.format("Insufficient quantity. Current availability: {0}\nRequested: {1}\n\nDo you want to proceed anyway?\nThis will result in negative stock.",
-                                     availability, quantity),
+                        I18n.format("Insufficient quantity. Current availability: {0}", availability)
+                            + "\n" + I18n.format("Requested: {0}", quantity)
+                            + "\n\n" + I18n.tr("Do you want to proceed anyway?")
+                            + "\n" + I18n.tr("This will result in negative stock."),
                         I18n.tr("Insufficient Stock"),
                         JOptionPane.YES_NO_OPTION,
                         JOptionPane.WARNING_MESSAGE);
