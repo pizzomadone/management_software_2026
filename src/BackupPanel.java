@@ -290,9 +290,22 @@ public class BackupPanel extends JPanel {
                 currency = DatabaseCurrency.confirmLegacyCurrency(this, path);
                 if (currency == null) return;
             }
-            backupManager.restoreBackup(path.toString(), currency);
-            Dialogs.showMessageDialog(this,
-                I18n.tr("Backup restored successfully.") + "\n" + I18n.tr("WareStat will now close. Reopen it to use the restored database."),
+            CostIntegrity.Audit audit = backupManager.restoreBackup(path.toString(), currency);
+            StringBuilder restored = new StringBuilder(I18n.tr("Backup restored successfully."));
+            restored.append("\n\n").append(I18n.format(
+                "Import completed: {0} product(s) without purchase cost, {1} sale(s) with historical cost that cannot be reconstructed.",
+                audit.productsWithoutPurchaseCost(), audit.salesWithoutHistoricalCost()));
+            if (audit.productsWithoutPurchaseCost() > 0) {
+                restored.append("\n").append(I18n.tr(
+                    "Products without purchase cost are highlighted in orange and cannot be purchased or sold until the cost is entered in the product sheet."));
+            }
+            if (audit.salesWithoutHistoricalCost() > 0) {
+                restored.append("\n").append(I18n.tr(
+                    "Sales without reconstructable historical cost remain visible but are excluded from historical cost, gross profit and other calculations that require that cost."));
+            }
+            restored.append("\n\n").append(I18n.tr(
+                "WareStat will now close. Reopen it to use the restored database."));
+            Dialogs.showMessageDialog(this, restored.toString(),
                 I18n.tr("Restore Completed"), JOptionPane.INFORMATION_MESSAGE);
             System.exit(0);
         } catch (Exception exception) {
