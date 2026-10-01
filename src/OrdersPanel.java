@@ -257,6 +257,13 @@ public class OrdersPanel extends JPanel {
             // Convert view index to model index (important when table is sorted)
             int modelRow = ordersTable.convertRowIndexToModel(selectedRow);
             int orderId = (int)tableModel.getValueAt(modelRow, 0);
+            String status = String.valueOf(tableModel.getValueAt(modelRow, 3));
+            if ("Completed".equals(status) || "Reversed".equals(status)) {
+                Dialogs.showMessageDialog(this,
+                    "Completed or reversed sales cannot be modified. Use the reversal function for a completed sale so FIFO history is preserved.",
+                    I18n.tr("Historical Sale"), JOptionPane.WARNING_MESSAGE);
+                return;
+            }
             try {
                 try (PreparedStatement p=DatabaseManager.getInstance().getConnection().prepareStatement("SELECT number FROM invoices WHERE order_id=? LIMIT 1")) {
                     p.setInt(1,orderId); try (ResultSet r=p.executeQuery()) {
@@ -374,11 +381,53 @@ public class OrdersPanel extends JPanel {
                 return;
             }
 
+            if ("Reversed".equals(status)) {
+                Dialogs.showMessageDialog(this,
+                    I18n.tr("This sale has already been reversed and is kept as historical data."),
+                    I18n.tr("Historical Sale"), JOptionPane.INFORMATION_MESSAGE);
+                return;
+            }
+
+            if ("Completed".equals(status)) {
+                int reverse = Dialogs.showConfirmDialog(this,
+                    I18n.format("Reverse the completed sale for customer '{0}'?", customer) + "\n\n" +
+                    I18n.tr("The original sale will remain in history as reversed. Stock will be returned to the exact FIFO lots originally used."),
+                    I18n.tr("Reverse Completed Sale"),
+                    JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+                if (reverse != JOptionPane.YES_OPTION) return;
+
+                try {
+                    Connection conn = DatabaseManager.getInstance().getConnection();
+                    DatabaseManager.beginTransaction(conn);
+                    try {
+                        StockManager.reverseCompletedOrder(conn, id);
+                        conn.commit();
+                    } catch (Exception e) {
+                        conn.rollback();
+                        throw e;
+                    } finally {
+                        conn.setAutoCommit(true);
+                    }
+                    loadOrders();
+                    Window parentWindow = SwingUtilities.getWindowAncestor(this);
+                    if (parentWindow instanceof MainWindow) {
+                        ((MainWindow) parentWindow).refreshProductsPanel();
+                    }
+                    Dialogs.showMessageDialog(this,
+                        I18n.tr("Sale reversed successfully. Stock and FIFO layers were restored while the original sale was kept in history."),
+                        I18n.tr("Sale Reversed"), JOptionPane.INFORMATION_MESSAGE);
+                } catch (Exception e) {
+                    Dialogs.showMessageDialog(this,
+                        I18n.tr("Unable to reverse the completed sale") + ": " + I18n.tr(e.getMessage()),
+                        I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
+                }
+                return;
+            }
+
             int result = Dialogs.showConfirmDialog(this,
                 "Are you sure you want to delete the order from customer '" + customer + "'?\n" +
                 "Status: " + status + "\n" +
-                (status.equals("Completed") ? "Stock will be restored." :
-                 (status.equals("New") || status.equals("In Progress")) ? "Reservations will be cancelled." :
+                ((status.equals("New") || status.equals("In Progress")) ? "Reservations will be cancelled." :
                  "No stock changes."),
                 "Confirm Deletion",
                 JOptionPane.YES_NO_OPTION,
@@ -418,8 +467,7 @@ public class OrdersPanel extends JPanel {
 
                         Dialogs.showMessageDialog(this,
                             "Order deleted successfully!" +
-                            (status.equals("Completed") ? "\nStock has been restored." :
-                             (status.equals("New") || status.equals("In Progress")) ? "\nReservations have been cancelled." : ""),
+                            ((status.equals("New") || status.equals("In Progress")) ? "\nReservations have been cancelled." : ""),
                             "Success", JOptionPane.INFORMATION_MESSAGE);
 
                     } catch (SQLException e) {
