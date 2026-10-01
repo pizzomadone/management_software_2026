@@ -349,8 +349,23 @@ public class SupplierOrderDialog extends JDialog {
             ProductDisplay selectedProduct = (ProductDisplay)productCombo.getSelectedItem();
             if (selectedProduct == null) {
                 Dialogs.showMessageDialog(dialog,
-                    "Please select a product",
-                    "Warning", JOptionPane.WARNING_MESSAGE);
+                    I18n.tr("Please select a product"),
+                    I18n.tr("Warning"), JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+
+            try {
+                Connection c = DatabaseManager.getInstance().getConnection();
+                String missingCost = CostIntegrity.missingPurchaseCostMessage(
+                    c, java.util.List.of(selectedProduct.getProduct().getId()));
+                if (missingCost != null) {
+                    Dialogs.showMessageDialog(dialog, missingCost,
+                        I18n.tr("Purchase Cost Required"), JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
+            } catch (SQLException costError) {
+                Dialogs.showMessageDialog(dialog, I18n.tr(costError.getMessage()),
+                    I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
                 return;
             }
 
@@ -563,6 +578,14 @@ public class SupplierOrderDialog extends JDialog {
             }
 
             Connection conn = DatabaseManager.getInstance().getConnection();
+            java.util.List<Integer> productIds = new java.util.ArrayList<>();
+            for (StockManager.StockItem item : stockItems) productIds.add(item.getProductId());
+            String missingCost = CostIntegrity.missingPurchaseCostMessage(conn, productIds);
+            if (missingCost != null) {
+                Dialogs.showMessageDialog(this, missingCost,
+                    I18n.tr("Purchase Cost Required"), JOptionPane.WARNING_MESSAGE);
+                return;
+            }
             DatabaseManager.beginTransaction(conn);
 
             try {
