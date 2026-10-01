@@ -55,7 +55,7 @@ public class WarehouseReportPanel extends JPanel {
 
         JLabel totalProductsLabel = new JLabel("Total Products: 0");
         JLabel totalValueLabel = new JLabel("Stock at last purchase cost: " + SettingsPanel.formatCurrency(0));
-        totalValueLabel.setToolTipText("Only active products with positive stock are valued at current catalog prices.");
+        totalValueLabel.setToolTipText("Only active products with positive physical stock are valued at their current purchase cost. Reserved units remain included.");
         JLabel lowStockLabel = new JLabel("Low Stock Products: 0");
         JLabel outOfStockLabel = new JLabel("Out of Stock Products: 0");
 
