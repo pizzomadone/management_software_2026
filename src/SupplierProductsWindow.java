@@ -160,15 +160,38 @@ public class SupplierProductsWindow extends JDialog {
                 try(PreparedStatement d=c.prepareStatement("DELETE FROM product_suppliers WHERE id=?")){
                     d.setInt(1,id);d.executeUpdate();
                 }
+                String newPreferredName=null;
+                double newPreferredPrice=0.0;
                 if(preferred){
-                    try(PreparedStatement u=c.prepareStatement("""
-                            UPDATE product_suppliers SET is_preferred=1
-                            WHERE id=(SELECT id FROM product_suppliers WHERE product_id=? ORDER BY id LIMIT 1)
+                    try(PreparedStatement q=c.prepareStatement("""
+                            SELECT ps.id,s.company_name,ps.purchase_price
+                            FROM product_suppliers ps
+                            JOIN suppliers s ON s.id=ps.supplier_id
+                            WHERE ps.product_id=?
+                            ORDER BY ps.purchase_price ASC,ps.id ASC
+                            LIMIT 1
                             """)){
-                        u.setInt(1,productId);u.executeUpdate();
+                        q.setInt(1,productId);
+                        try(ResultSet r=q.executeQuery()){
+                            if(r.next()){
+                                int newPreferredId=r.getInt("id");
+                                newPreferredName=r.getString("company_name");
+                                newPreferredPrice=r.getDouble("purchase_price");
+                                try(PreparedStatement u=c.prepareStatement(
+                                        "UPDATE product_suppliers SET is_preferred=1 WHERE id=?")){
+                                    u.setInt(1,newPreferredId);u.executeUpdate();
+                                }
+                            }
+                        }
                     }
                 }
                 c.commit();
+                if(newPreferredName!=null){
+                    Dialogs.showMessageDialog(this,
+                        I18n.format("Preferred supplier changed automatically to {0}, the remaining supplier with the lowest purchase price ({1}).",
+                            newPreferredName,SettingsPanel.formatUnitCurrency(newPreferredPrice)),
+                        I18n.tr("Preferred Supplier Changed"),JOptionPane.INFORMATION_MESSAGE);
+                }
             }catch(Exception e){c.rollback();throw e;}
             finally{c.setAutoCommit(true);}
             load();
