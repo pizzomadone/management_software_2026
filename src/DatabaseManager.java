@@ -278,6 +278,7 @@ public class DatabaseManager {
                 number TEXT NOT NULL,
                 order_date DATETIME NOT NULL,
                 expected_delivery_date DATETIME,
+                received_date DATETIME,
                 status TEXT NOT NULL,
                 total REAL NOT NULL,
                 notes TEXT,
