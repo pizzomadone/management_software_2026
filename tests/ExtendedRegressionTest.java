@@ -60,9 +60,21 @@ public class ExtendedRegressionTest extends RegressionTest {
             for(String from:List.of("Draft","Confirmed","In Transit","Completed","Cancelled"))
                 for(String to:List.of("Draft","Confirmed","In Transit","Completed","Cancelled")) {
                     fresh();SD first=supplier(false,new HashMap<>());put(first,"statusCombo",new JComboBox<>(new String[]{from}));call(first,"saveOrder");
+                    String firstReceipt=value("SELECT received_date FROM supplier_orders WHERE id=1");
                     SD second=supplier(true,new HashMap<>());put(second,"statusCombo",new JComboBox<>(new String[]{to}));call(second,"saveOrder");
+                    String finalReceipt=value("SELECT received_date FROM supplier_orders WHERE id=1");
                     require(qty()==(to.equals("Completed")?13:10),from+" -> "+to+" changed stock incorrectly");
+                    require(to.equals("Completed")==(finalReceipt!=null),from+" -> "+to+" stored the wrong receipt-date state");
+                    if(from.equals("Completed") && to.equals("Completed"))
+                        require(firstReceipt.equals(finalReceipt),"Completed edit changed the original receipt date");
                 }
+        });
+        test("supplier orders require a positive line purchase price before creation",()->{
+            fresh();SD d=supplier(false,new HashMap<>());
+            DefaultTableModel m=(DefaultTableModel)get(d,"itemsTableModel");m.setValueAt("0",0,3);
+            rejectedSave(d,"saveOrder","orderSaved");
+            require("0".equals(value("SELECT COUNT(*) FROM supplier_orders")),"Zero-price supplier order was created");
+            require(qty()==10,"Rejected zero-price supplier order changed stock");
         });
         test("invoice rounding agrees between lines and saved header",()->{
             fresh();ID d=invoice();DefaultTableModel m=(DefaultTableModel)get(d,"itemsTableModel");m.setValueAt("0.335",0,3);call(d,"saveInvoice");
@@ -362,6 +374,25 @@ public class ExtendedRegressionTest extends RegressionTest {
             DatabaseMigrationManager.migrate(db);
             require("1".equals(value("SELECT COUNT(*) FROM inventory_lots WHERE product_id=1 AND source_type='MIGRATION'")),
                 "Rerunning migration 012 duplicated an exhausted opening FIFO layer");
+        });
+        test("migration 015 backfills receipt dates without reordering posted FIFO lots",()->{
+            fresh();
+            sql("DELETE FROM schema_migrations WHERE version='015'");
+            sql("ALTER TABLE supplier_orders DROP COLUMN received_date");
+            sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,expected_delivery_date,status,total) VALUES" +
+                "(10,1,'OLD-EXP',1000,2000,'Completed',5)," +
+                "(11,1,'OLD-FALLBACK',3000,NULL,'Completed',5)," +
+                "(12,1,'OLD-OPEN',5000,6000,'Draft',5)," +
+                "(13,1,'POSTED',7000,8000,'Completed',5)");
+            sql("INSERT INTO supplier_order_details(id,order_id,product_id,quantity,unit_price,total) VALUES(130,13,1,1,5,5)");
+            sql("INSERT INTO inventory_lots(product_id,supplier_id,supplier_order_detail_id,received_date,initial_quantity,remaining_quantity,unit_cost,source_type) VALUES(1,1,130,7500,1,1,5,'SUPPLIER_ORDER')");
+            DatabaseMigrationManager.migrate(db);
+            require("2000".equals(value("SELECT received_date FROM supplier_orders WHERE id=10")),"Expected delivery date was not used for imported completed order");
+            require("3000".equals(value("SELECT received_date FROM supplier_orders WHERE id=11")),"Order-date fallback was not used");
+            require(value("SELECT received_date FROM supplier_orders WHERE id=12")==null,"Open historical order was marked received");
+            require("7500".equals(value("SELECT received_date FROM supplier_orders WHERE id=13")),"Existing posted receipt date was not preserved");
+            require("7500".equals(value("SELECT received_date FROM inventory_lots WHERE supplier_order_detail_id=130")),"Migration changed an existing FIFO lot date");
+            require("1".equals(value("SELECT COUNT(*) FROM schema_migrations WHERE version='015'")),"Receipt-date migration was not recorded");
         });
         test("legacy supplier migration preserves referenced products",()->{
             fresh();try(Connection c=DatabaseManager.openConnection("jdbc:sqlite::memory:");Statement s=c.createStatement()) {
