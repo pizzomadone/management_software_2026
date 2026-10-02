@@ -150,11 +150,37 @@ public class FifoCompletionTest extends RegressionTest {
             mustReject(()->InventoryLotManager.adjustProductStock(db,51,1,2,new java.util.Date(),0));
             require(qty()==8,"Unpriced adjustment changed physical stock");
         });
+        test("supplier FIFO follows actual receipt date rather than order date",()->{
+            fresh();sql("UPDATE products SET quantity=0 WHERE id=1");
+            sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,received_date,status,total) VALUES" +
+                "(30,1,'REC-LATE',1000,3000,'Completed',5)," +
+                "(31,1,'REC-EARLY',2000,2000,'Completed',10)");
+            sql("INSERT INTO supplier_order_details(order_id,product_id,quantity,unit_price,total) VALUES" +
+                "(30,1,1,5,5),(31,1,1,10,10)");
+            InventoryLotManager.receiveSupplierOrder(db,30,new java.util.Date(3000),"REC-LATE");
+            InventoryLotManager.receiveSupplierOrder(db,31,new java.util.Date(2000),"REC-EARLY");
+            sale(40,1);
+            require("10.0".equals(value("SELECT cost_total FROM order_details WHERE id=40")),
+                "FIFO followed supplier order date instead of receipt date");
+        });
+        test("supplier receipt backend rejects zero purchase price atomically",()->{
+            fresh();int before=qty();
+            sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,received_date,status,total) VALUES(30,1,'ZERO',1000,2000,'Completed',0)");
+            sql("INSERT INTO supplier_order_details(order_id,product_id,quantity,unit_price,total) VALUES(30,1,2,0,0)");
+            mustReject(()->InventoryLotManager.receiveSupplierOrder(db,30,new java.util.Date(2000),"ZERO"));
+            require(qty()==before,"Rejected zero-price receipt changed physical stock");
+            require("0".equals(value("SELECT COUNT(*) FROM inventory_lots WHERE supplier_order_detail_id IS NOT NULL")),
+                "Rejected zero-price receipt created a FIFO lot");
+            require("0".equals(value("SELECT COUNT(*) FROM warehouse_movements")),
+                "Rejected zero-price receipt created a warehouse movement");
+        });
         test("new FIFO messages are translated in every supported language",()->{
             String[] keys={"Historical cost unavailable","Reverse Movement","MOVEMENT_REVERSAL","Movement reversed successfully.",
                 "Posted outward movements cannot be edited or deleted. Use Reverse Movement.",
                 "This movement has already been reversed.","No alternative supplier remains. This product now has no preferred supplier.",
-                "The last actual purchase cost, historical costs and existing FIFO lots will not change.","Database Updated"};
+                "The last actual purchase cost, historical costs and existing FIFO lots will not change.","Database Updated",
+                "Purchase price must be greater than zero","Supplier receipt date is required",
+                "Every product must have a supplier, a positive quantity and a purchase price greater than zero. Check: {0}"};
             try {
                 for(String language:List.of("it","es","fr","de","pl","pt_BR")) {
                     I18n.setLanguage(language);
