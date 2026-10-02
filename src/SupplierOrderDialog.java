@@ -501,6 +501,12 @@ public class SupplierOrderDialog extends JDialog {
     // Helper methods for safe parsing
     private int parseInteger(Object value) { return Numbers.positiveQuantity(value); }
     private double parseDouble(Object value) { return Numbers.nonNegative(value); }
+    private double parsePurchasePrice(Object value) {
+        double price = Numbers.nonNegative(value);
+        if (price <= 0) throw new IllegalArgumentException(
+            I18n.tr("Purchase price must be greater than zero"));
+        return price;
+    }
 
     private int productIdForRow(Connection c, int row) throws SQLException {
         if (itemsTableModel.getColumnCount()>6 && itemsTableModel.getValueAt(row,6)!=null)
@@ -561,7 +567,7 @@ public class SupplierOrderDialog extends JDialog {
             double total = 0.0;
             for (int i = 0; i < itemsTableModel.getRowCount(); i++) {
                 total = Numbers.add(total, Numbers.lineTotal(parseInteger(itemsTableModel.getValueAt(i, 2)),
-                    parseDouble(itemsTableModel.getValueAt(i, 3))));
+                    parsePurchasePrice(itemsTableModel.getValueAt(i, 3))));
             }
 
             String newStatus = (String)statusCombo.getSelectedItem();
@@ -593,12 +599,13 @@ public class SupplierOrderDialog extends JDialog {
 
                 if (order == null) {
                     numberField.setText(DocumentNumbers.nextSupplierNumber(conn, orderDate));
+                    Date receiptDate = "Completed".equals(newStatus) ? new Date() : null;
                     // Insert new order
                     String orderQuery = """
                         INSERT INTO supplier_orders (
                             supplier_id, number, order_date, expected_delivery_date,
-                            status, total, notes
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                            received_date, status, total, notes
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """;
 
                     try (PreparedStatement pstmt = conn.prepareStatement(orderQuery, Statement.RETURN_GENERATED_KEYS)) {
@@ -606,9 +613,10 @@ public class SupplierOrderDialog extends JDialog {
                         pstmt.setString(2, numberField.getText());
                         pstmt.setTimestamp(3, DateUtils.toSqlTimestamp(orderDate));
                         pstmt.setTimestamp(4, deliveryDate != null ? DateUtils.toSqlTimestamp(deliveryDate) : null);
-                        pstmt.setString(5, newStatus);
-                        pstmt.setDouble(6, total);
-                        pstmt.setString(7, notesArea.getText().trim());
+                        pstmt.setTimestamp(5, receiptDate != null ? DateUtils.toSqlTimestamp(receiptDate) : null);
+                        pstmt.setString(6, newStatus);
+                        pstmt.setDouble(7, total);
+                        pstmt.setString(8, notesArea.getText().trim());
                         pstmt.executeUpdate();
 
                         try (ResultSet rs = pstmt.getGeneratedKeys()) {
@@ -626,7 +634,7 @@ public class SupplierOrderDialog extends JDialog {
                     // Handle stock if Completed
                     if ("Completed".equals(newStatus)) {
                         InventoryLotManager.receiveSupplierOrder(
-                            conn, orderId, orderDate, numberField.getText());
+                            conn, orderId, receiptDate, numberField.getText());
                     }
 
                 } else {
@@ -634,20 +642,27 @@ public class SupplierOrderDialog extends JDialog {
                     orderId = order.getId();
                     List<StockManager.StockItem> oldStockItems = loadStoredStockItems(conn, orderId);
 
-                    try (PreparedStatement p = conn.prepareStatement("SELECT status FROM supplier_orders WHERE id=?")) {
+                    Date previousReceiptDate = null;
+                    try (PreparedStatement p = conn.prepareStatement(
+                            "SELECT status,received_date FROM supplier_orders WHERE id=?")) {
                         p.setInt(1, orderId);
                         try (ResultSet r = p.executeQuery()) {
                             if (!r.next()) throw new SQLException("Supplier order no longer exists");
-                            previousStatus = r.getString(1);
+                            previousStatus = r.getString("status");
+                            previousReceiptDate = DateUtils.parseDate(r, "received_date");
                         }
                     }
                     if ("Completed".equals(previousStatus)) {
                         InventoryLotManager.reverseSupplierOrder(conn, orderId, order.getNumber());
                     }
+                    Date receiptDate = "Completed".equals(newStatus)
+                        ? ("Completed".equals(previousStatus) && previousReceiptDate != null
+                            ? previousReceiptDate : new Date())
+                        : null;
 
                     String orderQuery = """
                         UPDATE supplier_orders SET
-                            order_date = ?, expected_delivery_date = ?,
+                            order_date = ?, expected_delivery_date = ?, received_date = ?,
                             status = ?, total = ?, notes = ?
                         WHERE id = ?
                     """;
@@ -655,10 +670,11 @@ public class SupplierOrderDialog extends JDialog {
                     try (PreparedStatement pstmt = conn.prepareStatement(orderQuery)) {
                         pstmt.setTimestamp(1, DateUtils.toSqlTimestamp(orderDate));
                         pstmt.setTimestamp(2, deliveryDate != null ? DateUtils.toSqlTimestamp(deliveryDate) : null);
-                        pstmt.setString(3, newStatus);
-                        pstmt.setDouble(4, total);
-                        pstmt.setString(5, notesArea.getText().trim());
-                        pstmt.setInt(6, orderId);
+                        pstmt.setTimestamp(3, receiptDate != null ? DateUtils.toSqlTimestamp(receiptDate) : null);
+                        pstmt.setString(4, newStatus);
+                        pstmt.setDouble(5, total);
+                        pstmt.setString(6, notesArea.getText().trim());
+                        pstmt.setInt(7, orderId);
                         pstmt.executeUpdate();
                     }
 
@@ -674,7 +690,7 @@ public class SupplierOrderDialog extends JDialog {
 
                     if ("Completed".equals(newStatus)) {
                         InventoryLotManager.receiveSupplierOrder(
-                            conn, orderId, orderDate, numberField.getText());
+                            conn, orderId, receiptDate, numberField.getText());
                     }
                 }
 
@@ -731,7 +747,7 @@ public class SupplierOrderDialog extends JDialog {
                 int productId = productIdForRow(conn, i);
 
                 int quantity = parseInteger(itemsTableModel.getValueAt(i, 2));
-                double unitPrice = parseDouble(itemsTableModel.getValueAt(i, 3));
+                double unitPrice = parsePurchasePrice(itemsTableModel.getValueAt(i, 3));
                 double total = Numbers.lineTotal(quantity, unitPrice);
                 String notes = (String)itemsTableModel.getValueAt(i, 5);
 
