@@ -38,7 +38,9 @@ public final class DatabaseMigrationManager {
         new Migration("013", "Mark unreconstructable zero-cost migration sales as unknown",
             DatabaseMigrationManager::markUnknownHistoricalCosts),
         new Migration("014", "Preserve manual FIFO reversals and unknown cost snapshots",
-            DatabaseMigrationManager::migrateFifoReversals)
+            DatabaseMigrationManager::migrateFifoReversals),
+        new Migration("015", "Store actual supplier receipt date",
+            DatabaseMigrationManager::migrateSupplierReceiptDate)
     );
 
     private DatabaseMigrationManager() {}
@@ -237,6 +239,36 @@ public final class DatabaseMigrationManager {
                     JOIN inventory_lots l ON l.id=x.lot_id
                     WHERE l.source_type='MIGRATION' AND x.unit_cost=0
                 )
+                """);
+        }
+    }
+
+    private static void migrateSupplierReceiptDate(Connection c) throws SQLException {
+        addColumnIfMissing(c, "supplier_orders", "received_date",
+            "ALTER TABLE supplier_orders ADD COLUMN received_date DATETIME");
+        try (Statement s = c.createStatement()) {
+            // Receipts posted by this FIFO version already have an authoritative lot date.
+            // Preserve it so upgrading cannot reorder existing active FIFO layers.
+            s.executeUpdate("""
+                UPDATE supplier_orders
+                SET received_date = COALESCE(
+                    (
+                        SELECT MIN(l.received_date)
+                        FROM supplier_order_details d
+                        JOIN inventory_lots l ON l.supplier_order_detail_id=d.id
+                        WHERE d.order_id=supplier_orders.id
+                          AND l.source_type='SUPPLIER_ORDER'
+                    ),
+                    expected_delivery_date,
+                    order_date
+                )
+                WHERE status='Completed' AND received_date IS NULL
+                """);
+            // Non-completed orders have not been received yet.
+            s.executeUpdate("""
+                UPDATE supplier_orders
+                SET received_date=NULL
+                WHERE status<>'Completed'
                 """);
         }
     }
