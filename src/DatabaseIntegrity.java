@@ -18,7 +18,7 @@ public final class DatabaseIntegrity {
         Map.entry("order_details", "cost_total"),
         Map.entry("invoices", "id number date customer_id taxable_amount vat total status order_id currency_code customer_snapshot company_snapshot logo_snapshot snapshot_version"),
         Map.entry("invoice_details", "id invoice_id product_id quantity unit_price vat_rate total product_code product_name"),
-        Map.entry("supplier_orders", "id supplier_id number order_date expected_delivery_date status total notes"),
+        Map.entry("supplier_orders", "id supplier_id number order_date expected_delivery_date received_date status total notes"),
         Map.entry("supplier_order_details", "id order_id product_id quantity unit_price total notes"),
         Map.entry("product_suppliers", "id product_id supplier_id supplier_product_code purchase_price is_preferred notes"),
         Map.entry("inventory_lots", "id product_id supplier_id supplier_order_detail_id warehouse_movement_id received_date initial_quantity remaining_quantity unit_cost source_type"),
