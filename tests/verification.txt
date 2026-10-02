@@ -25,6 +25,7 @@ PASS incompatible imports leave live data intact
 PASS retention only removes managed backup files
 PASS product photos are optimized ordered and included only in complete backups
 PASS all supplier order state transitions preserve receipts
+PASS supplier orders require a positive line purchase price before creation
 PASS invoice rounding agrees between lines and saved header
 PASS accounting rounding agrees in Java SQL reports and visible unit values
 PASS completed sales exclude cancelled documents and have no 1000 row cap
@@ -47,6 +48,7 @@ PASS product supplier relation keeps one preferred supplier and independent pric
 PASS legacy supplier list migration keeps the latest price even for the preferred supplier
 PASS legacy supplier list migration prefers an applicable price over a future row
 PASS migration 012 rerun does not duplicate exhausted opening FIFO layers
+PASS migration 015 backfills receipt dates without reordering posted FIFO lots
 PASS legacy supplier migration preserves referenced products
 PASS invoice source order foreign key survives migration
 PASS database rejects non-finite and invalid persisted numbers
@@ -99,5 +101,7 @@ PASS cost requirement blocks both purchase and sale saves before data changes
 PASS supplier receipt is linked to its exact warehouse movement
 PASS replacement supplier uses lowest price then oldest relationship without repricing stock
 PASS stock reductions retain FIFO history and reject silent zero-cost additions
+PASS supplier FIFO follows actual receipt date rather than order date
+PASS supplier receipt backend rejects zero purchase price atomically
 PASS new FIFO messages are translated in every supported language
-Regression checks: 102 passed, 0 failed
+Regression checks: 106 passed, 0 failed
