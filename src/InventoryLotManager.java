@@ -31,6 +31,19 @@ public final class InventoryLotManager {
 
     public static void receiveSupplierOrder(Connection c, int orderId, Date date, String number)
             throws SQLException {
+        if (date == null) throw new SQLException(I18n.tr("Supplier receipt date is required"));
+        try (PreparedStatement p=c.prepareStatement("""
+                SELECT 1
+                FROM supplier_order_details
+                WHERE order_id=? AND (unit_price IS NULL OR unit_price<=0)
+                LIMIT 1
+                """)) {
+            p.setInt(1,orderId);
+            try (ResultSet r=p.executeQuery()) {
+                if(r.next()) throw new SQLException(I18n.tr("Purchase price must be greater than zero"));
+            }
+        }
+
         int supplierId;
         try (PreparedStatement p=c.prepareStatement("SELECT supplier_id FROM supplier_orders WHERE id=?")) {
             p.setInt(1,orderId);
@@ -55,6 +68,7 @@ public final class InventoryLotManager {
                     int productId=r.getInt("product_id");
                     int quantity=Numbers.positiveQuantity(r.getObject("quantity"));
                     double cost=Numbers.nonNegative(r.getObject("unit_price"));
+                    if(cost<=0) throw new SQLException(I18n.tr("Purchase price must be greater than zero"));
                     int oldStock=physicalStock(c,productId);
                     int remaining=Math.max(0,Math.min(quantity,Math.addExact(oldStock,quantity)));
 
