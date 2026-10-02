@@ -220,7 +220,7 @@ public class MultiSupplierOrderDialog extends JDialog {
         try {
             Numbers.commitEdits(table);
             for (int row=0;row<model.getRowCount();row++) {
-                Numbers.positiveQuantity(model.getValueAt(row,5)); Numbers.nonNegative(model.getValueAt(row,6));
+                Numbers.positiveQuantity(model.getValueAt(row,5)); parsePurchasePrice(model.getValueAt(row,6));
             }
             updateTotals();
         } catch (IllegalArgumentException e) { showWarning(this,e.getMessage()); return; }
@@ -258,9 +258,9 @@ public class MultiSupplierOrderDialog extends JDialog {
         Map<Integer, List<Integer>> groups = new LinkedHashMap<>();
         for (int i = 0; i < model.getRowCount(); i++) {
             Object supplier = model.getValueAt(i, 3);
-            if (!(supplier instanceof Number) || parseInt(model.getValueAt(i, 5)) <= 0 || parseDouble(model.getValueAt(i, 6)) < 0) {
+            if (!(supplier instanceof Number) || parseInt(model.getValueAt(i, 5)) <= 0) {
                 showWarning(this, I18n.format(
-                    "Every product must have a supplier, a positive quantity and a non-negative purchase price. Check: {0}",
+                    "Every product must have a supplier, a positive quantity and a purchase price greater than zero. Check: {0}",
                     model.getValueAt(i, 2)));
                 return;
             }
@@ -290,31 +290,35 @@ public class MultiSupplierOrderDialog extends JDialog {
         Connection conn = null;
         try {
             conn = DatabaseManager.getInstance().getConnection(); DatabaseManager.beginTransaction(conn);
+            java.util.Date receiptDate = "Completed".equals(status.getSelectedItem())
+                ? new java.util.Date() : null;
             String prefix = "OF" + new java.text.SimpleDateFormat("yyyy").format(date);
             int sequence = nextSequence(conn, prefix);
             for (Map.Entry<Integer, List<Integer>> group : groups.entrySet()) {
                 String number = DocumentNumbers.nextSupplierNumber(conn,date);
                 double total = 0;
-                for (int row : group.getValue()) total=Numbers.add(total,Numbers.lineTotal(parseInt(model.getValueAt(row,5)),parseDouble(model.getValueAt(row,6))));
+                for (int row : group.getValue()) total=Numbers.add(total,Numbers.lineTotal(parseInt(model.getValueAt(row,5)),parsePurchasePrice(model.getValueAt(row,6))));
                 int orderId;
-                try (PreparedStatement ps = conn.prepareStatement("INSERT INTO supplier_orders (supplier_id,number,order_date,expected_delivery_date,status,total,notes) VALUES (?,?,?,?,?,?,?)", Statement.RETURN_GENERATED_KEYS)) {
+                try (PreparedStatement ps = conn.prepareStatement("INSERT INTO supplier_orders (supplier_id,number,order_date,expected_delivery_date,received_date,status,total,notes) VALUES (?,?,?,?,?,?,?,?)", Statement.RETURN_GENERATED_KEYS)) {
                     ps.setInt(1, group.getKey()); ps.setString(2, number); ps.setTimestamp(3, DateUtils.toSqlTimestamp(date));
-                    ps.setTimestamp(4, expected == null ? null : DateUtils.toSqlTimestamp(expected)); ps.setString(5, (String) status.getSelectedItem());
-                    ps.setDouble(6, total); ps.setString(7, notes.getText().trim()); ps.executeUpdate();
+                    ps.setTimestamp(4, expected == null ? null : DateUtils.toSqlTimestamp(expected));
+                    ps.setTimestamp(5, receiptDate == null ? null : DateUtils.toSqlTimestamp(receiptDate));
+                    ps.setString(6, (String) status.getSelectedItem());
+                    ps.setDouble(7, total); ps.setString(8, notes.getText().trim()); ps.executeUpdate();
                     try (ResultSet keys = ps.getGeneratedKeys()) { if (!keys.next()) throw new SQLException("Unable to create supplier order"); orderId = keys.getInt(1); }
                 }
                 List<StockManager.StockItem> stock = new ArrayList<>();
                 try (PreparedStatement ps = conn.prepareStatement("INSERT INTO supplier_order_details (order_id,product_id,quantity,unit_price,total,notes) VALUES (?,?,?,?,?,?)")) {
                     for (int row : group.getValue()) {
                         int productId = (int) model.getValueAt(row, 0); int qty = parseInt(model.getValueAt(row, 5));
-                        ps.setInt(1, orderId); ps.setInt(2, productId); ps.setInt(3, qty); ps.setDouble(4, parseDouble(model.getValueAt(row, 6)));
-                        ps.setDouble(5, Numbers.lineTotal(qty,parseDouble(model.getValueAt(row,6)))); ps.setString(6, String.valueOf(model.getValueAt(row, 8))); ps.addBatch();
+                        ps.setInt(1, orderId); ps.setInt(2, productId); ps.setInt(3, qty); ps.setDouble(4, parsePurchasePrice(model.getValueAt(row, 6)));
+                        ps.setDouble(5, Numbers.lineTotal(qty,parsePurchasePrice(model.getValueAt(row,6)))); ps.setString(6, String.valueOf(model.getValueAt(row, 8))); ps.addBatch();
                         stock.add(new StockManager.StockItem(productId, String.valueOf(model.getValueAt(row, 2)), qty));
                     }
                     ps.executeBatch();
                 }
                 if ("Completed".equals(status.getSelectedItem()))
-                    InventoryLotManager.receiveSupplierOrder(conn,orderId,date,number);
+                    InventoryLotManager.receiveSupplierOrder(conn,orderId,receiptDate,number);
             }
             conn.commit(); saved = true; dispose();
         } catch (Exception ex) {
@@ -329,6 +333,12 @@ public class MultiSupplierOrderDialog extends JDialog {
 
     private int parseInt(Object value) { return Numbers.positiveQuantity(value); }
     private double parseDouble(Object value) { return Numbers.nonNegative(value); }
+    private double parsePurchasePrice(Object value) {
+        double price = Numbers.nonNegative(value);
+        if (price <= 0) throw new IllegalArgumentException(
+            I18n.tr("Purchase price must be greater than zero"));
+        return price;
+    }
     private void showWarning(Component parent, String message) { Dialogs.showMessageDialog(parent, message, "Warning", JOptionPane.WARNING_MESSAGE); }
     private void showError(Component parent, String message) { Dialogs.showMessageDialog(parent, message, "Error", JOptionPane.ERROR_MESSAGE); }
     public boolean isSaved() { return saved; }
