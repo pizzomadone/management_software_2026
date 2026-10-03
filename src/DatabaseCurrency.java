@@ -51,7 +51,7 @@ public final class DatabaseCurrency {
      * Explicit currency change. RELABEL preserves every numeric value and only changes the
      * operating currency. CONVERT updates every non-final monetary value using the supplied
      * rate, where 1 unit of the old currency equals {@code rate} units of the new currency.
-     * Finalized invoices (Issued/Paid/Canceled) are immutable historical amounts and currencies.
+     * Finalized invoices (Issued/Canceled) are immutable historical amounts and currencies.
      */
     public static void change(String code, ChangeMode mode, BigDecimal rate) throws SQLException {
         Currency.getInstance(code);
@@ -344,11 +344,11 @@ public final class DatabaseCurrency {
         }
 
         try(PreparedStatement drafts=c.prepareStatement(
-                "SELECT id,taxable_amount,vat,total FROM invoices WHERE status='Draft' ORDER BY id");
+                "SELECT id,taxable_amount,vat,total,payment_status,paid_amount FROM invoices WHERE status='Draft' ORDER BY id");
             PreparedStatement lines=c.prepareStatement(
                 "SELECT quantity,unit_price,vat_rate FROM invoice_details WHERE invoice_id=? ORDER BY id");
             PreparedStatement update=c.prepareStatement(
-                "UPDATE invoices SET taxable_amount=?,vat=?,total=?,currency_code=? WHERE id=?");
+                "UPDATE invoices SET taxable_amount=?,vat=?,total=?,paid_amount=?,currency_code=? WHERE id=?");
             ResultSet r=drafts.executeQuery()) {
             while(r.next()) {
                 int id=r.getInt("id");double taxable=0,vat=0;int lineCount=0;
@@ -369,9 +369,11 @@ public final class DatabaseCurrency {
                     vat=convertMoney(r.getObject("vat"),rate);
                     total=convertMoney(r.getObject("total"),rate);
                 } else total=Numbers.add(taxable,vat);
+                double paidAmount = "PAID".equals(r.getString("payment_status"))
+                    ? total : convertMoney(r.getObject("paid_amount"),rate);
                 update.setDouble(1,taxable);update.setDouble(2,vat);
-                update.setDouble(3,total);update.setString(4,newCode);
-                update.setInt(5,id);update.addBatch();
+                update.setDouble(3,total);update.setDouble(4,paidAmount);
+                update.setString(5,newCode);update.setInt(6,id);update.addBatch();
             }
             update.executeBatch();
         }
