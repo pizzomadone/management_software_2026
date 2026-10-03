@@ -815,6 +815,7 @@ public final class DatabaseMigrationManager {
         // only when the full order can be covered; otherwise reclassify as Reservation.
         StockManager.reconcileReservedStock(c);
 
+        java.util.List<Integer> orderIds = new java.util.ArrayList<>();
         try (PreparedStatement orders = c.prepareStatement("""
                 SELECT id
                 FROM orders
@@ -822,52 +823,52 @@ public final class DatabaseMigrationManager {
                 ORDER BY order_date, id
                 """);
              ResultSet orderRows = orders.executeQuery()) {
+            while (orderRows.next()) orderIds.add(orderRows.getInt("id"));
+        }
 
-            while (orderRows.next()) {
-                int orderId = orderRows.getInt("id");
-                java.util.List<StockManager.StockItem> items = new java.util.ArrayList<>();
+        for (int orderId : orderIds) {
+            java.util.List<StockManager.StockItem> items = new java.util.ArrayList<>();
 
-                try (PreparedStatement details = c.prepareStatement("""
-                        SELECT od.product_id, p.name, SUM(od.quantity) AS quantity
-                        FROM order_details od
-                        JOIN products p ON p.id=od.product_id
-                        WHERE od.order_id=?
-                        GROUP BY od.product_id, p.name
-                        """)) {
-                    details.setInt(1, orderId);
-                    try (ResultSet rows = details.executeQuery()) {
-                        while (rows.next()) {
-                            items.add(new StockManager.StockItem(
-                                rows.getInt("product_id"),
-                                rows.getString("name"),
-                                rows.getInt("quantity")));
-                        }
+            try (PreparedStatement details = c.prepareStatement("""
+                    SELECT od.product_id, p.name, SUM(od.quantity) AS quantity
+                    FROM order_details od
+                    JOIN products p ON p.id=od.product_id
+                    WHERE od.order_id=?
+                    GROUP BY od.product_id, p.name
+                    """)) {
+                details.setInt(1, orderId);
+                try (ResultSet rows = details.executeQuery()) {
+                    while (rows.next()) {
+                        items.add(new StockManager.StockItem(
+                            rows.getInt("product_id"),
+                            rows.getString("name"),
+                            rows.getInt("quantity")));
                     }
                 }
-
-                if (items.isEmpty()) continue;
-
-                java.util.Map<String, StockManager.StockAvailability> insufficient =
-                    StockManager.checkStockAvailability(c, items, orderId, "ORDER");
-
-                if (!insufficient.isEmpty()) {
-                    StockManager.cancelReservation(c, "ORDER", orderId);
-                    try (PreparedStatement update = c.prepareStatement(
-                            "UPDATE orders SET status='Reservation' WHERE id=? AND status='New'")) {
-                        update.setInt(1, orderId);
-                        update.executeUpdate();
-                    }
-                } else {
-                    for (StockManager.StockItem item : items) {
-                        StockManager.createOrUpdateReservation(c, item.getProductId(),
-                            "ORDER", orderId, item.getQuantity(), "Order #" + orderId);
-                    }
-                }
-
-                // Keep the cached reserved quantity correct even when migrating a database
-                // whose reservation triggers have not yet been recreated.
-                StockManager.reconcileReservedStock(c);
             }
+
+            if (items.isEmpty()) continue;
+
+            java.util.Map<String, StockManager.StockAvailability> insufficient =
+                StockManager.checkStockAvailability(c, items, orderId, "ORDER");
+
+            if (!insufficient.isEmpty()) {
+                StockManager.cancelReservation(c, "ORDER", orderId);
+                try (PreparedStatement update = c.prepareStatement(
+                        "UPDATE orders SET status='Reservation' WHERE id=? AND status='New'")) {
+                    update.setInt(1, orderId);
+                    update.executeUpdate();
+                }
+            } else {
+                for (StockManager.StockItem item : items) {
+                    StockManager.createOrUpdateReservation(c, item.getProductId(),
+                        "ORDER", orderId, item.getQuantity(), "Order #" + orderId);
+                }
+            }
+
+            // Keep the cached reserved quantity correct even when migrating a database
+            // whose reservation triggers have not yet been recreated.
+            StockManager.reconcileReservedStock(c);
         }
     }
 
