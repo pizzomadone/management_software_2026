@@ -47,7 +47,7 @@ public class OrdersPanel extends JPanel {
         searchPanel.add(searchButton);
 
         // Orders table
-        String[] columns = {"ID", "Customer", "Date", "Status", "Total", "Payment"};
+        String[] columns = {"ID", "Customer", "Date", "Status", "Total incl. VAT", "Payment"};
         tableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -152,7 +152,12 @@ public class OrdersPanel extends JPanel {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
                 SELECT o.*, c.first_name || ' ' || c.last_name as customer_name,
-                       i.currency_code AS payment_currency_code
+                       i.currency_code AS payment_currency_code,
+                       COALESCE(i.total,
+                           (SELECT SUM(warestat_line_total(
+                               d.quantity,d.sale_unit_price_inc_vat))
+                            FROM order_details d WHERE d.order_id=o.id),
+                           o.total_ex_vat) AS total_inc_vat
                 FROM orders o
                 LEFT JOIN customers c ON o.customer_id = c.id
                 LEFT JOIN invoices i ON i.order_id = o.id
@@ -174,13 +179,12 @@ public class OrdersPanel extends JPanel {
                     }
 
                     row.add(rs.getString("status"));
-                    row.add(Numbers.moneyText(rs.getDouble("total")));
+                    row.add(Numbers.moneyText(rs.getDouble("total_inc_vat")));
 
                     // Add payment status
                     String paymentStatus = rs.getString("payment_status");
                     double paidAmount = rs.getDouble("paid_amount");
-                    double total = rs.getDouble("total");
-                    row.add(formatPaymentStatus(paymentStatus, paidAmount,
+                                        row.add(formatPaymentStatus(paymentStatus, paidAmount,
                         rs.getString("payment_currency_code")));
 
                     tableModel.addRow(row);
@@ -206,7 +210,12 @@ public class OrdersPanel extends JPanel {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
                 SELECT o.*, c.first_name || ' ' || c.last_name as customer_name,
-                       i.currency_code AS payment_currency_code
+                       i.currency_code AS payment_currency_code,
+                       COALESCE(i.total,
+                           (SELECT SUM(warestat_line_total(
+                               d.quantity,d.sale_unit_price_inc_vat))
+                            FROM order_details d WHERE d.order_id=o.id),
+                           o.total_ex_vat) AS total_inc_vat
                 FROM orders o
                 LEFT JOIN customers c ON o.customer_id = c.id
                 LEFT JOIN invoices i ON i.order_id = o.id
@@ -234,13 +243,12 @@ public class OrdersPanel extends JPanel {
                         }
 
                         row.add(rs.getString("status"));
-                        row.add(Numbers.moneyText(rs.getDouble("total")));
+                        row.add(Numbers.moneyText(rs.getDouble("total_inc_vat")));
 
                         // Add payment status
                         String paymentStatus = rs.getString("payment_status");
                         double paidAmount = rs.getDouble("paid_amount");
-                        double total = rs.getDouble("total");
-                        row.add(formatPaymentStatus(paymentStatus, paidAmount,
+                                                row.add(formatPaymentStatus(paymentStatus, paidAmount,
                         rs.getString("payment_currency_code")));
 
                         tableModel.addRow(row);
@@ -331,7 +339,7 @@ public class OrdersPanel extends JPanel {
                         rs.getString("customer_name"),
                         date,
                         rs.getString("status"),
-                        rs.getDouble("total")
+                        rs.getDouble("total_ex_vat")
                     );
 
                     // Load payment information
@@ -367,7 +375,9 @@ public class OrdersPanel extends JPanel {
                         rs.getInt("product_id"),
                         rs.getString("product_name"),
                         rs.getInt("quantity"),
-                        rs.getDouble("unit_price")
+                        rs.getDouble("sale_unit_price_ex_vat"),
+                        rs.getDouble("sale_unit_price_inc_vat"),
+                        rs.getDouble("vat_rate")
                     );
                     order.getItems().add(item);
                 }
@@ -521,7 +531,11 @@ public class OrdersPanel extends JPanel {
 
         double total;
         try (PreparedStatement p = conn.prepareStatement("""
-                SELECT COALESCE(i.total,o.total) AS payment_total
+                SELECT COALESCE(i.total,
+                           (SELECT SUM(warestat_line_total(
+                               d.quantity,d.sale_unit_price_inc_vat))
+                            FROM order_details d WHERE d.order_id=o.id),
+                           o.total_ex_vat) AS payment_total
                 FROM orders o
                 LEFT JOIN invoices i ON i.order_id=o.id
                 WHERE o.id=? AND o.status='Completed'
@@ -562,7 +576,11 @@ public class OrdersPanel extends JPanel {
         double paymentTotal;
         try (PreparedStatement p = conn.prepareStatement("""
                 SELECT o.status,o.payment_status,o.paid_amount,
-                       COALESCE(i.total,o.total) AS payment_total
+                       COALESCE(i.total,
+                           (SELECT SUM(warestat_line_total(
+                               d.quantity,d.sale_unit_price_inc_vat))
+                            FROM order_details d WHERE d.order_id=o.id),
+                           o.total_ex_vat) AS payment_total
                 FROM orders o
                 LEFT JOIN invoices i ON i.order_id=o.id
                 WHERE o.id=?
@@ -786,34 +804,23 @@ public class OrdersPanel extends JPanel {
                     .get(java.util.Calendar.YEAR);
                 String invoiceNumber = DatabaseManager.getInstance().getNextInvoiceNumber(conn, year);
 
-                // Use each product's VAT rate; fall back to the configured default only
-                // when no product rate is available.
-                Map<Integer, Double> vatRates = new HashMap<>();
-                String vatQuery = "SELECT vat_rate FROM products WHERE id = ?";
-                try (PreparedStatement vatStmt = conn.prepareStatement(vatQuery)) {
-                    for (OrderItem item : order.getItems()) {
-                        vatStmt.setInt(1, item.getProductId());
-                        try (ResultSet vatRs = vatStmt.executeQuery()) {
-                            double rate = SettingsPanel.getDefaultVatRate();
-                            if (vatRs.next()) {
-                                double productRate = vatRs.getDouble("vat_rate");
-                                if (!vatRs.wasNull()) rate = productRate;
-                            }
-                            vatRates.put(item.getProductId(), rate);
-                        }
-                    }
-                }
+                // Customer orders snapshot both VAT rate and gross/net sale prices,
+                // so invoicing never depends on later product changes.
                 double taxableAmount = 0.0;
                 double vatTotal = 0.0;
+                double total = 0.0;
 
                 for (OrderItem item : order.getItems()) {
-                    double itemTaxable = Numbers.lineTotal(item.getQuantity(), item.getUnitPrice());
-                    double itemVat = Numbers.tax(itemTaxable, Numbers.vat(vatRates.get(item.getProductId())));
+                    double itemTaxable = item.getTotalExVat();
+                    double itemGross = item.getTotalIncVat();
+                    double itemVat = Numbers.money(java.math.BigDecimal.valueOf(itemGross)
+                        .subtract(java.math.BigDecimal.valueOf(itemTaxable)));
                     taxableAmount = Numbers.add(taxableAmount,itemTaxable);
                     vatTotal = Numbers.add(vatTotal,itemVat);
+                    total = Numbers.add(total,itemGross);
                 }
 
-                double total = Numbers.add(taxableAmount,vatTotal);
+
 
                 // Insert invoice
                 String insertInvoice = """
@@ -840,21 +847,23 @@ public class OrdersPanel extends JPanel {
 
                 // Insert invoice details
                 String insertDetails = """
-                    INSERT INTO invoice_details (invoice_id, product_id, quantity, unit_price, vat_rate, total)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO invoice_details
+                        (invoice_id, product_id, quantity, sale_unit_price_ex_vat,
+                         sale_unit_price_inc_vat, vat_rate, total)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                 """;
 
                 try (PreparedStatement pstmt = conn.prepareStatement(insertDetails)) {
                     for (OrderItem item : order.getItems()) {
-                        double itemTaxable = Numbers.lineTotal(item.getQuantity(), item.getUnitPrice());
-                        double vatRate = vatRates.get(item.getProductId());
+                        double itemTaxable = item.getTotalExVat();
 
                         pstmt.setInt(1, invoiceId);
                         pstmt.setInt(2, item.getProductId());
                         pstmt.setInt(3, item.getQuantity());
-                        pstmt.setDouble(4, item.getUnitPrice());
-                        pstmt.setDouble(5, vatRate);
-                        pstmt.setDouble(6, itemTaxable);
+                        pstmt.setDouble(4, item.getUnitPriceExVat());
+                        pstmt.setDouble(5, item.getUnitPriceIncVat());
+                        pstmt.setDouble(6, item.getVatRate());
+                        pstmt.setDouble(7, itemTaxable);
                         pstmt.addBatch();
                     }
                     pstmt.executeBatch();
