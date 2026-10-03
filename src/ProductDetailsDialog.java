@@ -145,17 +145,17 @@ public final class ProductDetailsDialog extends JDialog {
         return null;
     }
 
-    private void showPurchaseCostHelp() {
-        String message = I18n.tr(
+    private String purchaseCostHelpTooltip() {
+        return "<html><div style='width: 390px'>"
+            + I18n.tr(
                 "Preferred supplier cost is the current purchase cost saved for the preferred supplier. In Product Details it is read-only.")
-            + "\n\n" + I18n.tr(
+            + "<br><br>" + I18n.tr(
                 "When a supplier order is received, its actual unit purchase price becomes the FIFO lot cost and updates that supplier's current cost.")
-            + "\n\n" + I18n.tr(
+            + "<br><br>" + I18n.tr(
                 "Last purchase cost is the unit cost of the most recently received supplier purchase. It is updated automatically and cannot be edited here.")
-            + "\n\n" + I18n.tr(
-                "Historical FIFO lots and completed sales keep the costs recorded when they were created.");
-        Dialogs.showMessageDialog(this, message, I18n.tr("Purchase Cost Help"),
-            JOptionPane.INFORMATION_MESSAGE);
+            + "<br><br>" + I18n.tr(
+                "Historical FIFO lots and completed sales keep the costs recorded when they were created.")
+            + "</div></html>";
     }
 
     private void addPreferredSupplierCostLine(JPanel panel, GridBagConstraints g,
@@ -191,15 +191,8 @@ public final class ProductDetailsDialog extends JDialog {
         g.gridy++;
     }
 
-    private JButton purchaseCostHelpButton() {
-        JButton help = new JButton("?");
-        help.putClientProperty("i18n.literal", true);
-        help.setFont(help.getFont().deriveFont(Font.BOLD));
-        help.setMargin(new Insets(0, 6, 0, 6));
-        help.setFocusable(false);
-        help.setToolTipText(I18n.tr("Click for help"));
-        help.addActionListener(e -> showPurchaseCostHelp());
-        return help;
+    private JLabel purchaseCostHelpButton() {
+        return Dialogs.clickHelpLabel(purchaseCostHelpTooltip());
     }
 
     private void addCostLine(JPanel panel, GridBagConstraints g, String label,
