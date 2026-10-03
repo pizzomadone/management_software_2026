@@ -20,10 +20,16 @@ public class ProductSelectionDialog extends JDialog {
     private int selectedQuantity = 1;
     private double selectedVatRate = 22.0;
     private Timer searchTimer;
-    
+    private final boolean activeOnly;
+
     public ProductSelectionDialog(JDialog parent) {
+        this(parent, true);
+    }
+
+    public ProductSelectionDialog(JDialog parent, boolean activeOnly) {
         super(parent, "Select Product", true);
-        
+        this.activeOnly = activeOnly;
+
         setupWindow();
         initComponents();
         loadAllProducts();
@@ -250,6 +256,7 @@ public class ProductSelectionDialog extends JDialog {
             String query = """
                 SELECT id, code, name, description, sale_price_inc_vat, quantity
                 FROM products
+                """ + (activeOnly ? "WHERE active=1\n" : "") + """
                 ORDER BY name
                 LIMIT 1000
             """;
@@ -281,9 +288,10 @@ public class ProductSelectionDialog extends JDialog {
             String query = """
                 SELECT id, code, name, description, sale_price_inc_vat, quantity
                 FROM products
-                WHERE LOWER(code) LIKE LOWER(?)
+                WHERE """ + (activeOnly ? "active=1 AND " : "") + """
+                      (LOWER(code) LIKE LOWER(?)
                    OR LOWER(name) LIKE LOWER(?)
-                   OR LOWER(description) LIKE LOWER(?)
+                   OR LOWER(description) LIKE LOWER(?))
                 ORDER BY
                     CASE
                         WHEN LOWER(code) LIKE LOWER(?) THEN 1
