@@ -165,7 +165,12 @@ public class ProductSuppliersDialog extends JDialog {
         JPanel form=new JPanel(new GridLayout(0,2,6,6));
         form.add(new JLabel(I18n.tr("Supplier")));form.add(new JLabel(supplier.getCompanyName()));
         form.add(new JLabel(I18n.tr("Supplier Product Code (optional)")));form.add(code);
-        form.add(new JLabel("Purchase Price *"));form.add(price);
+        JPanel pricePanel=new JPanel(new FlowLayout(FlowLayout.LEFT,5,0));
+        pricePanel.add(price);
+        JLabel currency=new JLabel(SettingsPanel.getCurrencyCode());
+        currency.setToolTipText(SettingsPanel.getCurrency());
+        pricePanel.add(currency);
+        form.add(new JLabel("Purchase Price *"));form.add(pricePanel);
         form.add(new JLabel(I18n.tr("Preferred")));form.add(preferred);
         form.add(new JLabel(I18n.tr("Notes")));form.add(new JScrollPane(notes));
 
@@ -189,6 +194,8 @@ public class ProductSuppliersDialog extends JDialog {
                 JOptionPane.OK_CANCEL_OPTION,JOptionPane.PLAIN_MESSAGE)!=JOptionPane.OK_OPTION)return;
         try{
             double purchasePrice=Numbers.nonNegative(price.getText());
+            if(purchasePrice<=0)
+                throw new IllegalArgumentException(I18n.tr("Purchase price must be greater than zero"));
             Connection c=DatabaseManager.getInstance().getConnection();DatabaseManager.beginTransaction(c);
             try{
                 boolean wasPreferred = relationId != null && isPreferredRelation(c, relationId);
