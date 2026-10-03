@@ -23,6 +23,9 @@ public class OrderDialog extends JDialog {
     private JTextField paidAmountField;
     private JLabel paidAmountLabel;
     private JPanel paymentPanel;
+    private JButton newCustomerButton;
+    private JButton addItemButton;
+    private JButton removeItemButton;
     private JTable itemsTable;
     private DefaultTableModel itemsTableModel;
     private JLabel totalLabel;
@@ -49,6 +52,7 @@ public class OrderDialog extends JDialog {
         if (order != null) {
             loadOrderData();
         }
+        configureEditability();
     }
     
     // Constructor for JDialog parent
@@ -64,6 +68,7 @@ public class OrderDialog extends JDialog {
         if (order != null) {
             loadOrderData();
         }
+        configureEditability();
     }
     
     @Override
@@ -104,7 +109,7 @@ public class OrderDialog extends JDialog {
         orderPanel.add(selectCustomerButton, gbc);
         
         gbc.gridx = 3; gbc.gridwidth = 1;
-        JButton newCustomerButton = new JButton("New Customer");
+        newCustomerButton = new JButton("New Customer");
         newCustomerButton.addActionListener(e -> createNewCustomer());
         orderPanel.add(newCustomerButton, gbc);
         
@@ -153,7 +158,7 @@ public class OrderDialog extends JDialog {
         itemsTableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
-                return column == 2; // Only quantity is editable
+                return column == 2 && !isProtectedHistoricalOrder(); // Only quantity is editable
             }
         };
         itemsTable = new JTable(itemsTableModel);
@@ -191,8 +196,8 @@ public class OrderDialog extends JDialog {
         
         // Panel for table buttons
         JPanel tableButtonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        JButton addItemButton = new JButton("Add Product");
-        JButton removeItemButton = new JButton("Remove Product");
+        addItemButton = new JButton("Add Product");
+        removeItemButton = new JButton("Remove Product");
         
         addItemButton.addActionListener(e -> showProductSelectionDialog());
         removeItemButton.addActionListener(e -> removeSelectedProduct());
@@ -234,6 +239,37 @@ public class OrderDialog extends JDialog {
         add(mainPanel);
     }
     
+    private boolean isCompletedPaymentOnly() {
+        return order != null && "Completed".equals(order.getStatus());
+    }
+
+    private boolean isReversedOrder() {
+        return order != null && "Reversed".equals(order.getStatus());
+    }
+
+    private boolean isProtectedHistoricalOrder() {
+        return isCompletedPaymentOnly() || isReversedOrder();
+    }
+
+    private void configureEditability() {
+        if (!isProtectedHistoricalOrder()) return;
+
+        selectCustomerButton.setEnabled(false);
+        newCustomerButton.setEnabled(false);
+        dateField.setEnabled(false);
+        statusCombo.setEnabled(false);
+        addItemButton.setEnabled(false);
+        removeItemButton.setEnabled(false);
+
+        boolean paymentEditable = isCompletedPaymentOnly();
+        paymentStatusCombo.setEnabled(paymentEditable);
+        if (paymentEditable) {
+            updatePaymentAmountField();
+        } else {
+            paidAmountField.setEnabled(false);
+        }
+    }
+
     private void showCustomerSelectionDialog() {
         CustomerSelectionDialog dialog = new CustomerSelectionDialog(this);
         dialog.setVisible(true);
@@ -509,13 +545,54 @@ public class OrderDialog extends JDialog {
         updateTotals();
     }
 
+    private void saveCompletedPaymentOnly() {
+        Connection conn = null;
+        try {
+            String selected = String.valueOf(paymentStatusCombo.getSelectedItem());
+            String paymentCode;
+            double paidAmount = 0.0;
+
+            if ("Paid".equals(selected)) {
+                paymentCode = "PAID";
+            } else if ("Partially Paid".equals(selected)) {
+                paymentCode = "PARTIALLY_PAID";
+                paidAmount = Numbers.money(Numbers.decimal(paidAmountField.getText()));
+            } else {
+                paymentCode = "NOT_PAID";
+            }
+
+            conn = DatabaseManager.getInstance().getConnection();
+            DatabaseManager.beginTransaction(conn);
+            try {
+                OrdersPanel.updateCompletedOrderPayment(conn, order.getId(), paymentCode, paidAmount);
+                conn.commit();
+            } catch (Exception e) {
+                conn.rollback();
+                throw e;
+            } finally {
+                conn.setAutoCommit(true);
+            }
+
+            orderSaved = true;
+            dispose();
+        } catch (Exception e) {
+            e.printStackTrace();
+            Dialogs.showMessageDialog(this,
+                I18n.tr("Error while updating payment") + ": " + e.getMessage(),
+                I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
     private void saveOrder() {
         try {
-            if (order != null &&
-                    ("Completed".equals(order.getStatus()) || "Reversed".equals(order.getStatus()))) {
+            if (isReversedOrder()) {
                 Dialogs.showMessageDialog(this,
-                    I18n.tr("Completed or reversed sales cannot be modified. Use the reversal function for a completed sale so FIFO history is preserved."),
+                    I18n.tr("This sale has already been reversed and is kept as historical data."),
                     I18n.tr("Historical Sale"), JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            if (isCompletedPaymentOnly()) {
+                saveCompletedPaymentOnly();
                 return;
             }
             validateRows();
