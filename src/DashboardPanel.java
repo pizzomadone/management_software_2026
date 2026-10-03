@@ -514,7 +514,6 @@ public class DashboardPanel extends JPanel {
                 FROM products p
                 LEFT JOIN product_suppliers ps
                   ON ps.product_id=p.id AND ps.is_preferred=1
-                WHERE p.active=1
                 """;
             try (Statement stmt = conn.createStatement();
                  ResultSet rs = stmt.executeQuery(warehouseQuery)) {
@@ -915,7 +914,6 @@ public class DashboardPanel extends JPanel {
                 FROM products p
                 LEFT JOIN order_details od ON p.id = od.product_id
                 LEFT JOIN orders o ON od.order_id = o.id AND o.status = 'Completed'
-                WHERE p.active = 1
                 GROUP BY p.id, p.name
                 ORDER BY revenue DESC
             """;
