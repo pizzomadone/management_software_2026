@@ -109,7 +109,11 @@ public class RegressionTest {
     static ID invoice()throws Exception{
         ID d=empty(ID.class);put(d,"selectedCustomer",customer());put(d,"numberField",new JTextField(""));
         put(d,"dateField",new DatePickerField(today()));put(d,"dateFormat",new SimpleDateFormat("dd/MM/yyyy"));
-        put(d,"statusCombo",new JComboBox<>(new String[]{"Issued"}));put(d,"productsCache",new HashMap<Integer,Product>());
+        put(d,"statusCombo",new JComboBox<>(new String[]{"Issued"}));
+        put(d,"paymentStatusCombo",new JComboBox<>(new String[]{"Not Paid"}));
+        put(d,"paidAmountLabel",new JLabel("Paid Amount:"));
+        put(d,"paidAmountField",new JTextField("0.00"));
+        put(d,"productsCache",new HashMap<Integer,Product>());
         DefaultTableModel m=new DefaultTableModel(new Object[][]{{"A","Product A",3,"10.00","22.00","30.00"}},new String[]{"Code","Name","Qty","Price","VAT","Total"});
         put(d,"itemsTableModel",m);put(d,"itemsTable",new JTable(m));
         put(d,"taxableAmountLabel",new JLabel());put(d,"vatLabel",new JLabel());put(d,"totalLabel",new JLabel());put(d,"currentTaxableAmount",30.0);put(d,"currentVat",6.6);put(d,"currentTotal",36.6);return d;
@@ -130,6 +134,24 @@ public class RegressionTest {
             fresh(); completed();
             for(int i=0;i<3;i++) { rejectedSave(order(true,3,"Completed"),"saveOrder","orderSaved"); require(qty()==7,"Repeated stock decrement"); }
             require("1".equals(value("SELECT COUNT(*) FROM warehouse_movements")),"Duplicated movement");
+        });
+        test("completed order payment updates never touch stock or FIFO", () -> {
+            fresh();completed();
+            String before=value("SELECT quantity||'|'||reserved_quantity FROM products WHERE id=1")
+                +"|"+value("SELECT COUNT(*) FROM warehouse_movements")
+                +"|"+value("SELECT COUNT(*) FROM inventory_lot_consumptions");
+            OrdersPanel.updateCompletedOrderPayment(db,1,"PARTIALLY_PAID",10);
+            require("PARTIALLY_PAID|10.0".equals(
+                value("SELECT payment_status||'|'||paid_amount FROM orders WHERE id=1")),
+                "Partial payment was not saved");
+            require(before.equals(value("SELECT quantity||'|'||reserved_quantity FROM products WHERE id=1")
+                +"|"+value("SELECT COUNT(*) FROM warehouse_movements")
+                +"|"+value("SELECT COUNT(*) FROM inventory_lot_consumptions")),
+                "Payment update changed stock or FIFO");
+            OrdersPanel.updateCompletedOrderPayment(db,1,"PAID",0);
+            require("PAID|30.0".equals(
+                value("SELECT payment_status||'|'||paid_amount FROM orders WHERE id=1")),
+                "Paid order did not use its full total");
         });
         test("completed sale rejects rewriting and reverses with preserved history", () -> {
             fresh(); completed(); rejectedSave(order(true,5,"Cancelled"),"saveOrder","orderSaved");
