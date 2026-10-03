@@ -676,10 +676,9 @@ public class InvoiceDialog extends JDialog {
     }
 
     private double paymentTargetTotal() {
-        if (invoice == null && createCompletedOrderCheckBox != null
-                && createCompletedOrderCheckBox.isSelected()) {
-            return currentTaxableAmount;
-        }
+        // Payment refers to the customer's actual amount due. For an invoice this is
+        // the gross document total, including VAT, even when a linked order stores a
+        // net commercial total.
         return currentTotal;
     }
 
@@ -1025,8 +1024,7 @@ public class InvoiceDialog extends JDialog {
             String paymentStatus = paymentStatusCode();
             double paidAmount;
             try {
-                paidAmount = paymentAmountForSave(
-                    createCompletedOrder ? currentTaxableAmount : currentTotal);
+                paidAmount = paymentAmountForSave(currentTotal);
             } catch (IllegalArgumentException e) {
                 Dialogs.showMessageDialog(this, e.getMessage(),
                     I18n.tr("Invalid Payment"), JOptionPane.WARNING_MESSAGE);
