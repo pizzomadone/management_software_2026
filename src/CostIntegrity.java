@@ -54,7 +54,8 @@ public final class CostIntegrity {
                 FROM products p
                 LEFT JOIN product_suppliers ps
                   ON ps.product_id=p.id AND ps.is_preferred=1
-                WHERE ps.purchase_price IS NULL OR ps.purchase_price<=0
+                WHERE (p.active=1 OR p.quantity>0)
+                  AND (ps.purchase_price IS NULL OR ps.purchase_price<=0)
                 """);
              ResultSet r = p.executeQuery()) {
             if (r.next()) products = r.getInt(1);
