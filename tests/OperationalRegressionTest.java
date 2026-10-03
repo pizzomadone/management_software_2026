@@ -35,20 +35,31 @@ public class OperationalRegressionTest extends RegressionTest {
             fresh();StockManager.createOrUpdateReservation(db,1,"ORDER",77,8,"");sql("UPDATE products SET reserved_quantity=0 WHERE id=1");call(DatabaseManager.getInstance(),"createTables");
             require("8".equals(value("SELECT reserved_quantity FROM products WHERE id=1")),"Active reservations were lost from availability after startup");
         });
-        test("migration releases legacy stock reservations from new orders",()->{
+        test("migration classifies legacy new orders by full availability",()->{
             fresh();
-            sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat) VALUES(77,1,0,'New',80,80)");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat) VALUES" +
+                "(77,1,1000,'New',80,80),(78,1,2000,'New',50,50)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate) VALUES" +
+                "(77,1,8,10,10,0),(78,1,5,10,10,0)");
             StockManager.createOrUpdateReservation(db,1,"ORDER",77,8,"legacy new order");
-            require("8".equals(value("SELECT reserved_quantity FROM products WHERE id=1")),
-                "Legacy fixture did not reserve stock");
-            sql("DELETE FROM schema_migrations WHERE version='018'");
+            StockManager.createOrUpdateReservation(db,1,"ORDER",78,5,"legacy overbooked order");
+            require("13".equals(value("SELECT reserved_quantity FROM products WHERE id=1")),
+                "Legacy overbooked fixture was not created");
+            sql("DELETE FROM schema_migrations WHERE version IN ('018','019')");
             DatabaseMigrationManager.migrate(db);
             StockManager.reconcileReservedStock(db);
-            require("CANCELLED".equals(value(
+            require("New".equals(value("SELECT status FROM orders WHERE id=77")),
+                "Fully covered legacy New order was not preserved");
+            require("Reservation".equals(value("SELECT status FROM orders WHERE id=78")),
+                "Uncovered legacy New order was not converted to Reservation");
+            require("8".equals(value("SELECT reserved_quantity FROM products WHERE id=1")),
+                "Migration did not rebuild only the fully covered reservation");
+            require("ACTIVE".equals(value(
                 "SELECT status FROM stock_reservations WHERE document_type='ORDER' AND document_id=77")),
-                "Migration did not release legacy New reservation");
-            require("0".equals(value("SELECT reserved_quantity FROM products WHERE id=1")),
-                "Legacy New reservation still blocks available stock");
+                "Covered legacy New order has no active reservation");
+            require("0".equals(value(
+                "SELECT COUNT(*) FROM stock_reservations WHERE document_type='ORDER' AND document_id=78 AND status='ACTIVE'")),
+                "Reservation order still blocks warehouse stock");
         });
         test("manual outward availability honors reservations and edit reversal",()->{
             fresh();StockManager.createOrUpdateReservation(db,1,"ORDER",77,8,"");WarehouseMovementDialog d=empty(WarehouseMovementDialog.class);put(d,"movement",null);
@@ -286,11 +297,11 @@ public class OperationalRegressionTest extends RegressionTest {
             sql("UPDATE products SET quantity=-2 WHERE id=2");
             sql("INSERT INTO products(code,name,quantity,sale_price_ex_vat,sale_price_inc_vat,vat_rate,active) VALUES('ZERO','Empty',0,10,10,0,1),('LOW','Low',5,10,10,0,1),('HIDDEN','Hidden',0,10,10,0,0)");
             sql("INSERT INTO minimum_stock(product_id,minimum_quantity,reorder_quantity) VALUES(1,3,0),(4,10,0),(5,10,0)");
-            sql("INSERT INTO orders(customer_id,order_date,status,total_ex_vat,total_inc_vat) VALUES(1,'2000-01-01','In Progress',0,0),(1,'2000-01-01','Completed',0,0),(1,'2000-01-01','Cancelled',0,0)");
+            sql("INSERT INTO orders(customer_id,order_date,status,total_ex_vat,total_inc_vat) VALUES(1,'2000-01-01','Reservation',0,0),(1,'2000-01-01','In Progress',0,0),(1,'2000-01-01','Completed',0,0),(1,'2000-01-01','Cancelled',0,0)");
             DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
-            require(kpi(dash,"lowStockCountLabel").equals("1"),"New commercial reservation incorrectly reduced available stock or low-stock rules changed");
+            require(kpi(dash,"lowStockCountLabel").equals("2"),"New order did not reserve stock or low-stock rules changed");
             require(kpi(dash,"zeroStockLabel").equals("2"),"Out of stock omitted a negative balance or included inactive products");
-            require(kpi(dash,"pendingOrdersLabel").equals("2"),"Pending orders used the monthly filter or included closed documents");
+            require(kpi(dash,"pendingOrdersLabel").equals("3"),"Reservation/New/In Progress pending orders were not counted correctly");
             require(kpi(dash,"warehouseValueLabel").equals(SettingsPanel.formatCurrency(50)+" *") && kpi(dash,"warehouseSaleValueLabel").equals(SettingsPanel.formatCurrency(150)),"Reservations reduced physical stock value");
             WarehouseReportPanel report=new WarehouseReportPanel();DefaultTableModel rows=(DefaultTableModel)get(report,"productsModel");
             int outOfStock=0;for(int row=0;row<rows.getRowCount();row++)if(rows.getValueAt(row,7).equals("OUT OF STOCK"))outOfStock++;
