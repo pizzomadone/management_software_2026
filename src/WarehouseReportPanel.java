@@ -54,8 +54,8 @@ public class WarehouseReportPanel extends JPanel {
         statsPanel.setBorder(BorderFactory.createTitledBorder("General Statistics"));
 
         JLabel totalProductsLabel = new JLabel("Total Products: 0");
-        JLabel totalValueLabel = new JLabel("Stock at last purchase cost: " + SettingsPanel.formatCurrency(0));
-        totalValueLabel.setToolTipText("Only active products with positive physical stock are valued at their current purchase cost. Reserved units remain included.");
+        JLabel totalValueLabel = new JLabel("Stock at preferred supplier cost: " + SettingsPanel.formatCurrency(0));
+        totalValueLabel.setToolTipText("Only active products with positive physical stock are valued at the current preferred supplier cost. Reserved units remain included.");
         JLabel lowStockLabel = new JLabel("Low Stock Products: 0");
         JLabel outOfStockLabel = new JLabel("Out of Stock Products: 0");
 
@@ -65,7 +65,7 @@ public class WarehouseReportPanel extends JPanel {
         statsPanel.add(outOfStockLabel);
 
         // Products Table
-        String[] columns = {"Code", "Product", "Physical", "Reserved", "Available", "Last Purchase Cost", "Stock at last purchase cost", "Status"};
+        String[] columns = {"Code", "Product", "Physical", "Reserved", "Available", "Preferred Supplier Cost", "Stock at preferred supplier cost", "Status"};
         productsModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -192,9 +192,12 @@ public class WarehouseReportPanel extends JPanel {
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
-                SELECT p.*, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity
+                SELECT p.*, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity,
+                       ps.purchase_price AS preferred_supplier_cost
                 FROM products p
                 LEFT JOIN minimum_stock sm ON sm.product_id = p.id
+                LEFT JOIN product_suppliers ps
+                  ON ps.product_id=p.id AND ps.is_preferred=1
                 WHERE p.active=1
                 ORDER BY p.name
             """;
@@ -214,7 +217,7 @@ public class WarehouseReportPanel extends JPanel {
                     int physicalStock = Numbers.quantity(rs.getObject("quantity"));
                     int reservedStock = Numbers.quantity(rs.getObject("reserved_quantity"));
                     long availableStock = (long) physicalStock - reservedStock;
-                    double price = Numbers.nonNegative(rs.getObject("acquisition_cost"));
+                    double price = Numbers.nonNegative(rs.getObject("preferred_supplier_cost"));
                     double totalValueProduct = Numbers.stockValue(physicalStock, price);
                     int minQuantity = rs.getInt("minimum_quantity");
 
@@ -265,7 +268,7 @@ public class WarehouseReportPanel extends JPanel {
 
             if (statsPanel.getComponentCount() >= 4) {
                 updateLocalizedStatistic((JLabel) statsPanel.getComponent(0), "Total Products", totalProducts);
-                updateLocalizedStatistic((JLabel) statsPanel.getComponent(1), "Stock at last purchase cost",
+                updateLocalizedStatistic((JLabel) statsPanel.getComponent(1), "Stock at preferred supplier cost",
                     SettingsPanel.formatCurrency(totalValue));
                 updateLocalizedStatistic((JLabel) statsPanel.getComponent(2), "Low Stock Products", lowStock);
                 updateLocalizedStatistic((JLabel) statsPanel.getComponent(3), "Out of Stock Products", outOfStock);
