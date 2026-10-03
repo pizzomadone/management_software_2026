@@ -61,6 +61,18 @@ public class OperationalRegressionTest extends RegressionTest {
             call(productEditor(15),"saveProduct");require("1".equals(value("SELECT COUNT(*) FROM warehouse_movements")),"Unchanged save duplicated adjustment");
             call(productEditor(8),"saveProduct");require("7".equals(value("SELECT quantity FROM warehouse_movements ORDER BY id DESC LIMIT 1")),"Updated count used stale product quantity");
         });
+        test("edited product selection can be restored after table refresh",()->{
+            fresh();
+            ProductsPanel panel=new ProductsPanel();
+            JTable table=(JTable)get(panel,"productsTable");
+            call(panel,"selectProductById",new Class<?>[]{int.class},1);
+            int viewRow=table.getSelectedRow();
+            require(viewRow>=0,"Edited product was not reselected");
+            int modelRow=table.convertRowIndexToModel(viewRow);
+            DefaultTableModel model=(DefaultTableModel)table.getModel();
+            require(((Number)model.getValueAt(modelRow,0)).intValue()==1,
+                "Wrong product remained selected after refresh");
+        });
         test("product pricing UI shows currency and product save preserves supplier reference price",()->{
             PD ui=empty(PD.class);
             JPanel priceWithCurrency=(JPanel)call(ui,"withCurrencyUnit",
