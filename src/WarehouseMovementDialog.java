@@ -430,7 +430,7 @@ public class WarehouseMovementDialog extends JDialog {
                         rs.getString("code"),
                         rs.getString("name"),
                         rs.getString("description"),
-                        rs.getDouble("price"),
+                        rs.getDouble("sale_price_inc_vat"),
                         rs.getInt("quantity")
                     );
                 }
