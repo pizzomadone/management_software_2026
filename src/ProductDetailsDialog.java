@@ -71,14 +71,11 @@ public final class ProductDetailsDialog extends JDialog {
         addLine(details, g, "Quantity", String.valueOf(product.getQuantity()));
         addLine(details, g, "Price", SettingsPanel.formatCurrency(product.getPrice()));
 
-        Double preferredSupplierCost = loadPreferredSupplierCost(product.getId());
-        addCostLine(details, g, "Preferred Supplier Cost",
-            preferredSupplierCost == null ? null : SettingsPanel.formatUnitCurrency(preferredSupplierCost),
-            true);
+        addPreferredSupplierCostLine(details, g, product);
         addCostLine(details, g, "Last Purchase Cost",
             product.getAcquisitionCost() > 0
                 ? SettingsPanel.formatUnitCurrency(product.getAcquisitionCost()) : null,
-            false);
+            true);
 
         addLine(details, g, "Minimum Quantity", String.valueOf(product.getMinimumQuantity()));
         addLine(details, g, "Preferred Supplier", product.getSupplierName());
@@ -148,6 +145,24 @@ public final class ProductDetailsDialog extends JDialog {
         return null;
     }
 
+    private Integer loadPreferredSupplierRelationId(int productId) {
+        try {
+            Connection c = DatabaseManager.getInstance().getConnection();
+            try (PreparedStatement p = c.prepareStatement("""
+                    SELECT id
+                    FROM product_suppliers
+                    WHERE product_id=? AND is_preferred=1
+                    LIMIT 1
+                    """)) {
+                p.setInt(1, productId);
+                try (ResultSet r = p.executeQuery()) {
+                    if (r.next()) return r.getInt(1);
+                }
+            }
+        } catch (SQLException ignored) {}
+        return null;
+    }
+
     private void showPurchaseCostHelp() {
         String message = I18n.tr(
                 "Preferred supplier cost is the current purchase cost saved for the preferred supplier. Click the value to edit it.")
@@ -159,6 +174,65 @@ public final class ProductDetailsDialog extends JDialog {
                 "Historical FIFO lots and completed sales keep the costs recorded when they were created.");
         Dialogs.showMessageDialog(this, message, I18n.tr("Purchase Cost Help"),
             JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private void addPreferredSupplierCostLine(JPanel panel, GridBagConstraints g,
+            Product product) {
+        g.gridx = 0;
+        g.weightx = 0;
+        g.weighty = 0;
+        g.fill = GridBagConstraints.NONE;
+        g.anchor = GridBagConstraints.NORTHWEST;
+
+        JLabel l = new JLabel("Preferred Supplier Cost:");
+        l.setFont(l.getFont().deriveFont(Font.BOLD));
+        panel.add(l, g);
+
+        g.gridx = 1;
+        g.weightx = 1;
+        g.fill = GridBagConstraints.HORIZONTAL;
+
+        Double cost = loadPreferredSupplierCost(product.getId());
+        Integer relationId = loadPreferredSupplierRelationId(product.getId());
+        JButton value = new JButton(cost == null
+            ? I18n.tr("Not set") : SettingsPanel.formatUnitCurrency(cost));
+        value.putClientProperty("i18n.literal", true);
+        value.setBorderPainted(false);
+        value.setContentAreaFilled(false);
+        value.setFocusPainted(false);
+        value.setHorizontalAlignment(SwingConstants.LEFT);
+        value.setMargin(new Insets(0, 0, 0, 0));
+        value.setEnabled(relationId != null);
+        if (relationId != null) {
+            value.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            value.setToolTipText(I18n.tr("Click to edit the preferred supplier cost."));
+            value.addActionListener(e -> {
+                new ProductSuppliersDialog(this, product.getId(), product.getName(), relationId)
+                    .setVisible(true);
+                Double refreshed = loadPreferredSupplierCost(product.getId());
+                value.setText(refreshed == null
+                    ? I18n.tr("Not set") : SettingsPanel.formatUnitCurrency(refreshed));
+            });
+        }
+        panel.add(value, g);
+
+        g.gridx = 2;
+        g.weightx = 0;
+        g.fill = GridBagConstraints.NONE;
+        panel.add(purchaseCostHelpButton(), g);
+
+        g.gridy++;
+    }
+
+    private JButton purchaseCostHelpButton() {
+        JButton help = new JButton("?");
+        help.putClientProperty("i18n.literal", true);
+        help.setFont(help.getFont().deriveFont(Font.BOLD));
+        help.setMargin(new Insets(0, 6, 0, 6));
+        help.setFocusable(false);
+        help.setToolTipText(I18n.tr("Click for help"));
+        help.addActionListener(e -> showPurchaseCostHelp());
+        return help;
     }
 
     private void addCostLine(JPanel panel, GridBagConstraints g, String label,
@@ -189,14 +263,7 @@ public final class ProductDetailsDialog extends JDialog {
             g.gridx = 2;
             g.weightx = 0;
             g.fill = GridBagConstraints.NONE;
-            JButton help = new JButton("?");
-            help.putClientProperty("i18n.literal", true);
-            help.setFont(help.getFont().deriveFont(Font.BOLD));
-            help.setMargin(new Insets(0, 6, 0, 6));
-            help.setFocusable(false);
-            help.setToolTipText(I18n.tr("Click for help"));
-            help.addActionListener(e -> showPurchaseCostHelp());
-            panel.add(help, g);
+            panel.add(purchaseCostHelpButton(), g);
         }
 
         g.fill = GridBagConstraints.NONE;
