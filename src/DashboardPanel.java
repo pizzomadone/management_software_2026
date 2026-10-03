@@ -623,7 +623,7 @@ public class DashboardPanel extends JPanel {
 
     private String monthlyInvoiceSummary(Connection conn,String start,String end) throws SQLException {
         java.util.LinkedHashMap<String,Double> totals=new java.util.LinkedHashMap<>();
-        String query="SELECT currency_code,taxable_amount FROM invoices WHERE status IN ('Issued','Paid') AND " +
+        String query="SELECT currency_code,taxable_amount FROM invoices WHERE status='Issued' AND " +
             DateUtils.sqlDate("date") + ">=? AND " + DateUtils.sqlDate("date") + "<? ORDER BY currency_code,id";
         try(PreparedStatement stmt=conn.prepareStatement(query)) {
             stmt.setString(1,start);stmt.setString(2,end);
