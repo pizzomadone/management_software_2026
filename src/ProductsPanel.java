@@ -851,7 +851,26 @@ public class ProductsPanel extends JPanel {
         
         dialog.setVisible(true);
         if (dialog.isProductSaved()) {
+            Integer productIdToReselect = product != null ? product.getId() : null;
             loadProducts();
+            if (productIdToReselect != null) {
+                selectProductById(productIdToReselect);
+            }
+        }
+    }
+
+    private void selectProductById(int productId) {
+        for (int modelRow = 0; modelRow < tableModel.getRowCount(); modelRow++) {
+            Object value = tableModel.getValueAt(modelRow, 0);
+            if (value instanceof Number number && number.intValue() == productId) {
+                int viewRow = productsTable.convertRowIndexToView(modelRow);
+                if (viewRow >= 0) {
+                    productsTable.setRowSelectionInterval(viewRow, viewRow);
+                    Rectangle rect = productsTable.getCellRect(viewRow, 0, true);
+                    productsTable.scrollRectToVisible(rect);
+                }
+                return;
+            }
         }
     }
     
