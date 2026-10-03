@@ -73,6 +73,22 @@ public class OperationalRegressionTest extends RegressionTest {
             require(((Number)model.getValueAt(modelRow,0)).intValue()==1,
                 "Wrong product remained selected after refresh");
         });
+        test("edited supplier order selection can be restored after refresh",()->{
+            fresh();
+            sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,status,total,notes) VALUES(41,1,'PO-41','2026-10-03','Draft',10,'')");
+            sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,status,total,notes) VALUES(42,1,'PO-42','2026-10-04','Draft',20,'')");
+            SupplierOrdersPanel panel=new SupplierOrdersPanel();
+            JTable table=(JTable)get(panel,"table");
+            ((javax.swing.table.TableRowSorter<?>)table.getRowSorter()).toggleSortOrder(1);
+            call(panel,"loadOrders");
+            call(panel,"selectOrderById",new Class<?>[]{int.class},41);
+            int viewRow=table.getSelectedRow();
+            require(viewRow>=0,"Edited supplier order was not reselected");
+            int modelRow=table.convertRowIndexToModel(viewRow);
+            DefaultTableModel model=(DefaultTableModel)table.getModel();
+            require(((Number)model.getValueAt(modelRow,0)).intValue()==41,
+                "Wrong supplier order remained selected after refresh");
+        });
         test("product pricing UI shows currency and product save preserves supplier reference price",()->{
             PD ui=empty(PD.class);
             JPanel priceWithCurrency=(JPanel)call(ui,"withCurrencyUnit",
