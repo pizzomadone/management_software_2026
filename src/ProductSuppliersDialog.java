@@ -9,10 +9,16 @@ public class ProductSuppliersDialog extends JDialog {
     private final String productName;
     private final DefaultTableModel model;
     private final JTable table;
+    private final Integer relationIdToEditOnOpen;
 
     public ProductSuppliersDialog(Window owner,int productId,String productName){
+        this(owner,productId,productName,null);
+    }
+
+    public ProductSuppliersDialog(Window owner,int productId,String productName,Integer relationIdToEditOnOpen){
         super(owner,I18n.tr("Product Suppliers")+": "+productName,ModalityType.APPLICATION_MODAL);
         this.productId=productId;this.productName=productName;
+        this.relationIdToEditOnOpen=relationIdToEditOnOpen;
         setLayout(new BorderLayout(8,8));
         setSize(760,480);
 
@@ -54,6 +60,24 @@ public class ProductSuppliersDialog extends JDialog {
 
         add(top,BorderLayout.NORTH);add(new JScrollPane(table),BorderLayout.CENTER);add(buttons,BorderLayout.SOUTH);
         Dialogs.centerWindow(this);I18n.localize(this);load();
+        if(relationIdToEditOnOpen!=null) SwingUtilities.invokeLater(this::editRequestedRelationAndClose);
+    }
+
+    private void editRequestedRelationAndClose(){
+        Integer supplierId=null;
+        try{
+            Connection c=DatabaseManager.getInstance().getConnection();
+            try(PreparedStatement p=c.prepareStatement(
+                    "SELECT supplier_id FROM product_suppliers WHERE id=? AND product_id=?")){
+                p.setInt(1,relationIdToEditOnOpen);p.setInt(2,productId);
+                try(ResultSet r=p.executeQuery()){if(r.next())supplierId=r.getInt(1);}
+            }
+        }catch(SQLException e){showError(e);}
+        if(supplierId!=null){
+            Supplier supplier=loadSupplier(supplierId);
+            if(supplier!=null)editRelation(relationIdToEditOnOpen,supplier);
+        }
+        dispose();
     }
 
     private void hide(int modelIndex){
@@ -241,9 +265,11 @@ public class ProductSuppliersDialog extends JDialog {
             +"\n\n"+I18n.tr(
                 "Supplier product code (optional): the code this supplier uses for the product in its catalog, quotes, invoices or portal. Leave it blank if the supplier does not provide one.")
             +"\n\n"+I18n.tr(
-                "Purchase price: the supplier's current reference purchase price. It is proposed in new supplier orders and can be changed in the order.")
+                "Purchase price: the supplier's current purchase cost for this product. It is proposed in new supplier orders.")
             +"\n\n"+I18n.tr(
-                "Preferred: makes this the preferred supplier for the product. Its purchase price becomes the default reference price proposed in new supplier orders; historical FIFO costs and the sale price are not changed.")
+                "If the actual unit price is changed in a supplier order, the price used when the order is received becomes the FIFO lot cost and updates this supplier cost.")
+            +"\n\n"+I18n.tr(
+                "Preferred: makes this the preferred supplier for the product. Its purchase price becomes the default purchase price proposed in new supplier orders; historical FIFO costs and the sale price are not changed.")
             +"\n\n"+I18n.tr(
                 "Notes: optional notes about this product-supplier relationship.");
         Dialogs.showMessageDialog(this,message,I18n.tr("Supplier product fields"),
@@ -265,7 +291,9 @@ public class ProductSuppliersDialog extends JDialog {
         String message=I18n.tr(
                 "A product can have multiple suppliers, but only one preferred supplier.")
             +"\n\n"+I18n.tr(
-                "The purchase price shown here is the supplier's current reference price. It is proposed automatically in new supplier orders and can still be changed in the order, for example for discounts or negotiated prices.")
+                "The purchase price shown here is the supplier's current purchase cost and is proposed automatically in new supplier orders.")
+            +"\n\n"+I18n.tr(
+                "When an order is received, its actual unit price becomes the FIFO lot cost and also becomes the current cost saved for that supplier.")
             +"\n\n"+I18n.tr(
                 "When you set a different preferred supplier, that supplier's purchase price becomes the default purchase price proposed for this product. The product sale price and historical FIFO costs are not changed.")
             +"\n\n"+I18n.tr(
