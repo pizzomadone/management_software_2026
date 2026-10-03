@@ -640,16 +640,17 @@ public class OrderDialog extends JDialog {
                 if (order == null) {
                     // New order
                     String orderQuery = """
-                        INSERT INTO orders (customer_id, order_date, status, total_ex_vat, payment_status, paid_amount)
-                        VALUES (?, ?, ?, ?, ?, ?)
+                        INSERT INTO orders (customer_id, order_date, status, total_ex_vat, total_inc_vat, payment_status, paid_amount)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
                     """;
                     try (PreparedStatement pstmt = conn.prepareStatement(orderQuery, Statement.RETURN_GENERATED_KEYS)) {
                         pstmt.setInt(1, selectedCustomer.getId());
                         pstmt.setTimestamp(2, DateUtils.toSqlTimestamp(orderDate));
                         pstmt.setString(3, newStatus);
                         pstmt.setDouble(4, currentTotalExVat);
-                        pstmt.setString(5, paymentStatus);
-                        pstmt.setDouble(6, paidAmount);
+                        pstmt.setDouble(5, currentTotal);
+                        pstmt.setString(6, paymentStatus);
+                        pstmt.setDouble(7, paidAmount);
                         pstmt.executeUpdate();
 
                         try (ResultSet rs = pstmt.getGeneratedKeys()) {
@@ -674,17 +675,18 @@ public class OrderDialog extends JDialog {
 
                     String orderQuery = """
                         UPDATE orders
-                        SET customer_id = ?, order_date = ?, status = ?, total_ex_vat = ?, payment_status = ?, paid_amount = ?
+                        SET customer_id = ?, order_date = ?, status = ?, total_ex_vat = ?, total_inc_vat = ?, payment_status = ?, paid_amount = ?
                         WHERE id = ?
                     """;
                     try (PreparedStatement pstmt = conn.prepareStatement(orderQuery)) {
                         pstmt.setInt(1, selectedCustomer.getId());
                         pstmt.setTimestamp(2, DateUtils.toSqlTimestamp(orderDate));
                         pstmt.setString(3, newStatus);
-                        pstmt.setDouble(4, currentTotal);
-                        pstmt.setString(5, paymentStatus);
-                        pstmt.setDouble(6, paidAmount);
-                        pstmt.setInt(7, orderId);
+                        pstmt.setDouble(4, currentTotalExVat);
+                        pstmt.setDouble(5, currentTotal);
+                        pstmt.setString(6, paymentStatus);
+                        pstmt.setDouble(7, paidAmount);
+                        pstmt.setInt(8, orderId);
                         pstmt.executeUpdate();
                     }
 
@@ -733,7 +735,7 @@ public class OrderDialog extends JDialog {
                 int quantity = parseInteger(itemsTableModel.getValueAt(i, 2));
                 double incVat = parseDouble(itemsTableModel.getValueAt(i, 3));
                 double vatRate = Numbers.vat(itemsTableModel.getValueAt(i, 5));
-                double exVat = SalePrice.exVatFromIncVat(incVat, vatRate);
+                double exVat = SalePrice.unitExVatForLine(quantity, incVat, vatRate);
                 pstmt.setInt(1, orderId);
                 pstmt.setInt(2, (int)itemsTableModel.getValueAt(i, 0));
                 pstmt.setInt(3, quantity);

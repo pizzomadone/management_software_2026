@@ -161,7 +161,8 @@ public class DatabaseManager {
                 code TEXT UNIQUE NOT NULL,
                 name TEXT NOT NULL,
                 description TEXT,
-                price REAL NOT NULL,
+                sale_price_ex_vat REAL NOT NULL,
+                sale_price_inc_vat REAL NOT NULL,
                 quantity INTEGER DEFAULT 0,
                 reserved_quantity INTEGER DEFAULT 0,
                 category TEXT DEFAULT '',
@@ -195,7 +196,10 @@ public class DatabaseManager {
                 customer_id INTEGER,
                 order_date DATETIME NOT NULL,
                 status TEXT NOT NULL,
-                total REAL NOT NULL,
+                total_ex_vat REAL NOT NULL,
+                total_inc_vat REAL NOT NULL,
+                payment_status TEXT NOT NULL DEFAULT 'NOT_PAID',
+                paid_amount REAL NOT NULL DEFAULT 0.0,
                 FOREIGN KEY (customer_id) REFERENCES customers (id)
             )
         """;
@@ -207,7 +211,9 @@ public class DatabaseManager {
                 order_id INTEGER,
                 product_id INTEGER,
                 quantity INTEGER NOT NULL,
-                unit_price REAL NOT NULL,
+                sale_unit_price_ex_vat REAL NOT NULL,
+                sale_unit_price_inc_vat REAL NOT NULL,
+                vat_rate REAL NOT NULL,
                 cost_total REAL,
                 FOREIGN KEY (order_id) REFERENCES orders (id),
                 FOREIGN KEY (product_id) REFERENCES products (id)
@@ -228,6 +234,11 @@ public class DatabaseManager {
                 payment_status TEXT NOT NULL DEFAULT 'NOT_PAID',
                 paid_amount REAL NOT NULL DEFAULT 0.0,
                 order_id INTEGER,
+                currency_code TEXT,
+                customer_snapshot TEXT,
+                company_snapshot TEXT,
+                logo_snapshot BLOB,
+                snapshot_version INTEGER,
                 FOREIGN KEY (order_id) REFERENCES orders (id),
                 FOREIGN KEY (customer_id) REFERENCES customers (id)
             )
@@ -240,9 +251,12 @@ public class DatabaseManager {
                 invoice_id INTEGER,
                 product_id INTEGER,
                 quantity INTEGER NOT NULL,
-                unit_price REAL NOT NULL,
+                sale_unit_price_ex_vat REAL NOT NULL,
+                sale_unit_price_inc_vat REAL NOT NULL,
                 vat_rate REAL NOT NULL,
                 total REAL NOT NULL,
+                product_code TEXT,
+                product_name TEXT,
                 FOREIGN KEY (invoice_id) REFERENCES invoices (id),
                 FOREIGN KEY (product_id) REFERENCES products (id)
             )

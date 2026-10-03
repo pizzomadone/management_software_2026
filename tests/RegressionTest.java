@@ -64,7 +64,7 @@ public class RegressionTest {
         call(DatabaseManager.getInstance(),"createTables");DatabaseCurrency.bind(db);
         sql("INSERT INTO customers(id,first_name,last_name) VALUES(1,'Test','Customer')");
         sql("INSERT INTO suppliers(id,company_name,vat_number) VALUES(1,'Supplier','TEST1'),(2,'Other','TEST2')");
-        sql("INSERT INTO products(id,code,name,description,price,quantity,acquisition_cost,supplier_id) VALUES(1,'A','Product A','',10,10,5,1),(2,'B','Product B','',20,10,8,2)");
+        sql("INSERT INTO products(id,code,name,description,sale_price_ex_vat,sale_price_inc_vat,quantity,acquisition_cost,supplier_id,vat_rate) VALUES(1,'A','Product A','',10,10,10,5,1,0),(2,'B','Product B','',20,20,10,8,2,0)");
         sql("INSERT INTO product_suppliers(product_id,supplier_id,purchase_price,is_preferred) VALUES(1,1,5,1),(2,2,8,1)");
     }
     static Customer customer(){return new Customer(1,"Test","Customer","","","");}
@@ -74,8 +74,8 @@ public class RegressionTest {
     }
     static void completed()throws Exception{
         seedOpeningLots();
-        sql("INSERT INTO orders(id,customer_id,order_date,status,total) VALUES(1,1,"+System.currentTimeMillis()+",'Completed',30)");
-        sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(1,1,3,10)");
+        sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat) VALUES(1,1,"+System.currentTimeMillis()+",'Completed',30,30)");
+        sql("INSERT INTO order_details(order_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate) VALUES(1,1,3,10,10,0)");
         StockManager.createOrUpdateReservation(db,1,"ORDER",1,3,"");
         StockManager.completeReservationAndDecrementStock(db,"ORDER",1,new java.util.Date(),"1");
         require(qty()==7,"Invalid completed fixture");
@@ -90,10 +90,10 @@ public class RegressionTest {
         put(d,"statusCombo",new JComboBox<>(new String[]{status}));
         put(d,"paymentStatusCombo",new JComboBox<>(new String[]{"Not Paid"}));
         put(d,"paidAmountField",new JTextField("0"));
-        DefaultTableModel m=new DefaultTableModel(new Object[][]{{1,"Product A",quantity,"10.00","30.00"}},new String[]{"ID","Name","Qty","Price","Total"});
+        DefaultTableModel m=new DefaultTableModel(new Object[][]{{1,"Product A",quantity,"10.00","30.00","0"}},new String[]{"ID","Name","Qty","Price","Total","VAT"});
         put(d,"itemsTableModel",m);put(d,"itemsTable",new JTable(m));
         double total=0;try{total=Integer.parseInt(quantity.toString())*10.0;}catch(Exception e){}
-        put(d,"totalLabel",new JLabel());put(d,"currentTotal",total);put(d,"productsCache",new HashMap<>());
+        put(d,"totalLabel",new JLabel());put(d,"currentTotal",total);put(d,"currentTotalExVat",total);put(d,"productsCache",new HashMap<>());
         return d;
     }
     static SD supplier(boolean existing,Map<Integer,Product> cache)throws Exception{
@@ -342,8 +342,8 @@ public class RegressionTest {
             sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,status,total) VALUES(11,1,'PO-B',2000,'Completed',50)");
             sql("INSERT INTO supplier_order_details(id,order_id,product_id,quantity,unit_price,total) VALUES(11,11,1,5,10,50)");
             InventoryLotManager.receiveSupplierOrder(db,11,new java.util.Date(2000),"PO-B");
-            sql("INSERT INTO orders(id,customer_id,order_date,status,total) VALUES(20,1,3000,'Completed',105)");
-            sql("INSERT INTO order_details(id,order_id,product_id,quantity,unit_price) VALUES(20,20,1,7,15)");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat) VALUES(20,1,3000,'Completed',105,105)");
+            sql("INSERT INTO order_details(id,order_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate) VALUES(20,20,1,7,15,15,0)");
             StockManager.createOrUpdateReservation(db,1,"ORDER",20,7,"");
             StockManager.completeReservationAndDecrementStock(db,"ORDER",20,new java.util.Date(3000),"20");
             require(qty()==3,"FIFO sale changed physical stock incorrectly");
@@ -354,8 +354,8 @@ public class RegressionTest {
             require("5.0".equals(value("SELECT purchase_price FROM product_suppliers WHERE product_id=1 AND supplier_id=1")),
                 "Negotiated receipt silently changed supplier reference price");
 
-            sql("INSERT INTO orders(id,customer_id,order_date,status,total) VALUES(21,1,4000,'Completed',45)");
-            sql("INSERT INTO order_details(id,order_id,product_id,quantity,unit_price) VALUES(21,21,1,3,15)");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat) VALUES(21,1,4000,'Completed',45,45)");
+            sql("INSERT INTO order_details(id,order_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate) VALUES(21,21,1,3,15,15,0)");
             StockManager.createOrUpdateReservation(db,1,"ORDER",21,3,"");
             StockManager.completeReservationAndDecrementStock(db,"ORDER",21,new java.util.Date(4000),"21");
             require(qty()==0,"Second FIFO sale changed physical stock incorrectly");
@@ -373,8 +373,8 @@ public class RegressionTest {
             sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,status,total) VALUES(11,1,'PO-B',2000,'Completed',50)");
             sql("INSERT INTO supplier_order_details(id,order_id,product_id,quantity,unit_price,total) VALUES(11,11,1,5,10,50)");
             InventoryLotManager.receiveSupplierOrder(db,11,new java.util.Date(2000),"PO-B");
-            sql("INSERT INTO orders(id,customer_id,order_date,status,total) VALUES(20,1,3000,'Completed',105)");
-            sql("INSERT INTO order_details(id,order_id,product_id,quantity,unit_price) VALUES(20,20,1,7,15)");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat) VALUES(20,1,3000,'Completed',105,105)");
+            sql("INSERT INTO order_details(id,order_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate) VALUES(20,20,1,7,15,15,0)");
             StockManager.createOrUpdateReservation(db,1,"ORDER",20,7,"");
             StockManager.completeReservationAndDecrementStock(db,"ORDER",20,new java.util.Date(3000),"20");
             StockManager.reverseCompletedOrder(db,20);
@@ -389,8 +389,8 @@ public class RegressionTest {
             sql("DELETE FROM inventory_lot_consumptions");
             sql("DELETE FROM inventory_lots");
             sql("UPDATE products SET quantity=0,acquisition_cost=9 WHERE id=1");
-            sql("INSERT INTO orders(id,customer_id,order_date,status,total) VALUES(20,1,3000,'Completed',30)");
-            sql("INSERT INTO order_details(id,order_id,product_id,quantity,unit_price) VALUES(20,20,1,2,15)");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat) VALUES(20,1,3000,'Completed',30,30)");
+            sql("INSERT INTO order_details(id,order_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate) VALUES(20,20,1,2,15,15,0)");
             StockManager.createOrUpdateReservation(db,1,"ORDER",20,2,"");
             boolean saleBlocked=false;
             try { StockManager.completeReservationAndDecrementStock(db,"ORDER",20,new java.util.Date(3000),"20"); }
@@ -413,8 +413,8 @@ public class RegressionTest {
         });
         test("legacy completed sale without FIFO history cannot be reversed", () -> {
             fresh();
-            sql("INSERT INTO orders(id,customer_id,order_date,status,total) VALUES(20,1,1000,'Completed',20)");
-            sql("INSERT INTO order_details(id,order_id,product_id,quantity,unit_price,cost_total) VALUES(20,20,1,2,10,NULL)");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat) VALUES(20,1,1000,'Completed',20,20)");
+            sql("INSERT INTO order_details(id,order_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate,cost_total) VALUES(20,20,1,2,10,10,0,NULL)");
             boolean blocked=false;
             try { InventoryLotManager.restoreOrder(db,20); }
             catch(SQLException e) { blocked=true; }
@@ -430,8 +430,8 @@ public class RegressionTest {
             sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,status,total) VALUES(10,1,'PO-LOCK',1000,'Completed',25)");
             sql("INSERT INTO supplier_order_details(id,order_id,product_id,quantity,unit_price,total) VALUES(10,10,1,5,5,25)");
             InventoryLotManager.receiveSupplierOrder(db,10,new java.util.Date(1000),"PO-LOCK");
-            sql("INSERT INTO orders(id,customer_id,order_date,status,total) VALUES(20,1,2000,'Completed',15)");
-            sql("INSERT INTO order_details(id,order_id,product_id,quantity,unit_price) VALUES(20,20,1,1,15)");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat) VALUES(20,1,2000,'Completed',15,15)");
+            sql("INSERT INTO order_details(id,order_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate) VALUES(20,20,1,1,15,15,0)");
             StockManager.createOrUpdateReservation(db,1,"ORDER",20,1,"");
             StockManager.completeReservationAndDecrementStock(db,"ORDER",20,new java.util.Date(2000),"20");
             boolean blocked=false;
@@ -488,7 +488,7 @@ public class RegressionTest {
             DatabaseManager.getInstance().initDatabase();
             db=DatabaseManager.getInstance().getConnection();
             sql("INSERT INTO suppliers(id,company_name,vat_number) VALUES(1,'Photo Supplier','PHOTO1')");
-            sql("INSERT INTO products(id,code,name,description,price,quantity,acquisition_cost,supplier_id) VALUES(1,'PHOTO','Photo Product','',10,5,4,1)");
+            sql("INSERT INTO products(id,code,name,description,sale_price_ex_vat,sale_price_inc_vat,quantity,acquisition_cost,supplier_id,vat_rate) VALUES(1,'PHOTO','Photo Product','',10,10,5,4,1,0)");
 
             Path source=OUT.resolve("photo-source.png");
             java.awt.image.BufferedImage original=new java.awt.image.BufferedImage(1600,1000,java.awt.image.BufferedImage.TYPE_INT_RGB);

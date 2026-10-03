@@ -309,7 +309,7 @@ public final class DatabaseMigrationManager {
     }
 
     private static void migrateSalePriceSemantics(Connection c) throws SQLException {
-        // Rename ambiguous sale columns without changing their existing numeric meaning.
+        // Rename ambiguous legacy sale columns without changing their numeric meaning.
         // Legacy product.price and sales unit_price values were VAT-exclusive.
         try (Statement s = c.createStatement()) {
             if (hasColumn(c, "products", "price") &&
@@ -332,6 +332,8 @@ public final class DatabaseMigrationManager {
 
         addColumnIfMissing(c, "products", "sale_price_inc_vat",
             "ALTER TABLE products ADD COLUMN sale_price_inc_vat REAL NOT NULL DEFAULT 0");
+        addColumnIfMissing(c, "orders", "total_inc_vat",
+            "ALTER TABLE orders ADD COLUMN total_inc_vat REAL NOT NULL DEFAULT 0");
         addColumnIfMissing(c, "order_details", "sale_unit_price_inc_vat",
             "ALTER TABLE order_details ADD COLUMN sale_unit_price_inc_vat REAL NOT NULL DEFAULT 0");
         addColumnIfMissing(c, "order_details", "vat_rate",
@@ -340,7 +342,7 @@ public final class DatabaseMigrationManager {
             "ALTER TABLE invoice_details ADD COLUMN sale_unit_price_inc_vat REAL NOT NULL DEFAULT 0");
 
         // Existing products: preserve the old VAT-exclusive price exactly and derive
-        // only the new customer-facing price.
+        // only the new customer-facing VAT-inclusive price.
         try (PreparedStatement read = c.prepareStatement(
                 "SELECT id,sale_price_ex_vat,vat_rate FROM products");
              PreparedStatement write = c.prepareStatement(
@@ -355,13 +357,53 @@ public final class DatabaseMigrationManager {
             write.executeBatch();
         }
 
-        // Old customer orders did not snapshot VAT. Current product VAT is the only
-        // reconstructable source, so use it without altering the stored net price.
+        // Invoice lines already snapshot historical VAT and net line totals.
+        // Reconstruct a gross unit value from the historical line total so quantity
+        // and sub-cent unit prices still reconcile with the unchanged invoice header.
+        try (PreparedStatement read = c.prepareStatement(
+                "SELECT id,quantity,sale_unit_price_ex_vat,vat_rate,total FROM invoice_details");
+             PreparedStatement write = c.prepareStatement(
+                "UPDATE invoice_details SET sale_unit_price_inc_vat=? WHERE id=?");
+             ResultSet r = read.executeQuery()) {
+            while (r.next()) {
+                int quantity = Numbers.positiveQuantity(r.getObject("quantity"));
+                double vatRate = Numbers.vat(r.getObject("vat_rate"));
+                double netLine = Numbers.nonNegative(r.getObject("total"));
+                double grossLine = Numbers.add(netLine, Numbers.tax(netLine, vatRate));
+                double grossUnit = grossLine / quantity;
+                write.setDouble(1, Numbers.nonNegative(grossUnit));
+                write.setInt(2, r.getInt("id"));
+                write.addBatch();
+            }
+            write.executeBatch();
+        }
+
+        // Preserve every legacy order net unit price exactly. If the order has a linked
+        // invoice, its historical VAT (and gross unit price when consistent) is preferred.
+        // Only orders without an invoice fall back to the product's current VAT rate.
         try (PreparedStatement read = c.prepareStatement("""
                 SELECT d.id,d.sale_unit_price_ex_vat,
-                       COALESCE(p.vat_rate,0) AS vat_rate
+                       p.vat_rate AS product_vat_rate,
+                       x.vat_rate AS invoice_vat_rate,
+                       x.sale_unit_price_ex_vat AS invoice_net,
+                       x.sale_unit_price_inc_vat AS invoice_gross
                 FROM order_details d
                 LEFT JOIN products p ON p.id=d.product_id
+                LEFT JOIN invoices i ON i.order_id=d.order_id
+                LEFT JOIN invoice_details x ON x.id=(
+                    SELECT x2.id
+                    FROM invoice_details x2
+                    WHERE x2.invoice_id=i.id AND x2.product_id=d.product_id
+                    ORDER BY
+                        CASE
+                            WHEN x2.quantity=d.quantity
+                             AND ABS(x2.sale_unit_price_ex_vat-d.sale_unit_price_ex_vat)<=0.004 THEN 0
+                            WHEN ABS(x2.sale_unit_price_ex_vat-d.sale_unit_price_ex_vat)<=0.004 THEN 1
+                            ELSE 2
+                        END,
+                        x2.id
+                    LIMIT 1
+                )
                 """);
              PreparedStatement write = c.prepareStatement("""
                 UPDATE order_details
@@ -370,41 +412,49 @@ public final class DatabaseMigrationManager {
                 """);
              ResultSet r = read.executeQuery()) {
             while (r.next()) {
-                double vatRate = r.getDouble("vat_rate");
                 double net = r.getDouble("sale_unit_price_ex_vat");
+                Object invoiceVat = r.getObject("invoice_vat_rate");
+                double vatRate = invoiceVat != null
+                    ? Numbers.vat(invoiceVat)
+                    : Numbers.vat(r.getObject("product_vat_rate"));
+
+                double gross = SalePrice.incVatFromExVat(net, vatRate);
+                Object invoiceNet = r.getObject("invoice_net");
+                Object invoiceGross = r.getObject("invoice_gross");
+                if (invoiceVat != null && invoiceNet != null && invoiceGross != null &&
+                        Math.abs(Numbers.nonNegative(invoiceNet) - net) <= 0.004) {
+                    gross = Numbers.nonNegative(invoiceGross);
+                }
+
                 write.setDouble(1, vatRate);
-                write.setDouble(2, SalePrice.incVatFromExVat(net, vatRate));
+                write.setDouble(2, gross);
                 write.setInt(3, r.getInt("id"));
                 write.addBatch();
             }
             write.executeBatch();
         }
 
-        // Invoices already have their historical VAT rate, so their gross unit price
-        // can be reconstructed deterministically without changing invoice totals.
-        try (PreparedStatement read = c.prepareStatement(
-                "SELECT id,sale_unit_price_ex_vat,vat_rate FROM invoice_details");
-             PreparedStatement write = c.prepareStatement(
-                "UPDATE invoice_details SET sale_unit_price_inc_vat=? WHERE id=?");
-             ResultSet r = read.executeQuery()) {
-            while (r.next()) {
-                write.setDouble(1, SalePrice.incVatFromExVat(
-                    r.getDouble("sale_unit_price_ex_vat"), r.getDouble("vat_rate")));
-                write.setInt(2, r.getInt("id"));
-                write.addBatch();
-            }
-            write.executeBatch();
+        // Preserve the historical net order total. The new gross total comes from the
+        // linked invoice when present, otherwise from the migrated order snapshots.
+        try (Statement s = c.createStatement()) {
+            s.executeUpdate("""
+                UPDATE orders
+                SET total_inc_vat=COALESCE(
+                    (SELECT i.total FROM invoices i
+                     WHERE i.order_id=orders.id ORDER BY i.id LIMIT 1),
+                    (SELECT SUM(warestat_line_total(
+                         d.quantity,d.sale_unit_price_inc_vat))
+                     FROM order_details d WHERE d.order_id=orders.id),
+                    total_ex_vat
+                )
+                """);
         }
 
-        // Never invent a received payment. Preserve paid_amount and only make its
-        // status agree with the customer-facing amount now known for the order.
+        // Never invent received money. paid_amount is preserved exactly; only the status
+        // is reconciled against the customer-facing amount due.
         try (PreparedStatement read = c.prepareStatement("""
                 SELECT o.id,o.paid_amount,
-                       COALESCE(i.total,
-                           (SELECT SUM(warestat_line_total(
-                               d.quantity,d.sale_unit_price_inc_vat))
-                            FROM order_details d WHERE d.order_id=o.id),
-                           o.total_ex_vat) AS amount_due
+                       COALESCE(i.total,o.total_inc_vat) AS amount_due
                 FROM orders o
                 LEFT JOIN invoices i ON i.order_id=o.id
                 """);

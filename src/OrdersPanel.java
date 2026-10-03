@@ -153,11 +153,7 @@ public class OrdersPanel extends JPanel {
             String query = """
                 SELECT o.*, c.first_name || ' ' || c.last_name as customer_name,
                        i.currency_code AS payment_currency_code,
-                       COALESCE(i.total,
-                           (SELECT SUM(warestat_line_total(
-                               d.quantity,d.sale_unit_price_inc_vat))
-                            FROM order_details d WHERE d.order_id=o.id),
-                           o.total_ex_vat) AS total_inc_vat
+                       COALESCE(i.total,o.total_inc_vat) AS total_inc_vat
                 FROM orders o
                 LEFT JOIN customers c ON o.customer_id = c.id
                 LEFT JOIN invoices i ON i.order_id = o.id
@@ -211,11 +207,7 @@ public class OrdersPanel extends JPanel {
             String query = """
                 SELECT o.*, c.first_name || ' ' || c.last_name as customer_name,
                        i.currency_code AS payment_currency_code,
-                       COALESCE(i.total,
-                           (SELECT SUM(warestat_line_total(
-                               d.quantity,d.sale_unit_price_inc_vat))
-                            FROM order_details d WHERE d.order_id=o.id),
-                           o.total_ex_vat) AS total_inc_vat
+                       COALESCE(i.total,o.total_inc_vat) AS total_inc_vat
                 FROM orders o
                 LEFT JOIN customers c ON o.customer_id = c.id
                 LEFT JOIN invoices i ON i.order_id = o.id
@@ -531,11 +523,7 @@ public class OrdersPanel extends JPanel {
 
         double total;
         try (PreparedStatement p = conn.prepareStatement("""
-                SELECT COALESCE(i.total,
-                           (SELECT SUM(warestat_line_total(
-                               d.quantity,d.sale_unit_price_inc_vat))
-                            FROM order_details d WHERE d.order_id=o.id),
-                           o.total_ex_vat) AS payment_total
+                SELECT COALESCE(i.total,o.total_inc_vat) AS payment_total
                 FROM orders o
                 LEFT JOIN invoices i ON i.order_id=o.id
                 WHERE o.id=? AND o.status='Completed'
@@ -571,16 +559,12 @@ public class OrdersPanel extends JPanel {
 
     static void normalizeCompletedOrderPayment(
             Connection conn, int orderId) throws SQLException {
-        String status;
+        String currentStatus;
         double paidAmount;
         double paymentTotal;
         try (PreparedStatement p = conn.prepareStatement("""
                 SELECT o.status,o.payment_status,o.paid_amount,
-                       COALESCE(i.total,
-                           (SELECT SUM(warestat_line_total(
-                               d.quantity,d.sale_unit_price_inc_vat))
-                            FROM order_details d WHERE d.order_id=o.id),
-                           o.total_ex_vat) AS payment_total
+                       COALESCE(i.total,o.total_inc_vat) AS payment_total
                 FROM orders o
                 LEFT JOIN invoices i ON i.order_id=o.id
                 WHERE o.id=?
@@ -589,24 +573,22 @@ public class OrdersPanel extends JPanel {
             try (ResultSet r = p.executeQuery()) {
                 if (!r.next()) throw new SQLException("Order no longer exists");
                 if (!"Completed".equals(r.getString("status"))) return;
-                status = r.getString("payment_status");
-                paidAmount = r.getDouble("paid_amount");
-                paymentTotal = r.getDouble("payment_total");
+                currentStatus = r.getString("payment_status");
+                paidAmount = Numbers.nonNegative(r.getObject("paid_amount"));
+                paymentTotal = Numbers.nonNegative(r.getObject("payment_total"));
             }
         }
 
-        if ("PAID".equals(status)) {
-            updateCompletedOrderPayment(conn, orderId, "PAID", 0);
-        } else if ("PARTIALLY_PAID".equals(status)) {
-            if (paidAmount <= 0) {
-                updateCompletedOrderPayment(conn, orderId, "NOT_PAID", 0);
-            } else if (paidAmount >= paymentTotal) {
-                updateCompletedOrderPayment(conn, orderId, "PAID", 0);
-            } else {
-                updateCompletedOrderPayment(conn, orderId, "PARTIALLY_PAID", paidAmount);
+        String normalized = paidAmount <= 0 ? "NOT_PAID"
+            : paidAmount + 0.004 >= paymentTotal ? "PAID" : "PARTIALLY_PAID";
+        if (!normalized.equals(currentStatus)) {
+            try (PreparedStatement p = conn.prepareStatement(
+                    "UPDATE orders SET payment_status=? WHERE id=? AND status='Completed'")) {
+                p.setString(1, normalized);
+                p.setInt(2, orderId);
+                if (p.executeUpdate() != 1)
+                    throw new SQLException("Completed order changed or no longer exists");
             }
-        } else {
-            updateCompletedOrderPayment(conn, orderId, "NOT_PAID", 0);
         }
     }
 
@@ -636,11 +618,7 @@ public class OrdersPanel extends JPanel {
             double currentPaid;
             String paymentCurrency;
             try (PreparedStatement p = conn.prepareStatement("""
-                    SELECT COALESCE(i.total,
-                               (SELECT SUM(warestat_line_total(
-                                   d.quantity,d.sale_unit_price_inc_vat))
-                                FROM order_details d WHERE d.order_id=o.id),
-                               o.total_ex_vat) AS payment_total,
+                    SELECT COALESCE(i.total,o.total_inc_vat) AS payment_total,
                            o.payment_status,o.paid_amount,
                            COALESCE(i.currency_code,?) AS payment_currency
                     FROM orders o

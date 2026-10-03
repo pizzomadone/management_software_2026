@@ -560,7 +560,7 @@ public class DashboardPanel extends JPanel {
             String start = monthFormat.format(new java.util.Date(monthStart));
             String end = monthFormat.format(new java.util.Date(nextMonthStart));
             double monthlySales = sumMonthlyDocuments(conn,
-                "SELECT total FROM orders WHERE status='Completed' AND " +
+                "SELECT total_ex_vat FROM orders WHERE status='Completed' AND " +
                     DateUtils.sqlDate("order_date") + ">=? AND " + DateUtils.sqlDate("order_date") + "<?", start, end);
             String monthlyInvoiced = monthlyInvoiceSummary(conn,start,end);
 
@@ -755,11 +755,7 @@ public class DashboardPanel extends JPanel {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
                 SELECT o.id, o.order_date, o.status,
-                       COALESCE(
-                           (SELECT SUM(warestat_line_total(
-                               d.quantity,d.sale_unit_price_inc_vat))
-                            FROM order_details d WHERE d.order_id=o.id),
-                           o.total_ex_vat) AS total_inc_vat,
+                       o.total_inc_vat AS total_inc_vat,
                        c.first_name || ' ' || c.last_name as customer_name,
                        julianday('now') - julianday(o.order_date) as days_old
                 FROM orders o

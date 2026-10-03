@@ -950,14 +950,15 @@ public class InvoiceDialog extends JDialog {
         int orderId;
         try (PreparedStatement p = conn.prepareStatement("""
                 INSERT INTO orders
-                    (customer_id, order_date, status, total_ex_vat, payment_status, paid_amount)
-                VALUES (?, ?, 'Completed', ?, ?, ?)
+                    (customer_id, order_date, status, total_ex_vat, total_inc_vat, payment_status, paid_amount)
+                    VALUES (?, ?, 'Completed', ?, ?, ?, ?)
                 """, Statement.RETURN_GENERATED_KEYS)) {
             p.setInt(1, selectedCustomer.getId());
             p.setTimestamp(2, DateUtils.toSqlTimestamp(invoiceDate));
             p.setDouble(3, currentTaxableAmount);
-            p.setString(4, paymentStatus);
-            p.setDouble(5, paidAmount);
+            p.setDouble(4, currentTotal);
+            p.setString(5, paymentStatus);
+            p.setDouble(6, paidAmount);
             p.executeUpdate();
             try (ResultSet keys = p.getGeneratedKeys()) {
                 if (!keys.next()) throw new SQLException("Failed to get order ID");
@@ -978,7 +979,7 @@ public class InvoiceDialog extends JDialog {
                 p.setInt(1, orderId);
                 p.setInt(2, productIdForRow(conn, i));
                 p.setInt(3, quantity);
-                p.setDouble(4, SalePrice.exVatFromIncVat(incVat, vatRate));
+                p.setDouble(4, SalePrice.unitExVatForLine(quantity, incVat, vatRate));
                 p.setDouble(5, incVat);
                 p.setDouble(6, vatRate);
                 p.addBatch();
@@ -1201,7 +1202,7 @@ public class InvoiceDialog extends JDialog {
                 int quantity = parseInteger(itemsTableModel.getValueAt(i, 2));
                 double unitPriceIncVat = parseDouble(itemsTableModel.getValueAt(i, 3));
                 double vatRate = Numbers.vat(itemsTableModel.getValueAt(i, 4));
-                double unitPriceExVat = SalePrice.exVatFromIncVat(unitPriceIncVat, vatRate);
+                double unitPriceExVat = SalePrice.unitExVatForLine(quantity, unitPriceIncVat, vatRate);
                 double productTotalExVat = SalePrice.lineExVat(quantity, unitPriceIncVat, vatRate);
 
                 pstmt.setInt(1, invoiceId);

@@ -219,7 +219,7 @@ public class InvoicePDFGenerator {
                     I18n.tr("FROM"),companyName,companyLines,
                     I18n.tr("BILL TO"),customerName,customerLines);
 
-                pdf.startTable(new String[]{I18n.tr("Code"),I18n.tr("Description"),I18n.tr("Qty"),I18n.tr("Unit price excl. VAT")+" "+currency,I18n.tr("VAT %"),I18n.tr("Total")+" "+currency},new float[]{1.6f,3.1f,.7f,1.6f,.9f,1.6f});
+                pdf.startTable(new String[]{I18n.tr("Code"),I18n.tr("Description"),I18n.tr("Qty"),I18n.tr("Unit price excl. VAT")+" "+currency,I18n.tr("VAT %"),I18n.tr("Total excl. VAT")+" "+currency},new float[]{1.6f,3.1f,.7f,1.6f,.9f,1.6f});
                 for(InvoiceItem item:invoiceItems)pdf.row(item.getProductCode(),item.getProductName(),Integer.toString(item.getQuantity()),
                     Numbers.unitText(item.getUnitPrice()),decimal(item.getVatRate()),money(item.getTotal()));
 

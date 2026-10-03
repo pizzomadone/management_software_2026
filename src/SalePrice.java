@@ -32,6 +32,19 @@ public final class SalePrice {
         return Numbers.lineTotal(quantity, Numbers.nonNegative(unitPriceIncVat));
     }
 
+    /**
+     * Effective VAT-exclusive unit price for a specific line. The value is derived
+     * from the rounded gross line so multiplying it back by the same quantity
+     * preserves the accounting net line total.
+     */
+    public static double unitExVatForLine(int quantity, double unitPriceIncVat, double vatRate) {
+        int q = Numbers.positiveQuantity(quantity);
+        double netLine = lineExVat(q, unitPriceIncVat, vatRate);
+        BigDecimal unit = BigDecimal.valueOf(netLine)
+            .divide(BigDecimal.valueOf(q), MathContext.DECIMAL128);
+        return Numbers.nonNegative(unit.doubleValue());
+    }
+
     /** Net line amount derived from the gross line, so the amount paid remains authoritative. */
     public static double lineExVat(int quantity, double unitPriceIncVat, double vatRate) {
         double gross = lineIncVat(quantity, unitPriceIncVat);

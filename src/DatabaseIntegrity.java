@@ -16,7 +16,7 @@ public final class DatabaseIntegrity {
         Map.entry("products", "id code name description sale_price_ex_vat sale_price_inc_vat quantity reserved_quantity category alternative_sku weight unit_of_measure acquisition_cost active supplier_id warehouse_position vat_rate"),
         Map.entry("product_images", "id product_id filename is_primary sort_order"),
         Map.entry("suppliers", "id company_name vat_number tax_code address phone email certified_email website notes"),
-        Map.entry("orders", "id customer_id order_date status total_ex_vat payment_status paid_amount"),
+        Map.entry("orders", "id customer_id order_date status total_ex_vat total_inc_vat payment_status paid_amount"),
         Map.entry("order_details", "id order_id product_id quantity sale_unit_price_ex_vat sale_unit_price_inc_vat vat_rate cost_total"),
         Map.entry("invoices", "id number date customer_id taxable_amount vat total status payment_status paid_amount order_id currency_code customer_snapshot company_snapshot logo_snapshot snapshot_version"),
         Map.entry("invoice_details", "id invoice_id product_id quantity sale_unit_price_ex_vat sale_unit_price_inc_vat vat_rate total product_code product_name"),
@@ -108,7 +108,9 @@ public final class DatabaseIntegrity {
         rules.put("supplier_order_details",supplierLine+" OR "+amount("total"));
 
         String orderTotal = hasColumn(c,"orders","total_ex_vat") ? "total_ex_vat" : "total";
-        rules.put("orders",amount(orderTotal)+" OR "+amount("paid_amount"));
+        String orderRule = amount(orderTotal)+" OR "+amount("paid_amount");
+        if (hasColumn(c,"orders","total_inc_vat")) orderRule += " OR " + amount("total_inc_vat");
+        rules.put("orders",orderRule);
 
         String invoiceRule=amount("taxable_amount")+" OR "+amount("vat")+" OR "+amount("total");
         if (hasColumn(c, "invoices", "paid_amount")) invoiceRule += " OR " + amount("paid_amount");

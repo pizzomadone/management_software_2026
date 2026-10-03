@@ -105,7 +105,7 @@ public class OperationalRegressionTest extends RegressionTest {
             require("1".equals(value("SELECT COUNT(*) FROM warehouse_notifications WHERE status='NEW'")),"Duplicate display text changed another notification");
         });
         test("warehouse valuation agrees with dashboard and zero cost margin",()->{
-            fresh();sql("UPDATE products SET price=10,acquisition_cost=0.004,quantity=1 WHERE id=1");sql("UPDATE products SET acquisition_cost=99,active=0 WHERE id=2");
+            fresh();sql("UPDATE products SET sale_price_ex_vat=10,sale_price_inc_vat=10,vat_rate=0,acquisition_cost=0.004,quantity=1 WHERE id=1");sql("UPDATE products SET acquisition_cost=99,active=0 WHERE id=2");
             WarehouseReportPanel report=new WarehouseReportPanel();DefaultTableModel model=(DefaultTableModel)get(report,"productsModel");require(model.getRowCount()==1,"Inactive catalog included");
             DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
             require(((JLabel)get(dash,"warehouseValueLabel")).getText().equals(SettingsPanel.formatCurrency(Numbers.nonNegative(model.getValueAt(0,6)))),"Valuation rounding differs");
@@ -117,7 +117,7 @@ public class OperationalRegressionTest extends RegressionTest {
             DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");require(kpi(dash,"monthInvoicedLabel").equals(SettingsPanel.formatCurrency(10)),"Wrong monthly invoice boundary/status");
         });
         test("stock at zero cost is distinct from sale value and an empty warehouse",()->{
-            fresh();sql("UPDATE products SET quantity=10,acquisition_cost=0,price=12.50 WHERE id=1");
+            fresh();sql("UPDATE products SET quantity=10,acquisition_cost=0,sale_price_ex_vat=12.50,sale_price_inc_vat=12.50,vat_rate=0 WHERE id=1");
             sql("UPDATE products SET active=0,quantity=100,acquisition_cost=99 WHERE id=2");
             DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
             require(kpi(dash,"warehouseValueLabel").equals(SettingsPanel.formatCurrency(0)+" *"),"Invented an acquisition cost");
@@ -129,7 +129,7 @@ public class OperationalRegressionTest extends RegressionTest {
             require(kpi(dash,"warehouseValueLabel").equals(SettingsPanel.formatCurrency(0)) && kpi(dash,"warehouseSaleValueLabel").equals(SettingsPanel.formatCurrency(0)),"Empty warehouse retained old values");
         });
         test("negative stock cannot cancel positive assets and stays visible after restocking",()->{
-            fresh();sql("UPDATE products SET quantity=3,acquisition_cost=0.335,price=2.335 WHERE id=1");
+            fresh();sql("UPDATE products SET quantity=3,acquisition_cost=0.335,sale_price_ex_vat=2.335,sale_price_inc_vat=2.335,vat_rate=0 WHERE id=1");
             sql("UPDATE products SET quantity=-100,acquisition_cost=80 WHERE id=2");
             DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");call(dash,"loadAlerts");
             require(kpi(dash,"warehouseValueLabel").equals(SettingsPanel.formatCurrency(1.01)),"Deficit cancelled another product's cost value");
@@ -170,12 +170,12 @@ public class OperationalRegressionTest extends RegressionTest {
                     long start=month.getTimeInMillis();month.add(Calendar.MONTH,1);long end=month.getTimeInMillis();
                     String day=new java.text.SimpleDateFormat("yyyy-MM-dd").format(new java.util.Date(start));
                     Object[] dates={start-1,start,end-1,end,day+" 12:00:00",day};
-                    try(PreparedStatement order=db.prepareStatement("INSERT INTO orders(customer_id,order_date,status,total) VALUES(1,?,'Completed',10)");
+                    try(PreparedStatement order=db.prepareStatement("INSERT INTO orders(customer_id,order_date,status,total_ex_vat,total_inc_vat) VALUES(1,?,'Completed',10,10)");
                         PreparedStatement invoice=db.prepareStatement("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status,currency_code) VALUES(?,?,1,10,0,10,'Issued','EUR')")) {
                         for(int i=0;i<dates.length;i++) {order.setObject(1,dates[i]);order.executeUpdate();invoice.setString(1,"BOUNDARY-"+i);invoice.setObject(2,dates[i]);invoice.executeUpdate();}
                     }
                     for(String status:List.of("New","In Progress","Cancelled"))
-                        sql("INSERT INTO orders(customer_id,order_date,status,total) VALUES(1,"+start+",'"+status+"',900)");
+                        sql("INSERT INTO orders(customer_id,order_date,status,total_ex_vat,total_inc_vat) VALUES(1,"+start+",'"+status+"',900,900)");
                     for(String status:List.of("Draft","Canceled"))
                         sql("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status,currency_code) VALUES('"+status+"',"+start+",1,900,0,900,'"+status+"','EUR')");
                     sql("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status,payment_status,paid_amount,currency_code) VALUES('PAID',"+start+",1,20,0,20,'Issued','PAID',20,'EUR')");
@@ -196,8 +196,8 @@ public class OperationalRegressionTest extends RegressionTest {
             require(kpi(dash,"monthRevenueLabel").equals(SettingsPanel.formatCurrency(30)) && kpi(dash,"monthInvoicedLabel").equals(SettingsPanel.formatCurrency(0)),"Invoice cancellation incorrectly cancelled the independent order");
         });
         test("potential stock margin is value weighted and handles loss free cost and no denominator",()->{
-            fresh();sql("UPDATE products SET quantity=1,price=100,acquisition_cost=90 WHERE id=1");
-            sql("UPDATE products SET quantity=9,price=10,acquisition_cost=1 WHERE id=2");
+            fresh();sql("UPDATE products SET quantity=1,sale_price_ex_vat=100,sale_price_inc_vat=100,vat_rate=0,acquisition_cost=90 WHERE id=1");
+            sql("UPDATE products SET quantity=9,sale_price_ex_vat=10,sale_price_inc_vat=10,vat_rate=0,acquisition_cost=1 WHERE id=2");
             DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
             require(kpi(dash,"warehouseValueLabel").equals(SettingsPanel.formatCurrency(99)) && kpi(dash,"warehouseSaleValueLabel").equals(SettingsPanel.formatCurrency(190)),"Wrong basis for margin");
             require(kpi(dash,"avgMarginLabel").equals("47.9%"),"Used an unweighted product margin average");
@@ -209,7 +209,7 @@ public class OperationalRegressionTest extends RegressionTest {
             require(kpi(dash,"avgMarginLabel").equals("100.0% *"),"Missing purchase cost must mark the margin incomplete");
             sql("UPDATE products SET acquisition_cost=150 WHERE id=1");call(dash,"loadKPIData");
             require(kpi(dash,"avgMarginLabel").equals("-50.0%"),"Loss was hidden or confused with markup");
-            sql("UPDATE products SET price=0 WHERE id=1");call(dash,"loadKPIData");
+            sql("UPDATE products SET sale_price_ex_vat=0,sale_price_inc_vat=0,vat_rate=0 WHERE id=1");call(dash,"loadKPIData");
             require(kpi(dash,"avgMarginLabel").equals("—"),"Zero denominator produced a fictitious margin");
             sql("UPDATE products SET quantity=0");call(dash,"loadKPIData");
             require(kpi(dash,"avgMarginLabel").equals("—"),"An empty warehouse showed a profit percentage");
@@ -217,9 +217,9 @@ public class OperationalRegressionTest extends RegressionTest {
         test("stock and pending order counts match the documented physical stock rules",()->{
             fresh();call(order(false,9,"New"),"saveOrder");
             sql("UPDATE products SET quantity=-2 WHERE id=2");
-            sql("INSERT INTO products(code,name,quantity,price,active) VALUES('ZERO','Empty',0,10,1),('LOW','Low',5,10,1),('HIDDEN','Hidden',0,10,0)");
+            sql("INSERT INTO products(code,name,quantity,sale_price_ex_vat,sale_price_inc_vat,vat_rate,active) VALUES('ZERO','Empty',0,10,10,0,1),('LOW','Low',5,10,10,0,1),('HIDDEN','Hidden',0,10,10,0,0)");
             sql("INSERT INTO minimum_stock(product_id,minimum_quantity,reorder_quantity) VALUES(1,3,0),(4,10,0),(5,10,0)");
-            sql("INSERT INTO orders(customer_id,order_date,status,total) VALUES(1,'2000-01-01','In Progress',0),(1,'2000-01-01','Completed',0),(1,'2000-01-01','Cancelled',0)");
+            sql("INSERT INTO orders(customer_id,order_date,status,total_ex_vat,total_inc_vat) VALUES(1,'2000-01-01','In Progress',0,0),(1,'2000-01-01','Completed',0,0),(1,'2000-01-01','Cancelled',0,0)");
             DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
             require(kpi(dash,"lowStockCountLabel").equals("2"),"Low stock omitted a deficit, ignored reservations, counted inactive products or mishandled a disabled threshold");
             require(kpi(dash,"zeroStockLabel").equals("2"),"Out of stock omitted a negative balance or included inactive products");
@@ -231,7 +231,7 @@ public class OperationalRegressionTest extends RegressionTest {
         });
         test("KPI titles notes and explanations translate in every supported language",()->{
             fresh();DashboardPanel dash=new DashboardPanel(null);JPanel panel=(JPanel)call(dash,"createKPIPanel");
-            String[] titles={"Stock at last purchase cost","Stock at sale price","Monthly order sales (excl. VAT)","Monthly invoiced (excl. VAT)","Potential stock margin",
+            String[] titles={"Stock at last purchase cost","Stock at net sale price","Monthly order sales (excl. VAT)","Monthly invoiced (excl. VAT)","Potential stock margin",
                 "In-stock products with missing purchase cost","Negative-stock products (excluded from valuation)"};
             Map<String,String> fields=Map.of("warehouseValue","warehouseValueLabel","warehouseSaleValue","warehouseSaleValueLabel",
                 "lowStock","lowStockCountLabel","zeroStock","zeroStockLabel","monthRevenue","monthRevenueLabel",
@@ -322,7 +322,7 @@ public class OperationalRegressionTest extends RegressionTest {
             try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+file);Statement s=c.createStatement()){s.execute("DROP TABLE application_metadata");}
             boolean blocked=false;try{BackupManager.getInstance().importDatabase(file);}catch(RuntimeException e){blocked=true;}require(blocked,"Legacy currency guessed");
             BackupManager.getInstance().importDatabase(file,"USD");db=DatabaseManager.getInstance().getConnection();require("USD".equals(DatabaseCurrency.read(db)) && "USD".equals(SettingsPanel.getCurrencyCode()),"Original currency lost at import");
-            require("10.0".equals(value("SELECT price FROM products WHERE id=1")),"Currency label changed numeric price");
+            require("10.0".equals(value("SELECT sale_price_inc_vat FROM products WHERE id=1")),"Currency label changed numeric price");
         });
         test("SQL and UI use the same calendar day across time zones",()->{
             fresh();TimeZone previous=TimeZone.getDefault();

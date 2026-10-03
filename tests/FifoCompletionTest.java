@@ -6,8 +6,8 @@ import javax.swing.table.DefaultTableModel;
 /** Synthetic end-to-end cases for immutable FIFO history and incomplete costs. */
 public class FifoCompletionTest extends RegressionTest {
     static void sale(int id,int quantity) throws Exception {
-        sql("INSERT INTO orders(id,customer_id,order_date,status,total) VALUES("+id+",1,"+System.currentTimeMillis()+",'Completed',"+(quantity*15)+")");
-        sql("INSERT INTO order_details(id,order_id,product_id,quantity,unit_price) VALUES("+id+","+id+",1,"+quantity+",15)");
+        sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat) VALUES("+id+",1,"+System.currentTimeMillis()+",'Completed',"+(quantity*15)+","+(quantity*15)+")");
+        sql("INSERT INTO order_details(id,order_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate) VALUES("+id+","+id+",1,"+quantity+",15,15,0)");
         StockManager.createOrUpdateReservation(db,1,"ORDER",id,quantity,"");
         StockManager.completeReservationAndDecrementStock(db,"ORDER",id,new java.util.Date(),String.valueOf(id));
     }
@@ -84,8 +84,8 @@ public class FifoCompletionTest extends RegressionTest {
             fresh();sql("UPDATE products SET acquisition_cost=0 WHERE id=1");
             seedOpeningLots();
             // Evidence from an older version that posted zero-cost opening units.
-            sql("INSERT INTO orders(id,customer_id,order_date,status,total) VALUES(20,1,"+System.currentTimeMillis()+",'Completed',30)");
-            sql("INSERT INTO order_details(id,order_id,product_id,quantity,unit_price,cost_total) VALUES(20,20,1,2,15,0)");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat) VALUES(20,1,"+System.currentTimeMillis()+",'Completed',30,30)");
+            sql("INSERT INTO order_details(id,order_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate,cost_total) VALUES(20,20,1,2,15,15,0,0)");
             sql("INSERT INTO inventory_lot_consumptions(lot_id,order_detail_id,quantity,unit_cost) SELECT id,20,2,0 FROM inventory_lots WHERE product_id=1");
             sql("UPDATE inventory_lots SET remaining_quantity=8 WHERE product_id=1");
             sql("UPDATE products SET quantity=8,acquisition_cost=9 WHERE id=1");
@@ -100,8 +100,8 @@ public class FifoCompletionTest extends RegressionTest {
         test("demo lots cannot invent historical cost in reports or hide revenue",()->{
             fresh();
             sql("INSERT INTO inventory_lots(product_id,received_date,initial_quantity,remaining_quantity,unit_cost,source_type) VALUES(2,1,1,1,8,'DEMO_OPENING')");
-            sql("INSERT INTO orders(id,customer_id,order_date,status,total) VALUES(20,1,"+System.currentTimeMillis()+",'Completed',30)");
-            sql("INSERT INTO order_details(id,order_id,product_id,quantity,unit_price) VALUES(20,20,1,2,15)");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat) VALUES(20,1,"+System.currentTimeMillis()+",'Completed',30,30)");
+            sql("INSERT INTO order_details(id,order_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate) VALUES(20,20,1,2,15,15,0)");
             SalesReportPanel report=new SalesReportPanel();call(report,"loadReportData");
             DefaultTableModel rows=(DefaultTableModel)get(report,"tableModel");
             require(rows.getRowCount()==1 && "30.00".equals(rows.getValueAt(0,4)),"Known revenue lost");

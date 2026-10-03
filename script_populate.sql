@@ -191,7 +191,7 @@ WITH RECURSIVE seq(x) AS (
     SELECT x + 1 FROM seq WHERE x < 120
 )
 INSERT INTO products(
-    code, name, description, price, quantity, reserved_quantity, category,
+    code, name, description, sale_price_ex_vat, sale_price_inc_vat, quantity, reserved_quantity, category,
     alternative_sku, weight, unit_of_measure, acquisition_cost, active,
     supplier_id, warehouse_position, vat_rate
 )
@@ -223,6 +223,7 @@ SELECT
         WHEN 4 THEN 'Technical item used in customer and supplier order tests.'
         ELSE 'General inventory item for reports, invoices and dashboard statistics.'
     END,
+    ROUND(9.90 + ((x * 37) % 850) / 2.7, 2),
     ROUND(9.90 + ((x * 37) % 850) / 2.7, 2),
     CASE
         WHEN x % 29 = 0 THEN -5
@@ -267,6 +268,11 @@ SELECT
     END
 FROM seq;
 
+-- The generated catalog value is the customer-facing VAT-inclusive price.
+-- Keep the accounting net price derived from that exact gross value.
+UPDATE products
+SET sale_price_ex_vat = sale_price_inc_vat / (1.0 + vat_rate / 100.0);
+
 -- Minimum/reorder settings for every product.
 INSERT INTO minimum_stock(
     product_id, minimum_quantity, reorder_quantity,
@@ -296,7 +302,7 @@ INSERT INTO product_suppliers(
 SELECT
     p.id,1 + ((p.id - 1) % 18),
     'SUP-' || printf('%02d',1 + ((p.id - 1) % 18)) || '-' || p.code,
-    ROUND(CASE WHEN p.acquisition_cost=0 THEN p.price*0.45 ELSE p.acquisition_cost END,2),
+    ROUND(CASE WHEN p.acquisition_cost=0 THEN p.sale_price_ex_vat*0.45 ELSE p.acquisition_cost END,2),
     1,'Preferred supplier'
 FROM products p;
 
@@ -310,7 +316,7 @@ SELECT
     1 + ((pref.supplier_id - 1 + alternatives.n * 5) % 18),
     'SUP-' || printf('%02d',1 + ((pref.supplier_id - 1 + alternatives.n * 5) % 18)) || '-' || p.code,
     ROUND(
-        CASE WHEN p.acquisition_cost=0 THEN p.price*0.45
+        CASE WHEN p.acquisition_cost=0 THEN p.sale_price_ex_vat*0.45
              ELSE p.acquisition_cost*(0.94 + alternatives.n*0.04) END,2
     ),
     0,'Alternative supplier'
@@ -342,7 +348,7 @@ WITH RECURSIVE seq(x) AS (
     SELECT x + 1 FROM seq WHERE x < 240
 )
 INSERT INTO orders(
-    customer_id, order_date, status, total, payment_status, paid_amount
+    customer_id, order_date, status, total_ex_vat, total_inc_vat, payment_status, paid_amount
 )
 SELECT
     1 + ((x * 7) % 120),
@@ -353,6 +359,7 @@ SELECT
         WHEN 2 THEN 'Completed'
         ELSE 'Cancelled'
     END,
+    0,
     0,
     CASE x % 3
         WHEN 0 THEN 'NOT_PAID'
@@ -367,27 +374,47 @@ WITH RECURSIVE seq(x) AS (
     UNION ALL
     SELECT x + 1 FROM seq WHERE x < 720
 )
-INSERT INTO order_details(order_id, product_id, quantity, unit_price, cost_total)
+INSERT INTO order_details(
+    order_id, product_id, quantity,
+    sale_unit_price_ex_vat, sale_unit_price_inc_vat, vat_rate, cost_total
+)
 SELECT
     1 + ((x - 1) / 3),
     p.id,
     1 + (x % 5),
-    ROUND(p.price * (0.90 + (x % 3) * 0.05), 2),
+    ROUND(
+        ROUND(
+            ROUND((1 + (x % 5)) * ROUND(p.sale_price_inc_vat * (0.90 + (x % 3) * 0.05), 2), 2) /
+            (1.0 + p.vat_rate / 100.0),
+            2
+        ) / (1 + (x % 5)),
+        12
+    ),
+    ROUND(p.sale_price_inc_vat * (0.90 + (x % 3) * 0.05), 2),
+    p.vat_rate,
     NULL
 FROM seq
 JOIN products p ON p.id = 1 + ((x * 17) % 120);
 
 UPDATE orders
-SET total = ROUND(COALESCE((
-    SELECT SUM(d.quantity * d.unit_price)
-    FROM order_details d
-    WHERE d.order_id = orders.id
-), 0), 2);
+SET total_inc_vat = ROUND(COALESCE((
+        SELECT SUM(ROUND(d.quantity * d.sale_unit_price_inc_vat, 2))
+        FROM order_details d
+        WHERE d.order_id = orders.id
+    ), 0), 2),
+    total_ex_vat = ROUND(COALESCE((
+        SELECT SUM(ROUND(
+            ROUND(d.quantity * d.sale_unit_price_inc_vat, 2) /
+            (1.0 + d.vat_rate / 100.0), 2
+        ))
+        FROM order_details d
+        WHERE d.order_id = orders.id
+    ), 0), 2);
 
 UPDATE orders
 SET paid_amount = CASE payment_status
-    WHEN 'PAID' THEN total
-    WHEN 'PARTIALLY_PAID' THEN ROUND(total * 0.40, 2)
+    WHEN 'PAID' THEN total_inc_vat
+    WHEN 'PARTIALLY_PAID' THEN ROUND(total_inc_vat * 0.40, 2)
     ELSE 0
 END;
 
@@ -602,17 +629,27 @@ WITH RECURSIVE seq(x) AS (
     SELECT x + 1 FROM seq WHERE x < 540
 )
 INSERT INTO invoice_details(
-    invoice_id, product_id, quantity, unit_price, vat_rate, total,
-    product_code, product_name
+    invoice_id, product_id, quantity, sale_unit_price_ex_vat,
+    sale_unit_price_inc_vat, vat_rate, total, product_code, product_name
 )
 SELECT
     1 + ((x - 1) / 3),
     p.id,
     1 + (x % 4),
-    ROUND(p.price * (0.92 + (x % 3) * 0.04), 2),
+    ROUND(
+        ROUND(
+            ROUND((1 + (x % 4)) * ROUND(p.sale_price_inc_vat * (0.92 + (x % 3) * 0.04), 2), 2) /
+            (1.0 + p.vat_rate / 100.0),
+            2
+        ) / (1 + (x % 4)),
+        12
+    ),
+    ROUND(p.sale_price_inc_vat * (0.92 + (x % 3) * 0.04), 2),
     p.vat_rate,
     ROUND(
-        (1 + (x % 4)) * ROUND(p.price * (0.92 + (x % 3) * 0.04), 2),
+        ROUND((1 + (x % 4)) *
+            ROUND(p.sale_price_inc_vat * (0.92 + (x % 3) * 0.04), 2), 2) /
+        (1.0 + p.vat_rate / 100.0),
         2
     ),
     p.code,
@@ -621,10 +658,13 @@ FROM seq
 JOIN products p ON p.id = 1 + ((x * 19) % 120);
 
 -- Final reconciliation from the values actually stored in SQLite.
--- This deliberately derives every line total from quantity * stored unit_price,
--- matching InvoicePDFGenerator/Numbers.lineTotal.
+-- Reconcile net line totals from the exact VAT-inclusive customer price.
 UPDATE invoice_details
-SET total = ROUND(quantity * unit_price, 2);
+SET total = ROUND(
+    ROUND(quantity * sale_unit_price_inc_vat, 2) /
+    (1.0 + vat_rate / 100.0),
+    2
+);
 
 UPDATE invoices
 SET taxable_amount = ROUND(COALESCE((
@@ -633,7 +673,7 @@ SET taxable_amount = ROUND(COALESCE((
         WHERE d.invoice_id = invoices.id
     ), 0), 2),
     vat = ROUND(COALESCE((
-        SELECT SUM(ROUND(d.total * d.vat_rate / 100.0, 2))
+        SELECT SUM(ROUND(d.quantity * d.sale_unit_price_inc_vat, 2) - d.total)
         FROM invoice_details d
         WHERE d.invoice_id = invoices.id
     ), 0), 2);
@@ -733,7 +773,7 @@ UNION ALL SELECT '  Active reservations: ' || COUNT(*) FROM stock_reservations W
 UNION ALL SELECT 'Invoices: ' || COUNT(*) FROM invoices
 UNION ALL SELECT '  Invoice line mismatches: ' || COUNT(*)
     FROM invoice_details
-    WHERE ABS(total - ROUND(quantity * unit_price, 2)) > 0.004
+    WHERE ABS(total - ROUND(ROUND(quantity * sale_unit_price_inc_vat, 2) / (1.0 + vat_rate / 100.0), 2)) > 0.004
 UNION ALL SELECT '  Invoice header mismatches: ' || COUNT(*)
     FROM invoices i
     WHERE ABS(i.taxable_amount - COALESCE((
@@ -741,7 +781,7 @@ UNION ALL SELECT '  Invoice header mismatches: ' || COUNT(*)
               FROM invoice_details d WHERE d.invoice_id=i.id
           ), 0)) > 0.004
        OR ABS(i.vat - COALESCE((
-              SELECT ROUND(SUM(ROUND(d.total * d.vat_rate / 100.0, 2)), 2)
+              SELECT ROUND(SUM(ROUND(d.quantity * d.sale_unit_price_inc_vat, 2) - d.total), 2)
               FROM invoice_details d WHERE d.invoice_id=i.id
           ), 0)) > 0.004
        OR ABS(i.total - ROUND(i.taxable_amount + i.vat, 2)) > 0.004

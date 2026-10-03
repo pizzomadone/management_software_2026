@@ -39,9 +39,9 @@ public class OrderItem {
 
     /** Legacy-compatible net line total. */
     public double getTotal() { return getTotalExVat(); }
-    public double getTotalExVat() { return SalePrice.lineExVat(quantity, unitPriceIncVat, vatRate); }
+    public double getTotalExVat() { return Numbers.lineTotal(quantity, unitPriceExVat); }
     public double getTotalIncVat() { return SalePrice.lineIncVat(quantity, unitPriceIncVat); }
-    public double getVatAmount() { return SalePrice.vatAmount(quantity, unitPriceIncVat, vatRate); }
+    public double getVatAmount() { return Numbers.money(java.math.BigDecimal.valueOf(getTotalIncVat()).subtract(java.math.BigDecimal.valueOf(getTotalExVat()))); }
 
     public void setId(int id) { this.id = id; }
     public void setOrderId(int orderId) { this.orderId = orderId; }

@@ -91,8 +91,8 @@ public class ExtendedRegressionTest extends RegressionTest {
             require("0.335".equals(Numbers.unitText(0.335)),"Unit precision was hidden");
             require(Numbers.moneyText(Numbers.lineTotal(3,0.335)).equals("1.01"),"Precise unit price does not reconcile with line total");
 
-            sql("INSERT INTO orders(id,customer_id,order_date,status,total) VALUES(20,1,"+System.currentTimeMillis()+",'Completed',2.68)");
-            sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(20,1,1,2.675)");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat) VALUES(20,1,"+System.currentTimeMillis()+",'Completed',2.68,2.68)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate) VALUES(20,1,1,2.675,2.675,0)");
             SalesReportPanel report=new SalesReportPanel();call(report,"loadReportData");
             DefaultTableModel rows=(DefaultTableModel)get(report,"tableModel");
             boolean found=false;
@@ -103,8 +103,8 @@ public class ExtendedRegressionTest extends RegressionTest {
         });
         test("completed sales exclude cancelled documents and have no 1000 row cap",()->{
             fresh();db.setAutoCommit(false);
-            for(int i=0;i<1005;i++)sql("INSERT INTO orders(customer_id,order_date,status,total) VALUES(1,"+System.currentTimeMillis()+",'Completed',1)");
-            sql("INSERT INTO orders(customer_id,order_date,status,total) VALUES(1,"+System.currentTimeMillis()+",'Cancelled',900)");db.commit();db.setAutoCommit(true);
+            for(int i=0;i<1005;i++)sql("INSERT INTO orders(customer_id,order_date,status,total_ex_vat,total_inc_vat) VALUES(1,"+System.currentTimeMillis()+",'Completed',1,1)");
+            sql("INSERT INTO orders(customer_id,order_date,status,total_ex_vat,total_inc_vat) VALUES(1,"+System.currentTimeMillis()+",'Cancelled',900,900)");db.commit();db.setAutoCommit(true);
             SalesReportPanel p=new SalesReportPanel();call(p,"loadReportData");
             require(((DefaultTableModel)get(p,"tableModel")).getRowCount()==1005,"Sales rows="+((DefaultTableModel)get(p,"tableModel")).getRowCount()+", today="+today()+", bounds="+((DatePickerField)get(p,"startDateField")).getText()+".."+((DatePickerField)get(p,"endDateField")).getText()+", SQL day="+value("SELECT "+DateUtils.sqlDate("order_date")+" FROM orders LIMIT 1"));
             require(((JLabel)get(p,"totalSalesLabel")).getText().contains("1,005.00"),"Sales total differs");
@@ -114,10 +114,10 @@ public class ExtendedRegressionTest extends RegressionTest {
             JTable t=(JTable)get(p,"abcAnalysisTable");require(((Number)t.getModel().getValueAt(0,1)).intValue()==1,"Dominant product is not A");
         });
         test("top ten percentages include all products in the denominator",()->{
-            fresh();sql("INSERT INTO orders(id,customer_id,order_date,status,total) VALUES(1,1,"+System.currentTimeMillis()+",'Completed',200)");
+            fresh();sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat) VALUES(1,1,"+System.currentTimeMillis()+",'Completed',200,200)");
             for(int i=1;i<=20;i++) {
-                if(i>2)sql("INSERT INTO products(id,code,name,price) VALUES("+i+",'P"+i+"','Product "+i+"',10)");
-                sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(1,"+i+",1,10)");
+                if(i>2)sql("INSERT INTO products(id,code,name,sale_price_ex_vat,sale_price_inc_vat,vat_rate) VALUES("+i+",'P"+i+"','Product "+i+"',10,10,0)");
+                sql("INSERT INTO order_details(order_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate) VALUES(1,"+i+",1,10,10,0)");
             }
             AdvancedStatsPanel p=new AdvancedStatsPanel();call(p,"loadData");
             JTable t=(JTable)get(p,"topProductsTable");require(t.getRowCount()==10 && "5.0%".equals(t.getValueAt(0,3)),"Wrong market share");
@@ -205,10 +205,10 @@ public class ExtendedRegressionTest extends RegressionTest {
             DatabaseMigrationManager.migrate(db);requireNormalizedThresholdSchema();
             require("8|0".equals(value("SELECT minimum_quantity||'|'||reorder_quantity FROM minimum_stock WHERE product_id=1")),"Product-only threshold lost");
             require("4|25|5|2|Original reorder settings".equals(value("SELECT minimum_quantity||'|'||reorder_quantity||'|'||lead_time_days||'|'||preferred_supplier_id||'|'||notes FROM minimum_stock WHERE product_id=2")),"Existing reorder settings did not synchronize to product_suppliers");
-            require(qty()==7 && "1|3|10.0".equals(value("SELECT product_id||'|'||quantity||'|'||unit_price FROM order_details WHERE order_id=1")),"Migration altered stock or order history");
+            require(qty()==7 && "1|3|10.0".equals(value("SELECT product_id||'|'||quantity||'|'||sale_unit_price_inc_vat FROM order_details WHERE order_id=1")),"Migration altered stock or order history");
             DatabaseMigrationManager.migrate(db);requireNormalizedThresholdSchema();
             require("2".equals(value("SELECT COUNT(*) FROM minimum_stock")),"Repeated upgrade duplicated settings");
-            sql("UPDATE products SET price=12 WHERE id=1");sql("UPDATE minimum_stock SET minimum_quantity=12 WHERE product_id=1");
+            sql("UPDATE products SET sale_price_ex_vat=12,sale_price_inc_vat=12,vat_rate=0 WHERE id=1");sql("UPDATE minimum_stock SET minimum_quantity=12 WHERE product_id=1");
             require("12".equals(value("SELECT minimum_quantity FROM minimum_stock WHERE product_id=1")),"Old triggers broke post-upgrade writes");
         });
         test("legacy warehouse thresholds including zero win conflicts without losing other settings",()->{
@@ -247,12 +247,12 @@ public class ExtendedRegressionTest extends RegressionTest {
         test("advanced statistics exclude unfinished cancelled and out-of-period orders",()->{
             fresh();completed();
             for(String status:List.of("New","In Progress","Cancelled")) {
-                sql("INSERT INTO orders(customer_id,order_date,status,total) VALUES(1,"+System.currentTimeMillis()+",'"+status+"',2000)");
-                sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES((SELECT MAX(id) FROM orders),2,100,20)");
+                sql("INSERT INTO orders(customer_id,order_date,status,total_ex_vat,total_inc_vat) VALUES(1,"+System.currentTimeMillis()+",'"+status+"',2000,2000)");
+                sql("INSERT INTO order_details(order_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate) VALUES((SELECT MAX(id) FROM orders),2,100,20,20,0)");
             }
             for(String date:List.of("2000-01-01",java.time.LocalDate.now().plusDays(1).toString())) {
-                sql("INSERT INTO orders(customer_id,order_date,status,total) VALUES(1,'"+date+"','Completed',2000)");
-                sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES((SELECT MAX(id) FROM orders),2,100,20)");
+                sql("INSERT INTO orders(customer_id,order_date,status,total_ex_vat,total_inc_vat) VALUES(1,'"+date+"','Completed',2000,2000)");
+                sql("INSERT INTO order_details(order_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate) VALUES((SELECT MAX(id) FROM orders),2,100,20,20,0)");
             }
             AdvancedStatsPanel panel=new AdvancedStatsPanel();
             for(int period=0;period<3;period++) {
@@ -397,10 +397,10 @@ public class ExtendedRegressionTest extends RegressionTest {
         test("migration 016 separates legacy Paid invoice status from payment",()->{
             fresh();
             sql("DELETE FROM schema_migrations WHERE version='016'");
-            sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) " +
-                "VALUES(40,1,0,'Completed',30,'PARTIALLY_PAID',10)");
-            sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) " +
-                "VALUES(41,1,0,'Completed',30,'PAID',30)");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat,payment_status,paid_amount) " +
+                "VALUES(40,1,0,'Completed',30,30,'PARTIALLY_PAID',10)");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat,payment_status,paid_amount) " +
+                "VALUES(41,1,0,'Completed',30,30,'PAID',30)");
             sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status,payment_status,paid_amount) " +
                 "VALUES(40,'LEGACY-PAID',0,1,30,6.6,36.6,'Paid','NOT_PAID',0)");
             sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status,payment_status,paid_amount,order_id) " +
@@ -417,12 +417,106 @@ public class ExtendedRegressionTest extends RegressionTest {
             require("PARTIALLY_PAID|10.0".equals(value(
                 "SELECT payment_status||'|'||paid_amount FROM orders WHERE id=40")),
                 "Linked partial payment was altered by invoice migration");
-            require("PAID|36.6".equals(value(
+            OrdersPanel.normalizeCompletedOrderPayment(db,41);
+            require("PARTIALLY_PAID|30.0".equals(value(
                 "SELECT payment_status||'|'||paid_amount FROM orders WHERE id=41")),
-                "Linked paid order was not normalized to the gross invoice total");
+                "Payment reconciliation invented received money");
             require("1".equals(value("SELECT COUNT(*) FROM schema_migrations WHERE version='016'")),
                 "Invoice payment migration was not recorded");
         });
+        test("migration 017 preserves legacy net economics and derives customer gross prices",()->{
+            fresh();
+
+            for(String table:List.of("products","orders","order_details","invoice_details"))
+                for(String action:List.of("INSERT","UPDATE"))
+                    sql("DROP TRIGGER IF EXISTS numeric_guard_"+table+"_"+action);
+
+            sql("DELETE FROM schema_migrations WHERE version='017'");
+            sql("ALTER TABLE products RENAME COLUMN sale_price_ex_vat TO price");
+            sql("ALTER TABLE products DROP COLUMN sale_price_inc_vat");
+            sql("ALTER TABLE orders RENAME COLUMN total_ex_vat TO total");
+            sql("ALTER TABLE orders DROP COLUMN total_inc_vat");
+            sql("ALTER TABLE order_details RENAME COLUMN sale_unit_price_ex_vat TO unit_price");
+            sql("ALTER TABLE order_details DROP COLUMN sale_unit_price_inc_vat");
+            sql("ALTER TABLE order_details DROP COLUMN vat_rate");
+            sql("ALTER TABLE invoice_details RENAME COLUMN sale_unit_price_ex_vat TO unit_price");
+            sql("ALTER TABLE invoice_details DROP COLUMN sale_unit_price_inc_vat");
+
+            sql("UPDATE products SET price=100,vat_rate=22,quantity=10,acquisition_cost=60 WHERE id=1");
+            sql("UPDATE products SET price=50,vat_rate=10,quantity=10,acquisition_cost=35 WHERE id=2");
+            sql("INSERT INTO products(id,code,name,price,quantity,acquisition_cost,vat_rate) VALUES" +
+                "(3,'VAT0','Zero VAT',100,5,40,0),(4,'ROUND','Rounding',2.675,5,1,22)");
+
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) VALUES" +
+                "(101,1,1000,'Completed',100,'PAID',100)," +
+                "(102,1,1100,'Completed',100,'NOT_PAID',0)," +
+                "(103,1,1200,'Completed',100,'NOT_PAID',0)," +
+                "(104,1,1300,'Completed',8.03,'NOT_PAID',0)," +
+                "(105,1,1400,'Completed',50,'NOT_PAID',0)");
+            sql("INSERT INTO order_details(id,order_id,product_id,quantity,unit_price,cost_total) VALUES" +
+                "(101,101,1,1,100,60)," +
+                "(102,102,2,2,50,70)," +
+                "(103,103,3,1,100,40)," +
+                "(104,104,4,3,2.675,3)," +
+                "(105,105,2,1,50,35)");
+
+            sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status,order_id,currency_code) " +
+                "VALUES(105,'LEGACY-VAT',1400,1,50,11,61,'Issued',105,'EUR')");
+            sql("INSERT INTO invoice_details(id,invoice_id,product_id,quantity,unit_price,vat_rate,total) " +
+                "VALUES(105,105,2,1,50,22,50)");
+
+            sql("INSERT INTO inventory_lots(id,product_id,received_date,initial_quantity,remaining_quantity,unit_cost,source_type) " +
+                "VALUES(900,1,500,10,9,60,'TEST')");
+            sql("INSERT INTO inventory_lot_consumptions(id,lot_id,order_detail_id,quantity,unit_cost) " +
+                "VALUES(900,900,101,1,60)");
+            sql("INSERT INTO warehouse_movements(id,product_id,date,type,quantity,reason,document_number,document_type) " +
+                "VALUES(900,1,1000,'OUTWARD',1,'OTHER','101','ORDER')");
+            String physicalBefore=value("SELECT quantity||'|'||acquisition_cost FROM products WHERE id=1");
+            String fifoBefore=value("SELECT remaining_quantity||'|'||unit_cost FROM inventory_lots WHERE id=900");
+            String costBefore=value("SELECT cost_total FROM order_details WHERE id=101");
+            String movementsBefore=value("SELECT COUNT(*) FROM warehouse_movements");
+
+            DatabaseMigrationManager.migrate(db);
+
+            require("100.0|122.0".equals(value(
+                "SELECT sale_price_ex_vat||'|'||sale_price_inc_vat FROM products WHERE id=1")),
+                "Legacy 100 net / 22% product was repriced incorrectly");
+            require("100.0|122.0|100.0|PARTIALLY_PAID".equals(value(
+                "SELECT total_ex_vat||'|'||total_inc_vat||'|'||paid_amount||'|'||payment_status FROM orders WHERE id=101")),
+                "Migration changed received money or failed to derive the gross order total");
+            require("100.0|122.0|22.0|60.0".equals(value(
+                "SELECT sale_unit_price_ex_vat||'|'||sale_unit_price_inc_vat||'|'||vat_rate||'|'||cost_total FROM order_details WHERE id=101")),
+                "Legacy order snapshot or historical cost changed");
+            require("100.0|110.0|50.0|55.0|10.0".equals(value(
+                "SELECT o.total_ex_vat||'|'||o.total_inc_vat||'|'||d.sale_unit_price_ex_vat||'|'||d.sale_unit_price_inc_vat||'|'||d.vat_rate " +
+                "FROM orders o JOIN order_details d ON d.order_id=o.id WHERE o.id=102")),
+                "10% VAT or multiple-quantity migration is inconsistent");
+            require("100.0|100.0|100.0|0.0".equals(value(
+                "SELECT o.total_ex_vat||'|'||o.total_inc_vat||'|'||d.sale_unit_price_inc_vat||'|'||d.vat_rate " +
+                "FROM orders o JOIN order_details d ON d.order_id=o.id WHERE o.id=103")),
+                "Zero-VAT migration changed the price");
+            require("8.03|2.675|9.78".equals(value(
+                "SELECT o.total_ex_vat||'|'||d.sale_unit_price_ex_vat||'|'||o.total_inc_vat " +
+                "FROM orders o JOIN order_details d ON d.order_id=o.id WHERE o.id=104")),
+                "Rounding migration changed the legacy net value");
+            require("50.0|61.0|22.0|61.0".equals(value(
+                "SELECT d.sale_unit_price_ex_vat||'|'||d.sale_unit_price_inc_vat||'|'||d.vat_rate||'|'||o.total_inc_vat " +
+                "FROM orders o JOIN order_details d ON d.order_id=o.id WHERE o.id=105")),
+                "Linked historical invoice was not preferred over current product VAT");
+
+            require(physicalBefore.equals(value("SELECT quantity||'|'||acquisition_cost FROM products WHERE id=1")),
+                "Migration changed physical stock or last purchase cost");
+            require(fifoBefore.equals(value("SELECT remaining_quantity||'|'||unit_cost FROM inventory_lots WHERE id=900")),
+                "Migration changed FIFO layers");
+            require(costBefore.equals(value("SELECT cost_total FROM order_details WHERE id=101")),
+                "Migration changed historical FIFO cost");
+            require(movementsBefore.equals(value("SELECT COUNT(*) FROM warehouse_movements")),
+                "Migration changed warehouse movements");
+            require("1".equals(value("SELECT COUNT(*) FROM schema_migrations WHERE version='017'")),
+                "Migration 017 was not recorded exactly once");
+            DatabaseIntegrity.validate(db,false);
+        });
+
         test("legacy supplier migration preserves referenced products",()->{
             fresh();try(Connection c=DatabaseManager.openConnection("jdbc:sqlite::memory:");Statement s=c.createStatement()) {
                 s.execute("CREATE TABLE suppliers(id INTEGER PRIMARY KEY,company_name TEXT)");s.execute("INSERT INTO suppliers VALUES(1,'Supplier')");
@@ -441,7 +535,7 @@ public class ExtendedRegressionTest extends RegressionTest {
             boolean blocked=false;try{sql("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status,order_id) VALUES('ORPHAN',0,1,0,0,0,'Draft',999)");}catch(SQLException e){blocked=true;}require(blocked,"Orphan invoice accepted");
         });
         test("database rejects non-finite and invalid persisted numbers",()->{
-            fresh();for(String query:List.of("UPDATE products SET price=1e999 WHERE id=1","UPDATE products SET quantity=2.5 WHERE id=1","UPDATE products SET vat_rate=101 WHERE id=1","INSERT INTO supplier_orders(supplier_id,number,order_date,status,total) VALUES(1,'BAD',0,'Draft',-1)")) {
+            fresh();for(String query:List.of("UPDATE products SET sale_price_ex_vat=1e999,sale_price_inc_vat=1e999,vat_rate=0 WHERE id=1","UPDATE products SET quantity=2.5 WHERE id=1","UPDATE products SET vat_rate=101 WHERE id=1","INSERT INTO supplier_orders(supplier_id,number,order_date,status,total) VALUES(1,'BAD',0,'Draft',-1)")) {
                 boolean blocked=false;try{sql(query);}catch(SQLException e){blocked=true;}require(blocked,"Numeric domain accepted: "+query);
             }
             DatabaseIntegrity.validate(db,false);
@@ -487,6 +581,13 @@ public class ExtendedRegressionTest extends RegressionTest {
                 "Preferred Supplier",
                 "Last Purchase Cost",
                 "Stock at last purchase cost",
+                "Sale Price incl. VAT",
+                "Customer sale price incl. VAT",
+                "Unit Price incl. VAT",
+                "Total incl. VAT",
+                "Unit price excl. VAT",
+                "Total excl. VAT",
+                "Stock at net sale price",
                 "Historical Cost",
                 "Gross Profit",
                 "Refresh Supplier Prices"
@@ -504,27 +605,27 @@ public class ExtendedRegressionTest extends RegressionTest {
         });
         test("currency relabel changes operational currency without touching finalized invoices",()->{
             fresh();
-            sql("UPDATE products SET price=10,acquisition_cost=5 WHERE id=1");
+            sql("UPDATE products SET sale_price_ex_vat=10,sale_price_inc_vat=10,vat_rate=0,acquisition_cost=5 WHERE id=1");
             sql("UPDATE product_suppliers SET purchase_price=9 WHERE supplier_id=1 AND product_id=1");
-            sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) VALUES(10,1,0,'Completed',30,'PARTIALLY_PAID',10)");
-            sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price,cost_total) VALUES(10,1,3,10,12)");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat,payment_status,paid_amount) VALUES(10,1,0,'Completed',30,30,'PARTIALLY_PAID',10)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate,cost_total) VALUES(10,1,3,10,10,0,12)");
             sql("INSERT INTO inventory_lots(id,product_id,supplier_id,received_date,initial_quantity,remaining_quantity,unit_cost,source_type) VALUES(50,1,1,0,5,2,4,'TEST')");
             sql("INSERT INTO inventory_lot_consumptions(lot_id,order_detail_id,quantity,unit_cost) SELECT 50,id,1,4 FROM order_details WHERE order_id=10");
             sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,status,total) VALUES(10,1,'CUR-SUP',0,'Completed',10)");
             sql("INSERT INTO supplier_order_details(order_id,product_id,quantity,unit_price,total) VALUES(10,1,2,5,10)");
             sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(10,'CUR-ISSUED',0,1,10,2.2,12.2,'Issued')");
-            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total) VALUES(10,1,1,10,22,10)");
+            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate,total) VALUES(10,1,1,10,12.2,22,10)");
             InvoiceSnapshots.capture(db,10,false);
             sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(11,'CUR-DRAFT',0,1,20,4.4,24.4,'Draft')");
-            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total) VALUES(11,1,2,10,22,20)");
+            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate,total) VALUES(11,1,2,10,12.2,22,20)");
             InvoiceSnapshots.capture(db,11,false);
 
             DatabaseCurrency.change("USD",DatabaseCurrency.ChangeMode.RELABEL,null);
 
             require("USD".equals(DatabaseCurrency.read(db)) && "USD".equals(SettingsPanel.getCurrencyCode()),"Operating currency did not change");
-            require("10.0|5.0".equals(value("SELECT price||'|'||acquisition_cost FROM products WHERE id=1")),"Relabel converted product values");
+            require("10.0|5.0".equals(value("SELECT sale_price_inc_vat||'|'||acquisition_cost FROM products WHERE id=1")),"Relabel converted product values");
             require("9.0".equals(value("SELECT purchase_price FROM product_suppliers WHERE product_id=1 AND supplier_id=1")),"Relabel converted supplier price");
-            require("30.0|10.0|10.0|12.0".equals(value("SELECT total||'|'||paid_amount||'|'||(SELECT unit_price FROM order_details WHERE order_id=10)||'|'||(SELECT cost_total FROM order_details WHERE order_id=10) FROM orders WHERE id=10")),"Relabel changed customer order values");
+            require("30.0|10.0|10.0|12.0".equals(value("SELECT total_ex_vat||'|'||paid_amount||'|'||(SELECT sale_unit_price_inc_vat FROM order_details WHERE order_id=10)||'|'||(SELECT cost_total FROM order_details WHERE order_id=10) FROM orders WHERE id=10")),"Relabel changed customer order values");
             require("4.0|4.0".equals(value("SELECT l.unit_cost||'|'||c.unit_cost FROM inventory_lots l JOIN inventory_lot_consumptions c ON c.lot_id=l.id WHERE l.id=50")),
                 "Relabel changed FIFO historical unit costs");
             require("10.0|5.0".equals(value("SELECT total||'|'||(SELECT unit_price FROM supplier_order_details WHERE order_id=10) FROM supplier_orders WHERE id=10")),"Relabel changed supplier order values");
@@ -533,31 +634,31 @@ public class ExtendedRegressionTest extends RegressionTest {
         });
         test("currency conversion updates all operational values and preserves finalized invoices",()->{
             fresh();
-            sql("UPDATE products SET price=10,acquisition_cost=5 WHERE id=1");
+            sql("UPDATE products SET sale_price_ex_vat=10,sale_price_inc_vat=10,vat_rate=0,acquisition_cost=5 WHERE id=1");
             sql("UPDATE product_suppliers SET purchase_price=9 WHERE supplier_id=1 AND product_id=1");
-            sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) VALUES(10,1,0,'Completed',30,'PARTIALLY_PAID',10)");
-            sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price,cost_total) VALUES(10,1,3,10,12)");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat,payment_status,paid_amount) VALUES(10,1,0,'Completed',30,30,'PARTIALLY_PAID',10)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate,cost_total) VALUES(10,1,3,10,10,0,12)");
             sql("INSERT INTO inventory_lots(id,product_id,supplier_id,received_date,initial_quantity,remaining_quantity,unit_cost,source_type) VALUES(50,1,1,0,5,2,4,'TEST')");
             sql("INSERT INTO inventory_lot_consumptions(lot_id,order_detail_id,quantity,unit_cost) SELECT 50,id,1,4 FROM order_details WHERE order_id=10");
             sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,status,total) VALUES(10,1,'FX-SUP',0,'Completed',10)");
             sql("INSERT INTO supplier_order_details(order_id,product_id,quantity,unit_price,total) VALUES(10,1,2,5,10)");
             sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(10,'FX-ISSUED',"+System.currentTimeMillis()+",1,10,2.2,12.2,'Issued')");
-            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total) VALUES(10,1,1,10,22,10)");
+            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate,total) VALUES(10,1,1,10,12.2,22,10)");
             InvoiceSnapshots.capture(db,10,false);
             sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(11,'FX-DRAFT',"+System.currentTimeMillis()+",1,20,4.4,24.4,'Draft')");
-            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total) VALUES(11,1,2,10,22,20)");
+            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate,total) VALUES(11,1,2,10,12.2,22,20)");
             InvoiceSnapshots.capture(db,11,false);
 
             DatabaseCurrency.change("USD",DatabaseCurrency.ChangeMode.CONVERT,new java.math.BigDecimal("1.2"));
 
-            require("12.0|6.0".equals(value("SELECT price||'|'||acquisition_cost FROM products WHERE id=1")),"Product price or acquisition cost not converted");
+            require("12.0|6.0".equals(value("SELECT sale_price_inc_vat||'|'||acquisition_cost FROM products WHERE id=1")),"Product price or acquisition cost not converted");
             require("10.8".equals(value("SELECT purchase_price FROM product_suppliers WHERE product_id=1 AND supplier_id=1")),"Supplier product price not converted");
-            require("36.0|12.0|12.0|14.4".equals(value("SELECT total||'|'||paid_amount||'|'||(SELECT unit_price FROM order_details WHERE order_id=10)||'|'||(SELECT cost_total FROM order_details WHERE order_id=10) FROM orders WHERE id=10")),"Customer order conversion is inconsistent");
+            require("36.0|12.0|12.0|14.4".equals(value("SELECT total_ex_vat||'|'||paid_amount||'|'||(SELECT sale_unit_price_inc_vat FROM order_details WHERE order_id=10)||'|'||(SELECT cost_total FROM order_details WHERE order_id=10) FROM orders WHERE id=10")),"Customer order conversion is inconsistent");
             require("4.8|4.8".equals(value("SELECT l.unit_cost||'|'||c.unit_cost FROM inventory_lots l JOIN inventory_lot_consumptions c ON c.lot_id=l.id WHERE l.id=50")),
                 "FIFO historical unit costs were not converted consistently");
             require("12.0|6.0|12.0".equals(value("SELECT total||'|'||(SELECT unit_price FROM supplier_order_details WHERE order_id=10)||'|'||(SELECT total FROM supplier_order_details WHERE order_id=10) FROM supplier_orders WHERE id=10")),"Supplier order conversion is inconsistent");
-            require("USD|24.0|5.28|29.28|12.0|24.0".equals(value("SELECT currency_code||'|'||taxable_amount||'|'||vat||'|'||total||'|'||(SELECT unit_price FROM invoice_details WHERE invoice_id=11)||'|'||(SELECT total FROM invoice_details WHERE invoice_id=11) FROM invoices WHERE id=11")),"Draft invoice conversion is inconsistent");
-            require("EUR|10.0|2.2|12.2|10.0".equals(value("SELECT currency_code||'|'||taxable_amount||'|'||vat||'|'||total||'|'||(SELECT unit_price FROM invoice_details WHERE invoice_id=10) FROM invoices WHERE id=10")),"Finalized invoice changed during conversion");
+            require("USD|24.0|5.28|29.28|12.0|24.0".equals(value("SELECT currency_code||'|'||taxable_amount||'|'||vat||'|'||total||'|'||(SELECT sale_unit_price_ex_vat FROM invoice_details WHERE invoice_id=11)||'|'||(SELECT total FROM invoice_details WHERE invoice_id=11) FROM invoices WHERE id=11")),"Draft invoice conversion is inconsistent");
+            require("EUR|10.0|2.2|12.2|10.0".equals(value("SELECT currency_code||'|'||taxable_amount||'|'||vat||'|'||total||'|'||(SELECT sale_unit_price_ex_vat FROM invoice_details WHERE invoice_id=10) FROM invoices WHERE id=10")),"Finalized invoice changed during conversion");
 
             sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status,currency_code,customer_snapshot,company_snapshot,snapshot_version) VALUES(12,'FX-USD',"+System.currentTimeMillis()+",1,12,2.64,14.64,'Issued','USD','','',1)");
             DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
@@ -566,24 +667,24 @@ public class ExtendedRegressionTest extends RegressionTest {
         });
         test("currency conversion preserves sub-cent unit precision and recalculates cents consistently",()->{
             fresh();
-            sql("UPDATE products SET price=0.000001,acquisition_cost=0.000001 WHERE id=1");
+            sql("UPDATE products SET sale_price_ex_vat=0.000001,sale_price_inc_vat=0.000001,vat_rate=0,acquisition_cost=0.000001 WHERE id=1");
             sql("UPDATE product_suppliers SET purchase_price=0.000001 WHERE supplier_id=1 AND product_id=1");
-            sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) VALUES(20,1,0,'Completed',1.00,'PARTIALLY_PAID',0.33)");
-            sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(20,1,1000000,0.000001)");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat,payment_status,paid_amount) VALUES(20,1,0,'Completed',1.00,1.00,'PARTIALLY_PAID',0.33)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate) VALUES(20,1,1000000,0.000001,0.000001,0)");
             sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,status,total) VALUES(20,1,'FX-PRECISION',0,'Completed',1.00)");
             sql("INSERT INTO supplier_order_details(order_id,product_id,quantity,unit_price,total) VALUES(20,1,1000000,0.000001,1.00)");
             sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(20,'FX-PRECISION',0,1,1.00,0.22,1.22,'Draft')");
-            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total) VALUES(20,1,1000000,0.000001,22,1.00)");
+            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate,total) VALUES(20,1,1000000,0.000001,0.00000122,22,1.00)");
             InvoiceSnapshots.capture(db,20,false);
 
             DatabaseCurrency.change("USD",DatabaseCurrency.ChangeMode.CONVERT,new java.math.BigDecimal("1.5"));
 
             try(Statement s=db.createStatement()) {
-                try(ResultSet r=s.executeQuery("SELECT price,acquisition_cost FROM products WHERE id=1")) {
+                try(ResultSet r=s.executeQuery("SELECT sale_price_inc_vat,acquisition_cost FROM products WHERE id=1")) {
                     require(r.next() && Math.abs(r.getDouble(1)-0.0000015)<1e-15 && Math.abs(r.getDouble(2)-0.0000015)<1e-15,
                         "Unit precision was lost during product conversion");
                 }
-                try(ResultSet r=s.executeQuery("SELECT total,paid_amount,(SELECT unit_price FROM order_details WHERE order_id=20) FROM orders WHERE id=20")) {
+                try(ResultSet r=s.executeQuery("SELECT total,paid_amount,(SELECT sale_unit_price_inc_vat FROM order_details WHERE order_id=20) FROM orders WHERE id=20")) {
                     require(r.next() && r.getDouble(1)==1.50 && r.getDouble(2)==0.50 && Math.abs(r.getDouble(3)-0.0000015)<1e-15,
                         "Customer order conversion lost precision or rounded payment incorrectly");
                 }
@@ -591,7 +692,7 @@ public class ExtendedRegressionTest extends RegressionTest {
                     require(r.next() && r.getDouble(1)==1.50 && Math.abs(r.getDouble(2)-0.0000015)<1e-15 && r.getDouble(3)==1.50,
                         "Supplier order conversion lost precision");
                 }
-                try(ResultSet r=s.executeQuery("SELECT currency_code,taxable_amount,vat,total,(SELECT unit_price FROM invoice_details WHERE invoice_id=20),(SELECT total FROM invoice_details WHERE invoice_id=20) FROM invoices WHERE id=20")) {
+                try(ResultSet r=s.executeQuery("SELECT currency_code,taxable_amount,vat,total,(SELECT sale_unit_price_ex_vat FROM invoice_details WHERE invoice_id=20),(SELECT total FROM invoice_details WHERE invoice_id=20) FROM invoices WHERE id=20")) {
                     require(r.next() && "USD".equals(r.getString(1)) && r.getDouble(2)==1.50 && r.getDouble(3)==0.33 && r.getDouble(4)==1.83 &&
                         Math.abs(r.getDouble(5)-0.0000015)<1e-15 && r.getDouble(6)==1.50,
                         "Draft invoice conversion or VAT recalculation is inconsistent");
@@ -608,8 +709,8 @@ public class ExtendedRegressionTest extends RegressionTest {
                 require(r.next() && r.getDouble(1)==2.68 && r.getDouble(2)==3.02,
                     "SQL reports disagree with WareStat HALF_UP line totals");
             }
-            sql("INSERT INTO orders(id,customer_id,order_date,status,total) VALUES(20,1,"+System.currentTimeMillis()+",'Completed',2.68)");
-            sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(20,1,1,2.675)");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat) VALUES(20,1,"+System.currentTimeMillis()+",'Completed',2.68,2.68)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate) VALUES(20,1,1,2.675,2.675,0)");
             DashboardPanel dash=new DashboardPanel(null);call(dash,"loadTopProducts");call(dash,"loadABCAnalysis");
             JTable top=(JTable)get(dash,"topProductsTable");
             require(top.getRowCount()>0 && SettingsPanel.formatCurrency(2.68).equals(top.getValueAt(0,3)),
@@ -624,13 +725,13 @@ public class ExtendedRegressionTest extends RegressionTest {
         });
         test("currency conversion refuses to silently repair inconsistent documents",()->{
             fresh();
-            sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) VALUES(20,1,0,'Completed',10,'NOT_PAID',0)");
-            sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(20,1,1,9.99)");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat,payment_status,paid_amount) VALUES(20,1,0,'Completed',10,10,'NOT_PAID',0)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate) VALUES(20,1,1,9.99,9.99,0)");
             boolean blocked=false;
             try {DatabaseCurrency.change("USD",DatabaseCurrency.ChangeMode.CONVERT,new java.math.BigDecimal("1.2"));}
             catch(SQLException e){blocked=true;}
             require(blocked,"Inconsistent source order was silently reconciled during conversion");
-            require("EUR".equals(DatabaseCurrency.read(db)) && "9.99".equals(value("SELECT unit_price FROM order_details WHERE order_id=20")),
+            require("EUR".equals(DatabaseCurrency.read(db)) && "9.99".equals(value("SELECT sale_unit_price_inc_vat FROM order_details WHERE order_id=20")),
                 "Rejected conversion left partial changes");
         });
         test("issued and canceled invoices are finalized document states",()->{
@@ -642,19 +743,19 @@ public class ExtendedRegressionTest extends RegressionTest {
         });
         test("linked historical invoice payment keeps its invoice currency during conversion",()->{
             fresh();
-            sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) " +
-                "VALUES(70,1,0,'Completed',30,'PARTIALLY_PAID',10)");
-            sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(70,1,3,10)");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat,payment_status,paid_amount) " +
+                "VALUES(70,1,0,'Completed',30,30,'PARTIALLY_PAID',10)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate) VALUES(70,1,3,10,10,0)");
             sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status,order_id,currency_code) " +
                 "VALUES(70,'HIST-PAY',0,1,30,6.6,36.6,'Issued',70,'EUR')");
-            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total) " +
-                "VALUES(70,1,3,10,22,30)");
+            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate,total) " +
+                "VALUES(70,1,3,10,12.2,22,30)");
 
             DatabaseCurrency.change("USD",DatabaseCurrency.ChangeMode.CONVERT,
                 new java.math.BigDecimal("2"));
 
             require("60.0|10.0".equals(value(
-                "SELECT total||'|'||paid_amount FROM orders WHERE id=70")),
+                "SELECT total_ex_vat||'|'||paid_amount FROM orders WHERE id=70")),
                 "Historical linked payment was converted away from the invoice currency");
             require("EUR|36.6".equals(value(
                 "SELECT currency_code||'|'||total FROM invoices WHERE id=70")),
@@ -662,25 +763,25 @@ public class ExtendedRegressionTest extends RegressionTest {
         });
         test("currency conversion keeps cents consistent with high quantities VAT and partial payments",()->{
             fresh();
-            sql("UPDATE products SET price=0.0000004,acquisition_cost=2.675 WHERE id=1");
+            sql("UPDATE products SET sale_price_ex_vat=0.0000004,sale_price_inc_vat=0.0000004,vat_rate=0,acquisition_cost=2.675 WHERE id=1");
             sql("UPDATE product_suppliers SET purchase_price=0.0000004 WHERE supplier_id=1 AND product_id=1");
-            sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) VALUES(20,1,"+System.currentTimeMillis()+",'Completed',0.40,'PARTIALLY_PAID',0.335)");
-            sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(20,1,1000000,0.0000004)");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat,payment_status,paid_amount) VALUES(20,1,"+System.currentTimeMillis()+",'Completed',0.40,0.40,'PARTIALLY_PAID',0.335)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate) VALUES(20,1,1000000,0.0000004,0.0000004,0)");
             sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(20,'FX-PRECISION',"+System.currentTimeMillis()+",1,8.03,1.77,9.80,'Draft')");
-            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total) VALUES(20,1,3,2.675,22,8.03)");
+            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate,total) VALUES(20,1,3,2.6766666666666667,3.2666666666666666,22,8.03)");
             InvoiceSnapshots.capture(db,20,false);
 
             java.math.BigDecimal rate=new java.math.BigDecimal("1.234567");
             DatabaseCurrency.change("USD",DatabaseCurrency.ChangeMode.CONVERT,rate);
 
-            double convertedTiny=Double.parseDouble(value("SELECT unit_price FROM order_details WHERE order_id=20"));
-            double orderTotal=Double.parseDouble(value("SELECT total FROM orders WHERE id=20"));
+            double convertedTiny=Double.parseDouble(value("SELECT sale_unit_price_inc_vat FROM order_details WHERE order_id=20"));
+            double orderTotal=Double.parseDouble(value("SELECT total_ex_vat FROM orders WHERE id=20"));
             require(Numbers.moneyText(orderTotal).equals(Numbers.moneyText(Numbers.lineTotal(1000000,convertedTiny))),
                 "High-quantity order no longer reconciles after conversion");
             require("0.41".equals(Numbers.moneyText(Double.parseDouble(value("SELECT paid_amount FROM orders WHERE id=20")))),
                 "Partial payment conversion did not round to cents");
 
-            double invoicePrice=Double.parseDouble(value("SELECT unit_price FROM invoice_details WHERE invoice_id=20"));
+            double invoicePrice=Double.parseDouble(value("SELECT sale_unit_price_ex_vat FROM invoice_details WHERE invoice_id=20"));
             double line=Numbers.lineTotal(3,invoicePrice);
             double vat=Numbers.tax(line,22);
             require(Numbers.moneyText(Double.parseDouble(value("SELECT taxable_amount FROM invoices WHERE id=20"))).equals(Numbers.moneyText(line)),
@@ -693,30 +794,30 @@ public class ExtendedRegressionTest extends RegressionTest {
         });
         test("currency conversion refuses to repair inconsistent documents silently",()->{
             fresh();
-            sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) VALUES(30,1,0,'Completed',99,'NOT_PAID',0)");
-            sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(30,1,1,10)");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat,payment_status,paid_amount) VALUES(30,1,0,'Completed',99,99,'NOT_PAID',0)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate) VALUES(30,1,1,10,10,0)");
             boolean blocked=false;
             try {DatabaseCurrency.change("USD",DatabaseCurrency.ChangeMode.CONVERT,new java.math.BigDecimal("1.2"));}
             catch(SQLException e){blocked=true;}
             require(blocked,"Inconsistent order was silently rewritten by currency conversion");
             require("EUR".equals(DatabaseCurrency.read(db)),"Rejected conversion changed database currency");
-            require("99.0|10.0".equals(value("SELECT total||'|'||(SELECT unit_price FROM order_details WHERE order_id=30) FROM orders WHERE id=30")),
+            require("99.0|10.0".equals(value("SELECT total_ex_vat||'|'||(SELECT sale_unit_price_inc_vat FROM order_details WHERE order_id=30) FROM orders WHERE id=30")),
                 "Rejected conversion changed inconsistent order values");
         });
         test("currency conversion is atomic and historical foreign invoice only changes status",()->{
             fresh();
-            sql("UPDATE products SET price=10,acquisition_cost=5 WHERE id=1");
+            sql("UPDATE products SET sale_price_ex_vat=10,sale_price_inc_vat=10,vat_rate=0,acquisition_cost=5 WHERE id=1");
             sql("UPDATE product_suppliers SET purchase_price=9 WHERE supplier_id=1 AND product_id=1");
             sql("CREATE TRIGGER reject_currency_test BEFORE UPDATE ON product_suppliers BEGIN SELECT RAISE(ABORT,'currency rollback test'); END");
             boolean blocked=false;
             try{DatabaseCurrency.change("USD",DatabaseCurrency.ChangeMode.CONVERT,new java.math.BigDecimal("1.2"));}catch(SQLException e){blocked=true;}
             require(blocked,"Injected conversion failure was ignored");
             require("EUR".equals(DatabaseCurrency.read(db)) && "EUR".equals(SettingsPanel.getCurrencyCode()),"Failed conversion changed database currency");
-            require("10.0|5.0|9.0".equals(value("SELECT p.price||'|'||p.acquisition_cost||'|'||s.purchase_price FROM products p JOIN product_suppliers s ON s.product_id=p.id AND s.supplier_id=1 WHERE p.id=1")),"Failed conversion left partial monetary changes");
+            require("10.0|5.0|9.0".equals(value("SELECT p.sale_price_inc_vat||'|'||p.acquisition_cost||'|'||s.purchase_price FROM products p JOIN product_suppliers s ON s.product_id=p.id AND s.supplier_id=1 WHERE p.id=1")),"Failed conversion left partial monetary changes");
             sql("DROP TRIGGER reject_currency_test");
 
             sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(10,'HIST-EUR',0,1,10,2.2,12.2,'Issued')");
-            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total) VALUES(10,1,1,10,22,10)");
+            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate,total) VALUES(10,1,1,10,12.2,22,10)");
             InvoiceSnapshots.capture(db,10,false);
             DatabaseCurrency.change("USD",DatabaseCurrency.ChangeMode.RELABEL,null);
             Invoice model=new Invoice(10,"HIST-EUR",new java.util.Date(),1,"Test Customer",10,2.2,12.2,"Issued");
@@ -730,7 +831,7 @@ public class ExtendedRegressionTest extends RegressionTest {
             call(dialog,"saveInvoice");
             require(Boolean.TRUE.equals(get(dialog,"invoiceSaved")),"Historical status/payment save failed");
             require("Issued|PAID|12.2|EUR|10.0|2.2|12.2|10.0".equals(value(
-                "SELECT status||'|'||payment_status||'|'||paid_amount||'|'||currency_code||'|'||taxable_amount||'|'||vat||'|'||total||'|'||(SELECT unit_price FROM invoice_details WHERE invoice_id=10) FROM invoices WHERE id=10")),
+                "SELECT status||'|'||payment_status||'|'||paid_amount||'|'||currency_code||'|'||taxable_amount||'|'||vat||'|'||total||'|'||(SELECT sale_unit_price_ex_vat FROM invoice_details WHERE invoice_id=10) FROM invoices WHERE id=10")),
                 "Historical invoice content changed while updating payment");
         });
         test("invoice snapshots survive later party and catalog changes",()->{
@@ -781,7 +882,7 @@ public class ExtendedRegressionTest extends RegressionTest {
 
                 fresh();
                 sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(1,'VAT-MIX',"+System.currentTimeMillis()+",1,30,4.4,34.4,'Issued')");
-                sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total,product_code,product_name) VALUES(1,1,1,10,0,10,'A','Zero VAT'),(1,2,1,20,22,20,'B','Standard VAT')");
+                sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate,total,product_code,product_name) VALUES(1,1,1,10,10,0,10,'A','Zero VAT'),(1,2,1,20,24.4,22,20,'B','Standard VAT')");
                 InvoiceSnapshots.capture(db,1,false);
                 Invoice mixed=new Invoice(1,"VAT-MIX",new java.util.Date(),1,"",30,4.4,34.4,"Issued");
                 Path mixedFile=OUT.resolve("invoice-mixed-vat.pdf");
@@ -792,7 +893,7 @@ public class ExtendedRegressionTest extends RegressionTest {
 
                 fresh();
                 sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(1,'LEGACY',"+System.currentTimeMillis()+",1,10,2.2,12.2,'Issued')");
-                sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total) VALUES(1,1,1,10,22,10)");
+                sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate,total) VALUES(1,1,1,10,22,10)");
                 InvoiceSnapshots.capture(db,1,true);
                 Invoice legacy=new Invoice(1,"LEGACY",new java.util.Date(),1,"",10,2.2,12.2,"Issued");
                 Path legacyFile=OUT.resolve("invoice-legacy.pdf");
@@ -806,7 +907,7 @@ public class ExtendedRegressionTest extends RegressionTest {
         });
         test("fifty line invoice prints every row and totals within page bounds",()->{
             fresh();sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(1,'TEST-50',"+System.currentTimeMillis()+",1,500,110,610,'Issued')");
-            for(int i=0;i<50;i++)sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total,product_code,product_name) VALUES(1,1,1,10,22,10,'5901234123457','ROW-"+String.format("%03d",i)+"')");
+            for(int i=0;i<50;i++)sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate,total,product_code,product_name) VALUES(1,1,1,10,12.2,22,10,'5901234123457','ROW-"+String.format("%03d",i)+"')");
             InvoiceSnapshots.capture(db,1,false);Invoice i=new Invoice(1,"TEST-50",new java.util.Date(),1,"",500,110,610,"Issued");
             Path file=OUT.resolve("invoice-50-lines.pdf");call(new InvoicePDFGenerator(i,customer()),"generatePDF",new Class<?>[]{java.io.File.class},file.toFile());
             String text=pdfText(file);for(int row=0;row<50;row++)require(text.contains("ROW-"+String.format("%03d",row)),"Invoice row clipped: "+row);
