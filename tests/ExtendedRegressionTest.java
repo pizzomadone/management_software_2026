@@ -394,6 +394,28 @@ public class ExtendedRegressionTest extends RegressionTest {
             require("7500".equals(value("SELECT received_date FROM inventory_lots WHERE supplier_order_detail_id=130")),"Migration changed an existing FIFO lot date");
             require("1".equals(value("SELECT COUNT(*) FROM schema_migrations WHERE version='015'")),"Receipt-date migration was not recorded");
         });
+        test("migration 016 separates legacy Paid invoice status from payment",()->{
+            fresh();
+            sql("DELETE FROM schema_migrations WHERE version='016'");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) " +
+                "VALUES(40,1,0,'Completed',30,'PARTIALLY_PAID',10)");
+            sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status,payment_status,paid_amount) " +
+                "VALUES(40,'LEGACY-PAID',0,1,30,6.6,36.6,'Paid','NOT_PAID',0)");
+            sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status,payment_status,paid_amount,order_id) " +
+                "VALUES(41,'LEGACY-LINKED',0,1,30,6.6,36.6,'Paid','PAID',36.6,40)");
+            DatabaseMigrationManager.migrate(db);
+            require("Issued|PAID|36.6".equals(value(
+                "SELECT status||'|'||payment_status||'|'||paid_amount FROM invoices WHERE id=40")),
+                "Standalone legacy Paid invoice was not migrated");
+            require("Issued|NOT_PAID|0.0".equals(value(
+                "SELECT status||'|'||payment_status||'|'||paid_amount FROM invoices WHERE id=41")),
+                "Linked invoice retained an independent payment value");
+            require("PARTIALLY_PAID|10.0".equals(value(
+                "SELECT payment_status||'|'||paid_amount FROM orders WHERE id=40")),
+                "Linked order payment was altered by invoice migration");
+            require("1".equals(value("SELECT COUNT(*) FROM schema_migrations WHERE version='016'")),
+                "Invoice payment migration was not recorded");
+        });
         test("legacy supplier migration preserves referenced products",()->{
             fresh();try(Connection c=DatabaseManager.openConnection("jdbc:sqlite::memory:");Statement s=c.createStatement()) {
                 s.execute("CREATE TABLE suppliers(id INTEGER PRIMARY KEY,company_name TEXT)");s.execute("INSERT INTO suppliers VALUES(1,'Supplier')");
@@ -442,8 +464,12 @@ public class ExtendedRegressionTest extends RegressionTest {
                 "Currency changed successfully.",
                 "No amounts were converted.",
                 "Operational values were converted using the selected exchange rate.",
-                "Finalized invoice: only the status can be changed.",
-                "Issued, Paid and Canceled invoices are historical documents. Only their status can be changed.",
+                "Finalized invoice: only status and payment can be changed.",
+                "Issued and Canceled invoices are historical documents. Only status and payment can be changed.",
+                "Payment Status:",
+                "Update Payment",
+                "Partial paid amount must be greater than zero and less than the total.",
+                "Payment is managed by the linked customer order and is read-only here.",
                 "A finalized invoice cannot be returned to Draft.",
                 "Before changing currency, we recommend creating a backup of your database.",
                 "Open Backup",
@@ -600,11 +626,11 @@ public class ExtendedRegressionTest extends RegressionTest {
             require("EUR".equals(DatabaseCurrency.read(db)) && "9.99".equals(value("SELECT unit_price FROM order_details WHERE order_id=20")),
                 "Rejected conversion left partial changes");
         });
-        test("every non-Draft invoice is treated as finalized regardless of currency",()->{
+        test("issued and canceled invoices are finalized document states",()->{
             java.lang.reflect.Method method=InvoiceDialog.class.getDeclaredMethod("isFinalizedStatus",String.class);
             method.setAccessible(true);
             require(!(Boolean)method.invoke(null,"Draft"),"Draft invoice was locked");
-            for(String status:List.of("Issued","Paid","Canceled"))
+            for(String status:List.of("Issued","Canceled"))
                 require((Boolean)method.invoke(null,status),"Finalized invoice remained economically editable: "+status);
         });
         test("currency conversion keeps cents consistent with high quantities VAT and partial payments",()->{
@@ -668,10 +694,17 @@ public class ExtendedRegressionTest extends RegressionTest {
             DatabaseCurrency.change("USD",DatabaseCurrency.ChangeMode.RELABEL,null);
             Invoice model=new Invoice(10,"HIST-EUR",new java.util.Date(),1,"Test Customer",10,2.2,12.2,"Issued");
             ID dialog=empty(ID.class);put(dialog,"invoice",model);put(dialog,"documentCurrency","EUR");put(dialog,"historicalForeignCurrencyLocked",true);
-            put(dialog,"statusCombo",new JComboBox<>(new String[]{"Paid"}));
+            put(dialog,"linkedOrderLocked",false);
+            put(dialog,"statusCombo",new JComboBox<>(new String[]{"Issued"}));
+            put(dialog,"paymentStatusCombo",new JComboBox<>(new String[]{"Paid"}));
+            put(dialog,"paidAmountLabel",new JLabel("Paid Amount:"));
+            put(dialog,"paidAmountField",new JTextField("0"));
+            put(dialog,"currentTotal",12.2);
             call(dialog,"saveInvoice");
-            require(Boolean.TRUE.equals(get(dialog,"invoiceSaved")),"Historical status-only save failed");
-            require("Paid|EUR|10.0|2.2|12.2|10.0".equals(value("SELECT status||'|'||currency_code||'|'||taxable_amount||'|'||vat||'|'||total||'|'||(SELECT unit_price FROM invoice_details WHERE invoice_id=10) FROM invoices WHERE id=10")),"Historical invoice monetary data changed while updating status");
+            require(Boolean.TRUE.equals(get(dialog,"invoiceSaved")),"Historical status/payment save failed");
+            require("Issued|PAID|12.2|EUR|10.0|2.2|12.2|10.0".equals(value(
+                "SELECT status||'|'||payment_status||'|'||paid_amount||'|'||currency_code||'|'||taxable_amount||'|'||vat||'|'||total||'|'||(SELECT unit_price FROM invoice_details WHERE invoice_id=10) FROM invoices WHERE id=10")),
+                "Historical invoice content changed while updating payment");
         });
         test("invoice snapshots survive later party and catalog changes",()->{
             fresh();sql("UPDATE customers SET first_name='Łódź',last_name='Original' WHERE id=1");
@@ -685,7 +718,7 @@ public class ExtendedRegressionTest extends RegressionTest {
         test("invoice PDF covers statuses languages sparse parties and VAT variants",()->{
             String previousLanguage=I18n.getLanguage();
             try {
-                for(String status:List.of("Draft","Issued","Paid","Canceled")) {
+                for(String status:List.of("Draft","Issued","Canceled")) {
                     fresh();
                     ID d=invoice();put(d,"statusCombo",new JComboBox<>(new String[]{status}));call(d,"saveInvoice");
                     Invoice i=new Invoice(1,"PDF",new java.util.Date(),1,"",30,6.6,36.6,status);
