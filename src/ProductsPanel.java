@@ -698,6 +698,7 @@ public class ProductsPanel extends JPanel {
             String query = """
                 SELECT p.*, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity,
                        f.company_name as supplier_name,
+                       ps.purchase_price AS preferred_supplier_cost,
                        (SELECT filename FROM product_images pi WHERE pi.product_id=p.id ORDER BY pi.is_primary DESC,pi.sort_order,pi.id LIMIT 1) AS primary_image,
                        COALESCE(SUM(CASE
                            WHEN so.status IN ('Draft', 'Confirmed', 'In Transit')
@@ -741,8 +742,8 @@ public class ProductsPanel extends JPanel {
                     row.add(trimCellText(rs.getString("warehouse_position")));
                     row.add(rs.getDouble("vat_rate"));
                     row.add(ProductImageStore.getInstance().iconCover(rs.getString("primary_image"), 48, 30));
-                    if (rs.getObject("acquisition_cost") == null ||
-                            Numbers.nonNegative(rs.getObject("acquisition_cost")) <= 0) {
+                    if (rs.getObject("preferred_supplier_cost") == null ||
+                            Numbers.nonNegative(rs.getObject("preferred_supplier_cost")) <= 0) {
                         missingPurchaseCostProductIds.add(rs.getInt("id"));
                     }
                     tableModel.addRow(row);
@@ -820,8 +821,8 @@ public class ProductsPanel extends JPanel {
                         row.add(trimCellText(rs.getString("warehouse_position")));
                         row.add(rs.getDouble("vat_rate"));
                         row.add(ProductImageStore.getInstance().iconCover(rs.getString("primary_image"), 48, 30));
-                        if (rs.getObject("acquisition_cost") == null ||
-                            Numbers.nonNegative(rs.getObject("acquisition_cost")) <= 0) {
+                        if (rs.getObject("preferred_supplier_cost") == null ||
+                            Numbers.nonNegative(rs.getObject("preferred_supplier_cost")) <= 0) {
                         missingPurchaseCostProductIds.add(rs.getInt("id"));
                     }
                     tableModel.addRow(row);
