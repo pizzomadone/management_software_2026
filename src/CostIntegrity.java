@@ -49,7 +49,13 @@ public final class CostIntegrity {
     public static Audit audit(Connection c) throws SQLException {
         int products = 0;
         try (PreparedStatement p = c.prepareStatement(
-                "SELECT COUNT(*) FROM products WHERE acquisition_cost IS NULL OR acquisition_cost<=0");
+                """
+                SELECT COUNT(*)
+                FROM products p
+                LEFT JOIN product_suppliers ps
+                  ON ps.product_id=p.id AND ps.is_preferred=1
+                WHERE ps.purchase_price IS NULL OR ps.purchase_price<=0
+                """);
              ResultSet r = p.executeQuery()) {
             if (r.next()) products = r.getInt(1);
         }
@@ -66,12 +72,17 @@ public final class CostIntegrity {
     }
 
     public static boolean hasPurchaseCost(Connection c, int productId) throws SQLException {
-        try (PreparedStatement p = c.prepareStatement(
-                "SELECT acquisition_cost FROM products WHERE id=?")) {
+        try (PreparedStatement p = c.prepareStatement("""
+                SELECT p.id, ps.purchase_price
+                FROM products p
+                LEFT JOIN product_suppliers ps
+                  ON ps.product_id=p.id AND ps.is_preferred=1
+                WHERE p.id=?
+                """)) {
             p.setInt(1, productId);
             try (ResultSet r = p.executeQuery()) {
                 if (!r.next()) throw new SQLException("Product no longer exists");
-                Object value = r.getObject(1);
+                Object value = r.getObject("purchase_price");
                 return value != null && Numbers.nonNegative(value) > 0.0;
             }
         }
