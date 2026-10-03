@@ -637,6 +637,193 @@ public class OrdersPanel extends JPanel {
         normalizeCompletedOrderPayment(conn, orderId);
     }
 
+    record GeneratedInvoice(int id, String number) {}
+
+    // Called inside the caller's transaction so invoice, snapshots and payment state commit together.
+    static GeneratedInvoice createInvoiceFromOrder(Connection conn, Order order) throws SQLException {
+        if (conn.getAutoCommit()) throw new SQLException("Invoice creation requires a transaction");
+        if (!canGenerateInvoice(order.getStatus()) || order.getItems().isEmpty())
+            throw new SQLException("Only completed nonempty orders can be invoiced");
+        int orderId = order.getId();
+        // Generate invoice number
+        int year = new java.util.Calendar.Builder()
+            .setInstant(order.getOrderDate())
+            .build()
+            .get(java.util.Calendar.YEAR);
+        String invoiceNumber = DatabaseManager.getInstance().getNextInvoiceNumber(conn, year);
+
+        // Customer orders snapshot both VAT rate and gross/net sale prices,
+        // so invoicing never depends on later product changes.
+        double taxableAmount = 0.0;
+        double vatTotal = 0.0;
+        double total = 0.0;
+
+        for (OrderItem item : order.getItems()) {
+            double itemTaxable = item.getTotalExVat();
+            double itemGross = item.getTotalIncVat();
+            double itemVat = Numbers.money(java.math.BigDecimal.valueOf(itemGross)
+                .subtract(java.math.BigDecimal.valueOf(itemTaxable)));
+            taxableAmount = Numbers.add(taxableAmount,itemTaxable);
+            vatTotal = Numbers.add(vatTotal,itemVat);
+            total = Numbers.add(total,itemGross);
+        }
+
+
+
+        // Insert invoice
+        String insertInvoice = """
+            INSERT INTO invoices (number, date, customer_id, taxable_amount, vat, total, status, order_id)
+            VALUES (?, ?, ?, ?, ?, ?, 'Draft', ?)
+        """;
+
+        int invoiceId = 0;
+        try (PreparedStatement pstmt = conn.prepareStatement(insertInvoice, Statement.RETURN_GENERATED_KEYS)) {
+            pstmt.setString(1, invoiceNumber);
+            pstmt.setTimestamp(2, DateUtils.toSqlTimestamp(order.getOrderDate()));
+            pstmt.setInt(3, order.getCustomerId());
+            pstmt.setDouble(4, taxableAmount);
+            pstmt.setDouble(5, vatTotal);
+            pstmt.setDouble(6, total);
+            pstmt.setInt(7, orderId);
+            pstmt.executeUpdate();
+
+            ResultSet rs = pstmt.getGeneratedKeys();
+            if (rs.next()) {
+                invoiceId = rs.getInt(1);
+            }
+        }
+
+        // Insert invoice details
+        String insertDetails = """
+            INSERT INTO invoice_details
+                (invoice_id, product_id, quantity, sale_unit_price_ex_vat,
+                 sale_unit_price_inc_vat, vat_rate, total)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """;
+
+        try (PreparedStatement pstmt = conn.prepareStatement(insertDetails)) {
+            for (OrderItem item : order.getItems()) {
+                double itemTaxable = item.getTotalExVat();
+
+                pstmt.setInt(1, invoiceId);
+                pstmt.setInt(2, item.getProductId());
+                pstmt.setInt(3, item.getQuantity());
+                pstmt.setDouble(4, item.getUnitPriceExVat());
+                pstmt.setDouble(5, item.getUnitPriceIncVat());
+                pstmt.setDouble(6, item.getVatRate());
+                pstmt.setDouble(7, itemTaxable);
+                pstmt.addBatch();
+            }
+            pstmt.executeBatch();
+        }
+
+        reconcileCompletedOrderPaymentAfterInvoice(conn, orderId);
+        InvoiceSnapshots.capture(conn,invoiceId,false);
+        return new GeneratedInvoice(invoiceId, invoiceNumber);
+    }
+
+    private void generateInvoiceFromOrder() {
+        int selectedRow = ordersTable.getSelectedRow();
+        if (selectedRow == -1) return;
+
+        // Convert view index to model index (important when table is sorted)
+        int modelRow = ordersTable.convertRowIndexToModel(selectedRow);
+        int orderId = (int)tableModel.getValueAt(modelRow, 0);
+        String customer = (String)tableModel.getValueAt(modelRow, 1);
+        String status = (String)tableModel.getValueAt(modelRow, 3);
+
+        String existingInvoice = linkedInvoiceNumber(orderId);
+        if (existingInvoice != null) {
+            Window window = SwingUtilities.getWindowAncestor(this);
+            if (window instanceof MainWindow mainWindow) {
+                mainWindow.openInvoice(existingInvoice);
+            }
+            return;
+        }
+
+        if (!canGenerateInvoice(status)) {
+            Dialogs.showMessageDialog(this,
+                I18n.tr("Only completed customer orders can be invoiced."),
+                I18n.tr("Generate Invoice"), JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        // Confirm with user
+        int result = Dialogs.showConfirmDialog(this,
+            "Generate invoice for order from customer: " + customer + "?\n" +
+            "Order status: " + status,
+            "Confirm Invoice Generation",
+            JOptionPane.YES_NO_OPTION,
+            JOptionPane.QUESTION_MESSAGE);
+
+        if (result != JOptionPane.YES_OPTION) return;
+
+        try {
+            Order order = loadOrderDetails(orderId);
+            if (order == null) {
+                Dialogs.showMessageDialog(this,
+                    "Error loading order details",
+                    "Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            if (order.getItems().isEmpty()) {
+                Dialogs.showMessageDialog(this,
+                    "Cannot generate invoice: order has no items",
+                    "Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            Connection conn = DatabaseManager.getInstance().getConnection();
+            DatabaseManager.beginTransaction(conn);
+
+            try {
+                GeneratedInvoice generated = createInvoiceFromOrder(conn, order);
+                int invoiceId = generated.id();
+                String invoiceNumber = generated.number();
+                // Commit transaction (verify we're still in transaction mode)
+                if (!conn.getAutoCommit()) {
+                    conn.commit();
+                }
+
+                Object[] invoiceOptions = { I18n.tr("Go to Invoice"), I18n.tr("Close") };
+                int invoiceAction = Dialogs.showOptionDialog(this,
+                    I18n.format("Invoice {0} generated successfully!", invoiceNumber) + "\n" +
+                    I18n.tr("You can find it in the Invoices panel."),
+                    I18n.tr("Invoice Generated"), JOptionPane.DEFAULT_OPTION,
+                    JOptionPane.INFORMATION_MESSAGE, null, invoiceOptions, invoiceOptions[0]);
+
+                Window invoiceParentWindow = SwingUtilities.getWindowAncestor(this);
+                if (invoiceParentWindow instanceof MainWindow mainWindow) {
+                    mainWindow.refreshInvoicesPanel();
+                    if (invoiceAction == 0) mainWindow.openInvoice(invoiceNumber);
+                }
+
+            } catch (Exception e) {
+                try {
+                    if (!conn.getAutoCommit()) {
+                        conn.rollback();
+                    }
+                } catch (SQLException rollbackEx) {
+                    rollbackEx.printStackTrace();
+                }
+                throw e;
+            } finally {
+                try {
+                    conn.setAutoCommit(true);
+                } catch (SQLException finallyEx) {
+                    finallyEx.printStackTrace();
+                }
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            Dialogs.showMessageDialog(this,
+                "Error generating invoice: " + e.getMessage(),
+                "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
     private String formatPaymentStatus(String paymentStatus, double paidAmount,
             String paymentCurrency) {
         if (paymentStatus == null || "NOT_PAID".equals(paymentStatus)) {
