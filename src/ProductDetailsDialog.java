@@ -1,6 +1,6 @@
 import javax.swing.*;
 import java.awt.*;
-import java.sql.SQLException;
+import java.sql.*;
 import java.util.List;
 
 /** Read-only product view with a compact photo gallery and an explicit Edit action. */
@@ -70,7 +70,16 @@ public final class ProductDetailsDialog extends JDialog {
         addWrappedLine(details, g, "Description", product.getDescription());
         addLine(details, g, "Quantity", String.valueOf(product.getQuantity()));
         addLine(details, g, "Price", SettingsPanel.formatCurrency(product.getPrice()));
-        addLine(details, g, "Last Purchase Cost", SettingsPanel.formatCurrency(product.getAcquisitionCost()));
+
+        Double preferredSupplierCost = loadPreferredSupplierCost(product.getId());
+        addCostLine(details, g, "Preferred Supplier Cost",
+            preferredSupplierCost == null ? null : SettingsPanel.formatUnitCurrency(preferredSupplierCost),
+            true);
+        addCostLine(details, g, "Last Purchase Cost",
+            product.getAcquisitionCost() > 0
+                ? SettingsPanel.formatUnitCurrency(product.getAcquisitionCost()) : null,
+            false);
+
         addLine(details, g, "Minimum Quantity", String.valueOf(product.getMinimumQuantity()));
         addLine(details, g, "Preferred Supplier", product.getSupplierName());
         addLine(details, g, "Warehouse Position", product.getWarehousePosition());
@@ -116,6 +125,83 @@ public final class ProductDetailsDialog extends JDialog {
     public void setVisible(boolean visible) {
         if (visible) centerOnOwner();
         super.setVisible(visible);
+    }
+
+    private Double loadPreferredSupplierCost(int productId) {
+        try {
+            Connection c = DatabaseManager.getInstance().getConnection();
+            try (PreparedStatement p = c.prepareStatement("""
+                    SELECT purchase_price
+                    FROM product_suppliers
+                    WHERE product_id=? AND is_preferred=1
+                    LIMIT 1
+                    """)) {
+                p.setInt(1, productId);
+                try (ResultSet r = p.executeQuery()) {
+                    if (r.next()) {
+                        double value = Numbers.nonNegative(r.getObject(1));
+                        return value > 0 ? value : null;
+                    }
+                }
+            }
+        } catch (SQLException ignored) {}
+        return null;
+    }
+
+    private void showPurchaseCostHelp() {
+        String message = I18n.tr(
+                "Preferred supplier cost is the current purchase cost saved for the preferred supplier. Click the value to edit it.")
+            + "\n\n" + I18n.tr(
+                "When a supplier order is received, its actual unit purchase price becomes the FIFO lot cost and updates that supplier's current cost.")
+            + "\n\n" + I18n.tr(
+                "Last purchase cost is the unit cost of the most recently received supplier purchase. It is updated automatically and cannot be edited here.")
+            + "\n\n" + I18n.tr(
+                "Historical FIFO lots and completed sales keep the costs recorded when they were created.");
+        Dialogs.showMessageDialog(this, message, I18n.tr("Purchase Cost Help"),
+            JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private void addCostLine(JPanel panel, GridBagConstraints g, String label,
+            String value, boolean showHelp) {
+        g.gridx = 0;
+        g.weightx = 0;
+        g.weighty = 0;
+        g.fill = GridBagConstraints.NONE;
+        g.anchor = GridBagConstraints.NORTHWEST;
+
+        JLabel l = new JLabel(label + ":");
+        l.setFont(l.getFont().deriveFont(Font.BOLD));
+        panel.add(l, g);
+
+        g.gridx = 1;
+        g.weightx = 1;
+        g.fill = GridBagConstraints.HORIZONTAL;
+
+        JTextArea text = wrappedText(
+            value == null || value.isBlank() ? I18n.tr("Not set") : value, false);
+        text.setRows(1);
+        text.setColumns(1);
+        text.setMinimumSize(new Dimension(0, text.getPreferredSize().height));
+        text.setMaximumSize(new Dimension(Integer.MAX_VALUE, 42));
+        panel.add(text, g);
+
+        if (showHelp) {
+            g.gridx = 2;
+            g.weightx = 0;
+            g.fill = GridBagConstraints.NONE;
+            JButton help = new JButton("?");
+            help.putClientProperty("i18n.literal", true);
+            help.setFont(help.getFont().deriveFont(Font.BOLD));
+            help.setMargin(new Insets(0, 6, 0, 6));
+            help.setFocusable(false);
+            help.setToolTipText(I18n.tr("Click for help"));
+            help.addActionListener(e -> showPurchaseCostHelp());
+            panel.add(help, g);
+        }
+
+        g.fill = GridBagConstraints.NONE;
+        g.anchor = GridBagConstraints.WEST;
+        g.gridy++;
     }
 
     private static void addLine(JPanel panel, GridBagConstraints g, String label, String value) {
