@@ -127,7 +127,19 @@ public class FifoCompletionTest extends RegressionTest {
         test("supplier receipt is linked to its exact warehouse movement",()->{
             fresh();call(supplier(false,new HashMap<>()),"saveOrder");
             require("1".equals(value("SELECT COUNT(*) FROM inventory_lots l JOIN warehouse_movements m ON m.id=l.warehouse_movement_id WHERE l.source_type='SUPPLIER_ORDER' AND m.product_id=l.product_id AND m.quantity=l.initial_quantity AND m.document_type='SUPPLIER_ORDER'")),"Receipt/lot link missing");
-            require("5.0".equals(value("SELECT purchase_price FROM product_suppliers WHERE product_id=1")),"Receipt overwrote reference price");
+        });
+        test("received supplier price becomes both FIFO lot cost and current supplier cost",()->{
+            fresh();
+            sql("UPDATE product_suppliers SET purchase_price=5 WHERE product_id=1 AND supplier_id=1");
+            sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,received_date,status,total) VALUES(90,1,'SYNC',1000,2000,'Completed',16)");
+            sql("INSERT INTO supplier_order_details(id,order_id,product_id,quantity,unit_price,total) VALUES(90,90,1,2,8,16)");
+            InventoryLotManager.receiveSupplierOrder(db,90,new java.util.Date(2000),"SYNC");
+            require("8.0".equals(value("SELECT unit_cost FROM inventory_lots WHERE supplier_order_detail_id=90")),
+                "Received unit price did not become FIFO lot cost");
+            require("8.0".equals(value("SELECT purchase_price FROM product_suppliers WHERE product_id=1 AND supplier_id=1")),
+                "Received unit price did not update supplier current cost");
+            require("8.0".equals(value("SELECT acquisition_cost FROM products WHERE id=1")),
+                "Received unit price did not update last purchase cost");
         });
         test("replacement supplier uses lowest price then oldest relationship without repricing stock",()->{
             fresh();seedOpeningLots();
@@ -180,7 +192,12 @@ public class FifoCompletionTest extends RegressionTest {
                 "This movement has already been reversed.","No alternative supplier remains. This product now has no preferred supplier.",
                 "The last actual purchase cost, historical costs and existing FIFO lots will not change.","Database Updated",
                 "Purchase price must be greater than zero","Supplier receipt date is required",
-                "Every product must have a supplier, a positive quantity and a purchase price greater than zero. Check: {0}"};
+                "Every product must have a supplier, a positive quantity and a purchase price greater than zero. Check: {0}",
+                "Preferred Supplier Cost","Click to edit the preferred supplier cost.",
+                "Preferred supplier cost is the current purchase cost saved for the preferred supplier. Click the value to edit it.",
+                "When a supplier order is received, its actual unit purchase price becomes the FIFO lot cost and updates that supplier's current cost.",
+                "Last purchase cost is the unit cost of the most recently received supplier purchase. It is updated automatically and cannot be edited here.",
+                "Purchase Cost Help"};
             try {
                 for(String language:List.of("it","es","fr","de","pl","pt_BR")) {
                     I18n.setLanguage(language);
