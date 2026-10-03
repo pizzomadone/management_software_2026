@@ -159,10 +159,17 @@ public class RegressionTest {
             require("PAID|36.6".equals(
                 value("SELECT payment_status||'|'||paid_amount FROM orders WHERE id=1")),
                 "Linked paid order did not use the gross invoice total");
+
+            sql("DELETE FROM invoices WHERE id=90");
+            OrdersPanel.normalizeCompletedOrderPayment(db,1);
+            require("PAID|30.0".equals(
+                value("SELECT payment_status||'|'||paid_amount FROM orders WHERE id=1")),
+                "Deleting the linked Draft invoice did not restore the order payment basis");
+
             require(before.equals(value("SELECT quantity||'|'||reserved_quantity FROM products WHERE id=1")
                 +"|"+value("SELECT COUNT(*) FROM warehouse_movements")
                 +"|"+value("SELECT COUNT(*) FROM inventory_lot_consumptions")),
-                "Linking invoice payment changed stock or FIFO");
+                "Linking or unlinking invoice payment changed stock or FIFO");
         });
         test("completed sale rejects rewriting and reverses with preserved history", () -> {
             fresh(); completed(); rejectedSave(order(true,5,"Cancelled"),"saveOrder","orderSaved");
