@@ -116,13 +116,13 @@ public class FifoCompletionTest extends RegressionTest {
             require(CostIntegrity.audit(db).salesWithoutHistoricalCost()==1,"Unknown consumption omitted");
         });
         test("cost requirement blocks both purchase and sale saves before data changes",()->{
-            fresh();sql("UPDATE products SET acquisition_cost=0 WHERE id=1");
-            require(!CostIntegrity.hasPurchaseCost(db,1),"Missing cost accepted");
+            fresh();sql("UPDATE products SET acquisition_cost=99 WHERE id=1");sql("UPDATE product_suppliers SET purchase_price=0 WHERE product_id=1 AND is_preferred=1");
+            require(!CostIntegrity.hasPurchaseCost(db,1),"Missing preferred supplier cost accepted");
             rejectedSave(order(false,2,"New"),"saveOrder","orderSaved");
             rejectedSave(supplier(false,new HashMap<>()),"saveOrder","orderSaved");
             require("0".equals(value("SELECT COUNT(*) FROM orders")) && "0".equals(value("SELECT COUNT(*) FROM supplier_orders")),"Unpriced product used by a document");
-            sql("UPDATE products SET acquisition_cost=5 WHERE id=1");
-            require(CostIntegrity.hasPurchaseCost(db,1),"Corrected product remains blocked");
+            sql("UPDATE product_suppliers SET purchase_price=5 WHERE product_id=1 AND is_preferred=1");
+            require(CostIntegrity.hasPurchaseCost(db,1),"Corrected preferred supplier cost remains blocked");
         });
         test("supplier receipt is linked to its exact warehouse movement",()->{
             fresh();call(supplier(false,new HashMap<>()),"saveOrder");
