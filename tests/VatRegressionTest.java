@@ -60,13 +60,14 @@ public class VatRegressionTest extends RegressionTest {
             price.setText("-");require(breakdown.getText().isBlank() && margin.getText().isBlank(),"Incomplete input retained old estimates");
             require("10.0".equals(value("SELECT sale_price_inc_vat FROM products WHERE id=1")),"Preview wrote to the database");
         });
-        test("existing product margin preview uses last actual cost and translates",()->{
+        test("existing product margin preview uses preferred supplier cost and translates",()->{
             fresh();PD dialog=OperationalRegressionTest.productEditor(10);
-            ((Product)get(dialog,"product")).setAcquisitionCost(80);
+            ((Product)get(dialog,"product")).setAcquisitionCost(95);
+            put(dialog,"preferredSupplierCurrentCost",80.0);
             call(dialog,"createPricePreview");
             ((JTextField)get(dialog,"priceField")).setText("122");
             JLabel margin=(JLabel)get(dialog,"estimatedMarginLabel");
-            require(margin.getText().contains("20%"),"Existing preview used an editable or supplier cost instead of last actual cost");
+            require(margin.getText().contains("20%"),"Existing preview did not use preferred supplier cost");
             String previous=I18n.getLanguage();
             try {for(String language:List.of("it","es","fr","de","pl","pt_BR")) {
                 I18n.setLanguage(language);call(dialog,"updatePricePreview");
