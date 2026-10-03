@@ -742,8 +742,9 @@ public class ProductsPanel extends JPanel {
                     row.add(trimCellText(rs.getString("warehouse_position")));
                     row.add(rs.getDouble("vat_rate"));
                     row.add(ProductImageStore.getInstance().iconCover(rs.getString("primary_image"), 48, 30));
-                    if (rs.getObject("preferred_supplier_cost") == null ||
-                            Numbers.nonNegative(rs.getObject("preferred_supplier_cost")) <= 0) {
+                    if ((rs.getInt("active") == 1 || physicalStock > 0)
+                            && (rs.getObject("preferred_supplier_cost") == null ||
+                                Numbers.nonNegative(rs.getObject("preferred_supplier_cost")) <= 0)) {
                         missingPurchaseCostProductIds.add(rs.getInt("id"));
                     }
                     tableModel.addRow(row);
@@ -822,10 +823,11 @@ public class ProductsPanel extends JPanel {
                         row.add(trimCellText(rs.getString("warehouse_position")));
                         row.add(rs.getDouble("vat_rate"));
                         row.add(ProductImageStore.getInstance().iconCover(rs.getString("primary_image"), 48, 30));
-                        if (rs.getObject("preferred_supplier_cost") == null ||
-                            Numbers.nonNegative(rs.getObject("preferred_supplier_cost")) <= 0) {
-                        missingPurchaseCostProductIds.add(rs.getInt("id"));
-                    }
+                        if ((rs.getInt("active") == 1 || physicalStock > 0)
+                                && (rs.getObject("preferred_supplier_cost") == null ||
+                                    Numbers.nonNegative(rs.getObject("preferred_supplier_cost")) <= 0)) {
+                            missingPurchaseCostProductIds.add(rs.getInt("id"));
+                        }
                     tableModel.addRow(row);
                     }
                 }
