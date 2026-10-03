@@ -16,7 +16,7 @@ public class ProductsPanel extends JPanel {
     private static final String PRODUCT_COLUMN_ORDER_SETTING =
         "products.column_order";
     private static final String[] PRODUCT_COLUMN_KEYS = {
-        "id", "code", "name", "description", "price", "physical",
+        "id", "code", "name", "description", "sale_price_inc_vat", "physical",
         "reserved", "available", "on_order", "category", "unit",
         "min_qty", "active", "supplier", "position", "vat", "photo"
     };
@@ -33,7 +33,7 @@ public class ProductsPanel extends JPanel {
         "Product code or SKU",
         "Product name",
         "Product description",
-        "Current selling price",
+        "Customer sale price incl. VAT",
         "Units physically in stock",
         "Units committed to customer orders",
         "Physical stock minus reserved units",
