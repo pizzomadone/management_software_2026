@@ -147,7 +147,7 @@ public final class ProductDetailsDialog extends JDialog {
 
     private void showPurchaseCostHelp() {
         String message = I18n.tr(
-                "Preferred supplier cost is the current purchase cost saved for the preferred supplier. Click the value to edit it.")
+                "Preferred supplier cost is the current purchase cost saved for the preferred supplier. In Product Details it is read-only.")
             + "\n\n" + I18n.tr(
                 "When a supplier order is received, its actual unit purchase price becomes the FIFO lot cost and updates that supplier's current cost.")
             + "\n\n" + I18n.tr(
