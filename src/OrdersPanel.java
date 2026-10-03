@@ -71,9 +71,9 @@ public class OrdersPanel extends JPanel {
             new TableInteractionUtil.TableAction("Modify", this::editSelectedOrder),
             new TableInteractionUtil.TableAction("Delete", this::deleteSelectedOrder),
             null, // Separator
-            new TableInteractionUtil.TableAction(
-                () -> I18n.tr(linkedInvoiceNumberForSelectedOrder() != null
-                    ? "Go to Invoice" : "Generate Invoice"),
+            TableInteractionUtil.TableAction.dynamic(
+                () -> linkedInvoiceNumberForSelectedOrder() != null
+                    ? "Go to Invoice" : "Generate Invoice",
                 this::generateInvoiceFromOrder),
             null, // Separator
             new TableInteractionUtil.TableAction("Refresh", this::loadOrders, false)
