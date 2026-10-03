@@ -481,7 +481,10 @@ public final class TableStyleUtil {
         return containsAny(header,
             "stock at last purchase cost",
             "warehouse at last purchase cost",
-            "warehouse value at last purchase cost");
+            "warehouse value at last purchase cost",
+            "stock at preferred supplier cost",
+            "warehouse at preferred supplier cost",
+            "warehouse value at preferred supplier cost");
     }
 
     private static boolean isQuantityOrMoneyHeader(String header) {
@@ -1037,7 +1040,7 @@ public final class TableStyleUtil {
         return containsAny(h,
             "price", "prezzo", "precio", "preço", "preco", "prix", "preis", "cena",
             "unit cost", "costo unitario", "purchase cost", "costo acquisto",
-            "last purchase cost", "purchase price");
+            "last purchase cost", "purchase price", "preferred supplier cost");
     }
 
     private static String sourceHeader(JTable table, int viewColumn) {
