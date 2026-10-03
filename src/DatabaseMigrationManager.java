@@ -44,7 +44,9 @@ public final class DatabaseMigrationManager {
         new Migration("016", "Separate invoice document status from payment status",
             DatabaseMigrationManager::migrateInvoicePaymentStatus),
         new Migration("017", "Use explicit VAT-inclusive and VAT-exclusive sale price fields",
-            DatabaseMigrationManager::migrateSalePriceSemantics)
+            DatabaseMigrationManager::migrateSalePriceSemantics),
+        new Migration("018", "Make new customer orders non-stock reservations",
+            DatabaseMigrationManager::releaseNewOrderReservations)
     );
 
     private DatabaseMigrationManager() {}
@@ -786,6 +788,21 @@ public final class DatabaseMigrationManager {
         for(String column:List.of("product_code","product_name"))
             addColumnIfMissing(c,"invoice_details",column,"ALTER TABLE invoice_details ADD COLUMN " + column + " TEXT");
         InvoiceSnapshots.captureLegacy(c);
+    }
+
+    private static void releaseNewOrderReservations(Connection c) throws SQLException {
+        if (!hasTable(c, "stock_reservations") || !hasTable(c, "orders")) return;
+        try (PreparedStatement p = c.prepareStatement("""
+                UPDATE stock_reservations
+                SET status='CANCELLED'
+                WHERE status='ACTIVE'
+                  AND document_type='ORDER'
+                  AND document_id IN (
+                      SELECT id FROM orders WHERE status='New'
+                  )
+                """)) {
+            p.executeUpdate();
+        }
     }
 
     private static void addColumnIfMissing(Connection connection, String table, String column,
