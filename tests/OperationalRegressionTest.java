@@ -59,6 +59,23 @@ public class OperationalRegressionTest extends RegressionTest {
             call(productEditor(15),"saveProduct");require("1".equals(value("SELECT COUNT(*) FROM warehouse_movements")),"Unchanged save duplicated adjustment");
             call(productEditor(8),"saveProduct");require("7".equals(value("SELECT quantity FROM warehouse_movements ORDER BY id DESC LIMIT 1")),"Updated count used stale product quantity");
         });
+        test("product pricing UI shows currency and product save preserves supplier reference price",()->{
+            PD ui=empty(PD.class);
+            JPanel priceWithCurrency=(JPanel)call(ui,"withCurrencyUnit",
+                new Class<?>[]{JComponent.class},new JTextField("10"));
+            require(labels(priceWithCurrency).stream().anyMatch(l->SettingsPanel.getCurrencyCode().equals(l.getText())),
+                "Current currency code missing beside product price field");
+            require(labels(priceWithCurrency).stream().noneMatch(l->"?".equals(l.getText())),
+                "Pricing helper still shows a question-mark help icon");
+
+            fresh();
+            sql("UPDATE product_suppliers SET purchase_price=7,is_preferred=1 WHERE product_id=1 AND supplier_id=1");
+            PD editor=productEditor(10);
+            put(editor,"selectedSupplier",new Supplier(1,"Supplier A","","","","","","","",""));
+            call(editor,"saveProduct");
+            require("7.0".equals(value("SELECT purchase_price FROM product_suppliers WHERE product_id=1 AND supplier_id=1")),
+                "Saving the product overwrote the supplier reference price");
+        });
         test("notification actions target selected database IDs",()->{
             fresh();sql("INSERT INTO warehouse_notifications(id,product_id,type,message) VALUES(1,1,'LOW_STOCK','Same text'),(2,1,'LOW_STOCK','Same text')");
             WarehousePanel p=new WarehousePanel();JTable table=(JTable)get(p,"notificationsTable");DefaultTableModel model=(DefaultTableModel)get(p,"notificationsModel");
