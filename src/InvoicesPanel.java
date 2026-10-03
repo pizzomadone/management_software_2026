@@ -486,14 +486,19 @@ public class InvoicesPanel extends JPanel {
                     DatabaseManager.beginTransaction(conn);
 
                     try {
-                        // Get invoice ID
+                        // Get invoice ID and any linked completed order.
                         int invoiceId = 0;
-                        String getIdQuery = "SELECT id FROM invoices WHERE number = ?";
+                        Integer linkedOrderId = null;
+                        String getIdQuery = "SELECT id,order_id FROM invoices WHERE number = ?";
                         try (PreparedStatement pstmt = conn.prepareStatement(getIdQuery)) {
                             pstmt.setString(1, number);
-                            ResultSet rs = pstmt.executeQuery();
-                            if (rs.next()) {
-                                invoiceId = rs.getInt("id");
+                            try (ResultSet rs = pstmt.executeQuery()) {
+                                if (rs.next()) {
+                                    invoiceId = rs.getInt("id");
+                                    Object orderValue = rs.getObject("order_id");
+                                    if (orderValue != null)
+                                        linkedOrderId = ((Number)orderValue).intValue();
+                                }
                             }
                         }
 
@@ -512,6 +517,11 @@ public class InvoicesPanel extends JPanel {
                             pstmt.setInt(1, invoiceId);
                             pstmt.executeUpdate();
                         }
+
+                        // Once a Draft invoice is removed, the order becomes the payment
+                        // reference again. Normalize its payment against the order total.
+                        if (linkedOrderId != null)
+                            OrdersPanel.normalizeCompletedOrderPayment(conn, linkedOrderId);
 
                         conn.commit();
                         loadInvoices();
