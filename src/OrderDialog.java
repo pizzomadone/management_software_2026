@@ -32,6 +32,8 @@ public class OrderDialog extends JDialog {
     private TableModelListener tableListener;
     private double currentTotal = 0.0; // Customer-facing total, VAT included
     private double currentTotalExVat = 0.0;
+    private boolean paymentSelectionChanged;
+    private boolean loadingPayment;
     private String previousStatus = null; // Track previous status for state changes
     
     // Constructor for JFrame parent
@@ -130,7 +132,10 @@ public class OrderDialog extends JDialog {
         gbc.gridx = 1;
         paymentStatusCombo = new JComboBox<>(new String[]{"Not Paid", "Partially Paid", "Paid"});
         paymentStatusCombo.putClientProperty("i18n.values", true);
-        paymentStatusCombo.addActionListener(e -> updatePaymentAmountField());
+        paymentStatusCombo.addActionListener(e -> {
+            if (!loadingPayment) paymentSelectionChanged = true;
+            updatePaymentAmountField();
+        });
         orderPanel.add(paymentStatusCombo, gbc);
 
         // Paid Amount
@@ -309,6 +314,7 @@ public class OrderDialog extends JDialog {
         previousStatus = order.getStatus(); // Store current status as previous
 
         // Load payment status
+        loadingPayment = true;
         String paymentStatus = order.getPaymentStatus();
         if ("PAID".equals(paymentStatus)) {
             paymentStatusCombo.setSelectedItem("Paid");
@@ -317,6 +323,8 @@ public class OrderDialog extends JDialog {
         } else {
             paymentStatusCombo.setSelectedItem("Not Paid");
         }
+        loadingPayment = false;
+        paymentSelectionChanged = false;
         paidAmountField.setText(Numbers.moneyText(order.getPaidAmount()));
         updatePaymentAmountField();
 
@@ -426,7 +434,8 @@ public class OrderDialog extends JDialog {
         } else {
             paidAmountField.setEnabled(false);
             if ("Paid".equals(selectedPayment)) {
-                paidAmountField.setText(Numbers.moneyText(currentTotal));
+                paidAmountField.setText(Numbers.moneyText(order != null && !paymentSelectionChanged
+                    ? order.getPaidAmount() : currentTotal));
             } else {
                 paidAmountField.setText("0.00");
             }
@@ -463,7 +472,8 @@ public class OrderDialog extends JDialog {
             totalLabel.setText(I18n.tr("Total incl. VAT") + ": " +
                 SettingsPanel.formatCurrency(totalIncVat));
 
-            if ("Paid".equals(paymentStatusCombo.getSelectedItem())) {
+            if ("Paid".equals(paymentStatusCombo.getSelectedItem()) &&
+                    (order == null || paymentSelectionChanged)) {
                 paidAmountField.setText(Numbers.moneyText(totalIncVat));
             }
 
@@ -533,7 +543,8 @@ public class OrderDialog extends JDialog {
 
             if ("Paid".equals(paymentStatusUI)) {
                 paymentStatus = "PAID";
-                paidAmount = currentTotal;
+                paidAmount = order != null && !paymentSelectionChanged
+                    ? order.getPaidAmount() : currentTotal;
             } else if ("Partially Paid".equals(paymentStatusUI)) {
                 paymentStatus = "PARTIALLY_PAID";
                 try {
@@ -564,6 +575,8 @@ public class OrderDialog extends JDialog {
                 paymentStatus = "NOT_PAID";
                 paidAmount = 0.0;
             }
+
+            paymentStatus = PaymentAmounts.status(paidAmount, currentTotal);
 
             // Build list of stock items
             List<StockManager.StockItem> stockItems = new ArrayList<>();
@@ -778,3 +791,4 @@ public class OrderDialog extends JDialog {
         return orderSaved;
     }
 }
+

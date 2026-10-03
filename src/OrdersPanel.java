@@ -579,8 +579,7 @@ public class OrdersPanel extends JPanel {
             }
         }
 
-        String normalized = paidAmount <= 0 ? "NOT_PAID"
-            : paidAmount + 0.004 >= paymentTotal ? "PAID" : "PARTIALLY_PAID";
+        String normalized = PaymentAmounts.status(paidAmount, paymentTotal);
         if (!normalized.equals(currentStatus)) {
             try (PreparedStatement p = conn.prepareStatement(
                     "UPDATE orders SET payment_status=? WHERE id=? AND status='Completed'")) {
@@ -712,6 +711,91 @@ public class OrdersPanel extends JPanel {
         }
     }
 
+    record GeneratedInvoice(int id, String number) {}
+
+    // Called inside the caller's transaction so invoice, snapshots and payment state commit together.
+    static GeneratedInvoice createInvoiceFromOrder(Connection conn, Order order) throws SQLException {
+        if (conn.getAutoCommit()) throw new SQLException("Invoice creation requires a transaction");
+        if (!canGenerateInvoice(order.getStatus()) || order.getItems().isEmpty())
+            throw new SQLException("Only completed nonempty orders can be invoiced");
+        int orderId = order.getId();
+        // Generate invoice number
+        int year = new java.util.Calendar.Builder()
+            .setInstant(order.getOrderDate())
+            .build()
+            .get(java.util.Calendar.YEAR);
+        String invoiceNumber = DatabaseManager.getInstance().getNextInvoiceNumber(conn, year);
+
+        // Customer orders snapshot both VAT rate and gross/net sale prices,
+        // so invoicing never depends on later product changes.
+        double taxableAmount = 0.0;
+        double vatTotal = 0.0;
+        double total = 0.0;
+
+        for (OrderItem item : order.getItems()) {
+            double itemTaxable = item.getTotalExVat();
+            double itemGross = item.getTotalIncVat();
+            double itemVat = Numbers.money(java.math.BigDecimal.valueOf(itemGross)
+                .subtract(java.math.BigDecimal.valueOf(itemTaxable)));
+            taxableAmount = Numbers.add(taxableAmount,itemTaxable);
+            vatTotal = Numbers.add(vatTotal,itemVat);
+            total = Numbers.add(total,itemGross);
+        }
+
+
+
+        // Insert invoice
+        String insertInvoice = """
+            INSERT INTO invoices (number, date, customer_id, taxable_amount, vat, total, status, order_id)
+            VALUES (?, ?, ?, ?, ?, ?, 'Draft', ?)
+        """;
+
+        int invoiceId = 0;
+        try (PreparedStatement pstmt = conn.prepareStatement(insertInvoice, Statement.RETURN_GENERATED_KEYS)) {
+            pstmt.setString(1, invoiceNumber);
+            pstmt.setTimestamp(2, DateUtils.toSqlTimestamp(order.getOrderDate()));
+            pstmt.setInt(3, order.getCustomerId());
+            pstmt.setDouble(4, taxableAmount);
+            pstmt.setDouble(5, vatTotal);
+            pstmt.setDouble(6, total);
+            pstmt.setInt(7, orderId);
+            pstmt.executeUpdate();
+
+            ResultSet rs = pstmt.getGeneratedKeys();
+            if (rs.next()) {
+                invoiceId = rs.getInt(1);
+            }
+        }
+
+        // Insert invoice details
+        String insertDetails = """
+            INSERT INTO invoice_details
+                (invoice_id, product_id, quantity, sale_unit_price_ex_vat,
+                 sale_unit_price_inc_vat, vat_rate, total)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """;
+
+        try (PreparedStatement pstmt = conn.prepareStatement(insertDetails)) {
+            for (OrderItem item : order.getItems()) {
+                double itemTaxable = item.getTotalExVat();
+
+                pstmt.setInt(1, invoiceId);
+                pstmt.setInt(2, item.getProductId());
+                pstmt.setInt(3, item.getQuantity());
+                pstmt.setDouble(4, item.getUnitPriceExVat());
+                pstmt.setDouble(5, item.getUnitPriceIncVat());
+                pstmt.setDouble(6, item.getVatRate());
+                pstmt.setDouble(7, itemTaxable);
+                pstmt.addBatch();
+            }
+            pstmt.executeBatch();
+        }
+
+        reconcileCompletedOrderPaymentAfterInvoice(conn, orderId);
+        InvoiceSnapshots.capture(conn,invoiceId,false);
+        return new GeneratedInvoice(invoiceId, invoiceNumber);
+    }
+
     private void generateInvoiceFromOrder() {
         int selectedRow = ordersTable.getSelectedRow();
         if (selectedRow == -1) return;
@@ -779,80 +863,9 @@ public class OrdersPanel extends JPanel {
             DatabaseManager.beginTransaction(conn);
 
             try {
-                // Generate invoice number
-                int year = new java.util.Calendar.Builder()
-                    .setInstant(order.getOrderDate())
-                    .build()
-                    .get(java.util.Calendar.YEAR);
-                String invoiceNumber = DatabaseManager.getInstance().getNextInvoiceNumber(conn, year);
-
-                // Customer orders snapshot both VAT rate and gross/net sale prices,
-                // so invoicing never depends on later product changes.
-                double taxableAmount = 0.0;
-                double vatTotal = 0.0;
-                double total = 0.0;
-
-                for (OrderItem item : order.getItems()) {
-                    double itemTaxable = item.getTotalExVat();
-                    double itemGross = item.getTotalIncVat();
-                    double itemVat = Numbers.money(java.math.BigDecimal.valueOf(itemGross)
-                        .subtract(java.math.BigDecimal.valueOf(itemTaxable)));
-                    taxableAmount = Numbers.add(taxableAmount,itemTaxable);
-                    vatTotal = Numbers.add(vatTotal,itemVat);
-                    total = Numbers.add(total,itemGross);
-                }
-
-
-
-                // Insert invoice
-                String insertInvoice = """
-                    INSERT INTO invoices (number, date, customer_id, taxable_amount, vat, total, status, order_id)
-                    VALUES (?, ?, ?, ?, ?, ?, 'Draft', ?)
-                """;
-
-                int invoiceId = 0;
-                try (PreparedStatement pstmt = conn.prepareStatement(insertInvoice, Statement.RETURN_GENERATED_KEYS)) {
-                    pstmt.setString(1, invoiceNumber);
-                    pstmt.setTimestamp(2, DateUtils.toSqlTimestamp(order.getOrderDate()));
-                    pstmt.setInt(3, order.getCustomerId());
-                    pstmt.setDouble(4, taxableAmount);
-                    pstmt.setDouble(5, vatTotal);
-                    pstmt.setDouble(6, total);
-                    pstmt.setInt(7, orderId);
-                    pstmt.executeUpdate();
-
-                    ResultSet rs = pstmt.getGeneratedKeys();
-                    if (rs.next()) {
-                        invoiceId = rs.getInt(1);
-                    }
-                }
-
-                // Insert invoice details
-                String insertDetails = """
-                    INSERT INTO invoice_details
-                        (invoice_id, product_id, quantity, sale_unit_price_ex_vat,
-                         sale_unit_price_inc_vat, vat_rate, total)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """;
-
-                try (PreparedStatement pstmt = conn.prepareStatement(insertDetails)) {
-                    for (OrderItem item : order.getItems()) {
-                        double itemTaxable = item.getTotalExVat();
-
-                        pstmt.setInt(1, invoiceId);
-                        pstmt.setInt(2, item.getProductId());
-                        pstmt.setInt(3, item.getQuantity());
-                        pstmt.setDouble(4, item.getUnitPriceExVat());
-                        pstmt.setDouble(5, item.getUnitPriceIncVat());
-                        pstmt.setDouble(6, item.getVatRate());
-                        pstmt.setDouble(7, itemTaxable);
-                        pstmt.addBatch();
-                    }
-                    pstmt.executeBatch();
-                }
-
-                reconcileCompletedOrderPaymentAfterInvoice(conn, orderId);
-                InvoiceSnapshots.capture(conn,invoiceId,false);
+                GeneratedInvoice generated = createInvoiceFromOrder(conn, order);
+                int invoiceId = generated.id();
+                String invoiceNumber = generated.number();
                 // Commit transaction (verify we're still in transaction mode)
                 if (!conn.getAutoCommit()) {
                     conn.commit();
@@ -946,3 +959,4 @@ public class OrdersPanel extends JPanel {
     }
     public void refreshData() { loadOrders(); }
 }
+

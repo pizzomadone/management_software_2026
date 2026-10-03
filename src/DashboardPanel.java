@@ -560,7 +560,7 @@ public class DashboardPanel extends JPanel {
             String start = monthFormat.format(new java.util.Date(monthStart));
             String end = monthFormat.format(new java.util.Date(nextMonthStart));
             double monthlySales = sumMonthlyDocuments(conn,
-                "SELECT total_ex_vat FROM orders WHERE status='Completed' AND " +
+                "SELECT total_ex_vat AS total FROM orders WHERE status='Completed' AND " +
                     DateUtils.sqlDate("order_date") + ">=? AND " + DateUtils.sqlDate("order_date") + "<?", start, end);
             String monthlyInvoiced = monthlyInvoiceSummary(conn,start,end);
 
@@ -1147,4 +1147,5 @@ public class DashboardPanel extends JPanel {
         }
     }
 }
+
 

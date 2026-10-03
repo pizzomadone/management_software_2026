@@ -38,6 +38,9 @@ public class InvoiceDialog extends JDialog {
     private boolean historicalForeignCurrencyLocked;
     private boolean linkedOrderLocked;
     private JCheckBox createCompletedOrderCheckBox;
+    private boolean paymentSelectionChanged;
+    private boolean paymentLoaded;
+    private double loadedPaidAmount;
 
     // Constructor for JFrame parent
     public InvoiceDialog(JFrame parent, Invoice invoice) {
@@ -196,7 +199,10 @@ public class InvoiceDialog extends JDialog {
         gbc.gridx = 1;
         paymentStatusCombo = new JComboBox<>(new String[]{"Not Paid", "Partially Paid", "Paid"});
         paymentStatusCombo.putClientProperty("i18n.values", true);
-        paymentStatusCombo.addActionListener(e -> updatePaymentAmountField());
+        paymentStatusCombo.addActionListener(e -> {
+            paymentSelectionChanged = true;
+            updatePaymentAmountField();
+        });
         invoicePanel.add(paymentStatusCombo, gbc);
 
         gbc.gridx = 2;
@@ -684,6 +690,10 @@ public class InvoiceDialog extends JDialog {
 
     private double paymentAmountForSave(double targetTotal) {
         String status = paymentStatusCode();
+        if (paymentLoaded && !paymentSelectionChanged &&
+                Numbers.money(Numbers.decimal(paidAmountField.getText())) ==
+                    Numbers.money(java.math.BigDecimal.valueOf(loadedPaidAmount)))
+            return loadedPaidAmount;
         if ("NOT_PAID".equals(status)) return 0.0;
         if ("PAID".equals(status)) return Numbers.money(java.math.BigDecimal.valueOf(targetTotal));
 
@@ -712,7 +722,8 @@ public class InvoiceDialog extends JDialog {
         } else {
             paidAmountField.setEnabled(false);
             paidAmountField.setText("Paid".equals(selected)
-                ? Numbers.moneyText(paymentTargetTotal()) : "0.00");
+                ? Numbers.moneyText(paymentLoaded && !paymentSelectionChanged
+                    ? loadedPaidAmount : paymentTargetTotal()) : "0.00");
         }
     }
 
@@ -741,7 +752,10 @@ public class InvoiceDialog extends JDialog {
                 if ("PAID".equals(status)) paymentStatusCombo.setSelectedItem("Paid");
                 else if ("PARTIALLY_PAID".equals(status)) paymentStatusCombo.setSelectedItem("Partially Paid");
                 else paymentStatusCombo.setSelectedItem("Not Paid");
-                paidAmountField.setText(Numbers.moneyText(r.getDouble("paid_amount")));
+                loadedPaidAmount = Numbers.nonNegative(r.getObject("paid_amount"));
+                paymentLoaded = true;
+                paymentSelectionChanged = false;
+                paidAmountField.setText(Numbers.moneyText(loadedPaidAmount));
                 updatePaymentAmountField();
                 if (linkedOrderLocked) {
                     String tooltip = I18n.tr(
@@ -807,6 +821,7 @@ public class InvoiceDialog extends JDialog {
                 } else {
                     String paymentStatus = paymentStatusCode();
                     double paidAmount = paymentAmountForSave(currentTotal);
+                    paymentStatus = PaymentAmounts.status(paidAmount, currentTotal);
                     try (PreparedStatement p = conn.prepareStatement(
                             "UPDATE invoices SET status=?,payment_status=?,paid_amount=? WHERE id=?")) {
                         p.setString(1, newStatus);
@@ -1039,6 +1054,7 @@ public class InvoiceDialog extends JDialog {
             double paidAmount;
             try {
                 paidAmount = paymentAmountForSave(currentTotal);
+                paymentStatus = PaymentAmounts.status(paidAmount, currentTotal);
             } catch (IllegalArgumentException e) {
                 Dialogs.showMessageDialog(this, e.getMessage(),
                     I18n.tr("Invalid Payment"), JOptionPane.WARNING_MESSAGE);
@@ -1223,3 +1239,4 @@ public class InvoiceDialog extends JDialog {
         return invoiceSaved;
     }
 }
+

@@ -73,6 +73,7 @@ public final class DatabaseCurrency {
                 convertCustomerOrders(c,rate);
                 convertSupplierOrders(c,rate);
                 convertDraftInvoices(c,rate,code);
+                reconcilePayments(c);
             } else {
                 // Drafts are not historical documents: they follow the new operating currency.
                 try(PreparedStatement p=c.prepareStatement(
@@ -109,6 +110,24 @@ public final class DatabaseCurrency {
                 throw new SQLException("Choose whether to relabel or convert existing monetary values.");
         }
         change(code,ChangeMode.RELABEL,null);
+    }
+
+    private static void reconcilePayments(Connection c) throws SQLException {
+        try (Statement s=c.createStatement()) {
+            s.executeUpdate("""
+                UPDATE orders SET payment_status=CASE
+                    WHEN paid_amount<=0 THEN 'NOT_PAID'
+                    WHEN paid_amount+0.004>=COALESCE(
+                        (SELECT total FROM invoices WHERE order_id=orders.id),total_inc_vat)
+                        THEN 'PAID' ELSE 'PARTIALLY_PAID' END
+                """);
+            s.executeUpdate("""
+                UPDATE invoices SET payment_status=CASE
+                    WHEN paid_amount<=0 THEN 'NOT_PAID'
+                    WHEN paid_amount+0.004>=total THEN 'PAID' ELSE 'PARTIALLY_PAID' END
+                WHERE status='Draft' AND order_id IS NULL
+                """);
+        }
     }
 
     private static boolean sameMoney(double left,double right) {
@@ -220,7 +239,7 @@ public final class DatabaseCurrency {
             while(r.next()) {
                 double gross=convertUnit(r.getObject("sale_price_inc_vat"),rate);
                 double vatRate=Numbers.vat(r.getObject("vat_rate"));
-                write.setDouble(1,SalePrice.unitExVatForLine(Numbers.positiveQuantity(r.getObject("quantity")),gross,vatRate));
+                write.setDouble(1,SalePrice.exVatFromIncVat(gross,vatRate));
                 write.setDouble(2,gross);
                 write.setDouble(3,convertUnit(r.getObject("acquisition_cost"),rate));
                 write.setInt(4,r.getInt("id"));write.addBatch();
@@ -268,7 +287,7 @@ public final class DatabaseCurrency {
             while(r.next()) {
                 double gross=convertUnit(r.getObject("sale_unit_price_inc_vat"),rate);
                 double vatRate=Numbers.vat(r.getObject("vat_rate"));
-                write.setDouble(1,SalePrice.exVatFromIncVat(gross,vatRate));
+                write.setDouble(1,SalePrice.unitExVatForLine(Numbers.positiveQuantity(r.getObject("quantity")),gross,vatRate));
                 write.setDouble(2,gross);
                 Object cost=r.getObject("cost_total");
                 if(cost==null) write.setNull(3,Types.REAL);
@@ -310,24 +329,14 @@ public final class DatabaseCurrency {
                     totalIncVat=convertMoney(r.getObject("total_inc_vat"),rate);
                 }
 
-                String payment=r.getString("payment_status");
                 Object invoiceId=r.getObject("invoice_id");
                 String invoiceStatus=r.getString("invoice_status");
                 boolean linked=invoiceId!=null;
                 boolean historicalLinked=linked && !"Draft".equals(invoiceStatus);
 
-                double paid;
-                if("NOT_PAID".equals(payment)) {
-                    paid=0;
-                } else if("PAID".equals(payment)) {
-                    paid=historicalLinked
-                        ? Numbers.nonNegative(r.getObject("paid_amount"))
-                        : totalIncVat;
-                } else {
-                    paid=historicalLinked
-                        ? Numbers.nonNegative(r.getObject("paid_amount"))
-                        : convertMoney(r.getObject("paid_amount"),rate);
-                }
+                double paid = historicalLinked
+                    ? Numbers.nonNegative(r.getObject("paid_amount"))
+                    : convertMoney(r.getObject("paid_amount"),rate);
 
                 update.setDouble(1,totalExVat);
                 update.setDouble(2,totalIncVat);
@@ -421,8 +430,7 @@ public final class DatabaseCurrency {
                     vat=convertMoney(r.getObject("vat"),rate);
                     total=convertMoney(r.getObject("total"),rate);
                 }
-                double paidAmount = "PAID".equals(r.getString("payment_status"))
-                    ? total : convertMoney(r.getObject("paid_amount"),rate);
+                double paidAmount = convertMoney(r.getObject("paid_amount"),rate);
                 update.setDouble(1,taxable);update.setDouble(2,vat);
                 update.setDouble(3,total);update.setDouble(4,paidAmount);
                 update.setString(5,newCode);update.setInt(6,id);update.addBatch();
@@ -443,3 +451,4 @@ public final class DatabaseCurrency {
         return codeFromSetting(chosen.toUpperCase(java.util.Locale.ROOT));
     }
 }
+

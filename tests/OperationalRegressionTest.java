@@ -1,4 +1,6 @@
 import java.sql.*;
+import java.awt.GridBagLayout;
+import java.awt.GridBagConstraints;
 import java.nio.file.*;
 import java.util.*;
 import javax.swing.*;
@@ -44,7 +46,7 @@ public class OperationalRegressionTest extends RegressionTest {
         test("linked invoice freezes its source order",()->{
             fresh();completed();sql("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status,order_id,currency_code) VALUES('LOCKED',0,1,30,0,30,'Issued',1,'EUR')");
             OD d=order(true,5,"Completed");rejectedSave(d,"saveOrder","orderSaved");
-            require(qty()==7 && "30.0|3".equals(value("SELECT total||'|'||(SELECT quantity FROM order_details WHERE order_id=1) FROM orders WHERE id=1")),"Invoiced order diverged from invoice");
+            require(qty()==7 && "30.0|3".equals(value("SELECT total_ex_vat||'|'||(SELECT quantity FROM order_details WHERE order_id=1) FROM orders WHERE id=1")),"Invoiced order diverged from invoice");
             CustomersPanel customers=new CustomersPanel();require((Boolean)call(customers,"hasFinalizedCustomerInvoices",new Class<?>[]{Connection.class,int.class},db,1),"Finalized customer history was not detected");
         });
         test("only completed customer orders are invoice eligible",()->{

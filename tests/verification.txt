@@ -1,4 +1,5 @@
 PASS completed saves are idempotent
+PASS completed order payment updates never touch stock or FIFO
 PASS completed sale rejects rewriting and reverses with preserved history
 PASS all customer order state transitions preserve balances
 PASS completed sale rejects replacement of its product
@@ -15,9 +16,10 @@ PASS dates reject impossible days and trailing text
 PASS decimal calculations preserve unit precision
 PASS supplier sequence excludes year digits
 PASS supplier pricing uses the current product-supplier price
+PASS last purchase cost follows actual receipt date after supplier reversal
 PASS FIFO freezes exact historical purchase cost on customer sales
 PASS reversing a completed sale restores its exact FIFO layers
-PASS negative stock stays unpriced and incomplete FIFO reversal is rejected
+PASS negative stock sales and manual outward movements are rejected before FIFO changes
 PASS legacy completed sale without FIFO history cannot be reversed
 PASS consumed supplier FIFO lot blocks receipt reversal
 PASS WAL import includes committed data and retains a prior copy
@@ -49,6 +51,8 @@ PASS legacy supplier list migration keeps the latest price even for the preferre
 PASS legacy supplier list migration prefers an applicable price over a future row
 PASS migration 012 rerun does not duplicate exhausted opening FIFO layers
 PASS migration 015 backfills receipt dates without reordering posted FIFO lots
+PASS migration 016 separates legacy Paid invoice status from payment
+PASS migration 017 preserves legacy net economics and derives customer gross prices
 PASS legacy supplier migration preserves referenced products
 PASS invoice source order foreign key survives migration
 PASS database rejects non-finite and invalid persisted numbers
@@ -59,7 +63,8 @@ PASS currency conversion updates all operational values and preserves finalized 
 PASS currency conversion preserves sub-cent unit precision and recalculates cents consistently
 PASS all report line totals use the same HALF_UP accounting rule
 PASS currency conversion refuses to silently repair inconsistent documents
-PASS every non-Draft invoice is treated as finalized regardless of currency
+PASS issued and canceled invoices are finalized document states
+PASS linked historical invoice payment keeps its invoice currency during conversion
 PASS currency conversion keeps cents consistent with high quantities VAT and partial payments
 PASS currency conversion refuses to repair inconsistent documents silently
 PASS currency conversion is atomic and historical foreign invoice only changes status
@@ -72,6 +77,8 @@ PASS manual outward availability honors reservations and edit reversal
 PASS linked invoice freezes its source order
 PASS only completed customer orders are invoice eligible
 PASS inventory correction records only the physical delta
+PASS product pricing UI shows currency and product save preserves supplier reference price
+PASS product details show purchase costs read only
 PASS notification actions target selected database IDs
 PASS warehouse valuation agrees with dashboard and zero cost margin
 PASS monthly invoiced total includes the exact first millisecond
@@ -99,9 +106,18 @@ PASS demo lots cannot invent historical cost in reports or hide revenue
 PASS unpriced migration layers remain unavailable even after a supplier receipt
 PASS cost requirement blocks both purchase and sale saves before data changes
 PASS supplier receipt is linked to its exact warehouse movement
+PASS received supplier price becomes both FIFO lot cost and current supplier cost
 PASS replacement supplier uses lowest price then oldest relationship without repricing stock
 PASS stock reductions retain FIFO history and reject silent zero-cost additions
 PASS supplier FIFO follows actual receipt date rather than order date
 PASS supplier receipt backend rejects zero purchase price atomically
 PASS new FIFO messages are translated in every supported language
-Regression checks: 106 passed, 0 failed
+PASS 122 gross sale keeps 100 revenue 22 VAT and 40 FIFO profit through invoicing
+PASS editing paid pending orders preserves receipts and derives payment status
+PASS draft invoice content edits preserve recorded receipts
+PASS currency conversion preserves receipt amounts and order line net reconciliation
+PASS legacy subcent order migration produces a reconciling invoice and unchanged FIFO cost
+PASS importing a pre-017 database preserves money and migrates once
+PASS all VAT labels translate across the seven supported languages
+PASS population script matches final schema and invoice totals
+Regression checks: 122 passed, 0 failed

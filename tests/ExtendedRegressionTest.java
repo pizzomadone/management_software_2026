@@ -78,8 +78,8 @@ public class ExtendedRegressionTest extends RegressionTest {
         });
         test("invoice rounding agrees between lines and saved header",()->{
             fresh();ID d=invoice();DefaultTableModel m=(DefaultTableModel)get(d,"itemsTableModel");m.setValueAt("0.335",0,3);call(d,"saveInvoice");
-            require("1.01".equals(value("SELECT taxable_amount FROM invoices")),"Taxable rounding differs");
-            require("1.23".equals(value("SELECT total FROM invoices")),"VAT rounding differs");
+            require("0.83".equals(value("SELECT taxable_amount FROM invoices")),"Taxable rounding differs");
+            require("1.01".equals(value("SELECT total FROM invoices")),"VAT rounding differs");
         });
         test("accounting rounding agrees in Java SQL reports and visible unit values",()->{
             fresh();
@@ -495,7 +495,7 @@ public class ExtendedRegressionTest extends RegressionTest {
                 "SELECT o.total_ex_vat||'|'||o.total_inc_vat||'|'||d.sale_unit_price_inc_vat||'|'||d.vat_rate " +
                 "FROM orders o JOIN order_details d ON d.order_id=o.id WHERE o.id=103")),
                 "Zero-VAT migration changed the price");
-            require("8.03|2.675|9.78".equals(value(
+            require("8.03|2.675|9.8".equals(value(
                 "SELECT o.total_ex_vat||'|'||d.sale_unit_price_ex_vat||'|'||o.total_inc_vat " +
                 "FROM orders o JOIN order_details d ON d.order_id=o.id WHERE o.id=104")),
                 "Rounding migration changed the legacy net value");
@@ -684,7 +684,7 @@ public class ExtendedRegressionTest extends RegressionTest {
                     require(r.next() && Math.abs(r.getDouble(1)-0.0000015)<1e-15 && Math.abs(r.getDouble(2)-0.0000015)<1e-15,
                         "Unit precision was lost during product conversion");
                 }
-                try(ResultSet r=s.executeQuery("SELECT total,paid_amount,(SELECT sale_unit_price_inc_vat FROM order_details WHERE order_id=20) FROM orders WHERE id=20")) {
+                try(ResultSet r=s.executeQuery("SELECT total_inc_vat,paid_amount,(SELECT sale_unit_price_inc_vat FROM order_details WHERE order_id=20) FROM orders WHERE id=20")) {
                     require(r.next() && r.getDouble(1)==1.50 && r.getDouble(2)==0.50 && Math.abs(r.getDouble(3)-0.0000015)<1e-15,
                         "Customer order conversion lost precision or rounded payment incorrectly");
                 }
@@ -893,7 +893,7 @@ public class ExtendedRegressionTest extends RegressionTest {
 
                 fresh();
                 sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status) VALUES(1,'LEGACY',"+System.currentTimeMillis()+",1,10,2.2,12.2,'Issued')");
-                sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate,total) VALUES(1,1,1,10,22,10)");
+                sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate,total) VALUES(1,1,1,10,12.2,22,10)");
                 InvoiceSnapshots.capture(db,1,true);
                 Invoice legacy=new Invoice(1,"LEGACY",new java.util.Date(),1,"",10,2.2,12.2,"Issued");
                 Path legacyFile=OUT.resolve("invoice-legacy.pdf");
@@ -931,3 +931,4 @@ public class ExtendedRegressionTest extends RegressionTest {
         });
     }
 }
+

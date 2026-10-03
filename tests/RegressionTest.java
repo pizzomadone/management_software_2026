@@ -114,7 +114,7 @@ public class RegressionTest {
         put(d,"paidAmountLabel",new JLabel("Paid Amount:"));
         put(d,"paidAmountField",new JTextField("0.00"));
         put(d,"productsCache",new HashMap<Integer,Product>());
-        DefaultTableModel m=new DefaultTableModel(new Object[][]{{"A","Product A",3,"10.00","22.00","30.00"}},new String[]{"Code","Name","Qty","Price","VAT","Total"});
+        DefaultTableModel m=new DefaultTableModel(new Object[][]{{"A","Product A",3,"12.20","22.00","36.60"}},new String[]{"Code","Name","Qty","Price","VAT","Total"});
         put(d,"itemsTableModel",m);put(d,"itemsTable",new JTable(m));
         put(d,"taxableAmountLabel",new JLabel());put(d,"vatLabel",new JLabel());put(d,"totalLabel",new JLabel());put(d,"currentTaxableAmount",30.0);put(d,"currentVat",6.6);put(d,"currentTotal",36.6);return d;
     }
@@ -156,9 +156,9 @@ public class RegressionTest {
             sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status,order_id,currency_code) " +
                 "VALUES(90,'PAY-GROSS',0,1,30,6.6,36.6,'Draft',1,'EUR')");
             OrdersPanel.reconcileCompletedOrderPaymentAfterInvoice(db,1);
-            require("PAID|36.6".equals(
+            require("PARTIALLY_PAID|30.0".equals(
                 value("SELECT payment_status||'|'||paid_amount FROM orders WHERE id=1")),
-                "Linked paid order did not use the gross invoice total");
+                "Linking invoice changed received money instead of payment status");
 
             sql("DELETE FROM invoices WHERE id=90");
             OrdersPanel.normalizeCompletedOrderPayment(db,1);
@@ -210,7 +210,7 @@ public class RegressionTest {
             fresh();OD d=order(false,3,"Completed");JTable table=(JTable)get(d,"itemsTable");
             require(table.editCellAt(0,2),"Cannot start editor");((JTextField)table.getEditorComponent()).setText("5");
             call(d,"saveOrder");require(qty()==5,"Editor value ignored");
-            require("50.0".equals(value("SELECT total FROM orders")),"Wrong header total");
+            require("50.0".equals(value("SELECT total_inc_vat FROM orders")),"Wrong header total");
         });
         test("invalid quantities and non-finite payments never persist", () -> {
             for(Object q:List.of(-3,0,"2.5","","2147483648")) {
@@ -351,8 +351,8 @@ public class RegressionTest {
             require("0,3".equals(value("SELECT GROUP_CONCAT(remaining_quantity,',') FROM (SELECT remaining_quantity FROM inventory_lots WHERE source_type='SUPPLIER_ORDER' ORDER BY received_date,id)")),
                 "FIFO did not consume oldest lot first");
             require("10.0".equals(value("SELECT acquisition_cost FROM products WHERE id=1")),"Last purchase cost was not updated");
-            require("5.0".equals(value("SELECT purchase_price FROM product_suppliers WHERE product_id=1 AND supplier_id=1")),
-                "Negotiated receipt silently changed supplier reference price");
+            require("10.0".equals(value("SELECT purchase_price FROM product_suppliers WHERE product_id=1 AND supplier_id=1")),
+                "Supplier default did not follow the last receipt cost");
 
             sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat) VALUES(21,1,4000,'Completed',45,45)");
             sql("INSERT INTO order_details(id,order_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate) VALUES(21,21,1,3,15,15,0)");
@@ -561,9 +561,10 @@ public class RegressionTest {
         Locale.setDefault(Locale.US);TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
         Files.createDirectories(OUT);
         Field f=sun.misc.Unsafe.class.getDeclaredField("theUnsafe");f.setAccessible(true);unsafe=(sun.misc.Unsafe)f.get(null);
-        SwingUtilities.invokeAndWait(()->{try{runAll();ExtendedRegressionTest.extended();OperationalRegressionTest.operational();FifoCompletionTest.completion();}catch(Exception e){e.printStackTrace();failures++;}});
+        SwingUtilities.invokeAndWait(()->{try{runAll();ExtendedRegressionTest.extended();OperationalRegressionTest.operational();FifoCompletionTest.completion();VatRegressionTest.vat();}catch(Exception e){e.printStackTrace();failures++;}});
         System.out.println("Regression checks: " + checks + " passed, " + failures + " failed");
         System.exit(failures==0?0:1);
     }
 }
+
 

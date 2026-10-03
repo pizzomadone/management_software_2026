@@ -382,7 +382,7 @@ public final class DatabaseMigrationManager {
         // invoice, its historical VAT (and gross unit price when consistent) is preferred.
         // Only orders without an invoice fall back to the product's current VAT rate.
         try (PreparedStatement read = c.prepareStatement("""
-                SELECT d.id,d.sale_unit_price_ex_vat,
+                SELECT d.id,d.quantity,d.sale_unit_price_ex_vat,
                        p.vat_rate AS product_vat_rate,
                        x.vat_rate AS invoice_vat_rate,
                        x.sale_unit_price_ex_vat AS invoice_net,
@@ -390,19 +390,16 @@ public final class DatabaseMigrationManager {
                 FROM order_details d
                 LEFT JOIN products p ON p.id=d.product_id
                 LEFT JOIN invoices i ON i.order_id=d.order_id
-                LEFT JOIN invoice_details x ON x.id=(
-                    SELECT x2.id
-                    FROM invoice_details x2
-                    WHERE x2.invoice_id=i.id AND x2.product_id=d.product_id
-                    ORDER BY
-                        CASE
-                            WHEN x2.quantity=d.quantity
-                             AND ABS(x2.sale_unit_price_ex_vat-d.sale_unit_price_ex_vat)<=0.004 THEN 0
-                            WHEN ABS(x2.sale_unit_price_ex_vat-d.sale_unit_price_ex_vat)<=0.004 THEN 1
-                            ELSE 2
-                        END,
-                        x2.id
-                    LIMIT 1
+                LEFT JOIN invoice_details x ON x.id=COALESCE(
+                    (SELECT MIN(x2.id) FROM invoice_details x2
+                     WHERE x2.invoice_id=i.id AND x2.product_id=d.product_id
+                       AND x2.quantity=d.quantity
+                       AND ABS(x2.sale_unit_price_ex_vat-d.sale_unit_price_ex_vat)<=0.004),
+                    (SELECT MIN(x2.id) FROM invoice_details x2
+                     WHERE x2.invoice_id=i.id AND x2.product_id=d.product_id
+                       AND ABS(x2.sale_unit_price_ex_vat-d.sale_unit_price_ex_vat)<=0.004),
+                    (SELECT MIN(x2.id) FROM invoice_details x2
+                     WHERE x2.invoice_id=i.id AND x2.product_id=d.product_id)
                 )
                 """);
              PreparedStatement write = c.prepareStatement("""
@@ -418,7 +415,9 @@ public final class DatabaseMigrationManager {
                     ? Numbers.vat(invoiceVat)
                     : Numbers.vat(r.getObject("product_vat_rate"));
 
-                double gross = SalePrice.incVatFromExVat(net, vatRate);
+                int quantity = Numbers.positiveQuantity(r.getObject("quantity"));
+                double netLine = Numbers.lineTotal(quantity, net);
+                double gross = Numbers.add(netLine, Numbers.tax(netLine, vatRate)) / quantity;
                 Object invoiceNet = r.getObject("invoice_net");
                 Object invoiceGross = r.getObject("invoice_gross");
                 if (invoiceVat != null && invoiceNet != null && invoiceGross != null &&
@@ -464,8 +463,7 @@ public final class DatabaseMigrationManager {
             while (r.next()) {
                 double paid = Numbers.nonNegative(r.getObject("paid_amount"));
                 double due = Numbers.nonNegative(r.getObject("amount_due"));
-                String status = paid <= 0 ? "NOT_PAID"
-                    : paid + 0.004 >= due ? "PAID" : "PARTIALLY_PAID";
+                String status = PaymentAmounts.status(paid, due);
                 write.setString(1, status);
                 write.setInt(2, r.getInt("id"));
                 write.addBatch();
