@@ -555,37 +555,33 @@ public class OrdersPanel extends JPanel {
         }
     }
 
-    static void reconcileCompletedOrderPaymentAfterInvoice(
+    static void normalizeCompletedOrderPayment(
             Connection conn, int orderId) throws SQLException {
         String status;
         double paidAmount;
-        try (PreparedStatement p = conn.prepareStatement(
-                "SELECT payment_status,paid_amount FROM orders WHERE id=? AND status='Completed'")) {
+        double paymentTotal;
+        try (PreparedStatement p = conn.prepareStatement("""
+                SELECT o.payment_status,o.paid_amount,
+                       COALESCE(i.total,o.total) AS payment_total
+                FROM orders o
+                LEFT JOIN invoices i ON i.order_id=o.id
+                WHERE o.id=? AND o.status='Completed'
+                """)) {
             p.setInt(1, orderId);
             try (ResultSet r = p.executeQuery()) {
                 if (!r.next()) throw new SQLException("Completed order no longer exists");
                 status = r.getString("payment_status");
                 paidAmount = r.getDouble("paid_amount");
+                paymentTotal = r.getDouble("payment_total");
             }
         }
 
         if ("PAID".equals(status)) {
-            // "Paid" means fully settled. Once an invoice exists, its gross total is
-            // the authoritative amount due.
             updateCompletedOrderPayment(conn, orderId, "PAID", 0);
         } else if ("PARTIALLY_PAID".equals(status)) {
-            double invoiceTotal;
-            try (PreparedStatement p = conn.prepareStatement(
-                    "SELECT total FROM invoices WHERE order_id=?")) {
-                p.setInt(1, orderId);
-                try (ResultSet r = p.executeQuery()) {
-                    if (!r.next()) throw new SQLException("Linked invoice no longer exists");
-                    invoiceTotal = r.getDouble("total");
-                }
-            }
             if (paidAmount <= 0) {
                 updateCompletedOrderPayment(conn, orderId, "NOT_PAID", 0);
-            } else if (paidAmount >= invoiceTotal) {
+            } else if (paidAmount >= paymentTotal) {
                 updateCompletedOrderPayment(conn, orderId, "PAID", 0);
             } else {
                 updateCompletedOrderPayment(conn, orderId, "PARTIALLY_PAID", paidAmount);
@@ -593,6 +589,11 @@ public class OrdersPanel extends JPanel {
         } else {
             updateCompletedOrderPayment(conn, orderId, "NOT_PAID", 0);
         }
+    }
+
+    static void reconcileCompletedOrderPaymentAfterInvoice(
+            Connection conn, int orderId) throws SQLException {
+        normalizeCompletedOrderPayment(conn, orderId);
     }
 
     private void updateSelectedOrderPayment() {
