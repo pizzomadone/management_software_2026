@@ -43,7 +43,7 @@ public final class DatabaseIntegrity {
         if (!legacy) {
             String currency=DatabaseCurrency.read(c);
             try {DatabaseCurrency.codeFromSetting(currency);} catch(IllegalArgumentException e) {throw new SQLException("Database currency is missing or invalid",e);}
-            for(var rule:rules().entrySet()) {
+            for(var rule:rules(c).entrySet()) {
                 try(Statement s=c.createStatement();ResultSet r=s.executeQuery("SELECT rowid FROM "+rule.getKey()+" WHERE "+rule.getValue().replace("NEW.","")+" LIMIT 1")) {
                     if(r.next())throw new SQLException("Invalid existing numeric data in "+rule.getKey()+", row "+r.getLong(1)+". Reconcile the source database before import or release.");
                 }
@@ -71,7 +71,7 @@ public final class DatabaseIntegrity {
     private static String nullableAmount(String column) {
         return "NEW."+column+" IS NOT NULL AND ("+amount(column)+")";
     }
-    private static Map<String,String> rules() {
+    private static Map<String,String> rules(Connection c) throws SQLException {
         Map<String,String> rules=new LinkedHashMap<>();
         rules.put("products",integer("quantity",Integer.MIN_VALUE)+" OR "+integer("reserved_quantity",0)+" OR "+amount("price")+" OR "+amount("acquisition_cost")+" OR "+amount("vat_rate")+" OR NEW.vat_rate>100 OR "+amount("weight"));
         String line=integer("quantity",1)+" OR "+amount("unit_price");
@@ -79,7 +79,9 @@ public final class DatabaseIntegrity {
         rules.put("invoice_details",line+" OR "+amount("vat_rate")+" OR NEW.vat_rate>100 OR "+amount("total"));
         rules.put("supplier_order_details",line+" OR "+amount("total"));
         rules.put("orders",amount("total")+" OR "+amount("paid_amount"));
-        rules.put("invoices",amount("taxable_amount")+" OR "+amount("vat")+" OR "+amount("total")+" OR "+amount("paid_amount"));
+        String invoiceRule=amount("taxable_amount")+" OR "+amount("vat")+" OR "+amount("total");
+        if (hasColumn(c, "invoices", "paid_amount")) invoiceRule += " OR " + amount("paid_amount");
+        rules.put("invoices", invoiceRule);
         rules.put("supplier_orders",amount("total"));
         rules.put("product_suppliers",amount("purchase_price")+" OR "+integer("is_preferred",0)+" OR NEW.is_preferred>1");
         rules.put("inventory_lots",integer("initial_quantity",0)+" OR "+integer("remaining_quantity",0)+" OR NEW.remaining_quantity>NEW.initial_quantity OR "+amount("unit_cost"));
@@ -90,7 +92,15 @@ public final class DatabaseIntegrity {
         return rules;
     }
     public static void installGuards(Connection c) throws SQLException {
-        for(var rule:rules().entrySet())guard(c,rule.getKey(),rule.getValue());
+        for(var rule:rules(c).entrySet())guard(c,rule.getKey(),rule.getValue());
+    }
+
+    private static boolean hasColumn(Connection c, String table, String column) throws SQLException {
+        try (Statement s = c.createStatement();
+             ResultSet r = s.executeQuery("PRAGMA table_info(" + table + ")")) {
+            while (r.next()) if (column.equals(r.getString("name"))) return true;
+            return false;
+        }
     }
 
     private static void guard(Connection c, String table, String condition) throws SQLException {
