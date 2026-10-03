@@ -593,11 +593,23 @@ public class OrderDialog extends JDialog {
                         message.append(String.format("- %s: %s\n",
                             entry.getKey(), entry.getValue().getFormattedMessage()));
                     }
-                    message.append("\n").append(I18n.tr("Do you want to proceed anyway?")).append("\n").append(I18n.tr("This will result in negative stock."));
+
+                    if ("Completed".equals(newStatus)) {
+                        message.append("\n").append(I18n.tr("This will result in negative stock."));
+                        Dialogs.showMessageDialog(this,
+                            message.toString(),
+                            I18n.tr("Insufficient Stock"),
+                            JOptionPane.WARNING_MESSAGE);
+                        conn.rollback();
+                        return;
+                    }
+
+                    message.append("\n").append(I18n.tr("Do you want to proceed anyway?"))
+                           .append("\n").append(I18n.tr("This will result in negative stock."));
 
                     int choice = Dialogs.showConfirmDialog(this,
                         message.toString(),
-                        "Insufficient Stock",
+                        I18n.tr("Insufficient Stock"),
                         JOptionPane.YES_NO_OPTION,
                         JOptionPane.WARNING_MESSAGE);
 
