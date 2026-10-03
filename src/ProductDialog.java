@@ -24,6 +24,7 @@ public class ProductDialog extends JDialog {
     private JLabel lastPurchaseCostValueLabel;
     private JButton preferredSupplierCostButton;
     private Integer preferredSupplierRelationId;
+    private Double preferredSupplierCurrentCost;
     private JCheckBox activeCheckBox;
     private JButton selectSupplierButton;
     private JButton manageSuppliersButton;
@@ -326,7 +327,7 @@ public class ProductDialog extends JDialog {
         }
         estimatedMarginLabel.setToolTipText(I18n.tr(product == null
             ? "Estimated margin = (net sale price - purchase cost) / net sale price. Other expenses are excluded."
-            : "Estimate based on the last actual purchase cost. Margin = (net sale price - cost) / net sale price. Actual sale profit uses FIFO; other expenses are excluded."));
+            : "Estimated margin = (net sale price - preferred supplier cost) / net sale price. Actual sale profit uses FIFO; other expenses are excluded."));
         javax.swing.event.DocumentListener listener = new javax.swing.event.DocumentListener() {
             public void insertUpdate(javax.swing.event.DocumentEvent e) { updatePricePreview(); }
             public void removeUpdate(javax.swing.event.DocumentEvent e) { updatePricePreview(); }
@@ -357,13 +358,15 @@ public class ProductDialog extends JDialog {
             double cost;
             try {
                 cost = product == null ? Numbers.nonNegative(acquisitionCostField.getText())
-                    : Numbers.nonNegative(product.getAcquisitionCost());
+                    : Numbers.nonNegative(preferredSupplierCurrentCost);
             } catch (IllegalArgumentException e) {
                 estimatedMarginLabel.setText(I18n.tr("Margin unavailable: enter a purchase cost."));
                 return;
             }
             if (cost <= 0) {
-                estimatedMarginLabel.setText(I18n.tr("Margin unavailable: purchase cost missing."));
+                estimatedMarginLabel.setText(I18n.tr(product == null
+                    ? "Margin unavailable: purchase cost missing."
+                    : "Margin unavailable: preferred supplier cost missing."));
                 return;
             }
             double profit = net - cost;
@@ -772,9 +775,12 @@ public class ProductDialog extends JDialog {
     }
 
     private void updatePreferredSupplierCost(Double cost) {
-        if (preferredSupplierCostButton == null) return;
-        preferredSupplierCostButton.setText(cost == null ? "—" : costDisplay(cost));
-        preferredSupplierCostButton.setEnabled(preferredSupplierRelationId != null);
+        preferredSupplierCurrentCost = cost;
+        if (preferredSupplierCostButton != null) {
+            preferredSupplierCostButton.setText(cost == null ? "—" : costDisplay(cost));
+            preferredSupplierCostButton.setEnabled(preferredSupplierRelationId != null);
+        }
+        updatePricePreview();
     }
 
     private void showPreferredSupplierCostEditor() {
@@ -997,7 +1003,8 @@ public class ProductDialog extends JDialog {
                     minimum.setInt(1,productId); minimum.setInt(2,minimumQuantity); minimum.executeUpdate();
                 }
 
-                savePreferredSupplierRelation(conn,productId,supplierId);
+                savePreferredSupplierRelation(conn,productId,supplierId,
+                    product == null ? acquisitionCost : null);
 
                 if (product == null) {
                     if (pendingPhotoFilenames != null && !pendingPhotoFilenames.isEmpty()) {
@@ -1156,20 +1163,22 @@ public class ProductDialog extends JDialog {
         });
     }
 
-    private void savePreferredSupplierRelation(Connection c,int productId,Integer supplierId)
-            throws SQLException {
+    private void savePreferredSupplierRelation(Connection c,int productId,Integer supplierId,
+            Double initialPurchaseCost) throws SQLException {
         if(supplierId==null)return;
         try(PreparedStatement clear=c.prepareStatement(
                 "UPDATE product_suppliers SET is_preferred=0 WHERE product_id=? AND supplier_id<>?")){
             clear.setInt(1,productId);clear.setInt(2,supplierId);clear.executeUpdate();
         }
+        double insertedCost = initialPurchaseCost == null ? 0.0 : initialPurchaseCost;
         try(PreparedStatement upsert=c.prepareStatement("""
                 INSERT INTO product_suppliers(product_id,supplier_id,purchase_price,is_preferred)
-                VALUES(?,?,0,1)
+                VALUES(?,?,?,1)
                 ON CONFLICT(product_id,supplier_id) DO UPDATE SET
                     is_preferred=1
                 """)){
-            upsert.setInt(1,productId);upsert.setInt(2,supplierId);upsert.executeUpdate();
+            upsert.setInt(1,productId);upsert.setInt(2,supplierId);
+            upsert.setDouble(3,insertedCost);upsert.executeUpdate();
         }
     }
 
