@@ -178,7 +178,7 @@ public class OperationalRegressionTest extends RegressionTest {
                         sql("INSERT INTO orders(customer_id,order_date,status,total) VALUES(1,"+start+",'"+status+"',900)");
                     for(String status:List.of("Draft","Canceled"))
                         sql("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status,currency_code) VALUES('"+status+"',"+start+",1,900,0,900,'"+status+"','EUR')");
-                    sql("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status,currency_code) VALUES('PAID',"+start+",1,20,0,20,'Paid','EUR')");
+                    sql("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status,payment_status,paid_amount,currency_code) VALUES('PAID',"+start+",1,20,0,20,'Issued','PAID',20,'EUR')");
                     DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
                     require(kpi(dash,"monthRevenueLabel").equals(SettingsPanel.formatCurrency(40)),"Wrong monthly orders in "+zone);
                     require(kpi(dash,"monthInvoicedLabel").equals(SettingsPanel.formatCurrency(60)),"Wrong monthly invoices in "+zone);
@@ -190,7 +190,7 @@ public class OperationalRegressionTest extends RegressionTest {
             DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
             require(kpi(dash,"monthRevenueLabel").equals(SettingsPanel.formatCurrency(30)),"Invoice double-counted a sale or included VAT in orders");
             require(kpi(dash,"monthInvoicedLabel").equals(SettingsPanel.formatCurrency(30)),"VAT was included in net invoiced revenue");
-            sql("UPDATE invoices SET status='Paid'");call(dash,"loadKPIData");
+            OrdersPanel.updateCompletedOrderPayment(db,1,"PAID",0);call(dash,"loadKPIData");
             require(kpi(dash,"monthRevenueLabel").equals(SettingsPanel.formatCurrency(30)) && kpi(dash,"monthInvoicedLabel").equals(SettingsPanel.formatCurrency(30)),"Payment counted a second sale");
             sql("UPDATE invoices SET status='Canceled'");call(dash,"loadKPIData");
             require(kpi(dash,"monthRevenueLabel").equals(SettingsPanel.formatCurrency(30)) && kpi(dash,"monthInvoicedLabel").equals(SettingsPanel.formatCurrency(0)),"Invoice cancellation incorrectly cancelled the independent order");
