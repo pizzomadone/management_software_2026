@@ -4,6 +4,7 @@ import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import java.awt.*;
 import java.awt.event.*;
+import java.util.function.Supplier;
 
 /**
  * Utility class to add keyboard shortcuts and context menus to JTables.
@@ -47,6 +48,7 @@ public class TableInteractionUtil {
                 contextMenu.addSeparator();
             } else {
                 JMenuItem menuItem = new JMenuItem(action.getName());
+                menuItem.putClientProperty("tableAction", action);
                 menuItem.addActionListener(e -> {
                     if (action.getAction() != null) {
                         action.getAction().run();
@@ -87,15 +89,11 @@ public class TableInteractionUtil {
                     // Update menu items' enabled state
                     for (int i = 0; i < contextMenu.getComponentCount(); i++) {
                         java.awt.Component comp = contextMenu.getComponent(i);
-                        if (comp instanceof JMenuItem) {
-                            JMenuItem item = (JMenuItem) comp;
-                            // Find corresponding action
-                            String itemText = item.getText();
-                            for (TableAction action : actions) {
-                                if (action != null && action.getName().equals(itemText)) {
-                                    item.setEnabled(!action.requiresSelection() || table.getSelectedRow() != -1);
-                                    break;
-                                }
+                        if (comp instanceof JMenuItem item) {
+                            Object value = item.getClientProperty("tableAction");
+                            if (value instanceof TableAction action) {
+                                item.setText(action.getName());
+                                item.setEnabled(!action.requiresSelection() || table.getSelectedRow() != -1);
                             }
                         }
                     }
@@ -112,6 +110,7 @@ public class TableInteractionUtil {
      */
     public static class TableAction {
         private final String name;
+        private final Supplier<String> nameSupplier;
         private final Runnable action;
         private final boolean requiresSelection;
 
@@ -124,8 +123,20 @@ public class TableInteractionUtil {
          */
         public TableAction(String name, Runnable action, boolean requiresSelection) {
             this.name = name;
+            this.nameSupplier = null;
             this.action = action;
             this.requiresSelection = requiresSelection;
+        }
+
+        public TableAction(Supplier<String> nameSupplier, Runnable action, boolean requiresSelection) {
+            this.name = null;
+            this.nameSupplier = nameSupplier;
+            this.action = action;
+            this.requiresSelection = requiresSelection;
+        }
+
+        public TableAction(Supplier<String> nameSupplier, Runnable action) {
+            this(nameSupplier, action, true);
         }
 
         /**
@@ -138,7 +149,7 @@ public class TableInteractionUtil {
             this(name, action, true);
         }
 
-        public String getName() { return name; }
+        public String getName() { return nameSupplier != null ? nameSupplier.get() : name; }
         public Runnable getAction() { return action; }
         public boolean requiresSelection() { return requiresSelection; }
     }
