@@ -128,15 +128,15 @@ public class TableInteractionUtil {
             this.requiresSelection = requiresSelection;
         }
 
-        public TableAction(Supplier<String> nameSupplier, Runnable action, boolean requiresSelection) {
+        private TableAction(Supplier<String> nameSupplier, Runnable action, boolean requiresSelection) {
             this.name = null;
             this.nameSupplier = nameSupplier;
             this.action = action;
             this.requiresSelection = requiresSelection;
         }
 
-        public TableAction(Supplier<String> nameSupplier, Runnable action) {
-            this(nameSupplier, action, true);
+        public static TableAction dynamic(Supplier<String> nameSupplier, Runnable action) {
+            return new TableAction(nameSupplier, action, true);
         }
 
         /**
