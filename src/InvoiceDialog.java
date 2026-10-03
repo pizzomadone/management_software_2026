@@ -686,7 +686,7 @@ public class InvoiceDialog extends JDialog {
     private double paymentAmountForSave(double targetTotal) {
         String status = paymentStatusCode();
         if ("NOT_PAID".equals(status)) return 0.0;
-        if ("PAID".equals(status)) return Numbers.money(targetTotal);
+        if ("PAID".equals(status)) return Numbers.money(java.math.BigDecimal.valueOf(targetTotal));
 
         double amount = Numbers.money(Numbers.decimal(paidAmountField.getText()));
         if (amount <= 0 || amount >= targetTotal) {
