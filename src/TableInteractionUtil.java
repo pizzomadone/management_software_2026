@@ -47,7 +47,7 @@ public class TableInteractionUtil {
                 // Add separator for null actions
                 contextMenu.addSeparator();
             } else {
-                JMenuItem menuItem = new JMenuItem(action.getName());
+                JMenuItem menuItem = new JMenuItem(I18n.tr(action.getName()));
                 menuItem.putClientProperty("tableAction", action);
                 menuItem.addActionListener(e -> {
                     if (action.getAction() != null) {
@@ -92,7 +92,7 @@ public class TableInteractionUtil {
                         if (comp instanceof JMenuItem item) {
                             Object value = item.getClientProperty("tableAction");
                             if (value instanceof TableAction action) {
-                                item.setText(action.getName());
+                                item.setText(I18n.tr(action.getName()));
                                 item.setEnabled(!action.requiresSelection() || table.getSelectedRow() != -1);
                             }
                         }
