@@ -43,7 +43,7 @@ public class InvoicesPanel extends JPanel {
         searchPanel.add(searchButton);
 
         // Invoices table
-        String[] columns = {"Number", "Date", "Customer", "Taxable Amount", "VAT", "Total", "Status"};
+        String[] columns = {"Number", "Date", "Customer", "Taxable Amount", "VAT", "Total", "Status", "Payment"};
         tableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -129,9 +129,14 @@ public class InvoicesPanel extends JPanel {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
                 SELECT i.id, i.number, i.date, i.customer_id, i.status, i.currency_code,
+                       i.order_id, i.payment_status AS invoice_payment_status,
+                       i.paid_amount AS invoice_paid_amount,
+                       o.payment_status AS order_payment_status,
+                       o.paid_amount AS order_paid_amount,
                        c.first_name || ' ' || c.last_name as customer_name
                 FROM invoices i
                 LEFT JOIN customers c ON i.customer_id = c.id
+                LEFT JOIN orders o ON o.id = i.order_id
                 ORDER BY i.date DESC
             """;
 
@@ -162,6 +167,14 @@ public class InvoicesPanel extends JPanel {
                     row.add(SettingsPanel.formatCurrency(vat,currency));
                     row.add(SettingsPanel.formatCurrency(total,currency));
                     row.add(rs.getString("status"));
+                    boolean linked = rs.getObject("order_id") != null;
+                    String paymentStatus = linked
+                        ? rs.getString("order_payment_status")
+                        : rs.getString("invoice_payment_status");
+                    double paidAmount = linked
+                        ? rs.getDouble("order_paid_amount")
+                        : rs.getDouble("invoice_paid_amount");
+                    row.add(formatPaymentStatus(paymentStatus, paidAmount, currency));
                     tableModel.addRow(row);
                 }
             }
@@ -195,9 +208,14 @@ public class InvoicesPanel extends JPanel {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
                 SELECT i.id, i.number, i.date, i.customer_id, i.status, i.currency_code,
+                       i.order_id, i.payment_status AS invoice_payment_status,
+                       i.paid_amount AS invoice_paid_amount,
+                       o.payment_status AS order_payment_status,
+                       o.paid_amount AS order_paid_amount,
                        c.first_name || ' ' || c.last_name as customer_name
                 FROM invoices i
                 LEFT JOIN customers c ON i.customer_id = c.id
+                LEFT JOIN orders o ON o.id = i.order_id
                 ORDER BY i.date DESC
             """;
 
@@ -230,6 +248,14 @@ public class InvoicesPanel extends JPanel {
                         row.add(SettingsPanel.formatCurrency(totals[1],currency));
                         row.add(SettingsPanel.formatCurrency(totals[2],currency));
                         row.add(rs.getString("status"));
+                        boolean linked = rs.getObject("order_id") != null;
+                        String paymentStatus = linked
+                            ? rs.getString("order_payment_status")
+                            : rs.getString("invoice_payment_status");
+                        double paidAmount = linked
+                            ? rs.getDouble("order_paid_amount")
+                            : rs.getDouble("invoice_paid_amount");
+                        row.add(formatPaymentStatus(paymentStatus, paidAmount, currency));
                         tableModel.addRow(row);
                     }
                 }
@@ -341,9 +367,13 @@ public class InvoicesPanel extends JPanel {
     private Invoice loadInvoiceByNumber(String number) throws SQLException {
         Connection conn = DatabaseManager.getInstance().getConnection();
         String query = """
-            SELECT i.*, c.first_name || ' ' || c.last_name as customer_name
+            SELECT i.*,
+                   o.payment_status AS order_payment_status,
+                   o.paid_amount AS order_paid_amount,
+                   c.first_name || ' ' || c.last_name as customer_name
             FROM invoices i
             LEFT JOIN customers c ON i.customer_id = c.id
+            LEFT JOIN orders o ON o.id = i.order_id
             WHERE i.number = ?
         """;
 
@@ -370,6 +400,19 @@ public class InvoicesPanel extends JPanel {
                         totals[2], // total
                         rs.getString("status")
                     );
+
+                    Object orderValue = rs.getObject("order_id");
+                    Integer orderId = orderValue == null ? null : ((Number)orderValue).intValue();
+                    invoice.setOrderId(orderId);
+                    if (orderId != null) {
+                        String paymentStatus = rs.getString("order_payment_status");
+                        invoice.setPaymentStatus(paymentStatus == null ? "NOT_PAID" : paymentStatus);
+                        invoice.setPaidAmount(rs.getDouble("order_paid_amount"));
+                    } else {
+                        String paymentStatus = rs.getString("payment_status");
+                        invoice.setPaymentStatus(paymentStatus == null ? "NOT_PAID" : paymentStatus);
+                        invoice.setPaidAmount(rs.getDouble("paid_amount"));
+                    }
 
                     loadInvoiceItems(invoice);
                     return invoice;
@@ -409,6 +452,13 @@ public class InvoicesPanel extends JPanel {
         }
     }
 
+    private String formatPaymentStatus(String paymentStatus, double paidAmount, String currency) {
+        if ("PAID".equals(paymentStatus)) return I18n.tr("Paid");
+        if ("PARTIALLY_PAID".equals(paymentStatus))
+            return I18n.tr("Partial") + " (" + SettingsPanel.formatCurrency(paidAmount, currency) + ")";
+        return I18n.tr("Not Paid");
+    }
+
     private void deleteSelectedInvoice() {
         int selectedRow = invoicesTable.getSelectedRow();
         if (selectedRow != -1) {
@@ -418,7 +468,7 @@ public class InvoicesPanel extends JPanel {
             String customer = (String)tableModel.getValueAt(modelRow, 2);
             String status = (String)tableModel.getValueAt(modelRow, 6);
         if (InvoiceDialog.isFinalizedStatus(status)) {
-            Dialogs.showMessageDialog(this,I18n.tr("Issued, Paid and Canceled invoices are historical documents. Only their status can be changed."),I18n.tr("Historical Invoice"),JOptionPane.WARNING_MESSAGE);
+            Dialogs.showMessageDialog(this,I18n.tr("Issued and Canceled invoices are historical documents. Only status and payment can be changed."),I18n.tr("Historical Invoice"),JOptionPane.WARNING_MESSAGE);
             return;
         }
 
