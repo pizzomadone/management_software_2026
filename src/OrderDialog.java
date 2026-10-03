@@ -700,10 +700,10 @@ public class OrderDialog extends JDialog {
                     }
                 }
             }
-            // A reservation represents stock that is really available for this order.
-            // Never allow active reservations to exceed physical availability: otherwise
-            // pending orders can block each other when one of them is completed.
-            if ("New".equals(newStatus) || "In Progress".equals(newStatus) || "Completed".equals(newStatus)) {
+            // "New" is a commercial reservation only: it must not touch warehouse stock.
+            // Real warehouse availability is required only when the order becomes operational
+            // (In Progress) or is completed directly.
+            if ("In Progress".equals(newStatus) || "Completed".equals(newStatus)) {
                 Map<String, StockManager.StockAvailability> insufficient =
                     StockManager.checkStockAvailability(
                         conn,
@@ -852,8 +852,10 @@ public class OrderDialog extends JDialog {
                                          List<StockManager.StockItem> items, Date orderDate) throws SQLException {
         switch (status) {
             case "New":
+                // Commercial reservation only: no warehouse reservation, stock movement or FIFO effect.
+                break;
             case "In Progress":
-                // Create reservations for both New and In Progress
+                // Operational order: reserve currently available stock without changing physical stock.
                 for (StockManager.StockItem item : items) {
                     StockManager.createOrUpdateReservation(conn, item.getProductId(),
                         "ORDER", orderId, item.getQuantity(), "Order #" + orderId);
