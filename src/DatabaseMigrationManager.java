@@ -298,6 +298,34 @@ public final class DatabaseMigrationManager {
                 WHERE order_id IS NOT NULL
                 """);
 
+            // A linked PAID order means the whole linked invoice is settled.
+            // Normalize the stored amount to the invoice gross total, not the order net total.
+            s.executeUpdate("""
+                UPDATE orders
+                SET paid_amount=(
+                    SELECT i.total FROM invoices i WHERE i.order_id=orders.id
+                )
+                WHERE payment_status='PAID'
+                  AND EXISTS (SELECT 1 FROM invoices i WHERE i.order_id=orders.id)
+                """);
+
+            // Clean impossible legacy partial states against the linked invoice total.
+            s.executeUpdate("""
+                UPDATE orders
+                SET payment_status='NOT_PAID', paid_amount=0
+                WHERE payment_status='PARTIALLY_PAID' AND paid_amount<=0
+                """);
+            s.executeUpdate("""
+                UPDATE orders
+                SET payment_status='PAID',
+                    paid_amount=(SELECT i.total FROM invoices i WHERE i.order_id=orders.id)
+                WHERE payment_status='PARTIALLY_PAID'
+                  AND EXISTS (
+                    SELECT 1 FROM invoices i
+                    WHERE i.order_id=orders.id AND orders.paid_amount>=i.total
+                  )
+                """);
+
             // Paid is no longer a document lifecycle state.
             s.executeUpdate("""
                 UPDATE invoices
