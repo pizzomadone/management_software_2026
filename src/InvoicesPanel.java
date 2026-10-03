@@ -442,7 +442,8 @@ public class InvoicesPanel extends JPanel {
                         rs.getString("product_name"),
                         rs.getString("product_code"),
                         rs.getInt("quantity"),
-                        rs.getDouble("unit_price"),
+                        rs.getDouble("sale_unit_price_ex_vat"),
+                        rs.getDouble("sale_unit_price_inc_vat"),
                         rs.getDouble("vat_rate"),
                         rs.getDouble("total")
                     );
