@@ -510,7 +510,7 @@ public class DashboardPanel extends JPanel {
             int negativeStockCount = 0;
             String warehouseQuery = """
                 SELECT p.quantity, p.sale_price_ex_vat,
-                       ps.purchase_price AS preferred_supplier_cost
+                       COALESCE(ps.purchase_price,0) AS preferred_supplier_cost
                 FROM products p
                 LEFT JOIN product_suppliers ps
                   ON ps.product_id=p.id AND ps.is_preferred=1
