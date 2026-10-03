@@ -83,7 +83,7 @@ public class ProductSelectionDialog extends JDialog {
         searchPanel.add(searchInputPanel, BorderLayout.CENTER);
 
         // Products table with detailed information
-        String[] columns = {"ID", "Code", "Name", "Description", "Price", "Stock", "Status"};
+        String[] columns = {"ID", "Code", "Name", "Description", "Sale Price incl. VAT", "Stock", "Status"};
         tableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -248,7 +248,7 @@ public class ProductSelectionDialog extends JDialog {
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
-                SELECT id, code, name, description, price, quantity
+                SELECT id, code, name, description, sale_price_inc_vat, quantity
                 FROM products
                 ORDER BY name
                 LIMIT 1000
@@ -279,7 +279,7 @@ public class ProductSelectionDialog extends JDialog {
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
-                SELECT id, code, name, description, price, quantity
+                SELECT id, code, name, description, sale_price_inc_vat, quantity
                 FROM products
                 WHERE LOWER(code) LIKE LOWER(?)
                    OR LOWER(name) LIKE LOWER(?)
@@ -332,7 +332,7 @@ public class ProductSelectionDialog extends JDialog {
         }
         row.add(description);
 
-        row.add(rs.getDouble("price"));
+        row.add(rs.getDouble("sale_price_inc_vat"));
 
         int stock = rs.getInt("quantity");
         row.add(stock);
