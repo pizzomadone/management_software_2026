@@ -59,6 +59,77 @@ public final class Dialogs {
         window.setLocation(x, y);
     }
 
+    /**
+     * Small dashboard-style question-mark help. The explanation opens on click
+     * as a lightweight tooltip popup and closes when the pointer leaves the icon.
+     */
+    public static JLabel clickHelpLabel(String tooltipHtml) {
+        JLabel help = new JLabel("?", SwingConstants.CENTER) {
+            private Popup helpPopup;
+
+            {
+                putClientProperty("i18n.literal", true);
+                setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+                addHierarchyListener(event -> {
+                    if (!isShowing()) hideHelpPopup();
+                });
+                addMouseListener(new java.awt.event.MouseAdapter() {
+                    @Override public void mouseClicked(java.awt.event.MouseEvent event) {
+                        if (SwingUtilities.isLeftMouseButton(event)) showHelpPopup();
+                    }
+
+                    @Override public void mouseExited(java.awt.event.MouseEvent event) {
+                        hideHelpPopup();
+                    }
+                });
+            }
+
+            @Override
+            public String getToolTipText(java.awt.event.MouseEvent event) {
+                return null;
+            }
+
+            private void showHelpPopup() {
+                hideHelpPopup();
+                String text = getToolTipText();
+                if (text == null || text.isBlank() || !isShowing()) return;
+
+                JToolTip tip = createToolTip();
+                tip.setTipText(text);
+                Dimension size = tip.getPreferredSize();
+                Point location;
+                try {
+                    location = getLocationOnScreen();
+                } catch (IllegalComponentStateException exception) {
+                    return;
+                }
+
+                int x = location.x + getWidth() - size.width;
+                int y = location.y + getHeight() + 4;
+                helpPopup = PopupFactory.getSharedInstance().getPopup(this, tip, x, y);
+                helpPopup.show();
+            }
+
+            private void hideHelpPopup() {
+                if (helpPopup != null) {
+                    helpPopup.hide();
+                    helpPopup = null;
+                }
+            }
+        };
+
+        help.setToolTipText(tooltipHtml);
+        help.setFont(help.getFont().deriveFont(Font.BOLD, 10f));
+        Color foreground = UIManager.getColor("Label.disabledForeground");
+        help.setForeground(foreground != null ? foreground : Color.GRAY);
+        Color border = UIManager.getColor("Separator.foreground");
+        help.setBorder(BorderFactory.createLineBorder(border != null ? border : Color.LIGHT_GRAY, 1, true));
+        help.setPreferredSize(new Dimension(16, 16));
+        help.setMinimumSize(new Dimension(16, 16));
+        help.setMaximumSize(new Dimension(16, 16));
+        return help;
+    }
+
     /** Creates the standard legend used by forms that contain required fields. */
     public static JPanel requiredLegendPanel() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
