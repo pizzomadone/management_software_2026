@@ -72,7 +72,10 @@ public class OrdersPanel extends JPanel {
             new TableInteractionUtil.TableAction("Modify", this::editSelectedOrder),
             new TableInteractionUtil.TableAction("Delete", this::deleteSelectedOrder),
             null, // Separator
-            new TableInteractionUtil.TableAction("Generate Invoice", this::generateInvoiceFromOrder),
+            new TableInteractionUtil.TableAction(
+                () -> I18n.tr(linkedInvoiceNumberForSelectedOrder() != null
+                    ? "Go to Invoice" : "Generate Invoice"),
+                this::generateInvoiceFromOrder),
             new TableInteractionUtil.TableAction("Update Payment", this::updateSelectedOrderPayment),
             null, // Separator
             new TableInteractionUtil.TableAction("Refresh", this::loadOrders, false)
@@ -85,7 +88,7 @@ public class OrdersPanel extends JPanel {
                 if (evt.getClickCount() == 2 && SwingUtilities.isLeftMouseButton(evt)) {
                     int selectedRow = ordersTable.getSelectedRow();
                     if (selectedRow != -1) {
-                        if (!openLinkedInvoiceForSelectedOrder()) editSelectedOrder();
+                        editSelectedOrder();
                     }
                 }
             }
@@ -296,13 +299,16 @@ public class OrdersPanel extends JPanel {
         }
     }
 
-    private boolean openLinkedInvoiceForSelectedOrder() {
+    private String linkedInvoiceNumberForSelectedOrder() {
         int viewRow = ordersTable.getSelectedRow();
-        if (viewRow == -1) return false;
-
+        if (viewRow == -1) return null;
         int modelRow = ordersTable.convertRowIndexToModel(viewRow);
         int orderId = (int)tableModel.getValueAt(modelRow, 0);
-        String invoiceNumber = linkedInvoiceNumber(orderId);
+        return linkedInvoiceNumber(orderId);
+    }
+
+    private boolean openLinkedInvoiceForSelectedOrder() {
+        String invoiceNumber = linkedInvoiceNumberForSelectedOrder();
         if (invoiceNumber == null || invoiceNumber.isBlank()) return false;
 
         Window window = SwingUtilities.getWindowAncestor(this);
@@ -844,19 +850,19 @@ public class OrdersPanel extends JPanel {
         String customer = (String)tableModel.getValueAt(modelRow, 1);
         String status = (String)tableModel.getValueAt(modelRow, 3);
 
-        if (!canGenerateInvoice(status)) {
-            Dialogs.showMessageDialog(this,
-                I18n.tr("Only completed customer orders can be invoiced."),
-                I18n.tr("Generate Invoice"), JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-
         String existingInvoice = linkedInvoiceNumber(orderId);
         if (existingInvoice != null) {
             Window window = SwingUtilities.getWindowAncestor(this);
             if (window instanceof MainWindow mainWindow) {
                 mainWindow.openInvoice(existingInvoice);
             }
+            return;
+        }
+
+        if (!canGenerateInvoice(status)) {
+            Dialogs.showMessageDialog(this,
+                I18n.tr("Only completed customer orders can be invoiced."),
+                I18n.tr("Generate Invoice"), JOptionPane.WARNING_MESSAGE);
             return;
         }
 
