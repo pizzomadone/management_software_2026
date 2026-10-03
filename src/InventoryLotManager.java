@@ -69,6 +69,18 @@ public final class InventoryLotManager {
                     int quantity=Numbers.positiveQuantity(r.getObject("quantity"));
                     double cost=Numbers.nonNegative(r.getObject("unit_price"));
                     if(cost<=0) throw new SQLException(I18n.tr("Purchase price must be greater than zero"));
+
+                    // The received unit price is the real purchase cost of this receipt:
+                    // it becomes both the FIFO lot cost and the supplier's current
+                    // product cost used as the default for future supplier orders.
+                    try(PreparedStatement u=c.prepareStatement("""
+                            UPDATE product_suppliers SET purchase_price=?
+                            WHERE product_id=? AND supplier_id=?
+                            """)) {
+                        u.setDouble(1,cost);u.setInt(2,productId);u.setInt(3,supplierId);
+                        u.executeUpdate();
+                    }
+
                     int oldStock=physicalStock(c,productId);
                     int remaining=Math.max(0,Math.min(quantity,Math.addExact(oldStock,quantity)));
 
