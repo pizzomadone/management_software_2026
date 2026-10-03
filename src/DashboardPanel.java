@@ -149,7 +149,7 @@ public class DashboardPanel extends JPanel {
 
         JPanel cards = new JPanel(new GridLayout(2, 4, 10, 10));
         cards.setOpaque(false);
-        cards.add(createKPICard("Stock at last purchase cost", "—", SECONDARY_COLOR, "warehouseValue"));
+        cards.add(createKPICard("Stock at preferred supplier cost", "—", SECONDARY_COLOR, "warehouseValue"));
         cards.add(createKPICard("Stock at net sale price", "—", SECONDARY_COLOR, "warehouseSaleValue"));
         cards.add(createKPICard("Low Stock Products", "—", DANGER_COLOR, "lowStock"));
         cards.add(createKPICard("Out of Stock Products", "—", WARNING_COLOR, "zeroStock"));
@@ -508,12 +508,19 @@ public class DashboardPanel extends JPanel {
             double warehouseSaleValue = 0;
             int zeroCostCount = 0;
             int negativeStockCount = 0;
-            String warehouseQuery = "SELECT quantity, acquisition_cost, sale_price_ex_vat FROM products WHERE active = 1";
+            String warehouseQuery = """
+                SELECT p.quantity, p.sale_price_ex_vat,
+                       ps.purchase_price AS preferred_supplier_cost
+                FROM products p
+                LEFT JOIN product_suppliers ps
+                  ON ps.product_id=p.id AND ps.is_preferred=1
+                WHERE p.active=1
+                """;
             try (Statement stmt = conn.createStatement();
                  ResultSet rs = stmt.executeQuery(warehouseQuery)) {
                 while (rs.next()) {
                     int quantity = Numbers.quantity(rs.getObject("quantity"));
-                    double cost = Numbers.nonNegative(rs.getObject("acquisition_cost"));
+                    double cost = Numbers.nonNegative(rs.getObject("preferred_supplier_cost"));
                     double price = Numbers.nonNegative(rs.getObject("sale_price_ex_vat"));
                     warehouseValue = Numbers.add(warehouseValue, Numbers.stockValue(quantity, cost));
                     warehouseSaleValue = Numbers.add(warehouseSaleValue, Numbers.stockValue(quantity, price));
@@ -599,7 +606,7 @@ public class DashboardPanel extends JPanel {
             avgMarginLabel.setText(margin + (zeroCostCount > 0 && !"—".equals(margin) ? " *" : ""));
             zeroStockLabel.setText(String.valueOf(zeroStockCount));
             costCompletenessNoteLabel.setText(zeroCostCount > 0
-                ? I18n.tr("* Some in-stock products have no purchase cost; warehouse cost value and potential margin are incomplete.")
+                ? I18n.tr("* Some in-stock products have no preferred supplier cost; warehouse cost value and potential margin are incomplete.")
                 : "");
             historicalSalesCostNoteLabel.setText(costAudit.salesWithoutHistoricalCost() > 0
                 ? I18n.tr("* Some imported sales have no reconstructable historical cost and are excluded from historical cost and gross profit calculations.")
