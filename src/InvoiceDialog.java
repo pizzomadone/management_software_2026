@@ -924,19 +924,15 @@ public class InvoiceDialog extends JDialog {
                                     .append(entry.getValue().getFormattedMessage()).append("\n");
                             }
                             message.append("\n")
-                                .append(I18n.tr("Do you want to proceed anyway?"))
-                                .append("\n")
-                                .append(I18n.tr("This will result in negative stock."));
+                                .append(I18n.tr(
+                                    "The completed customer order cannot be created because stock cannot go below zero. Reduce the quantities or save the invoice without creating the order."));
 
-                            int choice = Dialogs.showConfirmDialog(this,
+                            Dialogs.showMessageDialog(this,
                                 message.toString(),
                                 I18n.tr("Insufficient Stock"),
-                                JOptionPane.YES_NO_OPTION,
                                 JOptionPane.WARNING_MESSAGE);
-                            if (choice != JOptionPane.YES_OPTION) {
-                                conn.rollback();
-                                return;
-                            }
+                            conn.rollback();
+                            return;
                         }
 
                         sourceOrderId = createCompletedOrder(
