@@ -16,7 +16,7 @@ public final class DatabaseIntegrity {
         Map.entry("suppliers", "id company_name vat_number tax_code address phone email certified_email website notes"),
         Map.entry("orders", "payment_status paid_amount"),
         Map.entry("order_details", "cost_total"),
-        Map.entry("invoices", "id number date customer_id taxable_amount vat total status order_id currency_code customer_snapshot company_snapshot logo_snapshot snapshot_version"),
+        Map.entry("invoices", "id number date customer_id taxable_amount vat total status payment_status paid_amount order_id currency_code customer_snapshot company_snapshot logo_snapshot snapshot_version"),
         Map.entry("invoice_details", "id invoice_id product_id quantity unit_price vat_rate total product_code product_name"),
         Map.entry("supplier_orders", "id supplier_id number order_date expected_delivery_date received_date status total notes"),
         Map.entry("supplier_order_details", "id order_id product_id quantity unit_price total notes"),
@@ -79,7 +79,7 @@ public final class DatabaseIntegrity {
         rules.put("invoice_details",line+" OR "+amount("vat_rate")+" OR NEW.vat_rate>100 OR "+amount("total"));
         rules.put("supplier_order_details",line+" OR "+amount("total"));
         rules.put("orders",amount("total")+" OR "+amount("paid_amount"));
-        rules.put("invoices",amount("taxable_amount")+" OR "+amount("vat")+" OR "+amount("total"));
+        rules.put("invoices",amount("taxable_amount")+" OR "+amount("vat")+" OR "+amount("total")+" OR "+amount("paid_amount"));
         rules.put("supplier_orders",amount("total"));
         rules.put("product_suppliers",amount("purchase_price")+" OR "+integer("is_preferred",0)+" OR NEW.is_preferred>1");
         rules.put("inventory_lots",integer("initial_quantity",0)+" OR "+integer("remaining_quantity",0)+" OR NEW.remaining_quantity>NEW.initial_quantity OR "+amount("unit_cost"));
