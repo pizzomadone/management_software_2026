@@ -87,7 +87,8 @@ public class RegressionTest {
         put(d,"previousStatus",actualStatus);
         put(d,"selectedCustomer",customer());put(d,"dateField",new DatePickerField(today()));
         put(d,"dateFormat",new SimpleDateFormat("dd/MM/yyyy"));
-        put(d,"statusCombo",new JComboBox<>(new String[]{status}));
+        JComboBox<String> orderStatusCombo=new JComboBox<>(new String[]{"New","Reservation","In Progress","Completed","Cancelled"});
+        orderStatusCombo.setSelectedItem(status);put(d,"statusCombo",orderStatusCombo);
         put(d,"paymentStatusCombo",new JComboBox<>(new String[]{"Not Paid"}));
         put(d,"paidAmountField",new JTextField("0"));
         DefaultTableModel m=new DefaultTableModel(new Object[][]{{1,"Product A",quantity,"10.00","30.00","0"}},new String[]{"ID","Name","Qty","Price","Total","VAT"});
