@@ -69,7 +69,7 @@ public final class ProductDetailsDialog extends JDialog {
         addLine(details, g, "Category", product.getCategory());
         addWrappedLine(details, g, "Description", product.getDescription());
         addLine(details, g, "Quantity", String.valueOf(product.getQuantity()));
-        addLine(details, g, "Price", SettingsPanel.formatCurrency(product.getPrice()));
+        addLine(details, g, "Sale Price incl. VAT", SettingsPanel.formatCurrency(product.getSalePriceIncVat()));
 
         addPreferredSupplierCostLine(details, g, product);
         addCostLine(details, g, "Last Purchase Cost",
