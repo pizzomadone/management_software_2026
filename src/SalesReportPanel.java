@@ -183,7 +183,7 @@ public class SalesReportPanel extends JPanel {
                     FROM detail_cost
                     GROUP BY order_id
                 )
-                SELECT o.id,o.order_date,o.status,o.total,
+                SELECT o.id,o.order_date,o.status,o.total_ex_vat AS total,
                        COALESCE(c.first_name || ' ' || c.last_name,'N/A') customer_name,
                        cg.cost_total,cg.missing_cost
                 FROM orders o
