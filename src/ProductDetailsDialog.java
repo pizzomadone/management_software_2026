@@ -69,9 +69,18 @@ public final class ProductDetailsDialog extends JDialog {
         addLine(details, g, "Category", product.getCategory());
         addWrappedLine(details, g, "Description", product.getDescription());
         addLine(details, g, "Quantity", String.valueOf(product.getQuantity()));
-        addLine(details, g, "Sale Price incl. VAT", SettingsPanel.formatCurrency(product.getSalePriceIncVat()));
+        double gross = product.getSalePriceIncVat();
+        double net = product.getSalePriceExVat();
+        double vatAmount = Numbers.money(java.math.BigDecimal.valueOf(gross)
+            .subtract(java.math.BigDecimal.valueOf(net)));
+        addLine(details, g, "Sale Price incl. VAT",
+            SettingsPanel.formatCurrency(gross) + " (" +
+            I18n.format("{0} net + {1} VAT",
+                SettingsPanel.formatCurrency(net), SettingsPanel.formatCurrency(vatAmount)) + ")");
 
-        addPreferredSupplierCostLine(details, g, product);
+        Double preferredCost = loadPreferredSupplierCost(product.getId());
+        addPreferredSupplierCostLine(details, g, product, preferredCost);
+        addLine(details, g, "Estimated Margin", estimatedMargin(product, preferredCost));
         addCostLine(details, g, "Last Purchase Cost",
             product.getAcquisitionCost() > 0
                 ? SettingsPanel.formatUnitCurrency(product.getAcquisitionCost()) : null,
@@ -158,8 +167,19 @@ public final class ProductDetailsDialog extends JDialog {
             + "</div></html>";
     }
 
+    private String estimatedMargin(Product product, Double preferredCost) {
+        if (preferredCost == null || preferredCost <= 0 || product.getSalePriceExVat() <= 0)
+            return I18n.tr("Not set");
+        double profit = product.getSalePriceExVat() - preferredCost;
+        java.text.NumberFormat percent = java.text.NumberFormat.getPercentInstance(
+            java.util.Locale.forLanguageTag(I18n.getLanguage().replace('_', '-')));
+        percent.setMaximumFractionDigits(1);
+        percent.setGroupingUsed(false);
+        return percent.format(profit / product.getSalePriceExVat());
+    }
+
     private void addPreferredSupplierCostLine(JPanel panel, GridBagConstraints g,
-            Product product) {
+            Product product, Double cost) {
         g.gridx = 0;
         g.weightx = 0;
         g.weighty = 0;
@@ -174,7 +194,6 @@ public final class ProductDetailsDialog extends JDialog {
         g.weightx = 1;
         g.fill = GridBagConstraints.HORIZONTAL;
 
-        Double cost = loadPreferredSupplierCost(product.getId());
         JTextArea value = wrappedText(cost == null
             ? I18n.tr("Not set") : SettingsPanel.formatUnitCurrency(cost), false);
         value.setRows(1);
