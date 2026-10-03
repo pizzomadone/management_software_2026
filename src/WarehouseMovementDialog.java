@@ -325,13 +325,20 @@ public class WarehouseMovementDialog extends JDialog {
         if (selectedProduct == null || inboundCostField == null) return;
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
-            try (PreparedStatement p = conn.prepareStatement(
-                    "SELECT acquisition_cost FROM products WHERE id=?")) {
+            try (PreparedStatement p = conn.prepareStatement("""
+                    SELECT ps.purchase_price
+                    FROM products p
+                    LEFT JOIN product_suppliers ps
+                      ON ps.product_id=p.id AND ps.is_preferred=1
+                    WHERE p.id=?
+                    """)) {
                 p.setInt(1, selectedProduct.getId());
                 try (ResultSet r = p.executeQuery()) {
-                    if (r.next()) {
+                    if (r.next() && r.getObject(1) != null) {
                         double cost = Numbers.nonNegative(r.getObject(1));
                         inboundCostField.setText(cost > 0 ? Numbers.unitText(cost) : "");
+                    } else {
+                        inboundCostField.setText("");
                     }
                 }
             }
