@@ -12,6 +12,8 @@ public class ProductDialog extends JDialog {
     private JTextField nameField;
     private JTextArea descriptionArea;
     private JTextField priceField;
+    private JLabel priceBreakdownLabel;
+    private JLabel estimatedMarginLabel;
     private JSpinner quantitySpinner;
     private JComboBox<String> categoryComboBox;
     private JTextField alternativeSkuField;
@@ -185,7 +187,16 @@ public class ProductDialog extends JDialog {
         activeCheckBox = new JCheckBox("", true);
 
         addFormRow(stockPanel, 0, "Sale Price incl. VAT *:", withCurrencyUnit(priceField));
-        int pricingRow=1;
+        JPanel pricePreview = createPricePreview();
+        GridBagConstraints previewConstraints = new GridBagConstraints();
+        previewConstraints.gridx = 0;
+        previewConstraints.gridy = 1;
+        previewConstraints.gridwidth = 2;
+        previewConstraints.weightx = 1;
+        previewConstraints.fill = GridBagConstraints.HORIZONTAL;
+        previewConstraints.insets = new Insets(0, 6, 8, 6);
+        stockPanel.add(pricePreview, previewConstraints);
+        int pricingRow=2;
         if (product == null) {
             addFormRow(stockPanel, pricingRow++, "Purchase Cost *:", withCurrencyUnit(acquisitionCostField));
         } else {
@@ -297,6 +308,75 @@ public class ProductDialog extends JDialog {
         field.fill = GridBagConstraints.HORIZONTAL;
         field.insets = new Insets(4, 0, 4, 6);
         panel.add(component, field);
+    }
+
+    private JPanel createPricePreview() {
+        JPanel preview = new JPanel(new GridLayout(0, 1, 0, 4));
+        preview.setOpaque(false);
+        priceBreakdownLabel = new JLabel(" ");
+        estimatedMarginLabel = new JLabel(" ");
+        for (JLabel label : new JLabel[]{priceBreakdownLabel, estimatedMarginLabel}) {
+            label.putClientProperty("i18n.literal", true);
+            label.setFont(label.getFont().deriveFont(Font.PLAIN, 12f));
+            preview.add(label);
+        }
+        estimatedMarginLabel.setToolTipText(I18n.tr(product == null
+            ? "Estimated margin = (net sale price - purchase cost) / net sale price. Other expenses are excluded."
+            : "Estimate based on the last actual purchase cost. Margin = (net sale price - cost) / net sale price. Actual sale profit uses FIFO; other expenses are excluded."));
+        javax.swing.event.DocumentListener listener = new javax.swing.event.DocumentListener() {
+            public void insertUpdate(javax.swing.event.DocumentEvent e) { updatePricePreview(); }
+            public void removeUpdate(javax.swing.event.DocumentEvent e) { updatePricePreview(); }
+            public void changedUpdate(javax.swing.event.DocumentEvent e) { updatePricePreview(); }
+        };
+        priceField.getDocument().addDocumentListener(listener);
+        vatRateField.getDocument().addDocumentListener(listener);
+        if (product == null && acquisitionCostField != null)
+            acquisitionCostField.getDocument().addDocumentListener(listener);
+        updatePricePreview();
+        return preview;
+    }
+
+    private void updatePricePreview() {
+        if (priceBreakdownLabel == null || estimatedMarginLabel == null) return;
+        priceBreakdownLabel.setText(" ");
+        estimatedMarginLabel.setText(" ");
+        estimatedMarginLabel.setForeground(UIManager.getColor("Label.foreground"));
+        try {
+            double gross = Numbers.nonNegative(priceField.getText());
+            double vat = Numbers.vat(vatRateField.getText());
+            double net = SalePrice.exVatFromIncVat(gross, vat);
+            double displayedNet = Numbers.money(java.math.BigDecimal.valueOf(net));
+            double tax = Numbers.money(java.math.BigDecimal.valueOf(gross)
+                .subtract(java.math.BigDecimal.valueOf(displayedNet)));
+            priceBreakdownLabel.setText(I18n.format("{0} net + {1} VAT",
+                SettingsPanel.formatCurrency(displayedNet), SettingsPanel.formatCurrency(tax)));
+            double cost;
+            try {
+                cost = product == null ? Numbers.nonNegative(acquisitionCostField.getText())
+                    : Numbers.nonNegative(product.getAcquisitionCost());
+            } catch (IllegalArgumentException e) {
+                estimatedMarginLabel.setText(I18n.tr("Margin unavailable: enter a purchase cost."));
+                return;
+            }
+            if (cost <= 0) {
+                estimatedMarginLabel.setText(I18n.tr("Margin unavailable: purchase cost missing."));
+                return;
+            }
+            double profit = net - cost;
+            if (net == 0) {
+                estimatedMarginLabel.setText(I18n.tr("Margin unavailable: net sale price is zero."));
+                return;
+            }
+            java.text.NumberFormat percent = java.text.NumberFormat.getPercentInstance(
+                java.util.Locale.forLanguageTag(I18n.getLanguage().replace('_', '-')));
+            percent.setMaximumFractionDigits(1);
+            percent.setGroupingUsed(false);
+            estimatedMarginLabel.setText(I18n.format("Estimated margin: {0} ({1}/unit)",
+                percent.format(profit / net), SettingsPanel.formatCurrency(profit)));
+            if (profit < 0) estimatedMarginLabel.setForeground(new Color(180, 45, 45));
+        } catch (IllegalArgumentException e) {
+            // Empty or incomplete input while typing must never leave an old estimate visible.
+        }
     }
 
     private JPanel withCurrencyUnit(JComponent component) {
@@ -1143,4 +1223,5 @@ public class ProductDialog extends JDialog {
 
     public boolean isProductSaved() { return productSaved; }
 }
+
 

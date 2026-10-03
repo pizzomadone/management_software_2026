@@ -41,6 +41,38 @@ public class VatRegressionTest extends RegressionTest {
         sql("ALTER TABLE invoice_details DROP COLUMN sale_unit_price_inc_vat");
     }
     static void vat() throws Exception {
+        test("product price preview updates live for gross price VAT and purchase cost",()->{
+            fresh();PD dialog=OperationalRegressionTest.productEditor(0);put(dialog,"product",null);
+            JPanel preview=(JPanel)call(dialog,"createPricePreview");
+            JTextField price=(JTextField)get(dialog,"priceField");
+            JTextField vat=(JTextField)get(dialog,"vatRateField");
+            JTextField cost=(JTextField)get(dialog,"acquisitionCostField");
+            price.setText("122");vat.setText("22");cost.setText("80");
+            JLabel breakdown=(JLabel)get(dialog,"priceBreakdownLabel");
+            JLabel margin=(JLabel)get(dialog,"estimatedMarginLabel");
+            require(breakdown.getText().equals(I18n.format("{0} net + {1} VAT",SettingsPanel.formatCurrency(100),SettingsPanel.formatCurrency(22))),"Net/VAT preview is incorrect");
+            require(margin.getText().contains("20%") && margin.getText().contains(SettingsPanel.formatCurrency(20)),"Margin was confused with markup");
+            cost.setText("120");require(margin.getText().contains("-20%"),"Loss is hidden");
+            vat.setText("0");require(breakdown.getText().contains(SettingsPanel.formatCurrency(122)),"VAT edit did not update preview");
+            price.setText("100,00");cost.setText("80");require(margin.getText().contains("20%"),"Decimal comma input did not update preview");
+            price.setText("0");require(!margin.getText().contains("%"),"Zero price produced an invalid margin");
+            price.setText("100");cost.setText("");require(!margin.getText().contains("%"),"Missing cost retained a stale margin");
+            price.setText("-");require(breakdown.getText().isBlank() && margin.getText().isBlank(),"Incomplete input retained old estimates");
+            require("10.0".equals(value("SELECT sale_price_inc_vat FROM products WHERE id=1")),"Preview wrote to the database");
+        });
+        test("existing product margin preview uses last actual cost and translates",()->{
+            fresh();PD dialog=OperationalRegressionTest.productEditor(10);
+            ((Product)get(dialog,"product")).setAcquisitionCost(80);
+            call(dialog,"createPricePreview");
+            ((JTextField)get(dialog,"priceField")).setText("122");
+            JLabel margin=(JLabel)get(dialog,"estimatedMarginLabel");
+            require(margin.getText().contains("20%"),"Existing preview used an editable or supplier cost instead of last actual cost");
+            String previous=I18n.getLanguage();
+            try {for(String language:List.of("it","es","fr","de","pl","pt_BR")) {
+                I18n.setLanguage(language);call(dialog,"updatePricePreview");
+                require(!margin.getText().contains("Estimated margin"),"Missing margin translation in "+language);
+            }} finally {I18n.setLanguage(previous);}
+        });
         test("122 gross sale keeps 100 revenue 22 VAT and 40 FIFO profit through invoicing",()->{
             fresh();
             PD product=OperationalRegressionTest.productEditor(10);

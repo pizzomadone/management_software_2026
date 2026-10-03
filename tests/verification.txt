@@ -112,6 +112,8 @@ PASS stock reductions retain FIFO history and reject silent zero-cost additions
 PASS supplier FIFO follows actual receipt date rather than order date
 PASS supplier receipt backend rejects zero purchase price atomically
 PASS new FIFO messages are translated in every supported language
+PASS product price preview updates live for gross price VAT and purchase cost
+PASS existing product margin preview uses last actual cost and translates
 PASS 122 gross sale keeps 100 revenue 22 VAT and 40 FIFO profit through invoicing
 PASS editing paid pending orders preserves receipts and derives payment status
 PASS draft invoice content edits preserve recorded receipts
@@ -120,4 +122,4 @@ PASS legacy subcent order migration produces a reconciling invoice and unchanged
 PASS importing a pre-017 database preserves money and migrates once
 PASS all VAT labels translate across the seven supported languages
 PASS population script matches final schema and invoice totals
-Regression checks: 122 passed, 0 failed
+Regression checks: 124 passed, 0 failed
