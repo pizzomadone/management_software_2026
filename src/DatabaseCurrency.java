@@ -263,8 +263,14 @@ public final class DatabaseCurrency {
             write.executeBatch();
         }
 
-        try(PreparedStatement orders=c.prepareStatement(
-                "SELECT id,total,payment_status,paid_amount FROM orders ORDER BY id");
+        try(PreparedStatement orders=c.prepareStatement("""
+                SELECT o.id,o.total,o.payment_status,o.paid_amount,
+                       i.id AS invoice_id,i.status AS invoice_status,
+                       i.total AS invoice_total
+                FROM orders o
+                LEFT JOIN invoices i ON i.order_id=o.id
+                ORDER BY o.id
+                """);
             PreparedStatement lines=c.prepareStatement(
                 "SELECT quantity,unit_price FROM order_details WHERE order_id=? ORDER BY id");
             PreparedStatement update=c.prepareStatement(
@@ -283,12 +289,38 @@ public final class DatabaseCurrency {
                     }
                 }
                 if(lineCount==0) total=convertMoney(r.getObject("total"),rate);
+
                 String payment=r.getString("payment_status");
+                Object invoiceId=r.getObject("invoice_id");
+                String invoiceStatus=r.getString("invoice_status");
+                boolean linked=invoiceId!=null;
+                boolean historicalLinked=linked && !"Draft".equals(invoiceStatus);
+
                 double paid;
-                if("PAID".equals(payment)) paid=total;
-                else if("NOT_PAID".equals(payment)) paid=0;
-                else paid=convertMoney(r.getObject("paid_amount"),rate);
-                update.setDouble(1,total);update.setDouble(2,paid);update.setInt(3,id);update.addBatch();
+                if("NOT_PAID".equals(payment)) {
+                    paid=0;
+                } else if("PAID".equals(payment)) {
+                    if(historicalLinked) {
+                        // Finalized invoices keep their historical currency and gross total.
+                        paid=Numbers.nonNegative(r.getObject("invoice_total"));
+                    } else if(linked) {
+                        // Draft invoice follows the new operating currency.
+                        paid=convertMoney(r.getObject("invoice_total"),rate);
+                    } else {
+                        paid=total;
+                    }
+                } else {
+                    // Partial payment is an actual monetary amount. Keep it untouched when
+                    // it belongs to a finalized historical invoice; otherwise convert it.
+                    paid=historicalLinked
+                        ? Numbers.nonNegative(r.getObject("paid_amount"))
+                        : convertMoney(r.getObject("paid_amount"),rate);
+                }
+
+                update.setDouble(1,total);
+                update.setDouble(2,paid);
+                update.setInt(3,id);
+                update.addBatch();
             }
             update.executeBatch();
         }
