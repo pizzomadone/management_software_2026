@@ -151,9 +151,11 @@ public class OrdersPanel extends JPanel {
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
-                SELECT o.*, c.first_name || ' ' || c.last_name as customer_name
+                SELECT o.*, c.first_name || ' ' || c.last_name as customer_name,
+                       i.currency_code AS payment_currency_code
                 FROM orders o
                 LEFT JOIN customers c ON o.customer_id = c.id
+                LEFT JOIN invoices i ON i.order_id = o.id
                 ORDER BY o.order_date DESC
             """;
 
@@ -178,7 +180,8 @@ public class OrdersPanel extends JPanel {
                     String paymentStatus = rs.getString("payment_status");
                     double paidAmount = rs.getDouble("paid_amount");
                     double total = rs.getDouble("total");
-                    row.add(formatPaymentStatus(paymentStatus, paidAmount, total));
+                    row.add(formatPaymentStatus(paymentStatus, paidAmount,
+                        rs.getString("payment_currency_code")));
 
                     tableModel.addRow(row);
                 }
@@ -202,9 +205,11 @@ public class OrdersPanel extends JPanel {
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
-                SELECT o.*, c.first_name || ' ' || c.last_name as customer_name
+                SELECT o.*, c.first_name || ' ' || c.last_name as customer_name,
+                       i.currency_code AS payment_currency_code
                 FROM orders o
                 LEFT JOIN customers c ON o.customer_id = c.id
+                LEFT JOIN invoices i ON i.order_id = o.id
                 WHERE c.first_name LIKE ? OR c.last_name LIKE ? OR o.status LIKE ?
                 ORDER BY o.order_date DESC
             """;
@@ -235,7 +240,8 @@ public class OrdersPanel extends JPanel {
                         String paymentStatus = rs.getString("payment_status");
                         double paidAmount = rs.getDouble("paid_amount");
                         double total = rs.getDouble("total");
-                        row.add(formatPaymentStatus(paymentStatus, paidAmount, total));
+                        row.add(formatPaymentStatus(paymentStatus, paidAmount,
+                        rs.getString("payment_currency_code")));
 
                         tableModel.addRow(row);
                     }
@@ -514,12 +520,16 @@ public class OrdersPanel extends JPanel {
             throw new SQLException("Invalid payment status");
 
         double total;
-        try (PreparedStatement p = conn.prepareStatement(
-                "SELECT total FROM orders WHERE id=? AND status='Completed'")) {
+        try (PreparedStatement p = conn.prepareStatement("""
+                SELECT COALESCE(i.total,o.total) AS payment_total
+                FROM orders o
+                LEFT JOIN invoices i ON i.order_id=o.id
+                WHERE o.id=? AND o.status='Completed'
+                """)) {
             p.setInt(1, orderId);
             try (ResultSet r = p.executeQuery()) {
                 if (!r.next()) throw new SQLException("Completed order no longer exists");
-                total = Numbers.money(java.math.BigDecimal.valueOf(r.getDouble("total")));
+                total = Numbers.money(java.math.BigDecimal.valueOf(r.getDouble("payment_total")));
             }
         }
 
@@ -545,6 +555,46 @@ public class OrdersPanel extends JPanel {
         }
     }
 
+    static void reconcileCompletedOrderPaymentAfterInvoice(
+            Connection conn, int orderId) throws SQLException {
+        String status;
+        double paidAmount;
+        try (PreparedStatement p = conn.prepareStatement(
+                "SELECT payment_status,paid_amount FROM orders WHERE id=? AND status='Completed'")) {
+            p.setInt(1, orderId);
+            try (ResultSet r = p.executeQuery()) {
+                if (!r.next()) throw new SQLException("Completed order no longer exists");
+                status = r.getString("payment_status");
+                paidAmount = r.getDouble("paid_amount");
+            }
+        }
+
+        if ("PAID".equals(status)) {
+            // "Paid" means fully settled. Once an invoice exists, its gross total is
+            // the authoritative amount due.
+            updateCompletedOrderPayment(conn, orderId, "PAID", 0);
+        } else if ("PARTIALLY_PAID".equals(status)) {
+            double invoiceTotal;
+            try (PreparedStatement p = conn.prepareStatement(
+                    "SELECT total FROM invoices WHERE order_id=?")) {
+                p.setInt(1, orderId);
+                try (ResultSet r = p.executeQuery()) {
+                    if (!r.next()) throw new SQLException("Linked invoice no longer exists");
+                    invoiceTotal = r.getDouble("total");
+                }
+            }
+            if (paidAmount <= 0) {
+                updateCompletedOrderPayment(conn, orderId, "NOT_PAID", 0);
+            } else if (paidAmount >= invoiceTotal) {
+                updateCompletedOrderPayment(conn, orderId, "PAID", 0);
+            } else {
+                updateCompletedOrderPayment(conn, orderId, "PARTIALLY_PAID", paidAmount);
+            }
+        } else {
+            updateCompletedOrderPayment(conn, orderId, "NOT_PAID", 0);
+        }
+    }
+
     private void updateSelectedOrderPayment() {
         int selectedRow = ordersTable.getSelectedRow();
         if (selectedRow == -1) return;
@@ -564,14 +614,23 @@ public class OrdersPanel extends JPanel {
             double total;
             String currentStatus;
             double currentPaid;
-            try (PreparedStatement p = conn.prepareStatement(
-                    "SELECT total,payment_status,paid_amount FROM orders WHERE id=? AND status='Completed'")) {
-                p.setInt(1, orderId);
+            String paymentCurrency;
+            try (PreparedStatement p = conn.prepareStatement("""
+                    SELECT COALESCE(i.total,o.total) AS payment_total,
+                           o.payment_status,o.paid_amount,
+                           COALESCE(i.currency_code,?) AS payment_currency
+                    FROM orders o
+                    LEFT JOIN invoices i ON i.order_id=o.id
+                    WHERE o.id=? AND o.status='Completed'
+                    """)) {
+                p.setString(1, SettingsPanel.getCurrencyCode());
+                p.setInt(2, orderId);
                 try (ResultSet r = p.executeQuery()) {
                     if (!r.next()) throw new SQLException("Completed order no longer exists");
-                    total = r.getDouble("total");
+                    total = r.getDouble("payment_total");
                     currentStatus = r.getString("payment_status");
                     currentPaid = r.getDouble("paid_amount");
+                    paymentCurrency = r.getString("payment_currency");
                 }
             }
 
@@ -579,7 +638,7 @@ public class OrdersPanel extends JPanel {
                 new String[]{"Not Paid", "Partially Paid", "Paid"});
             payment.putClientProperty("i18n.values", true);
             JTextField amount = new JTextField(Numbers.moneyText(currentPaid), 12);
-            JLabel amountLabel = new JLabel(I18n.tr("Paid Amount:"));
+            JLabel amountLabel = new JLabel(I18n.tr("Paid Amount:") + " " + paymentCurrency);
 
             if ("PAID".equals(currentStatus)) payment.setSelectedItem("Paid");
             else if ("PARTIALLY_PAID".equals(currentStatus)) payment.setSelectedItem("Partially Paid");
@@ -589,7 +648,8 @@ public class OrdersPanel extends JPanel {
                 String selected = String.valueOf(payment.getSelectedItem());
                 boolean partial = "Partially Paid".equals(selected);
                 amount.setEnabled(partial);
-                amountLabel.setText(partial ? I18n.tr("Paid Amount *:") : I18n.tr("Paid Amount:"));
+                amountLabel.setText((partial ? I18n.tr("Paid Amount *:") : I18n.tr("Paid Amount:"))
+                    + " " + paymentCurrency);
                 if ("Paid".equals(selected)) amount.setText(Numbers.moneyText(total));
                 else if ("Not Paid".equals(selected)) amount.setText("0.00");
             };
@@ -798,6 +858,7 @@ public class OrdersPanel extends JPanel {
                     pstmt.executeBatch();
                 }
 
+                reconcileCompletedOrderPaymentAfterInvoice(conn, orderId);
                 InvoiceSnapshots.capture(conn,invoiceId,false);
                 // Commit transaction (verify we're still in transaction mode)
                 if (!conn.getAutoCommit()) {
@@ -845,13 +906,17 @@ public class OrdersPanel extends JPanel {
     /**
      * Formats payment status for display in the table
      */
-    private String formatPaymentStatus(String paymentStatus, double paidAmount, double total) {
+    private String formatPaymentStatus(String paymentStatus, double paidAmount,
+            String paymentCurrency) {
         if (paymentStatus == null || "NOT_PAID".equals(paymentStatus)) {
             return I18n.tr("Not Paid");
         } else if ("PAID".equals(paymentStatus)) {
             return I18n.tr("Paid");
         } else if ("PARTIALLY_PAID".equals(paymentStatus)) {
-            return I18n.tr("Partial") + " (" + SettingsPanel.formatCurrency(paidAmount) + ")";
+            String currency = paymentCurrency == null || paymentCurrency.isBlank()
+                ? SettingsPanel.getCurrencyCode() : paymentCurrency;
+            return I18n.tr("Partial") + " (" +
+                SettingsPanel.formatCurrency(paidAmount, currency) + ")";
         }
         return I18n.tr("Not Paid");
     }
