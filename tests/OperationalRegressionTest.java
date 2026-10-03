@@ -122,12 +122,24 @@ public class OperationalRegressionTest extends RegressionTest {
             require("READ".equals(value("SELECT status FROM warehouse_notifications WHERE id="+wanted)),"Wrong notification updated");
             require("1".equals(value("SELECT COUNT(*) FROM warehouse_notifications WHERE status='NEW'")),"Duplicate display text changed another notification");
         });
-        test("warehouse valuation agrees with dashboard and zero cost margin",()->{
-            fresh();sql("UPDATE products SET sale_price_ex_vat=10,sale_price_inc_vat=10,vat_rate=0,acquisition_cost=99,quantity=1 WHERE id=1");sql("UPDATE products SET acquisition_cost=99,active=0 WHERE id=2");sql("UPDATE product_suppliers SET purchase_price=0.004 WHERE product_id=1 AND is_preferred=1");
-            WarehouseReportPanel report=new WarehouseReportPanel();DefaultTableModel model=(DefaultTableModel)get(report,"productsModel");require(model.getRowCount()==1,"Inactive catalog included");
+        test("inactive physical stock remains in warehouse valuation",()->{
+            fresh();
+            sql("UPDATE products SET sale_price_ex_vat=10,sale_price_inc_vat=10,vat_rate=0,acquisition_cost=99,quantity=1 WHERE id=1");
+            sql("UPDATE products SET acquisition_cost=99,active=0,quantity=2 WHERE id=2");
+            sql("UPDATE product_suppliers SET purchase_price=5 WHERE product_id=1 AND is_preferred=1");
+            WarehouseReportPanel report=new WarehouseReportPanel();
+            DefaultTableModel model=(DefaultTableModel)get(report,"productsModel");
+            require(model.getRowCount()==2,"Inactive product with stock disappeared from warehouse report");
+            require("Inactive".equals(model.getValueAt(1,7)),"Inactive stock is not identified in warehouse report");
             DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
-            require(((JLabel)get(dash,"warehouseValueLabel")).getText().equals(SettingsPanel.formatCurrency(Numbers.nonNegative(model.getValueAt(0,6)))),"Valuation rounding differs");
-            sql("UPDATE product_suppliers SET purchase_price=0 WHERE product_id=1 AND is_preferred=1");call(dash,"loadKPIData");require(((JLabel)get(dash,"avgMarginLabel")).getText().equals("100.0% *"),"Zero preferred-supplier cost margin is not 100%");
+            require(kpi(dash,"warehouseValueLabel").equals(SettingsPanel.formatCurrency(21)),
+                "Inactive physical stock is missing from warehouse cost value");
+            require(kpi(dash,"warehouseSaleValueLabel").equals(SettingsPanel.formatCurrency(50)),
+                "Inactive physical stock is missing from warehouse sale value");
+            sql("UPDATE product_suppliers SET purchase_price=0 WHERE product_id=1 AND is_preferred=1");
+            call(dash,"loadKPIData");
+            require(kpi(dash,"zeroCostCountLabel").equals("1") && kpi(dash,"avgMarginLabel").endsWith(" *"),
+                "Missing preferred cost on active stock is not marked when inactive stock is also present");
         });
         test("monthly invoiced total includes the exact first millisecond",()->{
             fresh();Calendar month=Calendar.getInstance();month.set(Calendar.DAY_OF_MONTH,1);month.set(Calendar.HOUR_OF_DAY,0);month.set(Calendar.MINUTE,0);month.set(Calendar.SECOND,0);month.set(Calendar.MILLISECOND,0);
@@ -139,11 +151,11 @@ public class OperationalRegressionTest extends RegressionTest {
             sql("UPDATE product_suppliers SET purchase_price=0 WHERE product_id=1 AND is_preferred=1");
             sql("UPDATE products SET active=0,quantity=100,acquisition_cost=99 WHERE id=2");
             DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
-            require(kpi(dash,"warehouseValueLabel").equals(SettingsPanel.formatCurrency(0)+" *"),"Invented an acquisition cost");
-            require(kpi(dash,"warehouseSaleValueLabel").equals(SettingsPanel.formatCurrency(125)),"Sale value missing or inactive stock included");
+            require(kpi(dash,"warehouseValueLabel").equals(SettingsPanel.formatCurrency(800)+" *"),"Inactive stock cost was omitted or a missing cost was invented");
+            require(kpi(dash,"warehouseSaleValueLabel").equals(SettingsPanel.formatCurrency(2125)),"Inactive stock sale value was omitted");
             require(kpi(dash,"zeroCostCountLabel").equals("1"),"Zero cost is not explained");
             sql("UPDATE product_suppliers SET purchase_price=5 WHERE product_id=1 AND is_preferred=1");call(dash,"loadKPIData");
-            require(kpi(dash,"warehouseValueLabel").equals(SettingsPanel.formatCurrency(50)) && kpi(dash,"zeroCostCountLabel").equals("0"),"Preferred supplier cost edit not reflected");
+            require(kpi(dash,"warehouseValueLabel").equals(SettingsPanel.formatCurrency(850)) && kpi(dash,"zeroCostCountLabel").equals("0"),"Preferred supplier cost edit not reflected");
             sql("DELETE FROM products");call(dash,"loadKPIData");
             require(kpi(dash,"warehouseValueLabel").equals(SettingsPanel.formatCurrency(0)) && kpi(dash,"warehouseSaleValueLabel").equals(SettingsPanel.formatCurrency(0)),"Empty warehouse retained old values");
         });
@@ -227,7 +239,8 @@ public class OperationalRegressionTest extends RegressionTest {
             sql("UPDATE products SET quantity=-9 WHERE id=2");call(dash,"loadKPIData");
             require(kpi(dash,"avgMarginLabel").equals("10.0%"),"Negative stock changed potential margin");
             sql("UPDATE products SET quantity=9,active=0 WHERE id=2");call(dash,"loadKPIData");
-            require(kpi(dash,"avgMarginLabel").equals("10.0%"),"Inactive stock changed potential margin");
+            require(kpi(dash,"avgMarginLabel").equals("47.9%"),"Inactive physical stock disappeared from potential margin");
+            sql("UPDATE products SET quantity=0 WHERE id=2");
             sql("UPDATE product_suppliers SET purchase_price=0 WHERE product_id=1 AND is_preferred=1");call(dash,"loadKPIData");
             require(kpi(dash,"avgMarginLabel").equals("100.0% *"),"Missing preferred supplier cost must mark the margin incomplete");
             sql("UPDATE product_suppliers SET purchase_price=150 WHERE product_id=1 AND is_preferred=1");call(dash,"loadKPIData");
