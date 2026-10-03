@@ -182,8 +182,8 @@ public class RegressionTest {
             require("15.0".equals(value("SELECT cost_total FROM order_details WHERE order_id=1")),"Original cost lost");
         });
         test("all customer order state transitions preserve balances", () -> {
-            for(String from:List.of("New","In Progress","Completed","Cancelled"))
-                for(String to:List.of("New","In Progress","Completed","Cancelled")) {
+            for(String from:List.of("Reservation","New","In Progress","Completed","Cancelled"))
+                for(String to:List.of("Reservation","New","In Progress","Completed","Cancelled")) {
                     fresh(); seedOpeningLots(); call(order(false,3,from),"saveOrder");
                     OD changed=order(true,5,to);
                     if (from.equals("Completed")) {
@@ -194,34 +194,45 @@ public class RegressionTest {
                     call(changed,"saveOrder");
                     require(qty()==("Completed".equals(to)?5:10), from+" -> "+to+" wrong physical stock");
                     require(value("SELECT reserved_quantity FROM products WHERE id=1").equals(
-                        "In Progress".equals(to)?"5":"0"), "Wrong reserved quantity");
+                        ("New".equals(to)||"In Progress".equals(to))?"5":"0"), "Wrong reserved quantity");
                 }
         });
-        test("new customer order is a commercial reservation only", () -> {
+        test("reservation is non-stock and new requires full availability", () -> {
             fresh(); seedOpeningLots();
-            OD draft=order(false,20,"New");
-            call(draft,"saveOrder");
-            require(Boolean.TRUE.equals(get(draft,"orderSaved")),"New reservation was not saved");
-            require("10|0".equals(value("SELECT quantity||'|'||reserved_quantity FROM products WHERE id=1")),
-                "New reservation changed warehouse stock");
+
+            OD reservation=order(false,20,"Reservation");
+            call(reservation,"saveOrder");
+            require(Boolean.TRUE.equals(get(reservation,"orderSaved")),"Reservation was not saved");
+            require("Reservation|10|0".equals(value(
+                "SELECT status||'|'||(SELECT quantity FROM products WHERE id=1)||'|'||(SELECT reserved_quantity FROM products WHERE id=1) FROM orders WHERE id=1")),
+                "Reservation changed warehouse stock");
             require("0".equals(value("SELECT COUNT(*) FROM stock_reservations WHERE status='ACTIVE'")),
-                "New reservation created an active warehouse reservation");
+                "Reservation created an active warehouse reservation");
             require("0".equals(value("SELECT COUNT(*) FROM warehouse_movements")),
-                "New reservation created a warehouse movement");
+                "Reservation created a warehouse movement");
             require("0".equals(value("SELECT COUNT(*) FROM inventory_lot_consumptions")),
-                "New reservation touched FIFO");
+                "Reservation touched FIFO");
 
-            OD blocked=order(true,20,"In Progress");
+            OD blocked=order(true,20,"New");
             rejectedSave(blocked,"saveOrder","orderSaved");
-            require("New".equals(value("SELECT status FROM orders WHERE id=1")) &&
+            require("Reservation".equals(value("SELECT status FROM orders WHERE id=1")) &&
                     "0".equals(value("SELECT reserved_quantity FROM products WHERE id=1")),
-                "Insufficient reservation changed the order or warehouse");
+                "Insufficient New order changed the order or warehouse");
+            require("Reservation".equals(((JComboBox<?>)get(blocked,"statusCombo")).getSelectedItem()),
+                "Insufficient New order was not redirected to Reservation");
 
-            OD operational=order(true,5,"In Progress");
-            call(operational,"saveOrder");
+            OD covered=order(true,5,"New");
+            call(covered,"saveOrder");
+            require("New|5".equals(value(
+                "SELECT status||'|'||(SELECT reserved_quantity FROM products WHERE id=1) FROM orders WHERE id=1")),
+                "New order did not reserve the fully available quantity");
+            require(qty()==10,"New order changed physical stock");
+
+            OD processing=order(true,5,"In Progress");
+            call(processing,"saveOrder");
             require("In Progress|5".equals(value(
                 "SELECT status||'|'||(SELECT reserved_quantity FROM products WHERE id=1) FROM orders WHERE id=1")),
-                "In Progress did not reserve available stock");
+                "In Progress did not keep the full reservation");
             require(qty()==10,"In Progress changed physical stock");
         });
         test("completed sale rejects replacement of its product", () -> {
