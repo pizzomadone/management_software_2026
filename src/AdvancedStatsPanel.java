@@ -294,7 +294,7 @@ public class AdvancedStatsPanel extends JPanel {
         String normalizedDate = DateUtils.sqlDate("o.order_date");
         String query =
             "SELECT strftime('%Y-%m', " + normalizedDate + ") AS month, " +
-            "SUM(o.total) AS total, COUNT(*) AS num_orders " +
+            "SUM(o.total_ex_vat) AS total, COUNT(*) AS num_orders " +
             "FROM orders o " +
             "WHERE o.order_date IS NOT NULL AND o.status='Completed' " +
             "AND " + normalizedDate + " BETWEEN ? AND ? " +
