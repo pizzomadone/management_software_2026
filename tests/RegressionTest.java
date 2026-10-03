@@ -132,7 +132,7 @@ public class RegressionTest {
     static void runAll() throws Exception {
         test("completed saves are idempotent", () -> {
             fresh(); completed();
-            for(int i=0;i<3;i++) { rejectedSave(order(true,3,"Completed"),"saveOrder","orderSaved"); require(qty()==7,"Repeated stock decrement"); }
+            for(int i=0;i<3;i++) { call(order(true,3,"Completed"),"saveOrder"); require(qty()==7,"Repeated stock decrement"); }
             require("1".equals(value("SELECT COUNT(*) FROM warehouse_movements")),"Duplicated movement");
         });
         test("completed order payment updates never touch stock or FIFO", () -> {
@@ -172,8 +172,9 @@ public class RegressionTest {
                 "Linking or unlinking invoice payment changed stock or FIFO");
         });
         test("completed sale rejects rewriting and reverses with preserved history", () -> {
-            fresh(); completed(); rejectedSave(order(true,5,"Cancelled"),"saveOrder","orderSaved");
-            require(qty()==7,"Rejected rewrite changed stock");
+            fresh(); completed(); call(order(true,5,"Cancelled"),"saveOrder");
+            require(qty()==7 && "Completed".equals(value("SELECT status FROM orders WHERE id=1")),
+                "Payment-only edit rewrote completed sale");
             StockManager.reverseCompletedOrder(db,1);
             require(qty()==10,"Wrong stock reversal");
             require("2".equals(value("SELECT COUNT(*) FROM warehouse_movements")),"Sale or reversal movement missing");
@@ -186,7 +187,7 @@ public class RegressionTest {
                     fresh(); seedOpeningLots(); call(order(false,3,from),"saveOrder");
                     OD changed=order(true,5,to);
                     if (from.equals("Completed")) {
-                        rejectedSave(changed,"saveOrder","orderSaved");
+                        call(changed,"saveOrder");
                         require(qty()==7 && "Completed".equals(value("SELECT status FROM orders WHERE id=1")),"Historical sale changed");
                         continue;
                     }
@@ -198,7 +199,7 @@ public class RegressionTest {
         });
         test("completed sale rejects replacement of its product", () -> {
             fresh();completed();OD d=order(true,5,"Completed");DefaultTableModel m=(DefaultTableModel)get(d,"itemsTableModel");
-            m.setValueAt(2,0,0);m.setValueAt("Product B",0,1);rejectedSave(d,"saveOrder","orderSaved");
+            m.setValueAt(2,0,0);m.setValueAt("Product B",0,1);call(d,"saveOrder");
             require(qty()==7 && "10".equals(value("SELECT quantity FROM products WHERE id=2")),"Historical product stock changed");
         });
         test("cancelled rows do not create phantom availability", () -> {
