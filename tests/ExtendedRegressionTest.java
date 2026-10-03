@@ -399,10 +399,14 @@ public class ExtendedRegressionTest extends RegressionTest {
             sql("DELETE FROM schema_migrations WHERE version='016'");
             sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) " +
                 "VALUES(40,1,0,'Completed',30,'PARTIALLY_PAID',10)");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) " +
+                "VALUES(41,1,0,'Completed',30,'PAID',30)");
             sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status,payment_status,paid_amount) " +
                 "VALUES(40,'LEGACY-PAID',0,1,30,6.6,36.6,'Paid','NOT_PAID',0)");
             sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status,payment_status,paid_amount,order_id) " +
                 "VALUES(41,'LEGACY-LINKED',0,1,30,6.6,36.6,'Paid','PAID',36.6,40)");
+            sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status,payment_status,paid_amount,order_id) " +
+                "VALUES(42,'LEGACY-LINKED-PAID',0,1,30,6.6,36.6,'Issued','NOT_PAID',0,41)");
             DatabaseMigrationManager.migrate(db);
             require("Issued|PAID|36.6".equals(value(
                 "SELECT status||'|'||payment_status||'|'||paid_amount FROM invoices WHERE id=40")),
@@ -412,7 +416,10 @@ public class ExtendedRegressionTest extends RegressionTest {
                 "Linked invoice retained an independent payment value");
             require("PARTIALLY_PAID|10.0".equals(value(
                 "SELECT payment_status||'|'||paid_amount FROM orders WHERE id=40")),
-                "Linked order payment was altered by invoice migration");
+                "Linked partial payment was altered by invoice migration");
+            require("PAID|36.6".equals(value(
+                "SELECT payment_status||'|'||paid_amount FROM orders WHERE id=41")),
+                "Linked paid order was not normalized to the gross invoice total");
             require("1".equals(value("SELECT COUNT(*) FROM schema_migrations WHERE version='016'")),
                 "Invoice payment migration was not recorded");
         });
@@ -632,6 +639,26 @@ public class ExtendedRegressionTest extends RegressionTest {
             require(!(Boolean)method.invoke(null,"Draft"),"Draft invoice was locked");
             for(String status:List.of("Issued","Canceled"))
                 require((Boolean)method.invoke(null,status),"Finalized invoice remained economically editable: "+status);
+        });
+        test("linked historical invoice payment keeps its invoice currency during conversion",()->{
+            fresh();
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) " +
+                "VALUES(70,1,0,'Completed',30,'PARTIALLY_PAID',10)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price) VALUES(70,1,3,10)");
+            sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status,order_id,currency_code) " +
+                "VALUES(70,'HIST-PAY',0,1,30,6.6,36.6,'Issued',70,'EUR')");
+            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,unit_price,vat_rate,total) " +
+                "VALUES(70,1,3,10,22,30)");
+
+            DatabaseCurrency.change("USD",DatabaseCurrency.ChangeMode.CONVERT,
+                new java.math.BigDecimal("2"));
+
+            require("60.0|10.0".equals(value(
+                "SELECT total||'|'||paid_amount FROM orders WHERE id=70")),
+                "Historical linked payment was converted away from the invoice currency");
+            require("EUR|36.6".equals(value(
+                "SELECT currency_code||'|'||total FROM invoices WHERE id=70")),
+                "Historical linked invoice currency or total changed");
         });
         test("currency conversion keeps cents consistent with high quantities VAT and partial payments",()->{
             fresh();
