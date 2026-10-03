@@ -94,8 +94,11 @@ public class OperationalRegressionTest extends RegressionTest {
             Product p=new Product(1,"A","Product A","",10,10);
             call(details,"addPreferredSupplierCostLine",
                 new Class<?>[]{JPanel.class,GridBagConstraints.class,Product.class},row,g,p);
-            require(Arrays.stream(row.getComponents()).filter(c->c instanceof JButton).count()==1,
-                "Preferred supplier cost is editable from Product Details");
+            require(Arrays.stream(row.getComponents()).noneMatch(c->c instanceof JButton),
+                "Product Details still uses a button for purchase-cost help");
+            require(Arrays.stream(row.getComponents()).anyMatch(c ->
+                    c instanceof JLabel label && "?".equals(label.getText())),
+                "Product Details purchase-cost help is not the dashboard-style tooltip icon");
             require(Arrays.stream(row.getComponents()).anyMatch(c->c instanceof JTextArea),
                 "Preferred supplier cost is not displayed as read-only text");
         });
