@@ -240,7 +240,7 @@ public class WarehouseMovementDialog extends JDialog {
 
     // Method to show ProductSelectionDialog
     private void showProductSelectionDialog() {
-        ProductSelectionDialog dialog = new ProductSelectionDialog(this);
+        ProductSelectionDialog dialog = new ProductSelectionDialog(this, false);
         dialog.setVisible(true);
 
         if (dialog.isProductSelected()) {
