@@ -46,7 +46,9 @@ public final class DatabaseMigrationManager {
         new Migration("017", "Use explicit VAT-inclusive and VAT-exclusive sale price fields",
             DatabaseMigrationManager::migrateSalePriceSemantics),
         new Migration("018", "Make new customer orders non-stock reservations",
-            DatabaseMigrationManager::releaseNewOrderReservations)
+            DatabaseMigrationManager::releaseNewOrderReservations),
+        new Migration("019", "Reclassify legacy new orders and reserve fully available stock",
+            DatabaseMigrationManager::migrateCustomerOrderReservationStates)
     );
 
     private DatabaseMigrationManager() {}
@@ -802,6 +804,70 @@ public final class DatabaseMigrationManager {
                   )
                 """)) {
             p.executeUpdate();
+        }
+    }
+
+    private static void migrateCustomerOrderReservationStates(Connection c) throws SQLException {
+        if (!hasTable(c, "orders") || !hasTable(c, "order_details")
+                || !hasTable(c, "stock_reservations")) return;
+
+        // Migration 018 intentionally released all legacy New reservations. Rebuild them
+        // only when the full order can be covered; otherwise reclassify as Reservation.
+        StockManager.reconcileReservedStock(c);
+
+        try (PreparedStatement orders = c.prepareStatement("""
+                SELECT id
+                FROM orders
+                WHERE status='New'
+                ORDER BY order_date, id
+                """);
+             ResultSet orderRows = orders.executeQuery()) {
+
+            while (orderRows.next()) {
+                int orderId = orderRows.getInt("id");
+                java.util.List<StockManager.StockItem> items = new java.util.ArrayList<>();
+
+                try (PreparedStatement details = c.prepareStatement("""
+                        SELECT od.product_id, p.name, SUM(od.quantity) AS quantity
+                        FROM order_details od
+                        JOIN products p ON p.id=od.product_id
+                        WHERE od.order_id=?
+                        GROUP BY od.product_id, p.name
+                        """)) {
+                    details.setInt(1, orderId);
+                    try (ResultSet rows = details.executeQuery()) {
+                        while (rows.next()) {
+                            items.add(new StockManager.StockItem(
+                                rows.getInt("product_id"),
+                                rows.getString("name"),
+                                rows.getInt("quantity")));
+                        }
+                    }
+                }
+
+                if (items.isEmpty()) continue;
+
+                java.util.Map<String, StockManager.StockAvailability> insufficient =
+                    StockManager.checkStockAvailability(c, items, orderId, "ORDER");
+
+                if (!insufficient.isEmpty()) {
+                    StockManager.cancelReservation(c, "ORDER", orderId);
+                    try (PreparedStatement update = c.prepareStatement(
+                            "UPDATE orders SET status='Reservation' WHERE id=? AND status='New'")) {
+                        update.setInt(1, orderId);
+                        update.executeUpdate();
+                    }
+                } else {
+                    for (StockManager.StockItem item : items) {
+                        StockManager.createOrUpdateReservation(c, item.getProductId(),
+                            "ORDER", orderId, item.getQuantity(), "Order #" + orderId);
+                    }
+                }
+
+                // Keep the cached reserved quantity correct even when migrating a database
+                // whose reservation triggers have not yet been recreated.
+                StockManager.reconcileReservedStock(c);
+            }
         }
     }
 
