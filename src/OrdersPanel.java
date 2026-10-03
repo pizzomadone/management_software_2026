@@ -508,6 +508,43 @@ public class OrdersPanel extends JPanel {
         return "Completed".equals(status);
     }
 
+    static void updateCompletedOrderPayment(Connection conn, int orderId,
+            String paymentStatus, double requestedPaidAmount) throws SQLException {
+        if (!java.util.Set.of("NOT_PAID", "PARTIALLY_PAID", "PAID").contains(paymentStatus))
+            throw new SQLException("Invalid payment status");
+
+        double total;
+        try (PreparedStatement p = conn.prepareStatement(
+                "SELECT total FROM orders WHERE id=? AND status='Completed'")) {
+            p.setInt(1, orderId);
+            try (ResultSet r = p.executeQuery()) {
+                if (!r.next()) throw new SQLException("Completed order no longer exists");
+                total = Numbers.money(java.math.BigDecimal.valueOf(r.getDouble("total")));
+            }
+        }
+
+        double paidAmount;
+        if ("NOT_PAID".equals(paymentStatus)) {
+            paidAmount = 0.0;
+        } else if ("PAID".equals(paymentStatus)) {
+            paidAmount = total;
+        } else {
+            paidAmount = Numbers.money(java.math.BigDecimal.valueOf(requestedPaidAmount));
+            if (paidAmount <= 0 || paidAmount >= total)
+                throw new SQLException(I18n.tr(
+                    "Partial paid amount must be greater than zero and less than the total."));
+        }
+
+        try (PreparedStatement p = conn.prepareStatement(
+                "UPDATE orders SET payment_status=?,paid_amount=? WHERE id=? AND status='Completed'")) {
+            p.setString(1, paymentStatus);
+            p.setDouble(2, paidAmount);
+            p.setInt(3, orderId);
+            if (p.executeUpdate() != 1)
+                throw new SQLException("Completed order changed or no longer exists");
+        }
+    }
+
     private void updateSelectedOrderPayment() {
         int selectedRow = ordersTable.getSelectedRow();
         if (selectedRow == -1) return;
@@ -592,14 +629,7 @@ public class OrdersPanel extends JPanel {
 
             DatabaseManager.beginTransaction(conn);
             try {
-                try (PreparedStatement p = conn.prepareStatement(
-                        "UPDATE orders SET payment_status=?,paid_amount=? WHERE id=? AND status='Completed'")) {
-                    p.setString(1, paymentCode);
-                    p.setDouble(2, paidAmount);
-                    p.setInt(3, orderId);
-                    if (p.executeUpdate() != 1)
-                        throw new SQLException("Completed order changed or no longer exists");
-                }
+                updateCompletedOrderPayment(conn, orderId, paymentCode, paidAmount);
                 conn.commit();
             } catch (Exception e) {
                 conn.rollback();
