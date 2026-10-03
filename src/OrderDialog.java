@@ -37,6 +37,7 @@ public class OrderDialog extends JDialog {
     private double currentTotalExVat = 0.0;
     private boolean paymentSelectionChanged;
     private boolean loadingPayment;
+    private boolean linkedInvoiceLocked;
     private String previousStatus = null; // Track previous status for state changes
     
     // Constructor for JFrame parent
@@ -239,8 +240,25 @@ public class OrderDialog extends JDialog {
         add(mainPanel);
     }
     
+    private boolean hasLinkedInvoice(int orderId) {
+        try (PreparedStatement p = DatabaseManager.getInstance().getConnection().prepareStatement(
+                "SELECT 1 FROM invoices WHERE order_id=? LIMIT 1")) {
+            p.setInt(1, orderId);
+            try (ResultSet r = p.executeQuery()) {
+                return r.next();
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Unable to verify linked invoice", e);
+        }
+    }
+
     private boolean isCompletedPaymentOnly() {
         return order != null && "Completed".equals(order.getStatus());
+    }
+
+    private boolean isPaymentOnlyOrder() {
+        return order != null && !isReversedOrder()
+            && (isCompletedPaymentOnly() || linkedInvoiceLocked);
     }
 
     private boolean isReversedOrder() {
@@ -248,7 +266,7 @@ public class OrderDialog extends JDialog {
     }
 
     private boolean isProtectedHistoricalOrder() {
-        return isCompletedPaymentOnly() || isReversedOrder();
+        return isPaymentOnlyOrder() || isReversedOrder();
     }
 
     private void configureEditability() {
@@ -261,7 +279,7 @@ public class OrderDialog extends JDialog {
         addItemButton.setEnabled(false);
         removeItemButton.setEnabled(false);
 
-        boolean paymentEditable = isCompletedPaymentOnly();
+        boolean paymentEditable = isPaymentOnlyOrder();
         paymentStatusCombo.setEnabled(paymentEditable);
         if (paymentEditable) {
             updatePaymentAmountField();
@@ -564,7 +582,7 @@ public class OrderDialog extends JDialog {
             conn = DatabaseManager.getInstance().getConnection();
             DatabaseManager.beginTransaction(conn);
             try {
-                OrdersPanel.updateCompletedOrderPayment(conn, order.getId(), paymentCode, paidAmount);
+                OrdersPanel.updateOrderPayment(conn, order.getId(), paymentCode, paidAmount);
                 conn.commit();
             } catch (Exception e) {
                 conn.rollback();
@@ -591,7 +609,7 @@ public class OrderDialog extends JDialog {
                     I18n.tr("Historical Sale"), JOptionPane.WARNING_MESSAGE);
                 return;
             }
-            if (isCompletedPaymentOnly()) {
+            if (isPaymentOnlyOrder()) {
                 saveCompletedPaymentOnly();
                 return;
             }
