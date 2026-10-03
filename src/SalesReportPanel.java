@@ -325,7 +325,7 @@ public class SalesReportPanel extends JPanel {
             detailDialog.setLayout(new BorderLayout(10, 10));
 
             // Details table
-            String[] columns = {"Product", "Quantity", "Unit Price", "Total", "Historical Cost", "Gross Profit"};
+            String[] columns = {"Product", "Quantity", "Unit Price excl. VAT", "Total excl. VAT", "Historical Cost", "Gross Profit"};
             DefaultTableModel detailModel = new DefaultTableModel(columns, 0);
             JTable detailTable = new JTable(detailModel);
             TableStyleUtil.applyCompact(detailTable);
@@ -335,9 +335,9 @@ public class SalesReportPanel extends JPanel {
                 Connection conn = DatabaseManager.getInstance().getConnection();
                 String query = """
                     SELECT COALESCE(p.name, 'Product N/A') as product_name,
-                           d.quantity, d.unit_price,
+                           d.quantity, d.sale_unit_price_ex_vat,
                            %s AS effective_cost,
-                           warestat_line_total(d.quantity,d.unit_price) as total
+                           warestat_line_total(d.quantity,d.sale_unit_price_ex_vat) as total
                     FROM order_details d
                     LEFT JOIN products p ON d.product_id = p.id
                     WHERE d.order_id = ?
@@ -349,7 +349,7 @@ public class SalesReportPanel extends JPanel {
                             Vector<Object> row = new Vector<>();
                             row.add(rs.getString("product_name"));
                             row.add(rs.getInt("quantity"));
-                            row.add(Numbers.unitText(rs.getDouble("unit_price")));
+                            row.add(Numbers.unitText(rs.getDouble("sale_unit_price_ex_vat")));
                             double lineTotal=rs.getDouble("total");
                             row.add(Numbers.moneyText(lineTotal));
                             Object historicalCost=rs.getObject("effective_cost");
