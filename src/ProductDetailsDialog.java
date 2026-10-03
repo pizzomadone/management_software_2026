@@ -145,24 +145,6 @@ public final class ProductDetailsDialog extends JDialog {
         return null;
     }
 
-    private Integer loadPreferredSupplierRelationId(int productId) {
-        try {
-            Connection c = DatabaseManager.getInstance().getConnection();
-            try (PreparedStatement p = c.prepareStatement("""
-                    SELECT id
-                    FROM product_suppliers
-                    WHERE product_id=? AND is_preferred=1
-                    LIMIT 1
-                    """)) {
-                p.setInt(1, productId);
-                try (ResultSet r = p.executeQuery()) {
-                    if (r.next()) return r.getInt(1);
-                }
-            }
-        } catch (SQLException ignored) {}
-        return null;
-    }
-
     private void showPurchaseCostHelp() {
         String message = I18n.tr(
                 "Preferred supplier cost is the current purchase cost saved for the preferred supplier. Click the value to edit it.")
@@ -193,27 +175,12 @@ public final class ProductDetailsDialog extends JDialog {
         g.fill = GridBagConstraints.HORIZONTAL;
 
         Double cost = loadPreferredSupplierCost(product.getId());
-        Integer relationId = loadPreferredSupplierRelationId(product.getId());
-        JButton value = new JButton(cost == null
-            ? I18n.tr("Not set") : SettingsPanel.formatUnitCurrency(cost));
-        value.putClientProperty("i18n.literal", true);
-        value.setBorderPainted(false);
-        value.setContentAreaFilled(false);
-        value.setFocusPainted(false);
-        value.setHorizontalAlignment(SwingConstants.LEFT);
-        value.setMargin(new Insets(0, 0, 0, 0));
-        value.setEnabled(relationId != null);
-        if (relationId != null) {
-            value.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-            value.setToolTipText(I18n.tr("Click to edit the preferred supplier cost."));
-            value.addActionListener(e -> {
-                new ProductSuppliersDialog(this, product.getId(), product.getName(), relationId)
-                    .setVisible(true);
-                Double refreshed = loadPreferredSupplierCost(product.getId());
-                value.setText(refreshed == null
-                    ? I18n.tr("Not set") : SettingsPanel.formatUnitCurrency(refreshed));
-            });
-        }
+        JTextArea value = wrappedText(cost == null
+            ? I18n.tr("Not set") : SettingsPanel.formatUnitCurrency(cost), false);
+        value.setRows(1);
+        value.setColumns(1);
+        value.setMinimumSize(new Dimension(0, value.getPreferredSize().height));
+        value.setMaximumSize(new Dimension(Integer.MAX_VALUE, 42));
         panel.add(value, g);
 
         g.gridx = 2;
