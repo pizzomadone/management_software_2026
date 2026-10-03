@@ -71,10 +71,13 @@ public class OperationalRegressionTest extends RegressionTest {
             fresh();
             sql("UPDATE product_suppliers SET purchase_price=7,is_preferred=1 WHERE product_id=1 AND supplier_id=1");
             PD editor=productEditor(10);
+            ((JTextField)get(editor,"acquisitionCostField")).setText("99");
             put(editor,"selectedSupplier",new Supplier(1,"Supplier A","","","","","","","",""));
             call(editor,"saveProduct");
             require("7.0".equals(value("SELECT purchase_price FROM product_suppliers WHERE product_id=1 AND supplier_id=1")),
-                "Saving the product overwrote the supplier reference price");
+                "Saving the product overwrote the supplier cost");
+            require("5.0".equals(value("SELECT acquisition_cost FROM products WHERE id=1")),
+                "Editing the product changed the informational last purchase cost");
         });
         test("notification actions target selected database IDs",()->{
             fresh();sql("INSERT INTO warehouse_notifications(id,product_id,type,message) VALUES(1,1,'LOW_STOCK','Same text'),(2,1,'LOW_STOCK','Same text')");
