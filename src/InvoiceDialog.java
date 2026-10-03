@@ -239,7 +239,7 @@ public class InvoiceDialog extends JDialog {
         }
 
         // Products table
-        String[] columns = {"Code", "Product", "Quantity *", "Unit Price", "VAT Rate %", "Total", "Product ID"};
+        String[] columns = {"Code", "Product", "Quantity *", "Unit Price incl. VAT", "VAT Rate %", "Total incl. VAT", "Product ID"};
         itemsTableModel = new InvoiceTableModel(columns, 0);
         itemsTable = new JTable(itemsTableModel);
         TableStyleUtil.setCurrencyCode(itemsTable, currencyCode());
@@ -482,9 +482,9 @@ public class InvoiceDialog extends JDialog {
             row.add(product.getCode());
             row.add(product.getName());
             row.add(quantity);
-            row.add(product.getPrice());
+            row.add(product.getSalePriceIncVat());
             row.add(vatRate);
-            row.add(Numbers.moneyText(Numbers.lineTotal(quantity, product.getPrice())));
+            row.add(Numbers.moneyText(SalePrice.lineIncVat(quantity, product.getSalePriceIncVat())));
             row.add(product.getId());
             itemsTableModel.addRow(row);
 
@@ -564,7 +564,7 @@ public class InvoiceDialog extends JDialog {
                         rs.getString("code"),
                         rs.getString("name"),
                         rs.getString("description"),
-                        rs.getDouble("price"),
+                        rs.getDouble("sale_price_inc_vat"),
                         rs.getInt("quantity")
                     );
                     productsCache.put(product.getId(), product);
@@ -604,9 +604,9 @@ public class InvoiceDialog extends JDialog {
             row.add(item.getProductCode());
             row.add(item.getProductName());
             row.add(item.getQuantity());
-            row.add(item.getUnitPrice());
+            row.add(item.getUnitPriceIncVat());
             row.add(item.getVatRate());
-            row.add(Numbers.moneyText(item.getTotal()));
+            row.add(Numbers.moneyText(item.getTotalIncVat()));
             row.add(item.getProductId());
             itemsTableModel.addRow(row);
         }
@@ -851,26 +851,26 @@ public class InvoiceDialog extends JDialog {
         try {
             double taxableAmount = 0;
             double totalVat = 0;
+            double grossTotal = 0;
 
             for (int i = 0; i < itemsTableModel.getRowCount(); i++) {
                 try {
-                    Object quantityObj = itemsTableModel.getValueAt(i, 2);
-                    Object priceObj = itemsTableModel.getValueAt(i, 3);
-                    Object vatRateObj = itemsTableModel.getValueAt(i, 4);
+                    int quantity = parseInteger(itemsTableModel.getValueAt(i, 2));
+                    double unitPriceIncVat = parseDouble(itemsTableModel.getValueAt(i, 3));
+                    double vatRate = Numbers.vat(itemsTableModel.getValueAt(i, 4));
 
-                    int quantity = parseInteger(quantityObj);
-                    double price = parseDouble(priceObj);
-                    double vatRate = parseDouble(vatRateObj);
+                    double lineGross = SalePrice.lineIncVat(quantity, unitPriceIncVat);
+                    double lineNet = SalePrice.lineExVat(quantity, unitPriceIncVat, vatRate);
+                    double lineVat = Numbers.money(java.math.BigDecimal.valueOf(lineGross)
+                        .subtract(java.math.BigDecimal.valueOf(lineNet)));
 
-                    double subtotal = Numbers.lineTotal(quantity, price);
-                    double vat = Numbers.tax(subtotal, vatRate);
+                    taxableAmount = Numbers.add(taxableAmount, lineNet);
+                    totalVat = Numbers.add(totalVat, lineVat);
+                    grossTotal = Numbers.add(grossTotal, lineGross);
 
-                    taxableAmount = Numbers.add(taxableAmount, subtotal);
-                    totalVat = Numbers.add(totalVat, vat);
-
-                    String currentTotal = (String) itemsTableModel.getValueAt(i, 5);
-                    String newTotal = Numbers.moneyText(subtotal);
-                    if (!newTotal.equals(currentTotal)) {
+                    String currentLineTotal = String.valueOf(itemsTableModel.getValueAt(i, 5));
+                    String newTotal = Numbers.moneyText(lineGross);
+                    if (!newTotal.equals(currentLineTotal)) {
                         itemsTableModel.setValueAt(newTotal, i, 5);
                     }
 
@@ -879,15 +879,13 @@ public class InvoiceDialog extends JDialog {
                 }
             }
 
-            double total = Numbers.add(taxableAmount, totalVat);
-
             currentTaxableAmount = taxableAmount;
             currentVat = totalVat;
-            currentTotal = total;
+            currentTotal = grossTotal;
 
             taxableAmountLabel.setText("Taxable Amount: " + SettingsPanel.formatCurrency(taxableAmount,currencyCode()));
             vatLabel.setText("VAT: " + SettingsPanel.formatCurrency(totalVat,currencyCode()));
-            totalLabel.setText("TOTAL: " + SettingsPanel.formatCurrency(total,currencyCode()));
+            totalLabel.setText("TOTAL: " + SettingsPanel.formatCurrency(grossTotal,currencyCode()));
             if (paymentStatusCombo != null && "Paid".equals(paymentStatusCombo.getSelectedItem())) {
                 updatePaymentAmountField();
             }
@@ -904,14 +902,22 @@ public class InvoiceDialog extends JDialog {
 
     private void validateRows() {
         Numbers.commitEdits(itemsTable);
-        double taxable = 0, tax = 0;
+        double taxable = 0, tax = 0, gross = 0;
         for (int i=0; i<itemsTableModel.getRowCount(); i++) {
-            double line = Numbers.lineTotal(Numbers.positiveQuantity(itemsTableModel.getValueAt(i,2)),
-                Numbers.nonNegative(itemsTableModel.getValueAt(i,3)));
-            taxable = Numbers.add(taxable, line);
-            tax = Numbers.add(tax, Numbers.tax(line, Numbers.vat(itemsTableModel.getValueAt(i,4))));
+            int quantity = Numbers.positiveQuantity(itemsTableModel.getValueAt(i,2));
+            double unitPriceIncVat = Numbers.nonNegative(itemsTableModel.getValueAt(i,3));
+            double vatRate = Numbers.vat(itemsTableModel.getValueAt(i,4));
+            double lineGross = SalePrice.lineIncVat(quantity, unitPriceIncVat);
+            double lineNet = SalePrice.lineExVat(quantity, unitPriceIncVat, vatRate);
+            double lineVat = Numbers.money(java.math.BigDecimal.valueOf(lineGross)
+                .subtract(java.math.BigDecimal.valueOf(lineNet)));
+            taxable = Numbers.add(taxable, lineNet);
+            tax = Numbers.add(tax, lineVat);
+            gross = Numbers.add(gross, lineGross);
         }
-        currentTaxableAmount = taxable; currentVat = tax; currentTotal = Numbers.add(taxable, tax);
+        currentTaxableAmount = taxable;
+        currentVat = tax;
+        currentTotal = gross;
         updateTotals();
     }
 
@@ -944,7 +950,7 @@ public class InvoiceDialog extends JDialog {
         int orderId;
         try (PreparedStatement p = conn.prepareStatement("""
                 INSERT INTO orders
-                    (customer_id, order_date, status, total, payment_status, paid_amount)
+                    (customer_id, order_date, status, total_ex_vat, payment_status, paid_amount)
                 VALUES (?, ?, 'Completed', ?, ?, ?)
                 """, Statement.RETURN_GENERATED_KEYS)) {
             p.setInt(1, selectedCustomer.getId());
@@ -960,14 +966,21 @@ public class InvoiceDialog extends JDialog {
         }
 
         try (PreparedStatement p = conn.prepareStatement("""
-                INSERT INTO order_details(order_id, product_id, quantity, unit_price)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO order_details
+                    (order_id, product_id, quantity, sale_unit_price_ex_vat,
+                     sale_unit_price_inc_vat, vat_rate)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """)) {
             for (int i = 0; i < itemsTableModel.getRowCount(); i++) {
+                int quantity = parseInteger(itemsTableModel.getValueAt(i, 2));
+                double incVat = parseDouble(itemsTableModel.getValueAt(i, 3));
+                double vatRate = Numbers.vat(itemsTableModel.getValueAt(i, 4));
                 p.setInt(1, orderId);
                 p.setInt(2, productIdForRow(conn, i));
-                p.setInt(3, parseInteger(itemsTableModel.getValueAt(i, 2)));
-                p.setDouble(4, parseDouble(itemsTableModel.getValueAt(i, 3)));
+                p.setInt(3, quantity);
+                p.setDouble(4, SalePrice.exVatFromIncVat(incVat, vatRate));
+                p.setDouble(5, incVat);
+                p.setDouble(6, vatRate);
                 p.addBatch();
             }
             p.executeBatch();
@@ -1177,26 +1190,29 @@ public class InvoiceDialog extends JDialog {
     private void insertInvoiceDetails(Connection conn, int invoiceId) throws SQLException {
         String detailQuery = """
             INSERT INTO invoice_details
-            (invoice_id, product_id, quantity, unit_price, vat_rate, total, product_code, product_name)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (invoice_id, product_id, quantity, sale_unit_price_ex_vat,
+             sale_unit_price_inc_vat, vat_rate, total, product_code, product_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """;
         try (PreparedStatement pstmt = conn.prepareStatement(detailQuery)) {
             for (int i = 0; i < itemsTableModel.getRowCount(); i++) {
                 int productId = productIdForRow(conn, i);
 
                 int quantity = parseInteger(itemsTableModel.getValueAt(i, 2));
-                double unitPrice = parseDouble(itemsTableModel.getValueAt(i, 3));
+                double unitPriceIncVat = parseDouble(itemsTableModel.getValueAt(i, 3));
                 double vatRate = Numbers.vat(itemsTableModel.getValueAt(i, 4));
-                double productTotal = Numbers.lineTotal(quantity, unitPrice);
+                double unitPriceExVat = SalePrice.exVatFromIncVat(unitPriceIncVat, vatRate);
+                double productTotalExVat = SalePrice.lineExVat(quantity, unitPriceIncVat, vatRate);
 
                 pstmt.setInt(1, invoiceId);
                 pstmt.setInt(2, productId);
                 pstmt.setInt(3, quantity);
-                pstmt.setDouble(4, unitPrice);
-                pstmt.setDouble(5, vatRate);
-                pstmt.setDouble(6, productTotal);
-                pstmt.setString(7,String.valueOf(itemsTableModel.getValueAt(i,0)));
-                pstmt.setString(8,String.valueOf(itemsTableModel.getValueAt(i,1)));
+                pstmt.setDouble(4, unitPriceExVat);
+                pstmt.setDouble(5, unitPriceIncVat);
+                pstmt.setDouble(6, vatRate);
+                pstmt.setDouble(7, productTotalExVat);
+                pstmt.setString(8,String.valueOf(itemsTableModel.getValueAt(i,0)));
+                pstmt.setString(9,String.valueOf(itemsTableModel.getValueAt(i,1)));
                 pstmt.executeUpdate();
             }
         }
