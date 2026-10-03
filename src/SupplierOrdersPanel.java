@@ -250,8 +250,26 @@ public class SupplierOrdersPanel extends JPanel {
             SupplierOrderDialog dialog = new SupplierOrderDialog(
                 owner, order.getSupplierId(), order.getSupplierName(), order);
             dialog.setVisible(true);
-            if (dialog.isOrderSaved()) { loadOrders(); refreshProducts(); }
+            if (dialog.isOrderSaved()) {
+                loadOrders();
+                selectOrderById(id);
+                refreshProducts();
+            }
         } catch (SQLException ex) { Dialogs.showMessageDialog(this, "Error loading supplier order: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE); }
+    }
+
+    private void selectOrderById(int orderId) {
+        for (int modelRow = 0; modelRow < model.getRowCount(); modelRow++) {
+            Object value = model.getValueAt(modelRow, 0);
+            if (value instanceof Number number && number.intValue() == orderId) {
+                int viewRow = table.convertRowIndexToView(modelRow);
+                if (viewRow >= 0) {
+                    table.setRowSelectionInterval(viewRow, viewRow);
+                    table.scrollRectToVisible(table.getCellRect(viewRow, 0, true));
+                }
+                return;
+            }
+        }
     }
 
     private SupplierOrder loadOrder(int id) throws SQLException {
