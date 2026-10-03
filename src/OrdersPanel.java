@@ -85,7 +85,7 @@ public class OrdersPanel extends JPanel {
                 if (evt.getClickCount() == 2 && SwingUtilities.isLeftMouseButton(evt)) {
                     int selectedRow = ordersTable.getSelectedRow();
                     if (selectedRow != -1) {
-                        editSelectedOrder();
+                        if (!openLinkedInvoiceForSelectedOrder()) editSelectedOrder();
                     }
                 }
             }
@@ -142,6 +142,14 @@ public class OrdersPanel extends JPanel {
         deleteButton.setToolTipText("Completed".equals(status)
             ? I18n.tr("Reverse the completed sale while preserving FIFO history.")
             : null);
+
+        String linkedInvoice = null;
+        if (isRowSelected && "Completed".equals(status)) {
+            int modelRow = ordersTable.convertRowIndexToModel(viewRow);
+            int orderId = (int)tableModel.getValueAt(modelRow, 0);
+            linkedInvoice = linkedInvoiceNumber(orderId);
+        }
+        generateInvoiceButton.setText(I18n.tr(linkedInvoice != null ? "Go to Invoice" : "Generate Invoice"));
         generateInvoiceButton.setEnabled(isRowSelected && "Completed".equals(status));
         updatePaymentButton.setEnabled(isRowSelected && "Completed".equals(status));
     }
@@ -273,6 +281,36 @@ public class OrdersPanel extends JPanel {
                 ((MainWindow) parentWindow).refreshProductsPanel();
             }
         }
+    }
+
+    private String linkedInvoiceNumber(int orderId) {
+        try (PreparedStatement p = DatabaseManager.getInstance().getConnection().prepareStatement(
+                "SELECT number FROM invoices WHERE order_id=? LIMIT 1")) {
+            p.setInt(1, orderId);
+            try (ResultSet r = p.executeQuery()) {
+                return r.next() ? r.getString(1) : null;
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    private boolean openLinkedInvoiceForSelectedOrder() {
+        int viewRow = ordersTable.getSelectedRow();
+        if (viewRow == -1) return false;
+
+        int modelRow = ordersTable.convertRowIndexToModel(viewRow);
+        int orderId = (int)tableModel.getValueAt(modelRow, 0);
+        String invoiceNumber = linkedInvoiceNumber(orderId);
+        if (invoiceNumber == null || invoiceNumber.isBlank()) return false;
+
+        Window window = SwingUtilities.getWindowAncestor(this);
+        if (window instanceof MainWindow mainWindow) {
+            mainWindow.openInvoice(invoiceNumber);
+            return true;
+        }
+        return false;
     }
 
     private void editSelectedOrder() {
@@ -813,23 +851,12 @@ public class OrdersPanel extends JPanel {
             return;
         }
 
-        try {
-            Connection connection = DatabaseManager.getInstance().getConnection();
-            try (PreparedStatement check = connection.prepareStatement(
-                    "SELECT number FROM invoices WHERE order_id = ?")) {
-                check.setInt(1, orderId);
-                try (ResultSet rs = check.executeQuery()) {
-                    if (rs.next()) {
-                        Dialogs.showMessageDialog(this,
-                            "This order has already been invoiced as " + rs.getString("number") + ".",
-                            "Invoice Already Exists", JOptionPane.WARNING_MESSAGE);
-                        return;
-                    }
-                }
+        String existingInvoice = linkedInvoiceNumber(orderId);
+        if (existingInvoice != null) {
+            Window window = SwingUtilities.getWindowAncestor(this);
+            if (window instanceof MainWindow mainWindow) {
+                mainWindow.openInvoice(existingInvoice);
             }
-        } catch (SQLException e) {
-            Dialogs.showMessageDialog(this, "Unable to verify existing invoices: " + e.getMessage(),
-                "Error", JOptionPane.ERROR_MESSAGE);
             return;
         }
 
