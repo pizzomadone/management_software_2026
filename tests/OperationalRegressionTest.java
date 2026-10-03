@@ -79,6 +79,17 @@ public class OperationalRegressionTest extends RegressionTest {
             require("5.0".equals(value("SELECT acquisition_cost FROM products WHERE id=1")),
                 "Editing the product changed the informational last purchase cost");
         });
+        test("product details load preferred supplier cost from the preferred relation",()->{
+            fresh();
+            sql("UPDATE product_suppliers SET purchase_price=7,is_preferred=1 WHERE product_id=1 AND supplier_id=1");
+            ProductDetailsDialog details=empty(ProductDetailsDialog.class);
+            Object cost=call(details,"loadPreferredSupplierCost",new Class<?>[]{int.class},1);
+            require(cost instanceof Double && ((Double)cost)==7.0,
+                "Product details did not load the preferred supplier cost");
+            sql("UPDATE products SET acquisition_cost=9 WHERE id=1");
+            require("9.0".equals(value("SELECT acquisition_cost FROM products WHERE id=1")),
+                "Fixture last purchase cost update failed");
+        });
         test("notification actions target selected database IDs",()->{
             fresh();sql("INSERT INTO warehouse_notifications(id,product_id,type,message) VALUES(1,1,'LOW_STOCK','Same text'),(2,1,'LOW_STOCK','Same text')");
             WarehousePanel p=new WarehousePanel();JTable table=(JTable)get(p,"notificationsTable");DefaultTableModel model=(DefaultTableModel)get(p,"notificationsModel");
