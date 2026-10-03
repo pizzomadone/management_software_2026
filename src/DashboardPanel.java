@@ -914,6 +914,13 @@ public class DashboardPanel extends JPanel {
                 FROM products p
                 LEFT JOIN order_details od ON p.id = od.product_id
                 LEFT JOIN orders o ON od.order_id = o.id AND o.status = 'Completed'
+                WHERE p.active=1 OR EXISTS (
+                    SELECT 1
+                    FROM order_details history_detail
+                    JOIN orders history_order ON history_order.id=history_detail.order_id
+                    WHERE history_detail.product_id=p.id
+                      AND history_order.status='Completed'
+                )
                 GROUP BY p.id, p.name
                 ORDER BY revenue DESC
             """;
