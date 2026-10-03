@@ -636,7 +636,11 @@ public class OrdersPanel extends JPanel {
             double currentPaid;
             String paymentCurrency;
             try (PreparedStatement p = conn.prepareStatement("""
-                    SELECT COALESCE(i.total,o.total) AS payment_total,
+                    SELECT COALESCE(i.total,
+                               (SELECT SUM(warestat_line_total(
+                                   d.quantity,d.sale_unit_price_inc_vat))
+                                FROM order_details d WHERE d.order_id=o.id),
+                               o.total_ex_vat) AS payment_total,
                            o.payment_status,o.paid_amount,
                            COALESCE(i.currency_code,?) AS payment_currency
                     FROM orders o
