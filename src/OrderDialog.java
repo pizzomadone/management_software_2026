@@ -700,7 +700,9 @@ public class OrderDialog extends JDialog {
                     }
                 }
             }
-            // Check stock availability for New, In Progress and Completed states
+            // A reservation represents stock that is really available for this order.
+            // Never allow active reservations to exceed physical availability: otherwise
+            // pending orders can block each other when one of them is completed.
             if ("New".equals(newStatus) || "In Progress".equals(newStatus) || "Completed".equals(newStatus)) {
                 Map<String, StockManager.StockAvailability> insufficient =
                     StockManager.checkStockAvailability(
@@ -711,35 +713,26 @@ public class OrderDialog extends JDialog {
                     );
 
                 if (!insufficient.isEmpty()) {
-                    StringBuilder message = new StringBuilder("Insufficient stock for the following products:\n\n");
+                    StringBuilder message = new StringBuilder(
+                        I18n.tr("Insufficient stock for the following products:"))
+                        .append("\n\n");
                     for (Map.Entry<String, StockManager.StockAvailability> entry : insufficient.entrySet()) {
-                        message.append(String.format("- %s: %s\n",
-                            entry.getKey(), entry.getValue().getFormattedMessage()));
+                        message.append("- ")
+                               .append(entry.getKey())
+                               .append(": ")
+                               .append(entry.getValue().getFormattedMessage())
+                               .append("\n");
                     }
 
-                    if ("Completed".equals(newStatus)) {
-                        message.append("\n").append(I18n.tr("This will result in negative stock."));
-                        Dialogs.showMessageDialog(this,
-                            message.toString(),
-                            I18n.tr("Insufficient Stock"),
-                            JOptionPane.WARNING_MESSAGE);
-                        conn.rollback();
-                        return;
-                    }
+                    message.append("\n").append(I18n.tr(
+                        "The order cannot reserve more units than are currently available. Reduce the quantities or replenish stock."));
 
-                    message.append("\n").append(I18n.tr("Do you want to proceed anyway?"))
-                           .append("\n").append(I18n.tr("This will result in negative stock."));
-
-                    int choice = Dialogs.showConfirmDialog(this,
+                    Dialogs.showMessageDialog(this,
                         message.toString(),
                         I18n.tr("Insufficient Stock"),
-                        JOptionPane.YES_NO_OPTION,
                         JOptionPane.WARNING_MESSAGE);
-
-                    if (choice != JOptionPane.YES_OPTION) {
-                        conn.rollback();
-                        return;
-                    }
+                    conn.rollback();
+                    return;
                 }
             }
 
