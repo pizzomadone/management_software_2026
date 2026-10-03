@@ -360,7 +360,9 @@ public class ProductDialog extends JDialog {
                 cost = product == null ? Numbers.nonNegative(acquisitionCostField.getText())
                     : Numbers.nonNegative(preferredSupplierCurrentCost);
             } catch (IllegalArgumentException e) {
-                estimatedMarginLabel.setText(I18n.tr("Margin unavailable: enter a purchase cost."));
+                estimatedMarginLabel.setText(I18n.tr(product == null
+                    ? "Margin unavailable: enter a purchase cost."
+                    : "Margin unavailable: preferred supplier cost missing."));
                 return;
             }
             if (cost <= 0) {
