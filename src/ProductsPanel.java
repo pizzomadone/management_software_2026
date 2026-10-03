@@ -771,6 +771,7 @@ public class ProductsPanel extends JPanel {
             String query = """
                 SELECT p.*, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity,
                        f.company_name as supplier_name,
+                       ps.purchase_price AS preferred_supplier_cost,
                        (SELECT filename FROM product_images pi WHERE pi.product_id=p.id ORDER BY pi.is_primary DESC,pi.sort_order,pi.id LIMIT 1) AS primary_image,
                        COALESCE(SUM(CASE
                            WHEN so.status IN ('Draft', 'Confirmed', 'In Transit')
