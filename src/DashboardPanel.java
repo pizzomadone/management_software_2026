@@ -543,7 +543,7 @@ public class DashboardPanel extends JPanel {
 
             // 3. Pending Orders
             int pendingOrders = 0;
-            String pendingQuery = "SELECT COUNT(*) as count FROM orders WHERE status IN ('New','In Progress')";
+            String pendingQuery = "SELECT COUNT(*) as count FROM orders WHERE status IN ('Reservation','New','In Progress')";
             try (Statement stmt = conn.createStatement();
                  ResultSet rs = stmt.executeQuery(pendingQuery)) {
                 if (rs.next()) {
