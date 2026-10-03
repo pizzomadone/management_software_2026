@@ -225,6 +225,8 @@ public class DatabaseManager {
                 vat REAL NOT NULL,
                 total REAL NOT NULL,
                 status TEXT NOT NULL,
+                payment_status TEXT NOT NULL DEFAULT 'NOT_PAID',
+                paid_amount REAL NOT NULL DEFAULT 0.0,
                 order_id INTEGER,
                 FOREIGN KEY (order_id) REFERENCES orders (id),
                 FOREIGN KEY (customer_id) REFERENCES customers (id)
