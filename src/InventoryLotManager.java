@@ -352,6 +352,10 @@ public final class InventoryLotManager {
             }
             insertLot(c,productId,null,null,movementId,date,quantity,remaining,cost,"MANUAL_INWARD");
         } else if("OUTWARD".equals(type)) {
+            int available=StockManager.getAvailableStock(c,productId);
+            if(quantity>available)
+                throw new SQLException(I18n.format(
+                    "Insufficient quantity. Current availability: {0}", available));
             consumeForMovement(c,movementId,productId,quantity);
             try(PreparedStatement u=c.prepareStatement("UPDATE products SET quantity=quantity-? WHERE id=?")) {
                 u.setInt(1,quantity);u.setInt(2,productId);u.executeUpdate();
@@ -610,7 +614,7 @@ public final class InventoryLotManager {
                 FROM supplier_order_details d
                 JOIN supplier_orders o ON o.id=d.order_id
                 WHERE d.product_id=? AND o.status='Completed' AND o.id<>?
-                ORDER BY o.order_date DESC,o.id DESC,d.id DESC LIMIT 1
+                ORDER BY o.received_date DESC,o.id DESC,d.id DESC LIMIT 1
                 """)) {
             p.setInt(1,productId);p.setInt(2,excludedOrderId);
             try(ResultSet r=p.executeQuery()){if(r.next())cost=Numbers.nonNegative(r.getObject(1));}
