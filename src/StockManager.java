@@ -480,7 +480,7 @@ public class StockManager {
 
     /**
      * Delete an order and restore stock based on its status
-     * Handles: restoring stock if Completed, cancelling reservations if New or In Progress
+     * Handles: restoring stock if Completed, cancelling reservations if In Progress
      */
     public static void deleteOrder(Connection conn, int orderId, String orderStatus) throws SQLException {
         try (PreparedStatement p = conn.prepareStatement("SELECT status FROM orders WHERE id=?")) {
@@ -495,8 +495,8 @@ public class StockManager {
                 "Completed or reversed customer sales cannot be deleted. Reverse completed sales instead.");
         }
 
-        // If order was New or In Progress, cancel active reservations
-        if ("New".equals(orderStatus) || "In Progress".equals(orderStatus)) {
+        // Only In Progress orders reserve warehouse stock.
+        if ("In Progress".equals(orderStatus)) {
             cancelReservation(conn, "ORDER", orderId);
         }
 
