@@ -75,7 +75,7 @@ public final class ProductDetailsDialog extends JDialog {
         addCostLine(details, g, "Last Purchase Cost",
             product.getAcquisitionCost() > 0
                 ? SettingsPanel.formatUnitCurrency(product.getAcquisitionCost()) : null,
-            true);
+            false);
 
         addLine(details, g, "Minimum Quantity", String.valueOf(product.getMinimumQuantity()));
         addLine(details, g, "Preferred Supplier", product.getSupplierName());
