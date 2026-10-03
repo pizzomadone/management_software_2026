@@ -488,7 +488,7 @@ public class OrdersPanel extends JPanel {
             int result = Dialogs.showConfirmDialog(this,
                 "Are you sure you want to delete the order from customer '" + customer + "'?\n" +
                 "Status: " + status + "\n" +
-                ((status.equals("New") || status.equals("In Progress")) ? "Reservations will be cancelled." :
+                (status.equals("In Progress") ? "Reservations will be cancelled." :
                  "No stock changes."),
                 "Confirm Deletion",
                 JOptionPane.YES_NO_OPTION,
