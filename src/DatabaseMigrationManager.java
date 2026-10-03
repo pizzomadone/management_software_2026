@@ -40,7 +40,9 @@ public final class DatabaseMigrationManager {
         new Migration("014", "Preserve manual FIFO reversals and unknown cost snapshots",
             DatabaseMigrationManager::migrateFifoReversals),
         new Migration("015", "Store actual supplier receipt date",
-            DatabaseMigrationManager::migrateSupplierReceiptDate)
+            DatabaseMigrationManager::migrateSupplierReceiptDate),
+        new Migration("016", "Separate invoice document status from payment status",
+            DatabaseMigrationManager::migrateInvoicePaymentStatus)
     );
 
     private DatabaseMigrationManager() {}
@@ -271,6 +273,39 @@ public final class DatabaseMigrationManager {
                 WHERE status<>'Completed'
                 """);
         }
+    }
+
+    private static void migrateInvoicePaymentStatus(Connection c) throws SQLException {
+        addColumnIfMissing(c, "invoices", "payment_status",
+            "ALTER TABLE invoices ADD COLUMN payment_status TEXT NOT NULL DEFAULT 'NOT_PAID'");
+        addColumnIfMissing(c, "invoices", "paid_amount",
+            "ALTER TABLE invoices ADD COLUMN paid_amount REAL NOT NULL DEFAULT 0.0");
+
+        try (Statement s = c.createStatement()) {
+            // In legacy databases, Paid was incorrectly used as a document status.
+            // Preserve that information as payment data only for standalone invoices.
+            s.executeUpdate("""
+                UPDATE invoices
+                SET payment_status='PAID', paid_amount=total
+                WHERE status='Paid' AND order_id IS NULL
+                """);
+
+            // Linked invoices always read payment from the customer order.
+            // Keep their local fields harmless; they are not a second source of truth.
+            s.executeUpdate("""
+                UPDATE invoices
+                SET payment_status='NOT_PAID', paid_amount=0
+                WHERE order_id IS NOT NULL
+                """);
+
+            // Paid is no longer a document lifecycle state.
+            s.executeUpdate("""
+                UPDATE invoices
+                SET status='Issued'
+                WHERE status='Paid'
+                """);
+        }
+        DatabaseIntegrity.installGuards(c);
     }
 
     private static void markUnknownHistoricalCosts(Connection c) throws SQLException {
