@@ -561,15 +561,16 @@ public class OrdersPanel extends JPanel {
         double paidAmount;
         double paymentTotal;
         try (PreparedStatement p = conn.prepareStatement("""
-                SELECT o.payment_status,o.paid_amount,
+                SELECT o.status,o.payment_status,o.paid_amount,
                        COALESCE(i.total,o.total) AS payment_total
                 FROM orders o
                 LEFT JOIN invoices i ON i.order_id=o.id
-                WHERE o.id=? AND o.status='Completed'
+                WHERE o.id=?
                 """)) {
             p.setInt(1, orderId);
             try (ResultSet r = p.executeQuery()) {
-                if (!r.next()) throw new SQLException("Completed order no longer exists");
+                if (!r.next()) throw new SQLException("Order no longer exists");
+                if (!"Completed".equals(r.getString("status"))) return;
                 status = r.getString("payment_status");
                 paidAmount = r.getDouble("paid_amount");
                 paymentTotal = r.getDouble("payment_total");
