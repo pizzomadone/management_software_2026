@@ -335,7 +335,7 @@ public class AdvancedStatsPanel extends JPanel {
         String normalizedDate = DateUtils.sqlDate("o.order_date");
         String query =
             "SELECT strftime('%Y-%m', " + normalizedDate + ") AS month, " +
-            "SUM(warestat_line_total(d.quantity,d.unit_price)) AS revenue " +
+            "SUM(warestat_line_total(d.quantity,d.sale_unit_price_ex_vat)) AS revenue " +
             "FROM order_details d " +
             "JOIN orders o ON o.id=d.order_id " +
             "WHERE d.product_id=? AND o.status='Completed' " +
@@ -958,7 +958,7 @@ public class AdvancedStatsPanel extends JPanel {
         String query =
             "SELECT COALESCE(p.name, 'Product N/A') AS name, " +
             "SUM(d.quantity) AS total_quantity, " +
-            "SUM(warestat_line_total(d.quantity,d.unit_price)) AS revenue, " +
+            "SUM(warestat_line_total(d.quantity,d.sale_unit_price_ex_vat)) AS revenue, " +
             "COUNT(DISTINCT o.id) AS num_orders " +
             "FROM order_details d " +
             "LEFT JOIN products p ON d.product_id = p.id " +
