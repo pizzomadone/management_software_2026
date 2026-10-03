@@ -164,7 +164,7 @@ public class DashboardPanel extends JPanel {
         notes.setBorder(BorderFactory.createEmptyBorder(9, 2, 0, 2));
         zeroCostCountLabel = new JLabel("—");
         negativeStockCountLabel = new JLabel("—");
-        notes.add(createKPINote("In-stock products with missing purchase cost", zeroCostCountLabel));
+        notes.add(createKPINote("In-stock products with missing preferred supplier cost", zeroCostCountLabel));
         notes.add(createKPINote("Negative-stock products (excluded from valuation)", negativeStockCountLabel));
         costCompletenessNoteLabel = new JLabel();
         costCompletenessNoteLabel.setFont(dashboardFont(Font.PLAIN, 11f));
