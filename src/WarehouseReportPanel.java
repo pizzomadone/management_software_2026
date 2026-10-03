@@ -56,7 +56,7 @@ public class WarehouseReportPanel extends JPanel {
         JLabel totalProductsLabel = new JLabel("Total Products: 0");
         JLabel totalValueLabel = new JLabel("Stock at preferred supplier cost: " + SettingsPanel.formatCurrency(0));
         totalValueLabel.setToolTipText(I18n.tr(
-            "Only active products with positive physical stock are valued at the current preferred supplier cost. Reserved units remain included."));
+            "Positive physical stock is valued at the current preferred supplier cost, including inactive products that still remain in stock. Reserved units remain included."));
         JLabel lowStockLabel = new JLabel("Low Stock Products: 0");
         JLabel outOfStockLabel = new JLabel("Out of Stock Products: 0");
 
@@ -233,7 +233,7 @@ public class WarehouseReportPanel extends JPanel {
                     String status;
                     boolean active = rs.getInt("active") == 1;
                     if (!active) {
-                        status = "INACTIVE";
+                        status = I18n.tr("Inactive");
                     } else if (availableStock <= 0) {
                         status = "OUT OF STOCK";
                         outOfStock++;
