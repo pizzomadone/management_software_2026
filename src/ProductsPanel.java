@@ -88,7 +88,7 @@ public class ProductsPanel extends JPanel {
         searchPanel.add(searchButton);
         
         // Products table
-        String[] columns = {"ID", "Code", "Name", "Description", "Price", "Physical", "Reserved", "Available", "On Order", "Category", "Unit", "Min Qty", "Active", "Supplier", "Position", "VAT %", "Photo"};
+        String[] columns = {"ID", "Code", "Name", "Description", "Sale Price incl. VAT", "Physical", "Reserved", "Available", "On Order", "Category", "Unit", "Min Qty", "Active", "Supplier", "Position", "VAT %", "Photo"};
         for (int i = 0; i < columns.length; i++) columns[i] = columns[i].trim();
         tableModel = new DefaultTableModel(columns, 0) {
             @Override public boolean isCellEditable(int row, int column) { return false; }
@@ -721,7 +721,7 @@ public class ProductsPanel extends JPanel {
                     row.add(trimCellText(rs.getString("code")));
                     row.add(trimCellText(rs.getString("name")));
                     row.add(trimCellText(rs.getString("description")));
-                    row.add(rs.getDouble("price"));
+                    row.add(rs.getDouble("sale_price_inc_vat"));
 
                     int physicalStock = rs.getInt("quantity");
                     int reservedStock = rs.getInt("reserved_quantity");
@@ -800,7 +800,7 @@ public class ProductsPanel extends JPanel {
                         row.add(trimCellText(rs.getString("code")));
                         row.add(trimCellText(rs.getString("name")));
                         row.add(trimCellText(rs.getString("description")));
-                        row.add(rs.getDouble("price"));
+                        row.add(rs.getDouble("sale_price_inc_vat"));
 
                         int physicalStock = rs.getInt("quantity");
                         int reservedStock = rs.getInt("reserved_quantity");
@@ -889,7 +889,7 @@ public class ProductsPanel extends JPanel {
                 Integer supplierId = getIntegerFromResultSet(rs, "preferred_supplier_id");
                 return new Product(
                     rs.getInt("id"), rs.getString("code"), rs.getString("name"),
-                    rs.getString("description"), rs.getDouble("price"),
+                    rs.getString("description"), rs.getDouble("sale_price_inc_vat"),
                     getIntegerFromResultSet(rs, "quantity", 0),
                     rs.getString("category") != null ? rs.getString("category") : "",
                     rs.getString("alternative_sku") != null ? rs.getString("alternative_sku") : "",
@@ -955,7 +955,7 @@ public class ProductsPanel extends JPanel {
                                 rs.getString("code"),
                                 rs.getString("name"),
                                 rs.getString("description"),
-                                rs.getDouble("price"),
+                                rs.getDouble("sale_price_inc_vat"),
                                 quantity,
                                 rs.getString("category") != null ? rs.getString("category") : "",
                                 rs.getString("alternative_sku") != null ? rs.getString("alternative_sku") : "",
