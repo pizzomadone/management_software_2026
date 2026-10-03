@@ -276,8 +276,12 @@ public class ProductDialog extends JDialog {
             .getMaximumWindowBounds();
         Dimension preferred = getPreferredSize();
 
-        int maxWidth = Math.max(620, usable.width - 60);
-        int maxHeight = Math.max(480, usable.height - 60);
+        // Use nearly all of the usable screen when the form needs it. The previous
+        // 60 px vertical reserve forced a scrollbar after the live price/margin
+        // preview added rows to the pricing section, even though the dialog still
+        // fitted on screen.
+        int maxWidth = Math.max(620, usable.width - 24);
+        int maxHeight = Math.max(480, usable.height - 16);
         int width = Math.min(maxWidth, Math.max(760, preferred.width));
         int height = Math.min(maxHeight, Math.max(560, preferred.height));
 
