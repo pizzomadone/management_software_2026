@@ -45,7 +45,7 @@ public class OperationalRegressionTest extends RegressionTest {
         });
         test("linked invoice freezes its source order",()->{
             fresh();completed();sql("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status,order_id,currency_code) VALUES('LOCKED',0,1,30,0,30,'Issued',1,'EUR')");
-            OD d=order(true,5,"Completed");rejectedSave(d,"saveOrder","orderSaved");
+            OD d=order(true,5,"Completed");call(d,"saveOrder");
             require(qty()==7 && "30.0|3".equals(value("SELECT total_ex_vat||'|'||(SELECT quantity FROM order_details WHERE order_id=1) FROM orders WHERE id=1")),"Invoiced order diverged from invoice");
             CustomersPanel customers=new CustomersPanel();require((Boolean)call(customers,"hasFinalizedCustomerInvoices",new Class<?>[]{Connection.class,int.class},db,1),"Finalized customer history was not detected");
         });
@@ -136,8 +136,10 @@ public class OperationalRegressionTest extends RegressionTest {
             require(kpi(dash,"warehouseValueLabel").equals(SettingsPanel.formatCurrency(0)) && kpi(dash,"warehouseSaleValueLabel").equals(SettingsPanel.formatCurrency(0)),"Empty warehouse retained old values");
         });
         test("negative stock cannot cancel positive assets and stays visible after restocking",()->{
-            fresh();sql("UPDATE products SET quantity=3,acquisition_cost=0.335,sale_price_ex_vat=2.335,sale_price_inc_vat=2.335,vat_rate=0 WHERE id=1");
-            sql("UPDATE products SET quantity=-100,acquisition_cost=80 WHERE id=2");
+            fresh();sql("UPDATE products SET quantity=3,acquisition_cost=99,sale_price_ex_vat=2.335,sale_price_inc_vat=2.335,vat_rate=0 WHERE id=1");
+            sql("UPDATE products SET quantity=-100,acquisition_cost=99 WHERE id=2");
+            sql("UPDATE product_suppliers SET purchase_price=0.335 WHERE product_id=1 AND is_preferred=1");
+            sql("UPDATE product_suppliers SET purchase_price=80 WHERE product_id=2 AND is_preferred=1");
             DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");call(dash,"loadAlerts");
             require(kpi(dash,"warehouseValueLabel").equals(SettingsPanel.formatCurrency(1.01)),"Deficit cancelled another product's cost value");
             require(kpi(dash,"warehouseSaleValueLabel").equals(SettingsPanel.formatCurrency(7.01)),"Deficit cancelled another product's sale value");
@@ -160,10 +162,10 @@ public class OperationalRegressionTest extends RegressionTest {
             DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
             require(kpi(dash,"monthRevenueLabel").equals(SettingsPanel.formatCurrency(30)),"Uninvoiced sale disappeared");
             require(kpi(dash,"monthInvoicedLabel").equals(SettingsPanel.formatCurrency(0)),"Phantom invoice");
-            rejectedSave(order(true,5,"Completed"),"saveOrder","orderSaved");
+            call(order(true,5,"Completed"),"saveOrder");
             SalesReportPanel report=new SalesReportPanel();call(report,"loadReportData");
             DefaultTableModel rows=(DefaultTableModel)get(report,"tableModel");
-            require(rows.getRowCount()==1 && rows.getValueAt(0,4).equals("30.00"),"Rejected rewrite changed revenue");
+            require(rows.getRowCount()==1 && rows.getValueAt(0,4).equals("30.00"),"Payment-only edit changed revenue");
             StockManager.reverseCompletedOrder(db,1);call(dash,"loadKPIData");call(report,"loadReportData");
             require(kpi(dash,"monthRevenueLabel").equals(SettingsPanel.formatCurrency(0)) && qty()==10,"Reversed sale remained in net revenue");
             require(rows.getRowCount()==0 && "1".equals(value("SELECT COUNT(*) FROM orders")),"Historical order lost");
@@ -295,7 +297,7 @@ public class OperationalRegressionTest extends RegressionTest {
                 try{call(dash,"loadKPIData");}catch(java.awt.HeadlessException expectedErrorDialog){}
                 for(String field:List.of("warehouseValueLabel","warehouseSaleValueLabel","monthRevenueLabel","monthInvoicedLabel","negativeStockCountLabel"))
                     require(kpi(dash,field).equals("—"),"Stale or partial figure after read failure: "+field);
-                sql("ALTER TABLE products RENAME COLUMN acquisition_cost TO unavailable_cost");
+                sql("ALTER TABLE product_suppliers RENAME COLUMN purchase_price TO unavailable_purchase_price");
                 try{call(report,"loadProductsData");}catch(java.awt.HeadlessException expectedErrorDialog){}
                 require(!Boolean.TRUE.equals(get(report,"productsValid")) && ((DefaultTableModel)get(report,"productsModel")).getRowCount()==0,"Invalid report remained exportable");
                 JPanel statistics=(JPanel)((JPanel)((JTabbedPane)get(report,"tabbedPane")).getComponentAt(0)).getComponent(0);
