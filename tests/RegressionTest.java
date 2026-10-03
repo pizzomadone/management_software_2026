@@ -154,7 +154,7 @@ public class RegressionTest {
                 "Paid order did not use its full total");
 
             sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status,order_id,currency_code) " +
-                "VALUES(90,'PAY-GROSS',0,1,30,6.6,36.6,'Issued',1,'EUR')");
+                "VALUES(90,'PAY-GROSS',0,1,30,6.6,36.6,'Draft',1,'EUR')");
             OrdersPanel.reconcileCompletedOrderPaymentAfterInvoice(db,1);
             require("PAID|36.6".equals(
                 value("SELECT payment_status||'|'||paid_amount FROM orders WHERE id=1")),
