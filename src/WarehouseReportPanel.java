@@ -199,7 +199,7 @@ public class WarehouseReportPanel extends JPanel {
                 LEFT JOIN minimum_stock sm ON sm.product_id = p.id
                 LEFT JOIN product_suppliers ps
                   ON ps.product_id=p.id AND ps.is_preferred=1
-                WHERE p.active=1
+                WHERE p.active=1 OR p.quantity<>0
                 ORDER BY p.name
             """;
 
@@ -231,7 +231,10 @@ public class WarehouseReportPanel extends JPanel {
                     // Stock thresholds are based on what is actually available
                     // after customer reservations. Valuation remains physical stock.
                     String status;
-                    if (availableStock <= 0) {
+                    boolean active = rs.getInt("active") == 1;
+                    if (!active) {
+                        status = "INACTIVE";
+                    } else if (availableStock <= 0) {
                         status = "OUT OF STOCK";
                         outOfStock++;
                     } else if (minQuantity > 0 && availableStock < minQuantity) {
