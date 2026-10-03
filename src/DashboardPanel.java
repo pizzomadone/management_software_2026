@@ -150,7 +150,7 @@ public class DashboardPanel extends JPanel {
         JPanel cards = new JPanel(new GridLayout(2, 4, 10, 10));
         cards.setOpaque(false);
         cards.add(createKPICard("Stock at last purchase cost", "—", SECONDARY_COLOR, "warehouseValue"));
-        cards.add(createKPICard("Stock at sale price", "—", SECONDARY_COLOR, "warehouseSaleValue"));
+        cards.add(createKPICard("Stock at net sale price", "—", SECONDARY_COLOR, "warehouseSaleValue"));
         cards.add(createKPICard("Low Stock Products", "—", DANGER_COLOR, "lowStock"));
         cards.add(createKPICard("Out of Stock Products", "—", WARNING_COLOR, "zeroStock"));
         cards.add(createKPICard("Monthly order sales (excl. VAT)", "—", SUCCESS_COLOR, "monthRevenue"));
@@ -508,13 +508,13 @@ public class DashboardPanel extends JPanel {
             double warehouseSaleValue = 0;
             int zeroCostCount = 0;
             int negativeStockCount = 0;
-            String warehouseQuery = "SELECT quantity, acquisition_cost, price FROM products WHERE active = 1";
+            String warehouseQuery = "SELECT quantity, acquisition_cost, sale_price_ex_vat FROM products WHERE active = 1";
             try (Statement stmt = conn.createStatement();
                  ResultSet rs = stmt.executeQuery(warehouseQuery)) {
                 while (rs.next()) {
                     int quantity = Numbers.quantity(rs.getObject("quantity"));
                     double cost = Numbers.nonNegative(rs.getObject("acquisition_cost"));
-                    double price = Numbers.nonNegative(rs.getObject("price"));
+                    double price = Numbers.nonNegative(rs.getObject("sale_price_ex_vat"));
                     warehouseValue = Numbers.add(warehouseValue, Numbers.stockValue(quantity, cost));
                     warehouseSaleValue = Numbers.add(warehouseSaleValue, Numbers.stockValue(quantity, price));
                     if (quantity > 0 && cost == 0) zeroCostCount++;
@@ -860,7 +860,7 @@ public class DashboardPanel extends JPanel {
             String query = """
                 SELECT p.name,
                        SUM(od.quantity) as total_qty,
-                       SUM(warestat_line_total(od.quantity,od.unit_price)) as total_revenue
+                       SUM(warestat_line_total(od.quantity,od.sale_unit_price_ex_vat)) as total_revenue
                 FROM order_details od
                 JOIN products p ON od.product_id = p.id
                 JOIN orders o ON od.order_id = o.id
@@ -903,7 +903,7 @@ public class DashboardPanel extends JPanel {
             // Get all products with their revenue, sorted by revenue
             String query = """
                 SELECT p.id, p.name,
-                       COALESCE(SUM(CASE WHEN o.status='Completed' THEN warestat_line_total(od.quantity,od.unit_price) ELSE 0 END), 0) as revenue
+                       COALESCE(SUM(CASE WHEN o.status='Completed' THEN warestat_line_total(od.quantity,od.sale_unit_price_ex_vat) ELSE 0 END), 0) as revenue
                 FROM products p
                 LEFT JOIN order_details od ON p.id = od.product_id
                 LEFT JOIN orders o ON od.order_id = o.id AND o.status = 'Completed'
