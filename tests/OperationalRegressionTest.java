@@ -93,7 +93,8 @@ public class OperationalRegressionTest extends RegressionTest {
             GridBagConstraints g=new GridBagConstraints();g.gridy=0;
             Product p=new Product(1,"A","Product A","",10,10);
             call(details,"addPreferredSupplierCostLine",
-                new Class<?>[]{JPanel.class,GridBagConstraints.class,Product.class},row,g,p);
+                new Class<?>[]{JPanel.class,GridBagConstraints.class,Product.class,Double.class},
+                row,g,p,7.0);
             require(Arrays.stream(row.getComponents()).noneMatch(c->c instanceof JButton),
                 "Product Details still uses a button for purchase-cost help");
             require(Arrays.stream(row.getComponents()).anyMatch(c ->
@@ -110,11 +111,11 @@ public class OperationalRegressionTest extends RegressionTest {
             require("1".equals(value("SELECT COUNT(*) FROM warehouse_notifications WHERE status='NEW'")),"Duplicate display text changed another notification");
         });
         test("warehouse valuation agrees with dashboard and zero cost margin",()->{
-            fresh();sql("UPDATE products SET sale_price_ex_vat=10,sale_price_inc_vat=10,vat_rate=0,acquisition_cost=0.004,quantity=1 WHERE id=1");sql("UPDATE products SET acquisition_cost=99,active=0 WHERE id=2");
+            fresh();sql("UPDATE products SET sale_price_ex_vat=10,sale_price_inc_vat=10,vat_rate=0,acquisition_cost=99,quantity=1 WHERE id=1");sql("UPDATE products SET acquisition_cost=99,active=0 WHERE id=2");sql("UPDATE product_suppliers SET purchase_price=0.004 WHERE product_id=1 AND is_preferred=1");
             WarehouseReportPanel report=new WarehouseReportPanel();DefaultTableModel model=(DefaultTableModel)get(report,"productsModel");require(model.getRowCount()==1,"Inactive catalog included");
             DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
             require(((JLabel)get(dash,"warehouseValueLabel")).getText().equals(SettingsPanel.formatCurrency(Numbers.nonNegative(model.getValueAt(0,6)))),"Valuation rounding differs");
-            sql("UPDATE products SET acquisition_cost=0 WHERE id=1");call(dash,"loadKPIData");require(((JLabel)get(dash,"avgMarginLabel")).getText().equals("100.0% *"),"Zero cost margin is not 100%");
+            sql("UPDATE product_suppliers SET purchase_price=0 WHERE product_id=1 AND is_preferred=1");call(dash,"loadKPIData");require(((JLabel)get(dash,"avgMarginLabel")).getText().equals("100.0% *"),"Zero preferred-supplier cost margin is not 100%");
         });
         test("monthly invoiced total includes the exact first millisecond",()->{
             fresh();Calendar month=Calendar.getInstance();month.set(Calendar.DAY_OF_MONTH,1);month.set(Calendar.HOUR_OF_DAY,0);month.set(Calendar.MINUTE,0);month.set(Calendar.SECOND,0);month.set(Calendar.MILLISECOND,0);
@@ -122,14 +123,15 @@ public class OperationalRegressionTest extends RegressionTest {
             DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");require(kpi(dash,"monthInvoicedLabel").equals(SettingsPanel.formatCurrency(10)),"Wrong monthly invoice boundary/status");
         });
         test("stock at zero cost is distinct from sale value and an empty warehouse",()->{
-            fresh();sql("UPDATE products SET quantity=10,acquisition_cost=0,sale_price_ex_vat=12.50,sale_price_inc_vat=12.50,vat_rate=0 WHERE id=1");
+            fresh();sql("UPDATE products SET quantity=10,acquisition_cost=99,sale_price_ex_vat=12.50,sale_price_inc_vat=12.50,vat_rate=0 WHERE id=1");
+            sql("UPDATE product_suppliers SET purchase_price=0 WHERE product_id=1 AND is_preferred=1");
             sql("UPDATE products SET active=0,quantity=100,acquisition_cost=99 WHERE id=2");
             DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
             require(kpi(dash,"warehouseValueLabel").equals(SettingsPanel.formatCurrency(0)+" *"),"Invented an acquisition cost");
             require(kpi(dash,"warehouseSaleValueLabel").equals(SettingsPanel.formatCurrency(125)),"Sale value missing or inactive stock included");
             require(kpi(dash,"zeroCostCountLabel").equals("1"),"Zero cost is not explained");
-            sql("UPDATE products SET acquisition_cost=5 WHERE id=1");call(dash,"loadKPIData");
-            require(kpi(dash,"warehouseValueLabel").equals(SettingsPanel.formatCurrency(50)) && kpi(dash,"zeroCostCountLabel").equals("0"),"Cost edit not reflected");
+            sql("UPDATE product_suppliers SET purchase_price=5 WHERE product_id=1 AND is_preferred=1");call(dash,"loadKPIData");
+            require(kpi(dash,"warehouseValueLabel").equals(SettingsPanel.formatCurrency(50)) && kpi(dash,"zeroCostCountLabel").equals("0"),"Preferred supplier cost edit not reflected");
             sql("DELETE FROM products");call(dash,"loadKPIData");
             require(kpi(dash,"warehouseValueLabel").equals(SettingsPanel.formatCurrency(0)) && kpi(dash,"warehouseSaleValueLabel").equals(SettingsPanel.formatCurrency(0)),"Empty warehouse retained old values");
         });
@@ -201,8 +203,10 @@ public class OperationalRegressionTest extends RegressionTest {
             require(kpi(dash,"monthRevenueLabel").equals(SettingsPanel.formatCurrency(30)) && kpi(dash,"monthInvoicedLabel").equals(SettingsPanel.formatCurrency(0)),"Invoice cancellation incorrectly cancelled the independent order");
         });
         test("potential stock margin is value weighted and handles loss free cost and no denominator",()->{
-            fresh();sql("UPDATE products SET quantity=1,sale_price_ex_vat=100,sale_price_inc_vat=100,vat_rate=0,acquisition_cost=90 WHERE id=1");
-            sql("UPDATE products SET quantity=9,sale_price_ex_vat=10,sale_price_inc_vat=10,vat_rate=0,acquisition_cost=1 WHERE id=2");
+            fresh();sql("UPDATE products SET quantity=1,sale_price_ex_vat=100,sale_price_inc_vat=100,vat_rate=0,acquisition_cost=999 WHERE id=1");
+            sql("UPDATE products SET quantity=9,sale_price_ex_vat=10,sale_price_inc_vat=10,vat_rate=0,acquisition_cost=999 WHERE id=2");
+            sql("UPDATE product_suppliers SET purchase_price=90 WHERE product_id=1 AND is_preferred=1");
+            sql("UPDATE product_suppliers SET purchase_price=1 WHERE product_id=2 AND is_preferred=1");
             DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
             require(kpi(dash,"warehouseValueLabel").equals(SettingsPanel.formatCurrency(99)) && kpi(dash,"warehouseSaleValueLabel").equals(SettingsPanel.formatCurrency(190)),"Wrong basis for margin");
             require(kpi(dash,"avgMarginLabel").equals("47.9%"),"Used an unweighted product margin average");
@@ -210,9 +214,9 @@ public class OperationalRegressionTest extends RegressionTest {
             require(kpi(dash,"avgMarginLabel").equals("10.0%"),"Negative stock changed potential margin");
             sql("UPDATE products SET quantity=9,active=0 WHERE id=2");call(dash,"loadKPIData");
             require(kpi(dash,"avgMarginLabel").equals("10.0%"),"Inactive stock changed potential margin");
-            sql("UPDATE products SET acquisition_cost=0 WHERE id=1");call(dash,"loadKPIData");
-            require(kpi(dash,"avgMarginLabel").equals("100.0% *"),"Missing purchase cost must mark the margin incomplete");
-            sql("UPDATE products SET acquisition_cost=150 WHERE id=1");call(dash,"loadKPIData");
+            sql("UPDATE product_suppliers SET purchase_price=0 WHERE product_id=1 AND is_preferred=1");call(dash,"loadKPIData");
+            require(kpi(dash,"avgMarginLabel").equals("100.0% *"),"Missing preferred supplier cost must mark the margin incomplete");
+            sql("UPDATE product_suppliers SET purchase_price=150 WHERE product_id=1 AND is_preferred=1");call(dash,"loadKPIData");
             require(kpi(dash,"avgMarginLabel").equals("-50.0%"),"Loss was hidden or confused with markup");
             sql("UPDATE products SET sale_price_ex_vat=0,sale_price_inc_vat=0,vat_rate=0 WHERE id=1");call(dash,"loadKPIData");
             require(kpi(dash,"avgMarginLabel").equals("—"),"Zero denominator produced a fictitious margin");
@@ -236,8 +240,8 @@ public class OperationalRegressionTest extends RegressionTest {
         });
         test("KPI titles notes and explanations translate in every supported language",()->{
             fresh();DashboardPanel dash=new DashboardPanel(null);JPanel panel=(JPanel)call(dash,"createKPIPanel");
-            String[] titles={"Stock at last purchase cost","Stock at net sale price","Monthly order sales (excl. VAT)","Monthly invoiced (excl. VAT)","Potential stock margin",
-                "In-stock products with missing purchase cost","Negative-stock products (excluded from valuation)"};
+            String[] titles={"Stock at preferred supplier cost","Stock at net sale price","Monthly order sales (excl. VAT)","Monthly invoiced (excl. VAT)","Potential stock margin",
+                "In-stock products with missing preferred supplier cost","Negative-stock products (excluded from valuation)"};
             Map<String,String> fields=Map.of("warehouseValue","warehouseValueLabel","warehouseSaleValue","warehouseSaleValueLabel",
                 "lowStock","lowStockCountLabel","zeroStock","zeroStockLabel","monthRevenue","monthRevenueLabel",
                 "monthInvoiced","monthInvoicedLabel","pendingOrders","pendingOrdersLabel","avgMargin","avgMarginLabel");
