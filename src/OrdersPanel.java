@@ -142,13 +142,14 @@ public class OrdersPanel extends JPanel {
             : null);
 
         String linkedInvoice = null;
-        if (isRowSelected && "Completed".equals(status)) {
+        if (isRowSelected) {
             int modelRow = ordersTable.convertRowIndexToModel(viewRow);
             int orderId = (int)tableModel.getValueAt(modelRow, 0);
             linkedInvoice = linkedInvoiceNumber(orderId);
         }
         generateInvoiceButton.setText(I18n.tr(linkedInvoice != null ? "Go to Invoice" : "Generate Invoice"));
-        generateInvoiceButton.setEnabled(isRowSelected && "Completed".equals(status));
+        generateInvoiceButton.setEnabled(isRowSelected
+            && (linkedInvoice != null || "Completed".equals(status)));
     }
 
     private void loadOrders() {
@@ -328,13 +329,6 @@ public class OrdersPanel extends JPanel {
                 return;
             }
             try {
-                if (!"Completed".equals(status)) {
-                    try (PreparedStatement p=DatabaseManager.getInstance().getConnection().prepareStatement("SELECT number FROM invoices WHERE order_id=? LIMIT 1")) {
-                        p.setInt(1,orderId); try (ResultSet r=p.executeQuery()) {
-                            if (r.next()) { Dialogs.showMessageDialog(this,I18n.tr("This order already has an invoice and cannot be modified.")+"\n"+I18n.tr("Invoice")+": "+r.getString(1),I18n.tr("Invoice Already Exists"),JOptionPane.WARNING_MESSAGE); return; }
-                        }
-                    }
-                }
                 Order order = loadOrderDetails(orderId);
                 if (order != null) {
                     showOrderDialog(order);
@@ -557,21 +551,27 @@ public class OrdersPanel extends JPanel {
         return "Completed".equals(status);
     }
 
-    static void updateCompletedOrderPayment(Connection conn, int orderId,
+    static void updateOrderPayment(Connection conn, int orderId,
             String paymentStatus, double requestedPaidAmount) throws SQLException {
         if (!java.util.Set.of("NOT_PAID", "PARTIALLY_PAID", "PAID").contains(paymentStatus))
             throw new SQLException("Invalid payment status");
 
         double total;
+        boolean allowed;
         try (PreparedStatement p = conn.prepareStatement("""
-                SELECT COALESCE(i.total,o.total_inc_vat) AS payment_total
+                SELECT o.status,
+                       EXISTS(SELECT 1 FROM invoices i WHERE i.order_id=o.id) AS has_invoice,
+                       COALESCE((SELECT i.total FROM invoices i WHERE i.order_id=o.id LIMIT 1),
+                                o.total_inc_vat) AS payment_total
                 FROM orders o
-                LEFT JOIN invoices i ON i.order_id=o.id
-                WHERE o.id=? AND o.status='Completed'
+                WHERE o.id=?
                 """)) {
             p.setInt(1, orderId);
             try (ResultSet r = p.executeQuery()) {
-                if (!r.next()) throw new SQLException("Completed order no longer exists");
+                if (!r.next()) throw new SQLException("Order no longer exists");
+                allowed = "Completed".equals(r.getString("status")) || r.getInt("has_invoice") == 1;
+                if (!allowed)
+                    throw new SQLException("Payment-only editing requires a completed order or a linked invoice");
                 total = Numbers.money(java.math.BigDecimal.valueOf(r.getDouble("payment_total")));
             }
         }
@@ -589,13 +589,25 @@ public class OrdersPanel extends JPanel {
         }
 
         try (PreparedStatement p = conn.prepareStatement(
-                "UPDATE orders SET payment_status=?,paid_amount=? WHERE id=? AND status='Completed'")) {
+                "UPDATE orders SET payment_status=?,paid_amount=? WHERE id=?")) {
             p.setString(1, paymentStatus);
             p.setDouble(2, paidAmount);
             p.setInt(3, orderId);
             if (p.executeUpdate() != 1)
-                throw new SQLException("Completed order changed or no longer exists");
+                throw new SQLException("Order changed or no longer exists");
         }
+    }
+
+    static void updateCompletedOrderPayment(Connection conn, int orderId,
+            String paymentStatus, double requestedPaidAmount) throws SQLException {
+        try (PreparedStatement p = conn.prepareStatement(
+                "SELECT 1 FROM orders WHERE id=? AND status='Completed'")) {
+            p.setInt(1, orderId);
+            try (ResultSet r = p.executeQuery()) {
+                if (!r.next()) throw new SQLException("Completed order no longer exists");
+            }
+        }
+        updateOrderPayment(conn, orderId, paymentStatus, requestedPaidAmount);
     }
 
     static void normalizeCompletedOrderPayment(
