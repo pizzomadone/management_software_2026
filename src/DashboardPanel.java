@@ -754,7 +754,12 @@ public class DashboardPanel extends JPanel {
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
-                SELECT o.id, o.order_date, o.status, o.total,
+                SELECT o.id, o.order_date, o.status,
+                       COALESCE(
+                           (SELECT SUM(warestat_line_total(
+                               d.quantity,d.sale_unit_price_inc_vat))
+                            FROM order_details d WHERE d.order_id=o.id),
+                           o.total_ex_vat) AS total_inc_vat,
                        c.first_name || ' ' || c.last_name as customer_name,
                        julianday('now') - julianday(o.order_date) as days_old
                 FROM orders o
@@ -773,7 +778,7 @@ public class DashboardPanel extends JPanel {
                     int id = rs.getInt("id");
                     String date = rs.getString("order_date");
                     String status = rs.getString("status");
-                    double total = rs.getDouble("total");
+                    double total = rs.getDouble("total_inc_vat");
                     String customer = rs.getString("customer_name");
                     int daysOld = (int) rs.getDouble("days_old");
 
