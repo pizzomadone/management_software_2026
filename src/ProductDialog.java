@@ -184,7 +184,7 @@ public class ProductDialog extends JDialog {
         vatRateField.setText(String.valueOf(SettingsPanel.getDefaultVatRate()));
         activeCheckBox = new JCheckBox("", true);
 
-        addFormRow(stockPanel, 0, "Price *:", withCurrencyUnit(priceField));
+        addFormRow(stockPanel, 0, "Sale Price incl. VAT *:", withCurrencyUnit(priceField));
         int pricingRow=1;
         if (product == null) {
             addFormRow(stockPanel, pricingRow++, "Purchase Cost *:", withCurrencyUnit(acquisitionCostField));
@@ -775,7 +775,7 @@ public class ProductDialog extends JDialog {
             if (name.isEmpty())
                 throw new IllegalArgumentException(I18n.tr("Product name is required."));
 
-            double price = readNonNegativeField(priceField, "Price");
+            double salePriceIncVat = readNonNegativeField(priceField, "Sale Price incl. VAT");
             int quantity = Numbers.quantity(quantitySpinner.getValue());
             String category = canonicalComboValue(categoryComboBox);
             String alternativeSku = alternativeSkuField.getText().trim();
@@ -796,6 +796,7 @@ public class ProductDialog extends JDialog {
             }
             String warehousePosition = warehousePositionField.getText().trim();
             double vatRate = readVatRate();
+            double salePriceExVat = SalePrice.exVatFromIncVat(salePriceIncVat, vatRate);
 
             if (product != null && supplierId != null &&
                     preferredSupplierChanged(supplierId)) {
@@ -842,18 +843,19 @@ public class ProductDialog extends JDialog {
 
                 if (product == null) {
                     String query = """
-                        INSERT INTO products (code, name, description, price, quantity,
+                        INSERT INTO products (code, name, description, sale_price_ex_vat, sale_price_inc_vat, quantity,
                             category, alternative_sku, weight, unit_of_measure,
                             acquisition_cost, active, warehouse_position, vat_rate)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """;
                     try (PreparedStatement pstmt = conn.prepareStatement(query, Statement.RETURN_GENERATED_KEYS)) {
                         pstmt.setString(1, code); pstmt.setString(2, name); pstmt.setString(3, description);
-                        pstmt.setDouble(4, price); pstmt.setInt(5, 0); pstmt.setString(6, category);
-                        pstmt.setString(7, alternativeSku); pstmt.setDouble(8, weight);
-                        pstmt.setString(9, unitOfMeasure); pstmt.setDouble(10, acquisitionCost);
-                        pstmt.setInt(11, active ? 1 : 0);
-                        pstmt.setString(12, warehousePosition); pstmt.setDouble(13, vatRate);
+                        pstmt.setDouble(4, salePriceExVat); pstmt.setDouble(5, salePriceIncVat);
+                        pstmt.setInt(6, 0); pstmt.setString(7, category);
+                        pstmt.setString(8, alternativeSku); pstmt.setDouble(9, weight);
+                        pstmt.setString(10, unitOfMeasure); pstmt.setDouble(11, acquisitionCost);
+                        pstmt.setInt(12, active ? 1 : 0);
+                        pstmt.setString(13, warehousePosition); pstmt.setDouble(14, vatRate);
                         pstmt.executeUpdate();
                         try (ResultSet keys = pstmt.getGeneratedKeys()) {
                             if (!keys.next()) throw new SQLException("Missing product identifier");
@@ -863,7 +865,7 @@ public class ProductDialog extends JDialog {
                 } else {
                     String query = """
                         UPDATE products
-                        SET code = ?, name = ?, description = ?, price = ?, quantity = ?,
+                        SET code = ?, name = ?, description = ?, sale_price_ex_vat = ?, sale_price_inc_vat = ?, quantity = ?,
                             category = ?, alternative_sku = ?, weight = ?, unit_of_measure = ?,
                             acquisition_cost = ?, active = ?,
                             warehouse_position = ?, vat_rate = ?
@@ -871,12 +873,13 @@ public class ProductDialog extends JDialog {
                     """;
                     try (PreparedStatement pstmt = conn.prepareStatement(query)) {
                         pstmt.setString(1, code); pstmt.setString(2, name); pstmt.setString(3, description);
-                        pstmt.setDouble(4, price); pstmt.setInt(5, oldQuantity); pstmt.setString(6, category);
-                        pstmt.setString(7, alternativeSku); pstmt.setDouble(8, weight);
-                        pstmt.setString(9, unitOfMeasure); pstmt.setDouble(10, acquisitionCost);
-                        pstmt.setInt(11, active ? 1 : 0);
-                        pstmt.setString(12, warehousePosition); pstmt.setDouble(13, vatRate);
-                        pstmt.setInt(14, product.getId());
+                        pstmt.setDouble(4, salePriceExVat); pstmt.setDouble(5, salePriceIncVat);
+                        pstmt.setInt(6, oldQuantity); pstmt.setString(7, category);
+                        pstmt.setString(8, alternativeSku); pstmt.setDouble(9, weight);
+                        pstmt.setString(10, unitOfMeasure); pstmt.setDouble(11, acquisitionCost);
+                        pstmt.setInt(12, active ? 1 : 0);
+                        pstmt.setString(13, warehousePosition); pstmt.setDouble(14, vatRate);
+                        pstmt.setInt(15, product.getId());
                         pstmt.executeUpdate();
                     }
                 }
