@@ -622,10 +622,10 @@ public class StockManager {
         public int getRequestedQuantity() { return requestedQuantity; }
 
         public String getFormattedMessage() {
-            return String.format(
-                "Physical: %d, Reserved: %d, Available: %d, Requested: %d",
-                physicalStock, reservedStock, availableStock, requestedQuantity
-            );
+            return I18n.tr("Physical") + ": " + physicalStock
+                + ", " + I18n.tr("Reserved") + ": " + reservedStock
+                + ", " + I18n.tr("Available") + ": " + availableStock
+                + ", " + I18n.tr("Requested") + ": " + requestedQuantity;
         }
     }
 }
