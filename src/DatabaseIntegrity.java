@@ -5,19 +5,21 @@ import java.util.*;
 public final class DatabaseIntegrity {
     private DatabaseIntegrity() {}
 
-    private static final Map<String, String> CORE = Map.of(
-        "products", "id code name price quantity",
+    /** Minimal shape accepted before migrations when validating an older backup. */
+    private static final Map<String, String> LEGACY_CORE = Map.of(
+        "products", "id code name quantity",
         "customers", "id first_name last_name email phone address",
-        "orders", "id customer_id order_date status total",
-        "order_details", "id order_id product_id quantity unit_price");
+        "orders", "id customer_id order_date status",
+        "order_details", "id order_id product_id quantity");
+
     private static final Map<String, String> CURRENT = Map.ofEntries(
-        Map.entry("products", "description reserved_quantity category alternative_sku weight unit_of_measure acquisition_cost active supplier_id warehouse_position vat_rate"),
+        Map.entry("products", "id code name description sale_price_ex_vat sale_price_inc_vat quantity reserved_quantity category alternative_sku weight unit_of_measure acquisition_cost active supplier_id warehouse_position vat_rate"),
         Map.entry("product_images", "id product_id filename is_primary sort_order"),
         Map.entry("suppliers", "id company_name vat_number tax_code address phone email certified_email website notes"),
-        Map.entry("orders", "payment_status paid_amount"),
-        Map.entry("order_details", "cost_total"),
+        Map.entry("orders", "id customer_id order_date status total_ex_vat payment_status paid_amount"),
+        Map.entry("order_details", "id order_id product_id quantity sale_unit_price_ex_vat sale_unit_price_inc_vat vat_rate cost_total"),
         Map.entry("invoices", "id number date customer_id taxable_amount vat total status payment_status paid_amount order_id currency_code customer_snapshot company_snapshot logo_snapshot snapshot_version"),
-        Map.entry("invoice_details", "id invoice_id product_id quantity unit_price vat_rate total product_code product_name"),
+        Map.entry("invoice_details", "id invoice_id product_id quantity sale_unit_price_ex_vat sale_unit_price_inc_vat vat_rate total product_code product_name"),
         Map.entry("supplier_orders", "id supplier_id number order_date expected_delivery_date received_date status total notes"),
         Map.entry("supplier_order_details", "id order_id product_id quantity unit_price total notes"),
         Map.entry("product_suppliers", "id product_id supplier_id supplier_product_code purchase_price is_preferred notes"),
@@ -35,8 +37,7 @@ public final class DatabaseIntegrity {
             if (!r.next() || !"ok".equalsIgnoreCase(r.getString(1)))
                 throw new SQLException("SQLite integrity check failed");
         }
-        requireColumns(c, CORE);
-        if (!legacy) requireColumns(c, CURRENT);
+        requireColumns(c, legacy ? LEGACY_CORE : CURRENT);
         try (Statement s = c.createStatement(); ResultSet r = s.executeQuery("PRAGMA foreign_key_check")) {
             if (r.next()) throw new SQLException("Orphaned database reference in " + r.getString(1));
         }
@@ -71,14 +72,44 @@ public final class DatabaseIntegrity {
     private static String nullableAmount(String column) {
         return "NEW."+column+" IS NOT NULL AND ("+amount(column)+")";
     }
+
     private static Map<String,String> rules(Connection c) throws SQLException {
         Map<String,String> rules=new LinkedHashMap<>();
-        rules.put("products",integer("quantity",Integer.MIN_VALUE)+" OR "+integer("reserved_quantity",0)+" OR "+amount("price")+" OR "+amount("acquisition_cost")+" OR "+amount("vat_rate")+" OR NEW.vat_rate>100 OR "+amount("weight"));
-        String line=integer("quantity",1)+" OR "+amount("unit_price");
-        rules.put("order_details",line+" OR ("+nullableAmount("cost_total")+")");
-        rules.put("invoice_details",line+" OR "+amount("vat_rate")+" OR NEW.vat_rate>100 OR "+amount("total"));
-        rules.put("supplier_order_details",line+" OR "+amount("total"));
-        rules.put("orders",amount("total")+" OR "+amount("paid_amount"));
+
+        String productPrice = hasColumn(c,"products","sale_price_ex_vat")
+            ? "sale_price_ex_vat" : "price";
+        String productRule = integer("quantity",Integer.MIN_VALUE)
+            +" OR "+integer("reserved_quantity",0)
+            +" OR "+amount(productPrice)
+            +" OR "+amount("acquisition_cost")
+            +" OR "+amount("vat_rate")+" OR NEW.vat_rate>100 OR "+amount("weight");
+        if (hasColumn(c,"products","sale_price_inc_vat"))
+            productRule += " OR " + amount("sale_price_inc_vat");
+        rules.put("products",productRule);
+
+        String orderUnitPrice = hasColumn(c,"order_details","sale_unit_price_ex_vat")
+            ? "sale_unit_price_ex_vat" : "unit_price";
+        String orderLine = integer("quantity",1)+" OR "+amount(orderUnitPrice);
+        if (hasColumn(c,"order_details","sale_unit_price_inc_vat"))
+            orderLine += " OR " + amount("sale_unit_price_inc_vat");
+        if (hasColumn(c,"order_details","vat_rate"))
+            orderLine += " OR " + amount("vat_rate") + " OR NEW.vat_rate>100";
+        rules.put("order_details",orderLine+" OR ("+nullableAmount("cost_total")+")");
+
+        String invoiceUnitPrice = hasColumn(c,"invoice_details","sale_unit_price_ex_vat")
+            ? "sale_unit_price_ex_vat" : "unit_price";
+        String invoiceLine = integer("quantity",1)+" OR "+amount(invoiceUnitPrice);
+        if (hasColumn(c,"invoice_details","sale_unit_price_inc_vat"))
+            invoiceLine += " OR " + amount("sale_unit_price_inc_vat");
+        invoiceLine += " OR "+amount("vat_rate")+" OR NEW.vat_rate>100 OR "+amount("total");
+        rules.put("invoice_details",invoiceLine);
+
+        String supplierLine=integer("quantity",1)+" OR "+amount("unit_price");
+        rules.put("supplier_order_details",supplierLine+" OR "+amount("total"));
+
+        String orderTotal = hasColumn(c,"orders","total_ex_vat") ? "total_ex_vat" : "total";
+        rules.put("orders",amount(orderTotal)+" OR "+amount("paid_amount"));
+
         String invoiceRule=amount("taxable_amount")+" OR "+amount("vat")+" OR "+amount("total");
         if (hasColumn(c, "invoices", "paid_amount")) invoiceRule += " OR " + amount("paid_amount");
         rules.put("invoices", invoiceRule);
@@ -91,6 +122,7 @@ public final class DatabaseIntegrity {
         rules.put("minimum_stock",integer("minimum_quantity",0)+" OR "+integer("reorder_quantity",0)+" OR (NEW.lead_time_days IS NOT NULL AND ("+integer("lead_time_days",0)+"))");
         return rules;
     }
+
     public static void installGuards(Connection c) throws SQLException {
         for(var rule:rules(c).entrySet())guard(c,rule.getKey(),rule.getValue());
     }
