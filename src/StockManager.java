@@ -196,6 +196,45 @@ public class StockManager {
         }
     }
 
+    private static void requireAvailableStockForCompletion(
+            Connection conn, String documentType, int documentId) throws SQLException {
+        String query = """
+            SELECT p.id, p.code, p.name, p.quantity,
+                   SUM(r.reserved_quantity) AS requested_quantity,
+                   COALESCE((
+                       SELECT SUM(other.reserved_quantity)
+                       FROM stock_reservations other
+                       WHERE other.product_id = p.id
+                         AND other.status = 'ACTIVE'
+                         AND NOT (other.document_type = ? AND other.document_id = ?)
+                   ), 0) AS other_reserved
+            FROM stock_reservations r
+            JOIN products p ON p.id = r.product_id
+            WHERE r.document_type = ? AND r.document_id = ? AND r.status = 'ACTIVE'
+            GROUP BY p.id, p.code, p.name, p.quantity
+        """;
+
+        try (PreparedStatement pstmt = conn.prepareStatement(query)) {
+            pstmt.setString(1, documentType);
+            pstmt.setInt(2, documentId);
+            pstmt.setString(3, documentType);
+            pstmt.setInt(4, documentId);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                while (rs.next()) {
+                    long requested = rs.getLong("requested_quantity");
+                    long available = (long)rs.getInt("quantity") - rs.getLong("other_reserved");
+                    if (requested > available) {
+                        throw new SQLException(
+                            I18n.tr("Insufficient Stock") + ": "
+                            + rs.getString("name") + " [" + rs.getString("code") + "]. "
+                            + I18n.format("Insufficient quantity. Current availability: {0}", available)
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     /**
      * Complete a stock reservation and decrement actual stock
      * This converts reserved stock into actual stock decrease
@@ -206,6 +245,11 @@ public class StockManager {
             int documentId,
             Date documentDate,
             String documentNumber) throws SQLException {
+
+        // Never post FIFO consumption or warehouse movements when the document
+        // would consume stock already unavailable because of physical stock or
+        // other active reservations.
+        requireAvailableStockForCompletion(conn, documentType, documentId);
 
         // Freeze the economic cost of a completed customer sale before changing
         // physical stock. A line may consume more than one FIFO lot.
