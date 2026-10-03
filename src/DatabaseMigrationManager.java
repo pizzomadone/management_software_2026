@@ -42,7 +42,9 @@ public final class DatabaseMigrationManager {
         new Migration("015", "Store actual supplier receipt date",
             DatabaseMigrationManager::migrateSupplierReceiptDate),
         new Migration("016", "Separate invoice document status from payment status",
-            DatabaseMigrationManager::migrateInvoicePaymentStatus)
+            DatabaseMigrationManager::migrateInvoicePaymentStatus),
+        new Migration("017", "Use explicit VAT-inclusive and VAT-exclusive sale price fields",
+            DatabaseMigrationManager::migrateSalePriceSemantics)
     );
 
     private DatabaseMigrationManager() {}
@@ -283,56 +285,144 @@ public final class DatabaseMigrationManager {
 
         try (Statement s = c.createStatement()) {
             // In legacy databases, Paid was incorrectly used as a document status.
-            // Preserve that information as payment data only for standalone invoices.
+            // Preserve the recorded payment only for standalone invoices.
             s.executeUpdate("""
                 UPDATE invoices
                 SET payment_status='PAID', paid_amount=total
                 WHERE status='Paid' AND order_id IS NULL
                 """);
 
-            // Linked invoices always read payment from the customer order.
-            // Keep their local fields harmless; they are not a second source of truth.
+            // Linked invoices never keep a second payment source.
             s.executeUpdate("""
                 UPDATE invoices
                 SET payment_status='NOT_PAID', paid_amount=0
                 WHERE order_id IS NOT NULL
                 """);
 
-            // A linked PAID order means the whole linked invoice is settled.
-            // Normalize the stored amount to the invoice gross total, not the order net total.
-            s.executeUpdate("""
-                UPDATE orders
-                SET paid_amount=(
-                    SELECT i.total FROM invoices i WHERE i.order_id=orders.id
-                )
-                WHERE payment_status='PAID'
-                  AND EXISTS (SELECT 1 FROM invoices i WHERE i.order_id=orders.id)
-                """);
-
-            // Clean impossible legacy partial states against the linked invoice total.
-            s.executeUpdate("""
-                UPDATE orders
-                SET payment_status='NOT_PAID', paid_amount=0
-                WHERE payment_status='PARTIALLY_PAID' AND paid_amount<=0
-                """);
-            s.executeUpdate("""
-                UPDATE orders
-                SET payment_status='PAID',
-                    paid_amount=(SELECT i.total FROM invoices i WHERE i.order_id=orders.id)
-                WHERE payment_status='PARTIALLY_PAID'
-                  AND EXISTS (
-                    SELECT 1 FROM invoices i
-                    WHERE i.order_id=orders.id AND orders.paid_amount>=i.total
-                  )
-                """);
-
-            // Paid is no longer a document lifecycle state.
             s.executeUpdate("""
                 UPDATE invoices
                 SET status='Issued'
                 WHERE status='Paid'
                 """);
         }
+        DatabaseIntegrity.installGuards(c);
+    }
+
+    private static void migrateSalePriceSemantics(Connection c) throws SQLException {
+        // Rename ambiguous sale columns without changing their existing numeric meaning.
+        // Legacy product.price and sales unit_price values were VAT-exclusive.
+        try (Statement s = c.createStatement()) {
+            if (hasColumn(c, "products", "price") &&
+                    !hasColumn(c, "products", "sale_price_ex_vat")) {
+                s.execute("ALTER TABLE products RENAME COLUMN price TO sale_price_ex_vat");
+            }
+            if (hasColumn(c, "orders", "total") &&
+                    !hasColumn(c, "orders", "total_ex_vat")) {
+                s.execute("ALTER TABLE orders RENAME COLUMN total TO total_ex_vat");
+            }
+            if (hasColumn(c, "order_details", "unit_price") &&
+                    !hasColumn(c, "order_details", "sale_unit_price_ex_vat")) {
+                s.execute("ALTER TABLE order_details RENAME COLUMN unit_price TO sale_unit_price_ex_vat");
+            }
+            if (hasColumn(c, "invoice_details", "unit_price") &&
+                    !hasColumn(c, "invoice_details", "sale_unit_price_ex_vat")) {
+                s.execute("ALTER TABLE invoice_details RENAME COLUMN unit_price TO sale_unit_price_ex_vat");
+            }
+        }
+
+        addColumnIfMissing(c, "products", "sale_price_inc_vat",
+            "ALTER TABLE products ADD COLUMN sale_price_inc_vat REAL NOT NULL DEFAULT 0");
+        addColumnIfMissing(c, "order_details", "sale_unit_price_inc_vat",
+            "ALTER TABLE order_details ADD COLUMN sale_unit_price_inc_vat REAL NOT NULL DEFAULT 0");
+        addColumnIfMissing(c, "order_details", "vat_rate",
+            "ALTER TABLE order_details ADD COLUMN vat_rate REAL NOT NULL DEFAULT 0");
+        addColumnIfMissing(c, "invoice_details", "sale_unit_price_inc_vat",
+            "ALTER TABLE invoice_details ADD COLUMN sale_unit_price_inc_vat REAL NOT NULL DEFAULT 0");
+
+        // Existing products: preserve the old VAT-exclusive price exactly and derive
+        // only the new customer-facing price.
+        try (PreparedStatement read = c.prepareStatement(
+                "SELECT id,sale_price_ex_vat,vat_rate FROM products");
+             PreparedStatement write = c.prepareStatement(
+                "UPDATE products SET sale_price_inc_vat=? WHERE id=?");
+             ResultSet r = read.executeQuery()) {
+            while (r.next()) {
+                write.setDouble(1, SalePrice.incVatFromExVat(
+                    r.getDouble("sale_price_ex_vat"), r.getDouble("vat_rate")));
+                write.setInt(2, r.getInt("id"));
+                write.addBatch();
+            }
+            write.executeBatch();
+        }
+
+        // Old customer orders did not snapshot VAT. Current product VAT is the only
+        // reconstructable source, so use it without altering the stored net price.
+        try (PreparedStatement read = c.prepareStatement("""
+                SELECT d.id,d.sale_unit_price_ex_vat,
+                       COALESCE(p.vat_rate,0) AS vat_rate
+                FROM order_details d
+                LEFT JOIN products p ON p.id=d.product_id
+                """);
+             PreparedStatement write = c.prepareStatement("""
+                UPDATE order_details
+                SET vat_rate=?,sale_unit_price_inc_vat=?
+                WHERE id=?
+                """);
+             ResultSet r = read.executeQuery()) {
+            while (r.next()) {
+                double vatRate = r.getDouble("vat_rate");
+                double net = r.getDouble("sale_unit_price_ex_vat");
+                write.setDouble(1, vatRate);
+                write.setDouble(2, SalePrice.incVatFromExVat(net, vatRate));
+                write.setInt(3, r.getInt("id"));
+                write.addBatch();
+            }
+            write.executeBatch();
+        }
+
+        // Invoices already have their historical VAT rate, so their gross unit price
+        // can be reconstructed deterministically without changing invoice totals.
+        try (PreparedStatement read = c.prepareStatement(
+                "SELECT id,sale_unit_price_ex_vat,vat_rate FROM invoice_details");
+             PreparedStatement write = c.prepareStatement(
+                "UPDATE invoice_details SET sale_unit_price_inc_vat=? WHERE id=?");
+             ResultSet r = read.executeQuery()) {
+            while (r.next()) {
+                write.setDouble(1, SalePrice.incVatFromExVat(
+                    r.getDouble("sale_unit_price_ex_vat"), r.getDouble("vat_rate")));
+                write.setInt(2, r.getInt("id"));
+                write.addBatch();
+            }
+            write.executeBatch();
+        }
+
+        // Never invent a received payment. Preserve paid_amount and only make its
+        // status agree with the customer-facing amount now known for the order.
+        try (PreparedStatement read = c.prepareStatement("""
+                SELECT o.id,o.paid_amount,
+                       COALESCE(i.total,
+                           (SELECT SUM(warestat_line_total(
+                               d.quantity,d.sale_unit_price_inc_vat))
+                            FROM order_details d WHERE d.order_id=o.id),
+                           o.total_ex_vat) AS amount_due
+                FROM orders o
+                LEFT JOIN invoices i ON i.order_id=o.id
+                """);
+             PreparedStatement write = c.prepareStatement(
+                "UPDATE orders SET payment_status=? WHERE id=?");
+             ResultSet r = read.executeQuery()) {
+            while (r.next()) {
+                double paid = Numbers.nonNegative(r.getObject("paid_amount"));
+                double due = Numbers.nonNegative(r.getObject("amount_due"));
+                String status = paid <= 0 ? "NOT_PAID"
+                    : paid + 0.004 >= due ? "PAID" : "PARTIALLY_PAID";
+                write.setString(1, status);
+                write.setInt(2, r.getInt("id"));
+                write.addBatch();
+            }
+            write.executeBatch();
+        }
+
         DatabaseIntegrity.installGuards(c);
     }
 
