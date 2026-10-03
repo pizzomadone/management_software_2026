@@ -766,7 +766,7 @@ public class DashboardPanel extends JPanel {
                        julianday('now') - julianday(o.order_date) as days_old
                 FROM orders o
                 LEFT JOIN customers c ON o.customer_id = c.id
-                WHERE o.status != 'Completed' AND o.status != 'Cancelled'
+                WHERE o.status IN ('Reservation','New','In Progress')
                 ORDER BY o.order_date ASC
                 LIMIT 15
             """;
