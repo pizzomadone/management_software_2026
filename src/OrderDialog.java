@@ -127,9 +127,17 @@ public class OrderDialog extends JDialog {
         orderPanel.add(new JLabel("Status:"), gbc);
 
         gbc.gridx = 3;
-        statusCombo = new JComboBox<>(new String[]{"New", "In Progress", "Completed", "Cancelled"});
+        statusCombo = new JComboBox<>(new String[]{"Reservation", "New", "In Progress", "Completed", "Cancelled"});
         statusCombo.putClientProperty("i18n.values", true);
         orderPanel.add(statusCombo, gbc);
+
+        JLabel orderStatusHelp = Dialogs.clickHelpLabel(I18n.tr("tooltip.order.statusFlow"));
+        gbc.gridx = 4; gbc.gridy = 0; gbc.gridwidth = 1;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.anchor = GridBagConstraints.NORTHEAST;
+        orderPanel.add(orderStatusHelp, gbc);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.anchor = GridBagConstraints.CENTER;
 
         // Payment Status
         gbc.gridx = 0; gbc.gridy = 2; gbc.gridwidth = 1;
@@ -700,10 +708,9 @@ public class OrderDialog extends JDialog {
                     }
                 }
             }
-            // "New" is a commercial reservation only: it must not touch warehouse stock.
-            // Real warehouse availability is required only when the order becomes operational
-            // (In Progress) or is completed directly.
-            if ("In Progress".equals(newStatus) || "Completed".equals(newStatus)) {
+            // Reservation is the only state that does not touch warehouse availability.
+            // New and In Progress reserve the full requested quantity; Completed consumes it.
+            if ("New".equals(newStatus) || "In Progress".equals(newStatus) || "Completed".equals(newStatus)) {
                 Map<String, StockManager.StockAvailability> insufficient =
                     StockManager.checkStockAvailability(
                         conn,
@@ -725,7 +732,8 @@ public class OrderDialog extends JDialog {
                     }
 
                     message.append("\n").append(I18n.tr(
-                        "The order cannot reserve more units than are currently available. Reduce the quantities or replenish stock."));
+                        "With insufficient available stock, the order can only be saved as Reservation. Reservation does not change stock, reserved quantities, lots or FIFO."));
+                    statusCombo.setSelectedItem("Reservation");
 
                     Dialogs.showMessageDialog(this,
                         message.toString(),
@@ -851,11 +859,12 @@ public class OrderDialog extends JDialog {
     private void handleStockForNewStatus(Connection conn, int orderId, String status,
                                          List<StockManager.StockItem> items, Date orderDate) throws SQLException {
         switch (status) {
-            case "New":
+            case "Reservation":
                 // Commercial reservation only: no warehouse reservation, stock movement or FIFO effect.
                 break;
+            case "New":
             case "In Progress":
-                // Operational order: reserve currently available stock without changing physical stock.
+                // Fully covered order: reserve the entire requested quantity without changing physical stock.
                 for (StockManager.StockItem item : items) {
                     StockManager.createOrUpdateReservation(conn, item.getProductId(),
                         "ORDER", orderId, item.getQuantity(), "Order #" + orderId);
