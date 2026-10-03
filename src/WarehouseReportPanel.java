@@ -194,7 +194,7 @@ public class WarehouseReportPanel extends JPanel {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
                 SELECT p.*, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity,
-                       ps.purchase_price AS preferred_supplier_cost
+                       COALESCE(ps.purchase_price,0) AS preferred_supplier_cost
                 FROM products p
                 LEFT JOIN minimum_stock sm ON sm.product_id = p.id
                 LEFT JOIN product_suppliers ps
