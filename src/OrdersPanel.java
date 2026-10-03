@@ -16,6 +16,7 @@ public class OrdersPanel extends JPanel {
     private JButton editButton;
     private JButton deleteButton;
     private JButton generateInvoiceButton;
+    private JButton updatePaymentButton;
     private JButton refreshButton;
     private SimpleDateFormat dateFormat;
     private Window parentWindow;
@@ -72,6 +73,7 @@ public class OrdersPanel extends JPanel {
             new TableInteractionUtil.TableAction("Delete", this::deleteSelectedOrder),
             null, // Separator
             new TableInteractionUtil.TableAction("Generate Invoice", this::generateInvoiceFromOrder),
+            new TableInteractionUtil.TableAction("Update Payment", this::updateSelectedOrderPayment),
             null, // Separator
             new TableInteractionUtil.TableAction("Refresh", this::loadOrders, false)
         );
@@ -95,6 +97,7 @@ public class OrdersPanel extends JPanel {
         editButton = new JButton("Modify");
         deleteButton = new JButton("Delete");
         generateInvoiceButton = new JButton("Generate Invoice");
+        updatePaymentButton = new JButton("Update Payment");
         refreshButton = new JButton("Refresh");
 
         generateInvoiceButton.setFont(generateInvoiceButton.getFont().deriveFont(Font.BOLD));
@@ -105,12 +108,14 @@ public class OrdersPanel extends JPanel {
         editButton.addActionListener(e -> editSelectedOrder());
         deleteButton.addActionListener(e -> deleteSelectedOrder());
         generateInvoiceButton.addActionListener(e -> generateInvoiceFromOrder());
+        updatePaymentButton.addActionListener(e -> updateSelectedOrderPayment());
         refreshButton.addActionListener(e -> loadOrders());
 
         buttonPanel.add(addButton);
         buttonPanel.add(editButton);
         buttonPanel.add(deleteButton);
         buttonPanel.add(generateInvoiceButton);
+        buttonPanel.add(updatePaymentButton);
         buttonPanel.add(refreshButton);
 
         // Main layout
@@ -138,6 +143,7 @@ public class OrdersPanel extends JPanel {
             ? I18n.tr("Reverse the completed sale while preserving FIFO history.")
             : null);
         generateInvoiceButton.setEnabled(isRowSelected && "Completed".equals(status));
+        updatePaymentButton.setEnabled(isRowSelected && "Completed".equals(status));
     }
 
     private void loadOrders() {
@@ -500,6 +506,118 @@ public class OrdersPanel extends JPanel {
 
     static boolean canGenerateInvoice(String status) {
         return "Completed".equals(status);
+    }
+
+    private void updateSelectedOrderPayment() {
+        int selectedRow = ordersTable.getSelectedRow();
+        if (selectedRow == -1) return;
+
+        int modelRow = ordersTable.convertRowIndexToModel(selectedRow);
+        int orderId = (int)tableModel.getValueAt(modelRow, 0);
+        String orderStatus = String.valueOf(tableModel.getValueAt(modelRow, 3));
+        if (!"Completed".equals(orderStatus)) {
+            Dialogs.showMessageDialog(this,
+                I18n.tr("Payment can be updated separately only for completed customer orders."),
+                I18n.tr("Update Payment"), JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        try {
+            Connection conn = DatabaseManager.getInstance().getConnection();
+            double total;
+            String currentStatus;
+            double currentPaid;
+            try (PreparedStatement p = conn.prepareStatement(
+                    "SELECT total,payment_status,paid_amount FROM orders WHERE id=? AND status='Completed'")) {
+                p.setInt(1, orderId);
+                try (ResultSet r = p.executeQuery()) {
+                    if (!r.next()) throw new SQLException("Completed order no longer exists");
+                    total = r.getDouble("total");
+                    currentStatus = r.getString("payment_status");
+                    currentPaid = r.getDouble("paid_amount");
+                }
+            }
+
+            JComboBox<String> payment = new JComboBox<>(
+                new String[]{"Not Paid", "Partially Paid", "Paid"});
+            payment.putClientProperty("i18n.values", true);
+            JTextField amount = new JTextField(Numbers.moneyText(currentPaid), 12);
+            JLabel amountLabel = new JLabel(I18n.tr("Paid Amount:"));
+
+            if ("PAID".equals(currentStatus)) payment.setSelectedItem("Paid");
+            else if ("PARTIALLY_PAID".equals(currentStatus)) payment.setSelectedItem("Partially Paid");
+            else payment.setSelectedItem("Not Paid");
+
+            Runnable refreshAmount = () -> {
+                String selected = String.valueOf(payment.getSelectedItem());
+                boolean partial = "Partially Paid".equals(selected);
+                amount.setEnabled(partial);
+                amountLabel.setText(partial ? I18n.tr("Paid Amount *:") : I18n.tr("Paid Amount:"));
+                if ("Paid".equals(selected)) amount.setText(Numbers.moneyText(total));
+                else if ("Not Paid".equals(selected)) amount.setText("0.00");
+            };
+            payment.addActionListener(e -> refreshAmount.run());
+            refreshAmount.run();
+
+            JPanel form = new JPanel(new GridLayout(2, 2, 8, 8));
+            form.add(new JLabel(I18n.tr("Payment Status:")));
+            form.add(payment);
+            form.add(amountLabel);
+            form.add(amount);
+
+            int choice = Dialogs.showConfirmDialog(this, form,
+                I18n.tr("Update Payment"), JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.PLAIN_MESSAGE);
+            if (choice != JOptionPane.OK_OPTION) return;
+
+            String paymentCode;
+            double paidAmount;
+            String selected = String.valueOf(payment.getSelectedItem());
+            if ("Paid".equals(selected)) {
+                paymentCode = "PAID";
+                paidAmount = Numbers.money(java.math.BigDecimal.valueOf(total));
+            } else if ("Partially Paid".equals(selected)) {
+                paymentCode = "PARTIALLY_PAID";
+                paidAmount = Numbers.money(Numbers.decimal(amount.getText()));
+                if (paidAmount <= 0 || paidAmount >= total) {
+                    Dialogs.showMessageDialog(this,
+                        I18n.tr("Partial paid amount must be greater than zero and less than the total."),
+                        I18n.tr("Invalid Payment"), JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
+            } else {
+                paymentCode = "NOT_PAID";
+                paidAmount = 0.0;
+            }
+
+            DatabaseManager.beginTransaction(conn);
+            try {
+                try (PreparedStatement p = conn.prepareStatement(
+                        "UPDATE orders SET payment_status=?,paid_amount=? WHERE id=? AND status='Completed'")) {
+                    p.setString(1, paymentCode);
+                    p.setDouble(2, paidAmount);
+                    p.setInt(3, orderId);
+                    if (p.executeUpdate() != 1)
+                        throw new SQLException("Completed order changed or no longer exists");
+                }
+                conn.commit();
+            } catch (Exception e) {
+                conn.rollback();
+                throw e;
+            } finally {
+                conn.setAutoCommit(true);
+            }
+
+            loadOrders();
+            Window window = SwingUtilities.getWindowAncestor(this);
+            if (window instanceof MainWindow mainWindow) mainWindow.refreshInvoicesPanel();
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            Dialogs.showMessageDialog(this,
+                I18n.tr("Error while updating payment") + ": " + e.getMessage(),
+                I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
+        }
     }
 
     private void generateInvoiceFromOrder() {
