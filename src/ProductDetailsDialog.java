@@ -16,6 +16,10 @@ public final class ProductDetailsDialog extends JDialog {
         setLayout(new BorderLayout(10, 10));
         ((JComponent)getContentPane()).setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
 
+        JPanel helpBar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+        helpBar.add(purchaseCostHelpButton());
+        add(helpBar, BorderLayout.NORTH);
+
         JPanel content = new ViewportWidthPanel();
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
 
@@ -157,7 +161,7 @@ public final class ProductDetailsDialog extends JDialog {
     private String purchaseCostHelpTooltip() {
         return "<html><div style='width: 390px'>"
             + I18n.tr(
-                "Preferred supplier cost is the current purchase cost saved for the preferred supplier. In Product Details it is read-only.")
+                "Preferred supplier cost is the current purchase cost saved for the preferred supplier.")
             + "<br><br>" + I18n.tr(
                 "When a supplier order is received, its actual unit purchase price becomes the FIFO lot cost and updates that supplier's current cost.")
             + "<br><br>" + I18n.tr(
@@ -201,11 +205,6 @@ public final class ProductDetailsDialog extends JDialog {
         value.setMinimumSize(new Dimension(0, value.getPreferredSize().height));
         value.setMaximumSize(new Dimension(Integer.MAX_VALUE, 42));
         panel.add(value, g);
-
-        g.gridx = 2;
-        g.weightx = 0;
-        g.fill = GridBagConstraints.NONE;
-        panel.add(purchaseCostHelpButton(), g);
 
         g.gridy++;
     }
