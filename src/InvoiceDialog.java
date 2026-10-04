@@ -90,6 +90,12 @@ public class InvoiceDialog extends JDialog {
         return status!=null && !"Draft".equals(status);
     }
 
+    static boolean canRestoreCanceledLinkedInvoice(
+            String currentInvoiceStatus, String newInvoiceStatus, String linkedOrderStatus) {
+        return !("Canceled".equals(currentInvoiceStatus) && "Issued".equals(newInvoiceStatus))
+            || "Completed".equals(linkedOrderStatus);
+    }
+
     private boolean hasLinkedOrder(int invoiceId) {
         try (PreparedStatement p = DatabaseManager.getInstance().getConnection().prepareStatement(
                 "SELECT order_id FROM invoices WHERE id=?")) {
@@ -778,6 +784,7 @@ public class InvoiceDialog extends JDialog {
             try {
                 String currentStatus;
                 Integer currentOrderId;
+                String currentOrderStatus = null;
                 String storedCurrency;
 
                 try (PreparedStatement read = conn.prepareStatement(
@@ -795,6 +802,29 @@ public class InvoiceDialog extends JDialog {
 
                 if (!java.util.Objects.equals(storedCurrency, currencyCode()))
                     throw new SQLException("Invoice currency changed unexpectedly");
+
+                if (currentOrderId != null) {
+                    try (PreparedStatement order = conn.prepareStatement(
+                            "SELECT status FROM orders WHERE id=?")) {
+                        order.setInt(1, currentOrderId);
+                        try (ResultSet r = order.executeQuery()) {
+                            if (!r.next())
+                                throw new SQLException("Linked customer order no longer exists");
+                            currentOrderStatus = r.getString("status");
+                        }
+                    }
+                }
+
+                if (!canRestoreCanceledLinkedInvoice(
+                        currentStatus, newStatus, currentOrderStatus)) {
+                    Dialogs.showMessageDialog(
+                        this,
+                        I18n.tr("A canceled invoice linked to a reversed sale cannot be issued again."),
+                        I18n.tr("Historical Invoice"),
+                        JOptionPane.WARNING_MESSAGE);
+                    conn.rollback();
+                    return;
+                }
 
                 if (!"Draft".equals(currentStatus) && "Draft".equals(newStatus)) {
                     Dialogs.showMessageDialog(
