@@ -53,6 +53,7 @@ public class OrderDialog extends JDialog {
         if (order != null) {
             loadOrderData();
         }
+        initializeLinkedInvoiceLock();
         configureEditability();
     }
     
@@ -69,6 +70,7 @@ public class OrderDialog extends JDialog {
         if (order != null) {
             loadOrderData();
         }
+        initializeLinkedInvoiceLock();
         configureEditability();
     }
     
@@ -248,6 +250,10 @@ public class OrderDialog extends JDialog {
         add(mainPanel);
     }
     
+    private void initializeLinkedInvoiceLock() {
+        linkedInvoiceLocked = order != null && hasLinkedInvoice(order.getId());
+    }
+
     private boolean hasLinkedInvoice(int orderId) {
         try (PreparedStatement p = DatabaseManager.getInstance().getConnection().prepareStatement(
                 "SELECT 1 FROM invoices WHERE order_id=? LIMIT 1")) {
