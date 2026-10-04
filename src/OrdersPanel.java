@@ -433,15 +433,24 @@ public class OrdersPanel extends JPanel {
             try {
                 Connection connection = DatabaseManager.getInstance().getConnection();
                 try (PreparedStatement pstmt = connection.prepareStatement(
-                        "SELECT number FROM invoices WHERE order_id = ?")) {
+                        "SELECT number, status FROM invoices WHERE order_id = ?")) {
                     pstmt.setInt(1, id);
                     try (ResultSet rs = pstmt.executeQuery()) {
                         if (rs.next()) {
-                            Dialogs.showMessageDialog(this,
-                                "Order cannot be deleted because invoice " + rs.getString("number") +
-                                " was generated from it. Delete the invoice first.",
-                                "Order Cannot Be Deleted", JOptionPane.WARNING_MESSAGE);
-                            return;
+                            String invoiceNumber = rs.getString("number");
+                            String invoiceStatus = rs.getString("status");
+                            if (linkedInvoiceBlocksOrderAction(status, invoiceStatus)) {
+                                String instruction = "Draft".equals(invoiceStatus)
+                                    ? "Delete the draft invoice first."
+                                    : "Canceled".equals(invoiceStatus)
+                                        ? "Only a completed sale can be reversed while linked to a canceled invoice."
+                                        : "Cancel the issued invoice first.";
+                                Dialogs.showMessageDialog(this,
+                                    "Order cannot be " + ("Completed".equals(status) ? "reversed" : "deleted") +
+                                    " because invoice " + invoiceNumber + " is linked to it. " + instruction,
+                                    "Order Cannot Be Changed", JOptionPane.WARNING_MESSAGE);
+                                return;
+                            }
                         }
                     }
                 }
@@ -554,6 +563,10 @@ public class OrdersPanel extends JPanel {
                 }
             }
         }
+    }
+
+    static boolean linkedInvoiceBlocksOrderAction(String orderStatus, String invoiceStatus) {
+        return !("Completed".equals(orderStatus) && "Canceled".equals(invoiceStatus));
     }
 
     static boolean canGenerateInvoice(String status) {
