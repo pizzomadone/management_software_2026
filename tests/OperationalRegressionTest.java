@@ -61,6 +61,39 @@ public class OperationalRegressionTest extends RegressionTest {
                 "SELECT COUNT(*) FROM stock_reservations WHERE document_type='ORDER' AND document_id=78 AND status='ACTIVE'")),
                 "Reservation order still blocks warehouse stock");
         });
+        test("customer order product selector shows unreserved availability",()->{
+            fresh();
+            StockManager.createOrUpdateReservation(db,1,"ORDER",77,8,"other order");
+
+            ProductSelectionDialog orderSelector=empty(ProductSelectionDialog.class);
+            put(orderSelector,"activeOnly",true);
+            put(orderSelector,"useAvailableStock",true);
+            DefaultTableModel orderModel=new DefaultTableModel(
+                new String[]{"ID","Code","Name","Description","Sale Price incl. VAT","Available","Status"},0);
+            put(orderSelector,"tableModel",orderModel);
+            call(orderSelector,"loadAllProducts");
+
+            int orderRow=-1;
+            for(int row=0;row<orderModel.getRowCount();row++)
+                if(((Number)orderModel.getValueAt(row,0)).intValue()==1){orderRow=row;break;}
+            require(orderRow>=0,"Reserved product missing from customer order selector");
+            require(((Number)orderModel.getValueAt(orderRow,5)).intValue()==2,
+                "Customer order selector shows physical stock instead of physical minus reserved");
+
+            ProductSelectionDialog normalSelector=empty(ProductSelectionDialog.class);
+            put(normalSelector,"activeOnly",true);
+            put(normalSelector,"useAvailableStock",false);
+            DefaultTableModel normalModel=new DefaultTableModel(
+                new String[]{"ID","Code","Name","Description","Sale Price incl. VAT","Stock","Status"},0);
+            put(normalSelector,"tableModel",normalModel);
+            call(normalSelector,"loadAllProducts");
+
+            int normalRow=-1;
+            for(int row=0;row<normalModel.getRowCount();row++)
+                if(((Number)normalModel.getValueAt(row,0)).intValue()==1){normalRow=row;break;}
+            require(normalRow>=0 && ((Number)normalModel.getValueAt(normalRow,5)).intValue()==10,
+                "Non-order product selector no longer shows physical stock");
+        });
         test("manual outward availability honors reservations and edit reversal",()->{
             fresh();StockManager.createOrUpdateReservation(db,1,"ORDER",77,8,"");WarehouseMovementDialog d=empty(WarehouseMovementDialog.class);put(d,"movement",null);
             require(((Number)call(d,"availableForOutward",new Class<?>[]{Connection.class,int.class},db,1)).intValue()==2,"Manual issue ignored reservations");
