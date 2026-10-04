@@ -102,6 +102,27 @@ public class OperationalRegressionTest extends RegressionTest {
             sql("UPDATE products SET quantity=5 WHERE id=1");put(d,"movement",new WarehouseMovement(1,1,"A",new java.util.Date(),"OUTWARD",5,"OTHER",null,null,""));
             require(((Number)call(d,"availableForOutward",new Class<?>[]{Connection.class,int.class},db,1)).intValue()==2,"Edited outward movement availability is wrong");
         });
+        test("linked invoice locks non-completed order immediately",()->{
+            fresh();
+            call(order(false,3,"New"),"saveOrder");
+            sql("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status,order_id,currency_code) VALUES('LOCKED-NEW',0,1,30,0,30,'Issued',1,'EUR')");
+
+            OD d=order(true,3,"New");
+            put(d,"selectCustomerButton",new JButton());
+            put(d,"newCustomerButton",new JButton());
+            put(d,"addItemButton",new JButton());
+            put(d,"removeItemButton",new JButton());
+            put(d,"paidAmountLabel",new JLabel());
+
+            call(d,"initializeLinkedInvoiceLock");
+            call(d,"configureEditability");
+
+            require((Boolean)get(d,"linkedInvoiceLocked"),"Linked invoice was not detected when opening the order");
+            require(!((JButton)get(d,"selectCustomerButton")).isEnabled(),"Linked order customer remains editable");
+            require(!((JComboBox<?>)get(d,"statusCombo")).isEnabled(),"Linked order status remains editable");
+            require(!((JButton)get(d,"addItemButton")).isEnabled(),"Linked order products remain editable");
+            require(((JComboBox<?>)get(d,"paymentStatusCombo")).isEnabled(),"Linked order payment is not editable");
+        });
         test("linked invoice freezes its source order",()->{
             fresh();completed();sql("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status,order_id,currency_code) VALUES('LOCKED',0,1,30,0,30,'Issued',1,'EUR')");
             OD d=order(true,5,"Completed");call(d,"saveOrder");
