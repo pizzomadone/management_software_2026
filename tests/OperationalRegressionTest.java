@@ -145,6 +145,14 @@ public class OperationalRegressionTest extends RegressionTest {
             require(OrdersPanel.linkedInvoiceBlocksOrderAction("New","Canceled"),
                 "Canceled invoice must not make a non-completed order deletable");
         });
+        test("canceled linked invoice can be restored only before sale reversal",()->{
+            require(InvoiceDialog.canRestoreCanceledLinkedInvoice("Canceled","Issued","Completed"),
+                "Accidentally canceled invoice cannot be restored while the sale is still completed");
+            require(!InvoiceDialog.canRestoreCanceledLinkedInvoice("Canceled","Issued","Reversed"),
+                "Canceled invoice can be reissued after the linked sale was reversed");
+            require(InvoiceDialog.canRestoreCanceledLinkedInvoice("Issued","Canceled","Completed"),
+                "Normal invoice cancellation was blocked");
+        });
         test("proforma is pending-order only and does not persist an invoice",()->{
             for(String status:java.util.List.of("Reservation","New","In Progress"))
                 require(OrdersPanel.canGenerateProforma(status),"Pending order cannot generate proforma: "+status);
