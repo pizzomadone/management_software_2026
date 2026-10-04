@@ -183,7 +183,7 @@ public class SalesReportPanel extends JPanel {
                     FROM detail_cost
                     GROUP BY order_id
                 )
-                SELECT o.id,o.order_date,o.status,o.total_ex_vat AS total,
+                SELECT o.id,COALESCE(o.completed_date,o.order_date) AS sale_date,o.status,o.total_ex_vat AS total,
                        COALESCE(c.first_name || ' ' || c.last_name,'N/A') customer_name,
                        cg.cost_total,cg.missing_cost
                 FROM orders o
@@ -191,9 +191,9 @@ public class SalesReportPanel extends JPanel {
                 LEFT JOIN cg ON cg.order_id=o.id
                 WHERE o.status='Completed'
                 """.formatted(CostIntegrity.historicalCostSql("d"));
-            if (start!=null) query += " AND " + DateUtils.sqlDate("o.order_date") + ">=?";
-            if (end!=null) query += " AND " + DateUtils.sqlDate("o.order_date") + "<=?";
-            query += " ORDER BY " + DateUtils.sqlDate("o.order_date") + " DESC,o.id DESC";
+            if (start!=null) query += " AND " + "warestat_date(COALESCE(o.completed_date,o.order_date))" + ">=?";
+            if (end!=null) query += " AND " + "warestat_date(COALESCE(o.completed_date,o.order_date))" + "<=?";
+            query += " ORDER BY " + "warestat_date(COALESCE(o.completed_date,o.order_date))" + " DESC,o.id DESC";
             PreparedStatement pstmt = conn.prepareStatement(query);
             int parameter=1;
             SimpleDateFormat iso=new SimpleDateFormat("yyyy-MM-dd");
@@ -211,9 +211,9 @@ public class SalesReportPanel extends JPanel {
                     Vector<Object> row = new Vector<>();
 
                     // DATE PARSING
-                    Date orderDate = DateUtils.parseDate(rs, "order_date");
-                    if (orderDate != null) {
-                        row.add(DateUtils.formatDate(orderDate, dateFormat));
+                    Date saleDate = DateUtils.parseDate(rs, "sale_date");
+                    if (saleDate != null) {
+                        row.add(DateUtils.formatDate(saleDate, dateFormat));
                     } else {
                         row.add("N/A");
                     }
