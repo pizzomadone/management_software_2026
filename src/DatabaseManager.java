@@ -195,6 +195,7 @@ public class DatabaseManager {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 customer_id INTEGER,
                 order_date DATETIME NOT NULL,
+                completed_date DATETIME,
                 status TEXT NOT NULL,
                 total_ex_vat REAL NOT NULL,
                 total_inc_vat REAL NOT NULL,
