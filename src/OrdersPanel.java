@@ -16,6 +16,7 @@ public class OrdersPanel extends JPanel {
     private JButton editButton;
     private JButton deleteButton;
     private JButton generateInvoiceButton;
+    private JButton generateProformaButton;
     private JButton refreshButton;
     private SimpleDateFormat dateFormat;
     private Window parentWindow;
@@ -75,6 +76,7 @@ public class OrdersPanel extends JPanel {
                 () -> linkedInvoiceNumberForSelectedOrder() != null
                     ? "Go to Invoice" : "Generate Invoice",
                 this::generateInvoiceFromOrder),
+            new TableInteractionUtil.TableAction("Generate Proforma PDF", this::generateProformaFromOrder),
             null, // Separator
             new TableInteractionUtil.TableAction("Refresh", this::loadOrders, false)
         );
@@ -98,21 +100,25 @@ public class OrdersPanel extends JPanel {
         editButton = new JButton("Modify");
         deleteButton = new JButton("Delete");
         generateInvoiceButton = new JButton("Generate Invoice");
+        generateProformaButton = new JButton("Generate Proforma PDF");
         refreshButton = new JButton("Refresh");
 
         generateInvoiceButton.setFont(generateInvoiceButton.getFont().deriveFont(Font.BOLD));
         generateInvoiceButton.setPreferredSize(new Dimension(150, 30));
         generateInvoiceButton.setOpaque(true);
+        generateProformaButton.setPreferredSize(new Dimension(180, 30));
 
         addButton.addActionListener(e -> showOrderDialog(null));
         editButton.addActionListener(e -> editSelectedOrder());
         deleteButton.addActionListener(e -> deleteSelectedOrder());
         generateInvoiceButton.addActionListener(e -> generateInvoiceFromOrder());
+        generateProformaButton.addActionListener(e -> generateProformaFromOrder());
         refreshButton.addActionListener(e -> loadOrders());
 
         buttonPanel.add(addButton);
         buttonPanel.add(editButton);
         buttonPanel.add(deleteButton);
+        buttonPanel.add(generateProformaButton);
         buttonPanel.add(generateInvoiceButton);
         buttonPanel.add(refreshButton);
 
@@ -150,6 +156,9 @@ public class OrdersPanel extends JPanel {
         generateInvoiceButton.setText(I18n.tr(linkedInvoice != null ? "Go to Invoice" : "Generate Invoice"));
         generateInvoiceButton.setEnabled(isRowSelected
             && (linkedInvoice != null || "Completed".equals(status)));
+        generateProformaButton.setEnabled(isRowSelected
+            && linkedInvoice == null
+            && canGenerateProforma(status));
     }
 
     private void loadOrders() {
@@ -551,6 +560,12 @@ public class OrdersPanel extends JPanel {
         return "Completed".equals(status);
     }
 
+    static boolean canGenerateProforma(String status) {
+        return "Reservation".equals(status)
+            || "New".equals(status)
+            || "In Progress".equals(status);
+    }
+
     static void updateOrderPayment(Connection conn, int orderId,
             String paymentStatus, double requestedPaidAmount) throws SQLException {
         if (!java.util.Set.of("NOT_PAID", "PARTIALLY_PAID", "PAID").contains(paymentStatus))
@@ -732,6 +747,24 @@ public class OrdersPanel extends JPanel {
         reconcileCompletedOrderPaymentAfterInvoice(conn, orderId);
         InvoiceSnapshots.capture(conn,invoiceId,false);
         return new GeneratedInvoice(invoiceId, invoiceNumber);
+    }
+
+    private void generateProformaFromOrder() {
+        int selectedRow = ordersTable.getSelectedRow();
+        if (selectedRow == -1) return;
+
+        int modelRow = ordersTable.convertRowIndexToModel(selectedRow);
+        int orderId = (int)tableModel.getValueAt(modelRow, 0);
+        String status = String.valueOf(tableModel.getValueAt(modelRow, 3));
+
+        if (linkedInvoiceNumber(orderId) != null || !canGenerateProforma(status)) {
+            Dialogs.showMessageDialog(this,
+                I18n.tr("Proforma can only be generated for Reservation, New or In Progress customer orders."),
+                I18n.tr("Generate Proforma PDF"), JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        ProformaPDFGenerator.generateAndSave(orderId, this);
     }
 
     private void generateInvoiceFromOrder() {
