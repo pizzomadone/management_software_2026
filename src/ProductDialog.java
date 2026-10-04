@@ -203,7 +203,7 @@ public class ProductDialog extends JDialog {
         } else {
             addFormRow(stockPanel, pricingRow++, "Preferred Supplier Cost:", withCurrencyUnit(preferredSupplierCostButton));
             addFormRow(stockPanel, pricingRow++, "Last Purchase Cost:",
-                withPricingHelp(withCurrencyUnit(lastPurchaseCostValueLabel)));
+                withCurrencyUnit(lastPurchaseCostValueLabel));
         }
         addFormRow(stockPanel, pricingRow++, "Quantity:", quantitySpinner);
         addFormRow(stockPanel, pricingRow++, "Minimum Quantity:", minimumQuantitySpinner);
@@ -236,7 +236,14 @@ public class ProductDialog extends JDialog {
         productPanel.setMinimumSize(new Dimension(340, productPanel.getMinimumSize().height));
         stockPanel.setMinimumSize(new Dimension(250, stockPanel.getMinimumSize().height));
 
-        content.add(formsPanel, BorderLayout.NORTH);
+        JPanel formsWrapper = new JPanel(new BorderLayout(0, 2));
+        if (product != null) {
+            JPanel helpBar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+            helpBar.add(Dialogs.clickHelpLabel(pricingHelpTooltip()));
+            formsWrapper.add(helpBar, BorderLayout.NORTH);
+        }
+        formsWrapper.add(formsPanel, BorderLayout.CENTER);
+        content.add(formsWrapper, BorderLayout.NORTH);
 
         photosPanel = new JPanel(new BorderLayout(0, 4));
         photosPanel.setBorder(BorderFactory.createTitledBorder(I18n.tr("Photos")));
@@ -395,14 +402,6 @@ public class ProductDialog extends JDialog {
         JLabel currency = new JLabel(SettingsPanel.getCurrencyCode());
         currency.setToolTipText(SettingsPanel.getCurrency());
         panel.add(currency);
-        return panel;
-    }
-
-    private JPanel withPricingHelp(JComponent component) {
-        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
-        panel.setOpaque(false);
-        panel.add(component);
-        panel.add(Dialogs.clickHelpLabel(pricingHelpTooltip()));
         return panel;
     }
 
