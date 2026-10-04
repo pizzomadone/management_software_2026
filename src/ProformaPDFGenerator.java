@@ -81,7 +81,7 @@ public final class ProformaPDFGenerator {
             ProformaData data = load(orderId);
             try (PdfWriter pdf = new PdfWriter("", false, I18n.tr("Page"),
                     I18n.tr("Document generated with WareStat"))) {
-                String orderRef = I18n.format("Order #{0}", orderId);
+                String orderRef = I18n.tr("Order") + " #" + orderId;
                 pdf.setContinuationTitle(I18n.tr("PROFORMA") + " - " + orderRef);
                 pdf.invoiceHeader(data.logo(), I18n.tr("PROFORMA"), orderRef,
                     I18n.tr("Date"), DATE_FORMAT.format(data.orderDate()),
