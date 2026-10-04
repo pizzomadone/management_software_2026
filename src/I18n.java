@@ -215,7 +215,6 @@ public final class I18n {
         if (component instanceof Frame frame) frame.setTitle(localized(frame, frame.getTitle()));
         if (component instanceof Dialog dialog) dialog.setTitle(localized(dialog, dialog.getTitle()));
         if (component instanceof AbstractButton button) {
-            String originalButtonText = ORIGINAL_TEXT.getOrDefault(button, button.getText());
             button.setText(localized(button, button.getText()));
             watchText(button);
             // Do not generate a tooltip that merely repeats the button label.
