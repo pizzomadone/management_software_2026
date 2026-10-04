@@ -135,6 +135,30 @@ public class OperationalRegressionTest extends RegressionTest {
                 require(!OrdersPanel.canGenerateInvoice(status),"Non-completed order is invoice eligible: "+status);
             require(!OrdersPanel.canGenerateInvoice(null),"Missing status is invoice eligible");
         });
+        test("proforma is pending-order only and does not persist an invoice",()->{
+            for(String status:java.util.List.of("Reservation","New","In Progress"))
+                require(OrdersPanel.canGenerateProforma(status),"Pending order cannot generate proforma: "+status);
+            for(String status:java.util.List.of("Completed","Cancelled","Reversed"))
+                require(!OrdersPanel.canGenerateProforma(status),"Historical order can generate proforma: "+status);
+            require(!OrdersPanel.canGenerateProforma(null),"Missing status can generate proforma");
+
+            fresh();
+            call(order(false,3,"New"),"saveOrder");
+            String before=value("SELECT COUNT(*) FROM invoices");
+            String stockBefore=value("SELECT quantity||'|'||reserved_quantity FROM products WHERE id=1");
+            Path pdf=OUT.resolve("customer-order-proforma.pdf");
+            Files.deleteIfExists(pdf);
+
+            ProformaPDFGenerator.generatePDF(1,pdf.toFile());
+
+            require(Files.isRegularFile(pdf) && Files.size(pdf)>0,"Proforma PDF was not created");
+            require(before.equals(value("SELECT COUNT(*) FROM invoices")),
+                "Generating a proforma persisted an invoice");
+            require("New".equals(value("SELECT status FROM orders WHERE id=1")),
+                "Generating a proforma changed the order status");
+            require(stockBefore.equals(value("SELECT quantity||'|'||reserved_quantity FROM products WHERE id=1")),
+                "Generating a proforma changed stock or reservations");
+        });
         test("inventory correction records only the physical delta",()->{
             fresh();call(productEditor(15),"saveProduct");require(qty()==15,"Stock count not saved");
             require("5".equals(value("SELECT quantity FROM warehouse_movements")) && "INWARD".equals(value("SELECT type FROM warehouse_movements")),"Wrong inventory delta");
