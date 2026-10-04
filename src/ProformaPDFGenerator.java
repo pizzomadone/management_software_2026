@@ -125,7 +125,7 @@ public final class ProformaPDFGenerator {
 
     private static ProformaData load(int orderId) throws SQLException, IOException {
         Connection conn = DatabaseManager.getInstance().getConnection();
-        Date orderDate;
+        java.util.Date orderDate;
         String currency = DatabaseCurrency.read(conn);
         if (currency == null || currency.isBlank()) {
             throw new SQLException("Database currency is missing");
@@ -181,7 +181,7 @@ public final class ProformaPDFGenerator {
                     double unitExVat = Numbers.nonNegative(r.getObject("sale_unit_price_ex_vat"));
                     double unitIncVat = Numbers.nonNegative(r.getObject("sale_unit_price_inc_vat"));
                     double vatRate = Numbers.vat(r.getObject("vat_rate"));
-                    double lineNet = SalePrice.lineExVat(quantity, unitIncVat, vatRate);
+                    double lineNet = Numbers.lineTotal(quantity, unitExVat);
                     double lineGross = SalePrice.lineIncVat(quantity, unitIncVat);
                     double lineVat = Numbers.money(java.math.BigDecimal.valueOf(lineGross)
                         .subtract(java.math.BigDecimal.valueOf(lineNet)));
@@ -265,7 +265,7 @@ public final class ProformaPDFGenerator {
     private record ProformaLine(String code, String name, int quantity,
             double unitPriceExVat, double vatRate, double totalExVat) {}
 
-    private record ProformaData(Date orderDate, String currency,
+    private record ProformaData(java.util.Date orderDate, String currency,
             String companyName, java.util.List<String> companyLines, byte[] logo,
             String customerName, java.util.List<String> customerLines,
             java.util.List<ProformaLine> lines,
