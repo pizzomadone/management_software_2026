@@ -567,7 +567,7 @@ public class DashboardPanel extends JPanel {
             String end = monthFormat.format(new java.util.Date(nextMonthStart));
             double monthlySales = sumMonthlyDocuments(conn,
                 "SELECT total_ex_vat AS total FROM orders WHERE status='Completed' AND " +
-                    DateUtils.sqlDate("order_date") + ">=? AND " + DateUtils.sqlDate("order_date") + "<?", start, end);
+                    "warestat_date(COALESCE(completed_date,order_date))" + ">=? AND " + "warestat_date(COALESCE(completed_date,order_date))" + "<?", start, end);
             String monthlyInvoiced = monthlyInvoiceSummary(conn,start,end);
 
             // Potential gross margin uses the same stock totals, weighted by their sale value.
