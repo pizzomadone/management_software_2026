@@ -426,7 +426,7 @@ public class OrderDialog extends JDialog {
     }
     
     private void showProductSelectionDialog() {
-        ProductSelectionDialog dialog = new ProductSelectionDialog(this);
+        ProductSelectionDialog dialog = new ProductSelectionDialog(this, true, true);
         dialog.setVisible(true);
         
         if (dialog.isProductSelected()) {
