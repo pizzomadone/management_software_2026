@@ -590,34 +590,39 @@ public class MainWindow extends JFrame {
     }
     
     private void showKeyboardShortcuts() {
+        int shortcutMask = Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx();
+        String modifier = (shortcutMask & KeyEvent.META_DOWN_MASK) != 0 ? "Cmd+" : "Ctrl+";
         String shortcutsText = """
             Keyboard Shortcuts:
-            
-            File Menu:
-            Ctrl+Shift+N    New Customer
-            Ctrl+Shift+P    New Product
-            Ctrl+Shift+O    New Customer Order
-            Ctrl+Shift+I    New Invoice
-            Ctrl+Q          Exit
-            
+
+            File:
+            %sShift+N    New Customer
+            %sShift+P    New Product
+            %sShift+O    New Customer Order
+            %sShift+I    New Invoice
+            %sQ          Exit
+
             Navigation:
-            Ctrl+1          Customers
-            Ctrl+2          Products
-            Ctrl+3          Orders
-            Ctrl+4          Invoices
-            Ctrl+5          Suppliers
-            Ctrl+6          Warehouse
-            Ctrl+H          Dashboard
-            
+            %s1          Customers
+            %s2          Products
+            %s3          Orders
+            %s4          Invoices
+            %s5          Suppliers
+            %s6          Warehouse
+            %sH          Dashboard
+
             Reports:
-            Ctrl+Shift+R    Sales Report
-            Ctrl+Shift+S    Advanced Statistics
-            Ctrl+Shift+W    Warehouse Report
-            
+            %sShift+R    Sales Report
+            %sShift+S    Advanced Statistics
+            %sShift+W    Warehouse Report
+
             Tools:
-            Ctrl+B          Backup Management
+            %sB          Backup Management
             F1              This Help
-            """;
+            """.formatted(
+                modifier, modifier, modifier, modifier, modifier,
+                modifier, modifier, modifier, modifier, modifier, modifier, modifier,
+                modifier, modifier, modifier, modifier);
         
         JTextArea textArea = new JTextArea(shortcutsText);
         textArea.setEditable(false);
