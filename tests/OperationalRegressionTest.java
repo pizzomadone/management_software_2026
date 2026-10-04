@@ -247,11 +247,17 @@ public class OperationalRegressionTest extends RegressionTest {
                 row,g,p,7.0);
             require(Arrays.stream(row.getComponents()).noneMatch(c->c instanceof JButton),
                 "Product Details still uses a button for purchase-cost help");
-            require(Arrays.stream(row.getComponents()).anyMatch(c ->
+            require(Arrays.stream(row.getComponents()).noneMatch(c ->
                     c instanceof JLabel label && "?".equals(label.getText())),
-                "Product Details purchase-cost help is not the dashboard-style tooltip icon");
+                "Product Details general cost guide is still attached to a field");
+            JLabel costHelp=(JLabel)call(details,"purchaseCostHelpButton");
+            require("?".equals(costHelp.getText()),
+                "Product Details top-right cost guide is missing");
+            String costHelpText=(String)call(details,"purchaseCostHelpTooltip");
+            require(!costHelpText.contains("read-only") && !costHelpText.contains("sola lettura"),
+                "Product Details cost guide still says the view is read-only");
             require(Arrays.stream(row.getComponents()).anyMatch(c->c instanceof JTextArea),
-                "Preferred supplier cost is not displayed as read-only text");
+                "Preferred supplier cost is not displayed as text");
         });
         test("notification actions target selected database IDs",()->{
             fresh();sql("INSERT INTO warehouse_notifications(id,product_id,type,message) VALUES(1,1,'LOW_STOCK','Same text'),(2,1,'LOW_STOCK','Same text')");
