@@ -48,7 +48,9 @@ public final class DatabaseMigrationManager {
         new Migration("018", "Make new customer orders non-stock reservations",
             DatabaseMigrationManager::releaseNewOrderReservations),
         new Migration("019", "Reclassify legacy new orders and reserve fully available stock",
-            DatabaseMigrationManager::migrateCustomerOrderReservationStates)
+            DatabaseMigrationManager::migrateCustomerOrderReservationStates),
+        new Migration("020", "Store actual customer order completion date",
+            DatabaseMigrationManager::migrateCustomerOrderCompletionDate)
     );
 
     private DatabaseMigrationManager() {}
@@ -869,6 +871,20 @@ public final class DatabaseMigrationManager {
             // Keep the cached reserved quantity correct even when migrating a database
             // whose reservation triggers have not yet been recreated.
             StockManager.reconcileReservedStock(c);
+        }
+    }
+
+    private static void migrateCustomerOrderCompletionDate(Connection c) throws SQLException {
+        if (!hasTable(c, "orders")) return;
+        addColumnIfMissing(c, "orders", "completed_date",
+            "ALTER TABLE orders ADD COLUMN completed_date DATETIME");
+        try (PreparedStatement p = c.prepareStatement("""
+                UPDATE orders
+                SET completed_date=order_date
+                WHERE completed_date IS NULL
+                  AND status IN ('Completed','Reversed')
+                """)) {
+            p.executeUpdate();
         }
     }
 
