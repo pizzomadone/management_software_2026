@@ -766,7 +766,7 @@ public class DashboardPanel extends JPanel {
                 FROM orders o
                 LEFT JOIN customers c ON o.customer_id = c.id
                 WHERE o.status IN ('Reservation','New','In Progress')
-                ORDER BY o.order_date ASC
+                ORDER BY warestat_date(o.order_date) ASC, o.id ASC
                 LIMIT 15
             """;
 
