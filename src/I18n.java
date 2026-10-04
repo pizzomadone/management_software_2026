@@ -218,14 +218,8 @@ public final class I18n {
             String originalButtonText = ORIGINAL_TEXT.getOrDefault(button, button.getText());
             button.setText(localized(button, button.getText()));
             watchText(button);
-            if (button.getToolTipText() == null && originalButtonText != null &&
-                    !originalButtonText.isBlank()) {
-                String tooltipKey = "tooltip." + originalButtonText;
-                ORIGINAL_TOOLTIPS.put(button, tooltipKey);
-                String translatedTooltip = translations.getOrDefault(tooltipKey, tr(originalButtonText));
-                LAST_TOOLTIPS.put(button, translatedTooltip);
-                button.setToolTipText(translatedTooltip);
-            }
+            // Do not generate a tooltip that merely repeats the button label.
+            // Buttons get tooltips only when the screen defines useful extra information.
         }
         if (component instanceof JLabel label) {
             label.setText(localized(label, label.getText()));
