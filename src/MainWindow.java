@@ -603,7 +603,7 @@ public class MainWindow extends JFrame {
             I18n.tr("Navigation") + ":\n" +
             modifier + "1          " + I18n.tr("Customers") + "\n" +
             modifier + "2          " + I18n.tr("Products") + "\n" +
-            modifier + "3          " + I18n.tr("Orders") + "\n" +
+            modifier + "3          " + I18n.tr("Customer Orders") + "\n" +
             modifier + "4          " + I18n.tr("Invoices") + "\n" +
             modifier + "5          " + I18n.tr("Suppliers") + "\n" +
             modifier + "6          " + I18n.tr("Warehouse") + "\n" +
