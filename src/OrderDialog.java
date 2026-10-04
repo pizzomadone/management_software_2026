@@ -323,7 +323,7 @@ public class OrderDialog extends JDialog {
             }
 
             selectCustomerButton.setText(buttonText);
-            selectCustomerButton.setToolTipText("Customer: " + buttonText);
+            selectCustomerButton.setToolTipText(I18n.tr("Customer") + ": " + buttonText);
         }
     }
     
