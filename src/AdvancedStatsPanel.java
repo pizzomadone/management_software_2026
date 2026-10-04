@@ -291,12 +291,12 @@ public class AdvancedStatsPanel extends JPanel {
 
     private void loadSalesData(DateRange range) throws SQLException {
         Connection conn = DatabaseManager.getInstance().getConnection();
-        String normalizedDate = DateUtils.sqlDate("o.order_date");
+        String normalizedDate = "warestat_date(COALESCE(o.completed_date,o.order_date))";
         String query =
             "SELECT strftime('%Y-%m', " + normalizedDate + ") AS month, " +
             "SUM(o.total_ex_vat) AS total, COUNT(*) AS num_orders " +
             "FROM orders o " +
-            "WHERE o.order_date IS NOT NULL AND o.status='Completed' " +
+            "WHERE o.status='Completed' " +
             "AND " + normalizedDate + " BETWEEN ? AND ? " +
             "GROUP BY month ORDER BY month";
 
@@ -332,14 +332,14 @@ public class AdvancedStatsPanel extends JPanel {
             return;
         }
 
-        String normalizedDate = DateUtils.sqlDate("o.order_date");
+        String normalizedDate = "warestat_date(COALESCE(o.completed_date,o.order_date))";
         String query =
             "SELECT strftime('%Y-%m', " + normalizedDate + ") AS month, " +
             "SUM(warestat_line_total(d.quantity,d.sale_unit_price_ex_vat)) AS revenue " +
             "FROM order_details d " +
             "JOIN orders o ON o.id=d.order_id " +
             "WHERE d.product_id=? AND o.status='Completed' " +
-            "AND o.order_date IS NOT NULL " +
+            "" +
             "AND " + normalizedDate + " BETWEEN ? AND ? " +
             "GROUP BY month ORDER BY month";
 
@@ -954,7 +954,7 @@ public class AdvancedStatsPanel extends JPanel {
     private void loadProductsData(DateRange range) throws SQLException {
         Connection conn = DatabaseManager.getInstance().getConnection();
 
-        String normalizedDate = DateUtils.sqlDate("o.order_date");
+        String normalizedDate = "warestat_date(COALESCE(o.completed_date,o.order_date))";
         String query =
             "SELECT COALESCE(p.name, 'Product N/A') AS name, " +
             "SUM(d.quantity) AS total_quantity, " +
@@ -963,7 +963,7 @@ public class AdvancedStatsPanel extends JPanel {
             "FROM order_details d " +
             "LEFT JOIN products p ON d.product_id = p.id " +
             "LEFT JOIN orders o ON d.order_id = o.id " +
-            "WHERE o.order_date IS NOT NULL AND o.status='Completed' " +
+            "WHERE o.status='Completed' " +
             "AND " + normalizedDate + " BETWEEN ? AND ? " +
             "GROUP BY d.product_id, p.name " +
             "ORDER BY revenue DESC";
