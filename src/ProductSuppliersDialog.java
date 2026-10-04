@@ -38,7 +38,7 @@ public class ProductSuppliersDialog extends JDialog {
         JLabel help=new JLabel("?");
         help.setFont(help.getFont().deriveFont(Font.BOLD));
         help.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        help.setToolTipText(I18n.tr("Click for help"));
+        help.setToolTipText(I18n.tr("Explain product suppliers"));
         help.addMouseListener(new java.awt.event.MouseAdapter(){
             @Override public void mouseClicked(java.awt.event.MouseEvent e){ showHelp(); }
         });
@@ -177,7 +177,7 @@ public class ProductSuppliersDialog extends JDialog {
         JLabel fieldHelp=new JLabel("?");
         fieldHelp.setFont(fieldHelp.getFont().deriveFont(Font.BOLD));
         fieldHelp.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        fieldHelp.setToolTipText(I18n.tr("Click for help"));
+        fieldHelp.setToolTipText(I18n.tr("Explain supplier fields"));
         fieldHelp.addMouseListener(new java.awt.event.MouseAdapter(){
             @Override public void mouseClicked(java.awt.event.MouseEvent e){ showRelationHelp(); }
         });
