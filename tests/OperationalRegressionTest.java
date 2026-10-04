@@ -135,6 +135,16 @@ public class OperationalRegressionTest extends RegressionTest {
                 require(!OrdersPanel.canGenerateInvoice(status),"Non-completed order is invoice eligible: "+status);
             require(!OrdersPanel.canGenerateInvoice(null),"Missing status is invoice eligible");
         });
+        test("canceled linked invoice allows only completed sale reversal",()->{
+            require(!OrdersPanel.linkedInvoiceBlocksOrderAction("Completed","Canceled"),
+                "Canceled linked invoice still blocks reversal of a completed sale");
+            require(OrdersPanel.linkedInvoiceBlocksOrderAction("Completed","Draft"),
+                "Draft linked invoice must be deleted before reversing the sale");
+            require(OrdersPanel.linkedInvoiceBlocksOrderAction("Completed","Issued"),
+                "Issued linked invoice must be canceled before reversing the sale");
+            require(OrdersPanel.linkedInvoiceBlocksOrderAction("New","Canceled"),
+                "Canceled invoice must not make a non-completed order deletable");
+        });
         test("proforma is pending-order only and does not persist an invoice",()->{
             for(String status:java.util.List.of("Reservation","New","In Progress"))
                 require(OrdersPanel.canGenerateProforma(status),"Pending order cannot generate proforma: "+status);
