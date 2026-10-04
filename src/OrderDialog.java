@@ -751,21 +751,23 @@ public class OrderDialog extends JDialog {
             }
 
                 int orderId;
+                Date completedDate = "Completed".equals(newStatus) ? new Date() : null;
 
                 if (order == null) {
                     // New order
                     String orderQuery = """
-                        INSERT INTO orders (customer_id, order_date, status, total_ex_vat, total_inc_vat, payment_status, paid_amount)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        INSERT INTO orders (customer_id, order_date, completed_date, status, total_ex_vat, total_inc_vat, payment_status, paid_amount)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """;
                     try (PreparedStatement pstmt = conn.prepareStatement(orderQuery, Statement.RETURN_GENERATED_KEYS)) {
                         pstmt.setInt(1, selectedCustomer.getId());
                         pstmt.setTimestamp(2, DateUtils.toSqlTimestamp(orderDate));
-                        pstmt.setString(3, newStatus);
-                        pstmt.setDouble(4, currentTotalExVat);
-                        pstmt.setDouble(5, currentTotal);
-                        pstmt.setString(6, paymentStatus);
-                        pstmt.setDouble(7, paidAmount);
+                        pstmt.setTimestamp(3, DateUtils.toSqlTimestamp(completedDate));
+                        pstmt.setString(4, newStatus);
+                        pstmt.setDouble(5, currentTotalExVat);
+                        pstmt.setDouble(6, currentTotal);
+                        pstmt.setString(7, paymentStatus);
+                        pstmt.setDouble(8, paidAmount);
                         pstmt.executeUpdate();
 
                         try (ResultSet rs = pstmt.getGeneratedKeys()) {
@@ -781,7 +783,7 @@ public class OrderDialog extends JDialog {
                     insertOrderDetails(conn, orderId);
 
                     // Handle stock based on status
-                    handleStockForNewStatus(conn, orderId, newStatus, stockItems, orderDate);
+                    handleStockForNewStatus(conn, orderId, newStatus, stockItems, completedDate);
 
                 } else {
                     // Update existing order
@@ -790,18 +792,19 @@ public class OrderDialog extends JDialog {
 
                     String orderQuery = """
                         UPDATE orders
-                        SET customer_id = ?, order_date = ?, status = ?, total_ex_vat = ?, total_inc_vat = ?, payment_status = ?, paid_amount = ?
+                        SET customer_id = ?, order_date = ?, completed_date = ?, status = ?, total_ex_vat = ?, total_inc_vat = ?, payment_status = ?, paid_amount = ?
                         WHERE id = ?
                     """;
                     try (PreparedStatement pstmt = conn.prepareStatement(orderQuery)) {
                         pstmt.setInt(1, selectedCustomer.getId());
                         pstmt.setTimestamp(2, DateUtils.toSqlTimestamp(orderDate));
-                        pstmt.setString(3, newStatus);
-                        pstmt.setDouble(4, currentTotalExVat);
-                        pstmt.setDouble(5, currentTotal);
-                        pstmt.setString(6, paymentStatus);
-                        pstmt.setDouble(7, paidAmount);
-                        pstmt.setInt(8, orderId);
+                        pstmt.setTimestamp(3, DateUtils.toSqlTimestamp(completedDate));
+                        pstmt.setString(4, newStatus);
+                        pstmt.setDouble(5, currentTotalExVat);
+                        pstmt.setDouble(6, currentTotal);
+                        pstmt.setString(7, paymentStatus);
+                        pstmt.setDouble(8, paidAmount);
+                        pstmt.setInt(9, orderId);
                         pstmt.executeUpdate();
                     }
 
@@ -816,7 +819,7 @@ public class OrderDialog extends JDialog {
                     insertOrderDetails(conn, orderId);
 
                     // Handle status change (now reservations are clean if they existed)
-                    handleStockForNewStatus(conn, orderId, newStatus, stockItems, orderDate);
+                    handleStockForNewStatus(conn, orderId, newStatus, stockItems, completedDate);
                 }
 
                 conn.commit();
@@ -863,7 +866,7 @@ public class OrderDialog extends JDialog {
     }
 
     private void handleStockForNewStatus(Connection conn, int orderId, String status,
-                                         List<StockManager.StockItem> items, Date orderDate) throws SQLException {
+                                         List<StockManager.StockItem> items, Date completedDate) throws SQLException {
         switch (status) {
             case "Reservation":
                 // Commercial reservation only: no warehouse reservation, stock movement or FIFO effect.
@@ -884,7 +887,7 @@ public class OrderDialog extends JDialog {
                         "ORDER", orderId, item.getQuantity(), "Order #" + orderId);
                 }
                 StockManager.completeReservationAndDecrementStock(conn, "ORDER", orderId,
-                    orderDate, String.valueOf(orderId));
+                    completedDate, String.valueOf(orderId));
                 break;
             case "Cancelled":
                 // No stock action
