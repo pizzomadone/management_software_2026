@@ -279,6 +279,34 @@ public class OperationalRegressionTest extends RegressionTest {
             require(kpi(dash,"zeroCostCountLabel").equals("1") && kpi(dash,"avgMarginLabel").endsWith(" *"),
                 "Missing preferred cost on active stock is not marked when inactive stock is also present");
         });
+        test("migration backfills historical customer completion dates",()->{
+            fresh();
+            sql("INSERT INTO orders(id,customer_id,order_date,completed_date,status,total_ex_vat,total_inc_vat) VALUES(77,1,1000,NULL,'Completed',10,10)");
+            sql("DELETE FROM schema_migrations WHERE version='020'");
+            DatabaseMigrationManager.migrate(db);
+            require("1".equals(value("SELECT completed_date=order_date FROM orders WHERE id=77")),
+                "Historical completed order did not inherit its order date as migration fallback");
+        });
+        test("completed sales use completion date for stock and monthly revenue",()->{
+            fresh();seedOpeningLots();
+            OD d=order(false,3,"Completed");
+            put(d,"dateField",new DatePickerField("01/01/2000"));
+            call(d,"saveOrder");
+            String today=new java.text.SimpleDateFormat("yyyy-MM-dd").format(new java.util.Date());
+            require("2000-01-01".equals(value("SELECT warestat_date(order_date) FROM orders WHERE id=1")),
+                "Order creation date changed when the sale completed");
+            require(today.equals(value("SELECT warestat_date(completed_date) FROM orders WHERE id=1")),
+                "Completed sale did not store its actual completion date");
+            require(today.equals(value("SELECT warestat_date(date) FROM warehouse_movements WHERE document_type='ORDER' AND document_number='1'")),
+                "Sale warehouse movement still uses the original order date");
+            DashboardPanel dash=new DashboardPanel(null);call(dash,"loadKPIData");
+            require(kpi(dash,"monthRevenueLabel").equals(SettingsPanel.formatCurrency(30)),
+                "Monthly revenue still follows order date instead of completion date");
+            SalesReportPanel report=new SalesReportPanel();call(report,"loadReportData");
+            DefaultTableModel rows=(DefaultTableModel)get(report,"tableModel");
+            require(rows.getRowCount()==1 && rows.getValueAt(0,0).equals(DateUtils.formatDate(new java.util.Date(),new java.text.SimpleDateFormat("dd/MM/yyyy"))),
+                "Sales report does not display the completion date");
+        });
         test("monthly invoiced total includes the exact first millisecond",()->{
             fresh();Calendar month=Calendar.getInstance();month.set(Calendar.DAY_OF_MONTH,1);month.set(Calendar.HOUR_OF_DAY,0);month.set(Calendar.MINUTE,0);month.set(Calendar.SECOND,0);month.set(Calendar.MILLISECOND,0);
             sql("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status,currency_code) VALUES('START',"+month.getTimeInMillis()+",1,10,0,10,'Issued','EUR'),('CANCELLED',"+month.getTimeInMillis()+",1,900,0,900,'Cancelled','EUR')");
