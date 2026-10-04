@@ -995,15 +995,16 @@ public class InvoiceDialog extends JDialog {
         int orderId;
         try (PreparedStatement p = conn.prepareStatement("""
                 INSERT INTO orders
-                    (customer_id, order_date, status, total_ex_vat, total_inc_vat, payment_status, paid_amount)
-                    VALUES (?, ?, 'Completed', ?, ?, ?, ?)
+                    (customer_id, order_date, completed_date, status, total_ex_vat, total_inc_vat, payment_status, paid_amount)
+                    VALUES (?, ?, ?, 'Completed', ?, ?, ?, ?)
                 """, Statement.RETURN_GENERATED_KEYS)) {
             p.setInt(1, selectedCustomer.getId());
             p.setTimestamp(2, DateUtils.toSqlTimestamp(invoiceDate));
-            p.setDouble(3, currentTaxableAmount);
-            p.setDouble(4, currentTotal);
-            p.setString(5, paymentStatus);
-            p.setDouble(6, paidAmount);
+            p.setTimestamp(3, DateUtils.toSqlTimestamp(invoiceDate));
+            p.setDouble(4, currentTaxableAmount);
+            p.setDouble(5, currentTotal);
+            p.setString(6, paymentStatus);
+            p.setDouble(7, paidAmount);
             p.executeUpdate();
             try (ResultSet keys = p.getGeneratedKeys()) {
                 if (!keys.next()) throw new SQLException("Failed to get order ID");
