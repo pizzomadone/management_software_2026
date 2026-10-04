@@ -307,6 +307,21 @@ public class OperationalRegressionTest extends RegressionTest {
             require(rows.getRowCount()==1 && rows.getValueAt(0,0).equals(DateUtils.formatDate(new java.util.Date(),new java.text.SimpleDateFormat("dd/MM/yyyy"))),
                 "Sales report does not display the completion date");
         });
+        test("pending-order age handles numeric stored dates",()->{
+            fresh();
+            Calendar old=Calendar.getInstance();
+            old.set(Calendar.HOUR_OF_DAY,12);old.set(Calendar.MINUTE,0);old.set(Calendar.SECOND,0);old.set(Calendar.MILLISECOND,0);
+            old.add(Calendar.DAY_OF_MONTH,-10);
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat) VALUES(77,1,"+
+                old.getTimeInMillis()+",'New',10,12.2)");
+            DashboardPanel dash=new DashboardPanel(null);call(dash,"loadPendingOrders");
+            List<JLabel> pendingLabels=labels((JPanel)get(dash,"pendingOrdersPanel"));
+            String expectedDate=DateUtils.formatDate(old.getTime(),new java.text.SimpleDateFormat("dd/MM/yyyy"));
+            require(pendingLabels.stream().anyMatch(l->l.getText().contains(expectedDate)),
+                "Pending order shows raw or invalid numeric date");
+            require(pendingLabels.stream().anyMatch(l->l.getText().contains("10 "+I18n.tr("days old"))),
+                "Pending order age is wrong for numeric stored dates");
+        });
         test("monthly invoiced total includes the exact first millisecond",()->{
             fresh();Calendar month=Calendar.getInstance();month.set(Calendar.DAY_OF_MONTH,1);month.set(Calendar.HOUR_OF_DAY,0);month.set(Calendar.MINUTE,0);month.set(Calendar.SECOND,0);month.set(Calendar.MILLISECOND,0);
             sql("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status,currency_code) VALUES('START',"+month.getTimeInMillis()+",1,10,0,10,'Issued','EUR'),('CANCELLED',"+month.getTimeInMillis()+",1,900,0,900,'Cancelled','EUR')");
@@ -433,7 +448,7 @@ public class OperationalRegressionTest extends RegressionTest {
         });
         test("KPI titles notes and explanations translate in every supported language",()->{
             fresh();DashboardPanel dash=new DashboardPanel(null);JPanel panel=(JPanel)call(dash,"createKPIPanel");
-            String[] titles={"Stock at preferred supplier cost","Stock at net sale price","Monthly order sales (excl. VAT)","Monthly invoiced (excl. VAT)","Potential stock margin",
+            String[] titles={"Stock value at preferred supplier cost","Stock value at net sale price","Monthly completed sales (excl. VAT)","Monthly invoiced (excl. VAT)","Potential stock margin",
                 "In-stock products with missing preferred supplier cost","Negative-stock products (excluded from valuation)"};
             Map<String,String> fields=Map.of("warehouseValue","warehouseValueLabel","warehouseSaleValue","warehouseSaleValueLabel",
                 "lowStock","lowStockCountLabel","zeroStock","zeroStockLabel","monthRevenue","monthRevenueLabel",
