@@ -149,11 +149,11 @@ public class DashboardPanel extends JPanel {
 
         JPanel cards = new JPanel(new GridLayout(2, 4, 10, 10));
         cards.setOpaque(false);
-        cards.add(createKPICard("Stock at preferred supplier cost", "—", SECONDARY_COLOR, "warehouseValue"));
-        cards.add(createKPICard("Stock at net sale price", "—", SECONDARY_COLOR, "warehouseSaleValue"));
+        cards.add(createKPICard("Stock value at preferred supplier cost", "—", SECONDARY_COLOR, "warehouseValue"));
+        cards.add(createKPICard("Stock value at net sale price", "—", SECONDARY_COLOR, "warehouseSaleValue"));
         cards.add(createKPICard("Low Stock Products", "—", DANGER_COLOR, "lowStock"));
         cards.add(createKPICard("Out of Stock Products", "—", WARNING_COLOR, "zeroStock"));
-        cards.add(createKPICard("Monthly order sales (excl. VAT)", "—", SUCCESS_COLOR, "monthRevenue"));
+        cards.add(createKPICard("Monthly completed sales (excl. VAT)", "—", SUCCESS_COLOR, "monthRevenue"));
         cards.add(createKPICard("Monthly invoiced (excl. VAT)", "—", SUCCESS_COLOR, "monthInvoiced"));
         cards.add(createKPICard("Pending Customer Orders", "—", WARNING_COLOR, "pendingOrders"));
         cards.add(createKPICard("Potential stock margin", "—", ACCENT_COLOR, "avgMargin"));
@@ -375,9 +375,9 @@ public class DashboardPanel extends JPanel {
     }
 
     private JPanel createTopProductsSection() {
-        JPanel panel = createSectionPanel("Top 10 Best-Selling Products", PRIMARY_COLOR);
+        JPanel panel = createSectionPanel("Top 10 Products by Units Sold (All Time)", PRIMARY_COLOR);
 
-        String[] columns = {"#", "Product", "Qty Sold", "Revenue"};
+        String[] columns = {"#", "Product", "Qty Sold", "Net Revenue"};
         DefaultTableModel model = new DefaultTableModel(columns, 0) {
             @Override public boolean isCellEditable(int row, int column) {
                 return false;
@@ -403,10 +403,10 @@ public class DashboardPanel extends JPanel {
 
     private JPanel createABCAnalysisSection() {
         JPanel panel = createSectionPanel(
-            "ABC (Pareto) Analysis - Product Classification by Revenue",
+            "ABC Analysis by Net Revenue (All Time)",
             PRIMARY_COLOR);
 
-        String[] columns = {"Class", "# Products", "% Products", "Total Revenue", "% Revenue", "Description"};
+        String[] columns = {"Class", "# Products", "% Products", "Net Revenue", "% Net Revenue", "Description"};
         DefaultTableModel model = new DefaultTableModel(columns, 0) {
             @Override public boolean isCellEditable(int row, int column) {
                 return false;
@@ -762,8 +762,7 @@ public class DashboardPanel extends JPanel {
             String query = """
                 SELECT o.id, o.order_date, o.status,
                        o.total_inc_vat AS total_inc_vat,
-                       c.first_name || ' ' || c.last_name as customer_name,
-                       julianday('now') - julianday(o.order_date) as days_old
+                       c.first_name || ' ' || c.last_name as customer_name
                 FROM orders o
                 LEFT JOIN customers c ON o.customer_id = c.id
                 WHERE o.status IN ('Reservation','New','In Progress')
@@ -778,13 +777,13 @@ public class DashboardPanel extends JPanel {
                 while (rs.next()) {
                     hasOrders = true;
                     int id = rs.getInt("id");
-                    String date = rs.getString("order_date");
+                    java.util.Date orderDate = DateUtils.parseDate(rs, "order_date");
                     String status = rs.getString("status");
                     double total = rs.getDouble("total_inc_vat");
                     String customer = rs.getString("customer_name");
-                    int daysOld = (int) rs.getDouble("days_old");
+                    int daysOld = orderAgeDays(orderDate);
 
-                    JPanel orderItem = createPendingOrderItem(id, date, status, total, customer, daysOld);
+                    JPanel orderItem = createPendingOrderItem(id, orderDate, status, total, customer, daysOld);
                     pendingOrdersPanel.add(orderItem);
                     pendingOrdersPanel.add(Box.createVerticalStrut(5));
                 }
@@ -805,7 +804,7 @@ public class DashboardPanel extends JPanel {
         pendingOrdersPanel.repaint();
     }
 
-    private JPanel createPendingOrderItem(int id, String date, String status,
+    private JPanel createPendingOrderItem(int id, java.util.Date orderDate, String status,
             double total, String customer, int daysOld) {
         Color accent = daysOld > 7 ? DANGER_COLOR : WARNING_COLOR;
         Color surface = daysOld > 7 ? SOFT_DANGER_COLOR : SOFT_WARNING_COLOR;
@@ -825,11 +824,7 @@ public class DashboardPanel extends JPanel {
         idLabel.setFont(dashboardFont(Font.BOLD, 12f));
         idLabel.setForeground(PRIMARY_COLOR);
 
-        String dateStr = date;
-        try {
-            java.util.Date d = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").parse(date);
-            dateStr = dateFormat.format(d);
-        } catch (Exception ignored) {}
+        String dateStr = orderDate == null ? "N/A" : DateUtils.formatDate(orderDate, dateFormat);
 
         JLabel detailsLabel = new JLabel(String.format("%s - %s - %d %s",
             customer != null ? customer : "N/A", dateStr, daysOld,
@@ -856,6 +851,14 @@ public class DashboardPanel extends JPanel {
         panel.add(infoPanel, BorderLayout.CENTER);
         panel.add(rightPanel, BorderLayout.EAST);
         return panel;
+    }
+
+    static int orderAgeDays(java.util.Date orderDate) {
+        if (orderDate == null) return 0;
+        java.time.ZoneId zone = java.time.ZoneId.systemDefault();
+        java.time.LocalDate orderDay = orderDate.toInstant().atZone(zone).toLocalDate();
+        long days = java.time.temporal.ChronoUnit.DAYS.between(orderDay, java.time.LocalDate.now(zone));
+        return (int)Math.max(0, Math.min(Integer.MAX_VALUE, days));
     }
 
     private void loadTopProducts() {
@@ -971,7 +974,7 @@ public class DashboardPanel extends JPanel {
                 String.format("%.1f%%", (classACount * 100.0 / totalProducts)),
                 SettingsPanel.formatCurrency(classARevenue),
                 String.format("%.1f%%", (classARevenue * 100.0 / totalRevenue)),
-                I18n.tr("High-value products - Priority focus")
+                I18n.tr("High revenue contribution")
             });
 
             model.addRow(new Object[]{
@@ -980,7 +983,7 @@ public class DashboardPanel extends JPanel {
                 String.format("%.1f%%", (classBCount * 100.0 / totalProducts)),
                 SettingsPanel.formatCurrency(classBRevenue),
                 String.format("%.1f%%", (classBRevenue * 100.0 / totalRevenue)),
-                I18n.tr("Medium-value products - Monitor")
+                I18n.tr("Medium revenue contribution")
             });
 
             model.addRow(new Object[]{
@@ -989,7 +992,7 @@ public class DashboardPanel extends JPanel {
                 String.format("%.1f%%", (classCCount * 100.0 / totalProducts)),
                 SettingsPanel.formatCurrency(classCRevenue),
                 String.format("%.1f%%", (classCRevenue * 100.0 / totalRevenue)),
-                I18n.tr("Low-value products - Consider liquidation")
+                I18n.tr("Low revenue contribution")
             });
 
         } catch (SQLException e) {
