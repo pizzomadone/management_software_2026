@@ -41,7 +41,7 @@ public class InventoryLotsDialog extends JDialog {
         JLabel help=new JLabel("?");
         help.setFont(help.getFont().deriveFont(Font.BOLD));
         help.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        help.setToolTipText(I18n.tr("Click for help"));
+        help.setToolTipText(I18n.tr("Explain FIFO lots"));
         help.addMouseListener(new java.awt.event.MouseAdapter(){
             @Override public void mouseClicked(java.awt.event.MouseEvent e){ showHelp(); }
         });
