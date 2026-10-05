@@ -46,6 +46,21 @@
 -keepnames class org.apache.pdfbox.**
 -keepclassmembernames class org.apache.pdfbox.** { *; }
 
+# Optional integrations bundled inside PDFBox/Commons Logging are intentionally
+# absent from WareStat. They are not runtime requirements and are removed by shrinking.
+-dontwarn javax.servlet.**
+-dontwarn org.apache.avalon.framework.**
+-dontwarn org.apache.log.**
+-dontwarn org.apache.log4j.**
+-dontwarn org.apache.logging.log4j.**
+-dontwarn org.slf4j.**
+-dontwarn org.apache.commons.logging.impl.**
+
+# PDFBox uses MethodHandle.invokeExact with signature-polymorphic calls; this is a
+# known static-analysis false positive rather than a missing JDK method.
+-dontwarn java.lang.invoke.MethodHandle
+-dontwarn org.apache.pdfbox.io.IOUtils
+
 # Generic Java/JNI safety rules recommended for optimized desktop applications.
 -keepclasseswithmembernames,includedescriptorclasses class * {
     native <methods>;
