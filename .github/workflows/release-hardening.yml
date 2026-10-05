@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - build/release-hardening
+    tags:
+      - "v*"
   workflow_dispatch:
 
 permissions:
@@ -145,7 +147,22 @@ jobs:
         shell: bash
         run: command -v ant >/dev/null 2>&1 || brew install ant
 
+      - name: Validate release tag
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          python packaging/release_assets.py tag
+
       - name: Build hardened installer
+        env:
+          WINDOWS_CERTIFICATE_P12: ${{ secrets.WINDOWS_CERTIFICATE_P12 }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: ant clean package-installer-release
 
       - name: Verify packaged runtime and payload
@@ -206,6 +223,9 @@ jobs:
             throw 'Unexpected internal file in installer output.'
           }
 
+      - name: Verify final checksums and exact public files
+        run: python packaging/release_assets.py verify dist/installers
+
       - name: Upload installer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -217,3 +237,45 @@ jobs:
           retention-days: 30
           compression-level: 0
 
+
+  validate-release-assets:
+    name: Validate complete release assets
+    needs: package
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: WareStat-*
+          path: release-assets
+          merge-multiple: true
+      - run: python packaging/release_assets.py verify release-assets all
+
+  draft-release:
+    name: Draft tagged release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: validate-release-assets
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: WareStat-*
+          path: release-assets
+          merge-multiple: true
+      - name: Verify version and checksums before creating draft
+        run: |
+          python packaging/release_assets.py tag
+          python packaging/release_assets.py verify release-assets all
+      - name: Create draft only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" release-assets/* --draft --verify-tag --title "WareStat $RELEASE_TAG" --notes "Installers for Windows x64, macOS arm64 and macOS x64. Review signatures and installation before publishing."

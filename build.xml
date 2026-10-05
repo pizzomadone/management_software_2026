@@ -712,7 +712,13 @@
     <!-- =================================
           Target: package-installer-windows
          ================================= -->
-    <target name="package-installer-windows" depends="package-exe-release" if="is.windows.release"
+    <target name="sign-release-app" depends="package-exe-release">
+        <exec executable="python" failonerror="true">
+            <arg value="packaging/sign_release.py"/><arg value="app"/>
+        </exec>
+    </target>
+
+    <target name="package-installer-windows" depends="sign-release-app" if="is.windows.release"
             description="Create the Windows EXE installer from the protected app image">
         <mkdir dir="${dist.dir}/installers"/>
         <exec executable="jpackage" failonerror="true">
@@ -735,7 +741,7 @@
     <!-- =================================
           Target: package-installer-mac
          ================================= -->
-    <target name="package-installer-mac" depends="package-exe-release" if="is.mac.release"
+    <target name="package-installer-mac" depends="sign-release-app" if="is.mac.release"
             description="Create the macOS DMG installer from the protected app image">
         <mkdir dir="${dist.dir}/installers"/>
         <exec executable="jpackage" failonerror="true">
@@ -762,6 +768,9 @@
         </condition>
         <fail unless="installer.supported"
               message="Production installers are currently supported on Windows and macOS only."/>
+        <exec executable="python" failonerror="true">
+            <arg value="packaging/sign_release.py"/><arg value="installer"/>
+        </exec>
         <echo message="Installer created in: ${dist.dir}/installers"/>
     </target>
 
