@@ -1,4 +1,4 @@
-name: GraalVM native-image experiment
+name: Native Image experiment
 
 on:
   push:
@@ -11,17 +11,21 @@ permissions:
 
 jobs:
   native-image-macos:
-    name: GraalVM ${{ matrix.label }}
+    name: ${{ matrix.label }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - runner: macos-15
-            label: macOS Apple Silicon
+            label: macOS Apple Silicon via Liberica NIK
             suffix: macos-arm64
+            nik_arch: aarch64
+            nik_sha256: 69c26ed190a143ddfdb7072941a0ad96d924fc98a8d0497c55ae3d6b0cce5297
           - runner: macos-15-intel
-            label: macOS Intel
+            label: macOS Intel via Liberica NIK
             suffix: macos-x64
+            nik_arch: amd64
+            nik_sha256: 00965a52e89d65e7abaa96bc6c58dd419e122bbf409a9d4966c2e490bb9cf77f
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
 
@@ -32,11 +36,27 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
-      - name: Set up GraalVM Community 21
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
-        with:
-          distribution: graalvm-community
-          java-version: '21'
+      - name: Set up Liberica NIK 23.1.12.1 for Java 21
+        shell: bash
+        env:
+          NIK_ARCH: ${{ matrix.nik_arch }}
+          NIK_SHA256: ${{ matrix.nik_sha256 }}
+        run: |
+          set -euo pipefail
+          filename="bellsoft-liberica-vm-full-openjdk21.0.12.1+2-23.1.12.1+1-macos-${NIK_ARCH}.zip"
+          url="https://github.com/bell-sw/LibericaNIK/releases/download/23.1.12.1%2B1-21.0.12.1%2B2/${filename}"
+          mkdir -p "$RUNNER_TEMP/nik"
+          curl --fail --location --retry 4 --output "$RUNNER_TEMP/nik.zip" "$url"
+          echo "${NIK_SHA256}  $RUNNER_TEMP/nik.zip" | shasum -a 256 -c -
+          ditto -x -k "$RUNNER_TEMP/nik.zip" "$RUNNER_TEMP/nik"
+          native_image="$(find "$RUNNER_TEMP/nik" -type f -path '*/bin/native-image' -print -quit)"
+          test -n "$native_image"
+          nik_home="$(cd "$(dirname "$native_image")/.." && pwd)"
+          echo "NIK_HOME=$nik_home" >> "$GITHUB_ENV"
+          echo "JAVA_HOME=$nik_home" >> "$GITHUB_ENV"
+          echo "$nik_home/bin" >> "$GITHUB_PATH"
+          "$nik_home/bin/java" -version
+          "$nik_home/bin/native-image" --version
 
       - name: Ensure Ant is available
         shell: bash
@@ -141,7 +161,7 @@ jobs:
       - name: Upload experimental native artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: WareStat-graalvm-${{ matrix.suffix }}-experiment
+          name: WareStat-liberica-nik-${{ matrix.suffix }}-experiment
           path: |
             native-out/
             native-config/
