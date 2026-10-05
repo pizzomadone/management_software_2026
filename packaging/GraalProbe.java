@@ -1,4 +1,6 @@
 import java.awt.BorderLayout;
+import java.awt.Component;
+import java.awt.Container;
 import java.awt.Window;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
@@ -12,6 +14,10 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.Locale;
 import java.util.ResourceBundle;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.imageio.ImageIO;
 import javax.swing.JFrame;
@@ -241,25 +247,74 @@ public final class GraalProbe {
         MainWindow.main(new String[0]);
         Thread.sleep(10000);
 
-        AtomicBoolean mainWindowShowing = new AtomicBoolean(false);
+        final MainWindow[] mainWindow = new MainWindow[1];
+        final WebViewComponent[] embeddedWebView = new WebViewComponent[1];
         SwingUtilities.invokeAndWait(() -> {
             for (Window open : Window.getWindows()) {
                 if (open instanceof MainWindow && open.isShowing()) {
-                    mainWindowShowing.set(true);
+                    mainWindow[0] = (MainWindow) open;
+                    embeddedWebView[0] = findWebView(open);
+                    break;
                 }
             }
         });
-        if (!mainWindowShowing.get()) {
+        if (mainWindow[0] == null) {
             throw new IllegalStateException("MainWindow was not showing after startup");
         }
+        if (embeddedWebView[0] == null) {
+            throw new IllegalStateException("MainWindow did not contain an embedded WebViewComponent");
+        }
+
+        verifyJavaScript(embeddedWebView[0], "WARESTAT_MAINWINDOW_WEBVIEW_OK", 15000);
 
         SwingUtilities.invokeAndWait(() -> {
             for (Window open : Window.getWindows()) {
                 open.dispose();
             }
         });
-        System.out.println("Graal startup probe: real MainWindow remained active");
+        System.out.println("Graal startup probe: MainWindow and embedded WebView passed");
         System.exit(0);
+    }
+
+    private static WebViewComponent findWebView(Component component) {
+        if (component instanceof WebViewComponent) {
+            return (WebViewComponent) component;
+        }
+        if (component instanceof Container) {
+            for (Component child : ((Container) component).getComponents()) {
+                WebViewComponent found = findWebView(child);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static void verifyJavaScript(WebViewComponent webView, String marker, long timeoutMillis)
+            throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+        Throwable lastError = null;
+        while (System.nanoTime() < deadline) {
+            CompletableFuture<String> future = webView.evalAsync("return '" + marker + "';");
+            try {
+                String value = future.get(2, TimeUnit.SECONDS);
+                if (value != null && value.contains(marker)) {
+                    return;
+                }
+                lastError = new IllegalStateException("Unexpected WebView JavaScript result: " + value);
+            } catch (ExecutionException error) {
+                Throwable cause = error.getCause() == null ? error : error.getCause();
+                lastError = cause;
+                if (!isNotDisplayedError(cause)) {
+                    throw new IllegalStateException("Embedded WebView JavaScript evaluation failed", cause);
+                }
+            } catch (TimeoutException error) {
+                lastError = error;
+            }
+            Thread.sleep(250);
+        }
+        throw new IllegalStateException("Embedded WebView never became ready for JavaScript", lastError);
     }
 
     private static void installFatalUncaughtHandler() {
