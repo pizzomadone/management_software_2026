@@ -39,6 +39,18 @@
 -keep class org.sqlite.JDBC { *; }
 -keep class * implements java.sql.Driver { public <init>(); }
 
+# NativeDB.c resolves these callbacks and fields during JNI_OnLoad.
+# Name-only rules do not prevent shrinking; keep the native bridge explicitly.
+-keep class org.sqlite.core.NativeDB { *; }
+-keep class org.sqlite.core.DB { *; }
+-keep class org.sqlite.Function { *; }
+-keep class org.sqlite.Function$Aggregate { *; }
+-keep class org.sqlite.Function$Window { *; }
+-keep class org.sqlite.Collation { *; }
+-keep interface org.sqlite.core.DB$ProgressObserver { *; }
+-keep class org.sqlite.ProgressHandler { *; }
+-keep class org.sqlite.BusyHandler { *; }
+
 # Preserve names that native/JNI and reflection-heavy third-party code may use,
 # while still allowing ProGuard to remove unreachable code.
 -keepnames class org.sqlite.**
