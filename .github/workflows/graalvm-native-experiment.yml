@@ -124,7 +124,9 @@ jobs:
           out="$PWD/native-out"
           (
             cd native-out
-            native-image --no-fallback -J-Xmx6g -Djava.awt.headless=false -Dorg.sqlite.lib.exportPath="$out" -H:ConfigurationFileDirectories="$config" -H:+ReportExceptionStackTraces -H:NativeLinkerOption=-Wl,-u,_JAWT_GetAWT -H:NativeLinkerOption=-Wl,-exported_symbol,_JAWT_GetAWT -H:IncludeResources='^(i18n/.*|icons/.*|fonts/.*|META-INF/services/.*|LICENSE-THIRD-PARTY.txt|NOTICE.txt)          )
+            native-image --no-fallback -J-Xmx6g -Djava.awt.headless=false -Dorg.sqlite.lib.exportPath="$out" -H:ConfigurationFileDirectories="$config" -H:+ReportExceptionStackTraces -H:NativeLinkerOption=-Wl,-u,_JAWT_GetAWT -H:NativeLinkerOption=-Wl,-exported_symbol,_JAWT_GetAWT -H:IncludeResources="^(i18n/.*|icons/.*|fonts/.*|META-INF/services/.*|LICENSE-THIRD-PARTY.txt|NOTICE.txt)$" -o WareStat-native -cp "../build/release/classes:../lib/*" MainWindow
+            native-image --no-fallback -J-Xmx6g -Djava.awt.headless=false -Dorg.sqlite.lib.exportPath="$out" -H:ConfigurationFileDirectories="$config" -H:+ReportExceptionStackTraces -H:NativeLinkerOption=-Wl,-u,_JAWT_GetAWT -H:NativeLinkerOption=-Wl,-exported_symbol,_JAWT_GetAWT -H:IncludeResources="^(i18n/.*|icons/.*|fonts/.*|META-INF/services/.*|LICENSE-THIRD-PARTY.txt|NOTICE.txt)$" -o WareStat-native-probe -cp "../build/graal-probe-classes:../build/release/classes:../lib/*" GraalProbe
+          )
 
       - name: Verify JAWT symbol is linked and exported
         shell: bash
@@ -209,6 +211,7 @@ jobs:
           find native-out -maxdepth 1 -type f -print
 
       - name: Upload experimental native artifacts
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: WareStat-liberica-nik-${{ matrix.suffix }}-experiment
