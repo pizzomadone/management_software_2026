@@ -39,6 +39,9 @@
 -keep class org.sqlite.JDBC { *; }
 -keep class * implements java.sql.Driver { public <init>(); }
 
+# SQLite native-image metadata loads this feature class by name.
+-keep class org.sqlite.nativeimage.** { *; }
+
 # Preserve names that native/JNI and reflection-heavy third-party code may use,
 # while still allowing ProGuard to remove unreachable code.
 -keepnames class org.sqlite.**
