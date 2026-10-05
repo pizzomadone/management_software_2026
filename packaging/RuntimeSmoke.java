@@ -19,8 +19,12 @@ public final class RuntimeSmoke {
                 final boolean[] shown = {false};
                 javax.swing.SwingUtilities.invokeAndWait(() -> {
                     for (java.awt.Window window : java.awt.Window.getWindows()) {
-                        if (window.isShowing() && window instanceof javax.swing.JDialog dialog
-                                && "WareStat - Language".equals(dialog.getTitle())) shown[0] = true;
+                        if (window.isShowing() && window instanceof javax.swing.JDialog dialog) {
+                            String title = dialog.getTitle();
+                            if ("WareStat - Language".equals(title) || "WareStat - Lingua".equals(title)) {
+                                shown[0] = true;
+                            }
+                        }
                     }
                 });
                 if (shown[0]) { System.out.println("Protected MainWindow opened the first-run language dialog"); System.exit(0); }
