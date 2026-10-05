@@ -31,8 +31,8 @@ jobs:
         shell: bash
         run: command -v ant >/dev/null 2>&1 || brew install ant
 
-      - name: Build protected WareStat JAR
-        run: ant clean verify-protected-jar
+      - name: Compile release classes
+        run: ant clean compile-release
 
       - name: Build native image
         shell: bash
@@ -47,7 +47,7 @@ jobs:
             -H:Name=WareStat-native \
             -H:Path="$PWD/native-out" \
             -H:IncludeResources='^(i18n/.*|icons/.*|fonts/.*|META-INF/services/.*|LICENSE-THIRD-PARTY.txt|NOTICE.txt)$' \
-            -cp "build/release/WareStat-1.3-protected.jar:lib/webview-1.0.10.jar" \
+            -cp "build/release/classes:lib/*" \
             MainWindow
 
       - name: Inspect native output
