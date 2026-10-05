@@ -59,6 +59,25 @@ jobs:
           "$nik_home/bin/java" -version
           "$nik_home/bin/native-image" --version
 
+      - name: Inspect Liberica NIK AWT and JAWT support
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Native Image linker options:"
+          native-image --expert-options-all 2>&1 | grep -E 'NativeLinkerOption|Linker|StaticExecutable' | head -80 || true
+          echo "Liberica NIK AWT/JAWT files:"
+          find "$NIK_HOME" -type f \( -iname '*jawt*' -o -iname '*javaaccessbridge*' -o -iname 'libawt*' \) -print | sort | tee "$RUNNER_TEMP/nik-awt-files.txt"
+          while IFS= read -r candidate; do
+            [ -f "$candidate" ] || continue
+            echo "=== $candidate ==="
+            file "$candidate" || true
+            case "$candidate" in
+              *.a|*.dylib)
+                nm -g "$candidate" 2>/dev/null | grep -E 'JAWT_GetAWT|JAWT_' || true
+                ;;
+            esac
+          done < "$RUNNER_TEMP/nik-awt-files.txt"
+
       - name: Ensure Ant is available
         shell: bash
         run: command -v ant >/dev/null 2>&1 || brew install ant
@@ -118,10 +137,33 @@ jobs:
           ./native-out/WareStat-native-probe libraries "$RUNNER_TEMP/graal-native-probe"
           test -s "$RUNNER_TEMP/graal-native-probe/smoke.pdf"
 
+      - name: Run explicit native WebView attach and JavaScript probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          fatal='IllegalStateException|\[webview-embed\] No JAWT_GetAWT|could not obtain a native window handle|Native webview_embed_create returned 0|UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError|Could not instantiate Shell Folder Manager'
+          : > native-out/webview-probe.log
+          set +e
+          DEBUG_WEBVIEW_EMBED=1 ./native-out/WareStat-native-probe webview "$RUNNER_TEMP/graal-native-probe" > native-out/webview-probe.log 2>&1
+          code=$?
+          set -e
+          cat native-out/webview-probe.log
+          if grep -E "$fatal" native-out/webview-probe.log; then
+            echo "Fatal WebView runtime problem detected" >&2
+            exit 1
+          fi
+          if [ "$code" -ne 0 ]; then
+            echo "Native WebView probe exited with code $code" >&2
+            exit "$code"
+          fi
+          grep -F 'Graal native WebView probe: JavaScript evaluation passed' native-out/webview-probe.log
+          echo "Native WebView attached and executed JavaScript"
+
       - name: Run actual native WareStat startup smoke
         shell: bash
         run: |
           set -euo pipefail
+          fatal='IllegalStateException|\[webview-embed\] No JAWT_GetAWT|could not obtain a native window handle|Native webview_embed_create returned 0|UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError|Could not instantiate Shell Folder Manager'
           app_data="$HOME/Library/Application Support/WareStat"
           rm -f "$app_data/data.db"
           : > native-out/startup.log
@@ -144,7 +186,7 @@ jobs:
           kill "$pid" 2>/dev/null || true
           wait "$pid" 2>/dev/null || true
           cat native-out/startup.log
-          if grep -E 'UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError' native-out/startup.log; then
+          if grep -E "$fatal" native-out/startup.log; then
             echo "Fatal Native Image runtime problem detected" >&2
             exit 1
           fi
@@ -264,6 +306,24 @@ jobs:
           $pdf = Join-Path $probeDir 'smoke.pdf'
           if (-not (Test-Path $pdf) -or (Get-Item $pdf).Length -lt 1000) { throw "Native PDF smoke output is missing or empty" }
 
+      - name: Run explicit native WebView attach and JavaScript probe
+        shell: pwsh
+        run: |
+          $probeDir = Join-Path $env:RUNNER_TEMP 'graal-native-probe'
+          $stdout = Join-Path $PWD 'native-out/webview-probe.stdout.log'
+          $stderr = Join-Path $PWD 'native-out/webview-probe.stderr.log'
+          & ./native-out/WareStat-native-probe.exe webview $probeDir 1> $stdout 2> $stderr
+          $code = $LASTEXITCODE
+          $logs = ''
+          if (Test-Path $stdout) { $logs += Get-Content $stdout -Raw }
+          if (Test-Path $stderr) { $logs += Get-Content $stderr -Raw }
+          Write-Host $logs
+          $fatal = 'IllegalStateException|\[webview-embed\] No JAWT_GetAWT|could not obtain a native window handle|Native webview_embed_create returned 0|UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError|Could not instantiate Shell Folder Manager'
+          if ($logs -match $fatal) { throw "Fatal WebView runtime problem detected" }
+          if ($code -ne 0) { throw "Native WebView probe exited with code $code" }
+          if ($logs -notmatch 'Graal native WebView probe: JavaScript evaluation passed') { throw "Native WebView success marker missing" }
+          Write-Host 'Native WebView attached and executed JavaScript'
+
       - name: Run actual native WareStat startup smoke
         shell: pwsh
         run: |
@@ -284,7 +344,8 @@ jobs:
           if (Test-Path $stdout) { $logs += Get-Content $stdout -Raw }
           if (Test-Path $stderr) { $logs += Get-Content $stderr -Raw }
           Write-Host $logs
-          if ($logs -match 'UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError') { throw "Fatal Native Image runtime problem detected" }
+          $fatal = 'IllegalStateException|\[webview-embed\] No JAWT_GetAWT|could not obtain a native window handle|Native webview_embed_create returned 0|UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError|Could not instantiate Shell Folder Manager'
+          if ($logs -match $fatal) { throw "Fatal Native Image runtime problem detected" }
           Write-Host 'Actual WareStat native executable remained healthy through startup'
 
       - name: Inspect native output
