@@ -222,10 +222,10 @@ jobs:
           $out = (Resolve-Path native-out).Path
           Push-Location native-out
           try {
-            $mainArgs = @('--no-fallback','-J-Xmx6g','-Djava.awt.headless=false',"-Dorg.sqlite.lib.exportPath=$out","-H:ConfigurationFileDirectories=$config",'-H:+ReportExceptionStackTraces','-H:IncludeResources=^(i18n/.*|icons/.*|fonts/.*|META-INF/services/.*|LICENSE-THIRD-PARTY.txt|NOTICE.txt)$','-o','WareStat-native','-cp','../build/release/classes;../lib/*','MainWindow')
+            $mainArgs = @('--no-fallback','-J-Xmx6g','-Djava.awt.headless=false',"-Dorg.sqlite.lib.exportPath=$out","-H:ConfigurationFileDirectories=$config",'-H:+ReportExceptionStackTraces','-H:IncludeResources=i18n/.*','-H:IncludeResources=icons/.*','-H:IncludeResources=fonts/.*','-H:IncludeResources=META-INF/services/.*','-H:IncludeResources=LICENSE-THIRD-PARTY.txt','-H:IncludeResources=NOTICE.txt','-o','WareStat-native','-cp','../build/release/classes;../lib/*','MainWindow')
             & native-image @mainArgs
             if ($LASTEXITCODE -ne 0) { throw "WareStat native-image build failed" }
-            $probeArgs = @('--no-fallback','-J-Xmx6g','-Djava.awt.headless=false',"-Dorg.sqlite.lib.exportPath=$out","-H:ConfigurationFileDirectories=$config",'-H:+ReportExceptionStackTraces','-H:IncludeResources=^(i18n/.*|icons/.*|fonts/.*|META-INF/services/.*|LICENSE-THIRD-PARTY.txt|NOTICE.txt)$','-o','WareStat-native-probe','-cp','../build/graal-probe-classes;../build/release/classes;../lib/*','GraalProbe')
+            $probeArgs = @('--no-fallback','-J-Xmx6g','-Djava.awt.headless=false',"-Dorg.sqlite.lib.exportPath=$out","-H:ConfigurationFileDirectories=$config",'-H:+ReportExceptionStackTraces','-H:IncludeResources=i18n/.*','-H:IncludeResources=icons/.*','-H:IncludeResources=fonts/.*','-H:IncludeResources=META-INF/services/.*','-H:IncludeResources=LICENSE-THIRD-PARTY.txt','-H:IncludeResources=NOTICE.txt','-o','WareStat-native-probe','-cp','../build/graal-probe-classes;../build/release/classes;../lib/*','GraalProbe')
             & native-image @probeArgs
             if ($LASTEXITCODE -ne 0) { throw "Graal native probe build failed" }
           } finally {
