@@ -105,3 +105,6 @@
 
 # FontBox loads resources relative to its class packages.
 -keepnames class org.apache.fontbox.**
+
+# ImageIO providers are instantiated through META-INF/services, not Java calls.
+-keep class * extends javax.imageio.spi.IIOServiceProvider { public <init>(); }
