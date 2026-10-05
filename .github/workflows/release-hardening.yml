@@ -1,0 +1,205 @@
+name: Hardened release build
+
+on:
+  push:
+    branches:
+      - build/release-hardening
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hardened-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  regression:
+    name: Regression suite
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Set up Java 21
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install Ant
+        run: sudo apt-get update && sudo apt-get install -y ant
+
+      - name: Run regression suite
+        run: ant clean test
+
+  protected-jar:
+    name: Validate protected JAR
+    needs: regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Set up Java 21
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install Ant
+        run: sudo apt-get update && sudo apt-get install -y ant
+
+      - name: Build and verify protected JAR
+        run: ant clean verify-protected-jar
+
+      - name: Verify private metadata is isolated
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f build/private/proguard-mapping-*.txt
+          if find dist -type f \( -name '*mapping*' -o -name '*seeds*' -o -name '*usage*' -o -name '*.java' \) | grep -q .; then
+            echo "Private build metadata leaked into dist/"
+            exit 1
+          fi
+
+      - name: Upload internal retrace metadata
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: internal-proguard-metadata
+          path: build/private/
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 9
+
+  package:
+    name: ${{ matrix.label }}
+    needs:
+      - regression
+      - protected-jar
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Windows x64 installer
+            runner: windows-2022
+            suffix: windows-x64
+            extension: exe
+          - label: macOS Apple Silicon installer
+            runner: macos-15
+            suffix: macos-arm64
+            extension: dmg
+          - label: macOS Intel installer
+            runner: macos-15-intel
+            suffix: macos-x64
+            extension: dmg
+
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Set up Java 21
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Ensure Ant is available on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ant -ErrorAction SilentlyContinue)) {
+            choco install ant -y --no-progress
+            $antBin = Get-ChildItem 'C:\ProgramData\chocolatey\lib\ant\tools\apache-ant-*\bin' -Directory | Select-Object -First 1
+            if ($antBin) { $antBin.FullName | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append }
+          }
+
+      - name: Ensure WiX is available on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $candle = Get-ChildItem "${env:ProgramFiles(x86)}\WiX Toolset v3.*\bin\candle.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $candle) {
+            choco install wixtoolset -y --no-progress
+            $candle = Get-ChildItem "${env:ProgramFiles(x86)}\WiX Toolset v3.*\bin\candle.exe" -ErrorAction Stop | Select-Object -First 1
+          }
+          $candle.Directory.FullName | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Ensure Ant is available on macOS
+        if: runner.os == 'macOS'
+        shell: bash
+        run: command -v ant >/dev/null 2>&1 || brew install ant
+
+      - name: Build hardened installer
+        run: ant clean package-installer-release
+
+      - name: Name and checksum Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = ((Select-String -Path build.properties -Pattern '^app\.version=(.+)$').Matches[0].Groups[1].Value).Trim()
+          $source = Get-ChildItem 'dist/installers/*.exe' | Select-Object -First 1
+          if (-not $source) { throw 'Windows installer was not produced.' }
+          $target = Join-Path $source.Directory.FullName "WareStat-$version-${{ matrix.suffix }}.exe"
+          Move-Item $source.FullName $target -Force
+          $hash = (Get-FileHash -Algorithm SHA256 $target).Hash.ToLowerInvariant()
+          "$hash  $(Split-Path $target -Leaf)" | Set-Content "$target.sha256" -Encoding ascii
+
+      - name: Name and checksum macOS installer
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^app.version=//p' build.properties | head -n1 | tr -d '\r')"
+          source_file="$(find dist/installers -maxdepth 1 -type f -name '*.dmg' -print -quit)"
+          test -n "$source_file"
+          target="dist/installers/WareStat-${version}-${{ matrix.suffix }}.dmg"
+          mv "$source_file" "$target"
+          shasum -a 256 "$target" | sed "s#  .*#  $(basename "$target")#" > "$target.sha256"
+
+      - name: Reject release metadata leaks
+        shell: bash
+        if: runner.os != 'Windows'
+        run: |
+          set -euo pipefail
+          if find dist/installers -type f \( -name '*.jar' -o -name '*.java' -o -name '*mapping*' -o -name '*seeds*' -o -name '*usage*' \) | grep -q .; then
+            echo "Unexpected internal file in installer output."
+            exit 1
+          fi
+
+      - name: Reject release metadata leaks on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $leaks = Get-ChildItem dist/installers -Recurse -File | Where-Object {
+            $_.Extension -in '.jar', '.java' -or $_.Name -match 'mapping|seeds|usage'
+          }
+          if ($leaks) {
+            $leaks | Format-Table FullName
+            throw 'Unexpected internal file in installer output.'
+          }
+
+      - name: Upload installer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: WareStat-${{ matrix.suffix }}
+          path: |
+            dist/installers/WareStat-*.${{ matrix.extension }}
+            dist/installers/WareStat-*.${{ matrix.extension }}.sha256
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
