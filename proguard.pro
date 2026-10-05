@@ -98,3 +98,10 @@
 
 # Do not leak build machine paths/names through optional debugging attributes.
 -keeppackagenames org.sqlite,org.apache.pdfbox
+
+# Commons Logging discovers the JDK backend by name and invokes its String constructor.
+-keep class org.apache.commons.logging.impl.Jdk14Logger { *; }
+-keep class org.apache.commons.logging.impl.LogFactoryImpl { public <init>(); }
+
+# FontBox loads resources relative to its class packages.
+-keepnames class org.apache.fontbox.**
