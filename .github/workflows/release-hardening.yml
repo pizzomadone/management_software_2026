@@ -131,15 +131,41 @@ jobs:
             if ($antBin) { $antBin.FullName | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append }
           }
 
-      - name: Ensure WiX is available on Windows
+      - name: Ensure supported WiX 3 is available on Windows
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $candle = Get-ChildItem "${env:ProgramFiles(x86)}\WiX Toolset v3.*\bin\candle.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $candle) {
-            choco install wixtoolset -y --no-progress
-            $candle = Get-ChildItem "${env:ProgramFiles(x86)}\WiX Toolset v3.*\bin\candle.exe" -ErrorAction Stop | Select-Object -First 1
+          $requiredWix = [version]'3.14.1'
+          $chocolateyWix = '3.14.1.20250415'
+
+          function Find-Candle {
+            Get-ChildItem "${env:ProgramFiles(x86)}\WiX Toolset v3.*\bin\candle.exe" -ErrorAction SilentlyContinue |
+              Sort-Object FullName -Descending |
+              Select-Object -First 1
           }
+
+          function Get-WixVersion([string]$path) {
+            if (-not $path) { return $null }
+            $raw = (Get-Item $path).VersionInfo.FileVersion
+            if ($raw -match '(\d+\.\d+\.\d+(?:\.\d+)?)') {
+              return [version]$Matches[1]
+            }
+            return $null
+          }
+
+          $candle = Find-Candle
+          $wixVersion = if ($candle) { Get-WixVersion $candle.FullName } else { $null }
+          if (-not $wixVersion -or $wixVersion -lt $requiredWix) {
+            choco install wixtoolset --version=$chocolateyWix -y --no-progress --force
+            $candle = Find-Candle
+            $wixVersion = if ($candle) { Get-WixVersion $candle.FullName } else { $null }
+          }
+
+          if (-not $candle -or -not $wixVersion -or $wixVersion -lt $requiredWix) {
+            throw "WiX Toolset 3.14.1 or newer within the v3 line is required."
+          }
+
+          Write-Host "Using WiX $wixVersion from $($candle.Directory.FullName)"
           $candle.Directory.FullName | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Ensure Ant is available on macOS
