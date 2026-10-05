@@ -147,6 +147,43 @@ jobs:
       - name: Build hardened installer
         run: ant clean package-installer-release
 
+      - name: Smoke-test protected platform runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^app.version=//p' build.properties | head -n1 | tr -d '\r')"
+          runtime_jar="build/release/WareStat-${version}-runtime.jar"
+          test -f "$runtime_jar"
+          cat > build/RuntimeSmoke.java <<'JAVA'
+          import java.sql.Connection;
+          import java.sql.DriverManager;
+          import java.util.Locale;
+          import java.util.ResourceBundle;
+          import org.apache.pdfbox.pdmodel.PDDocument;
+
+          public final class RuntimeSmoke {
+              public static void main(String[] args) throws Exception {
+                  Class.forName("org.sqlite.JDBC");
+                  try (Connection connection = DriverManager.getConnection("jdbc:sqlite::memory:")) {
+                      if (!connection.isValid(2)) throw new IllegalStateException("SQLite connection is invalid");
+                  }
+                  try (PDDocument document = new PDDocument()) {
+                      if (document.getNumberOfPages() != 0) throw new IllegalStateException("Unexpected PDF state");
+                  }
+                  ResourceBundle.getBundle("i18n.messages", Locale.ITALIAN);
+                  Class.forName("ca.weblite.webview.swing.WebViewComponent");
+                  System.out.println("Protected runtime smoke test passed");
+              }
+          }
+          JAVA
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            cp_sep=';'
+          else
+            cp_sep=':'
+          fi
+          javac -cp "$runtime_jar${cp_sep}lib/webview-1.0.10.jar" -d build/smoke-classes build/RuntimeSmoke.java
+          java -cp "build/smoke-classes${cp_sep}$runtime_jar${cp_sep}lib/webview-1.0.10.jar" RuntimeSmoke
+
       - name: Name and checksum Windows installer
         if: runner.os == 'Windows'
         shell: pwsh
