@@ -1,7 +1,7 @@
+import java.awt.BorderLayout;
 import java.awt.Window;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
-import java.io.File;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -12,7 +12,9 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.Locale;
 import java.util.ResourceBundle;
+import java.util.concurrent.atomic.AtomicBoolean;
 import javax.imageio.ImageIO;
+import javax.swing.JFrame;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -20,12 +22,15 @@ import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.font.PDType0Font;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
+import ca.weblite.webview.swing.WebViewComponent;
 
 /**
  * External GraalVM probe. It is compiled only by the experimental workflow and
  * is never included in the normal WareStat JAR or installers.
  */
 public final class GraalProbe {
+    private static final String WEBVIEW_OK = "WARESTAT_WEBVIEW_OK";
+
     private GraalProbe() {}
 
     public static void main(String[] args) throws Exception {
@@ -35,23 +40,28 @@ public final class GraalProbe {
 
         runLibraries(workDir);
 
-        if ("trace".equals(mode) || "startup".equals(mode)) {
-            runStartup();
-            return;
+        switch (mode) {
+            case "libraries":
+                System.out.println("Graal native probe: libraries passed");
+                System.exit(0);
+                return;
+            case "webview":
+                runWebViewProbe();
+                return;
+            case "trace":
+            case "startup":
+                runActualMainWindowStartup();
+                return;
+            default:
+                throw new IllegalArgumentException("Unknown Graal probe mode: " + mode);
         }
-
-        System.out.println("Graal native probe: libraries passed");
-        // AWT can keep a native event thread alive even after the probe has completed.
-        // Exit only after every library/resource assertion above has passed.
-        System.exit(0);
     }
 
     private static void runLibraries(Path workDir) throws Exception {
-        // Direct references keep the real application entry points reachable.
         Class<?> mainWindowClass = MainWindow.class;
         Class<?> aboutDialogClass = AboutDialog.class;
         Class<?> webPanelClass = WebPanel.class;
-        Class<?> webViewClass = ca.weblite.webview.swing.WebViewComponent.class;
+        Class<?> webViewClass = WebViewComponent.class;
         if (mainWindowClass == null || aboutDialogClass == null || webPanelClass == null || webViewClass == null) {
             throw new AssertionError("Required application classes are missing");
         }
@@ -63,7 +73,6 @@ public final class GraalProbe {
             }
         }
 
-        // Exercise SQLite ServiceLoader/JNI, SQL execution and rollback.
         Path db = workDir.resolve("smoke.db");
         Files.deleteIfExists(db);
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + db)) {
@@ -85,7 +94,6 @@ public final class GraalProbe {
             }
         }
 
-        // Exercise PDFBox, embedded Unicode fonts and ImageIO providers.
         Path pdf = workDir.resolve("smoke.pdf");
         try (PDDocument document = new PDDocument()) {
             PDPage page = new PDPage();
@@ -120,18 +128,103 @@ public final class GraalProbe {
             throw new AssertionError("PDF smoke output is empty");
         }
 
-        // Exercise application-side code that reads locale, settings and desktop properties.
         String userAgent = WebPanel.buildUserAgent();
         if (!userAgent.contains("WareStat/")) {
             throw new AssertionError("Unexpected embedded browser user-agent");
         }
     }
 
-    private static void runStartup() throws Exception {
-        Thread.setDefaultUncaughtExceptionHandler((thread, error) -> {
-            error.printStackTrace();
-            System.exit(1);
+    /**
+     * Proves that the native WebView is actually attached by evaluating
+     * JavaScript in a visible browser peer. Process liveness alone is not
+     * sufficient because peer-attach failures occur asynchronously on the EDT.
+     */
+    private static void runWebViewProbe() throws Exception {
+        installFatalUncaughtHandler();
+        AtomicBoolean completed = new AtomicBoolean(false);
+
+        Thread watchdog = new Thread(() -> {
+            try {
+                Thread.sleep(20000);
+                if (completed.compareAndSet(false, true)) {
+                    System.err.println("Graal native WebView probe timed out");
+                    Runtime.getRuntime().halt(2);
+                }
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+        }, "graal-webview-watchdog");
+        watchdog.setDaemon(true);
+        watchdog.start();
+
+        SwingUtilities.invokeLater(() -> {
+            try {
+                JFrame frame = new JFrame("WareStat Graal WebView probe");
+                WebViewComponent webView = WebViewComponent.create();
+                frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+                frame.setLayout(new BorderLayout());
+                frame.add(webView, BorderLayout.CENTER);
+                frame.setSize(640, 420);
+                frame.setLocationRelativeTo(null);
+                webView.setUrl("about:blank");
+                frame.setVisible(true);
+
+                final boolean[] requestPending = {false};
+                final int[] attempts = {0};
+                Timer poll = new Timer(250, null);
+                poll.addActionListener(event -> {
+                    if (completed.get() || requestPending[0] || !webView.isShowing()) {
+                        return;
+                    }
+                    requestPending[0] = true;
+                    attempts[0]++;
+                    webView.evalAsync("return '" + WEBVIEW_OK + "';").whenComplete((value, error) -> {
+                        requestPending[0] = false;
+                        if (completed.get()) {
+                            return;
+                        }
+                        if (error != null) {
+                            if (isNotDisplayedError(error) && attempts[0] < 40) {
+                                return;
+                            }
+                            failProbe("WebView JavaScript evaluation failed", error);
+                            return;
+                        }
+                        if (value != null && value.contains(WEBVIEW_OK)) {
+                            completed.set(true);
+                            poll.stop();
+                            webView.dispose();
+                            frame.dispose();
+                            System.out.println("Graal native WebView probe: JavaScript evaluation passed");
+                            System.exit(0);
+                        }
+                    });
+                });
+                poll.start();
+            } catch (Throwable error) {
+                failProbe("WebView creation failed", error);
+            }
         });
+
+        Thread.sleep(30000);
+    }
+
+    private static boolean isNotDisplayedError(Throwable error) {
+        for (Throwable current = error; current != null; current = current.getCause()) {
+            String message = current.getMessage();
+            if (message != null && message.contains("WebViewComponent not displayed")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Runs the real application entry point so reachability tracing also
+     * covers code outside the constructor, notably Taskbar/ShellFolderManager.
+     */
+    private static void runActualMainWindowStartup() throws Exception {
+        installFatalUncaughtHandler();
 
         Thread watchdog = new Thread(() -> {
             try {
@@ -141,31 +234,47 @@ public final class GraalProbe {
             } catch (InterruptedException ignored) {
                 Thread.currentThread().interrupt();
             }
-        }, "graal-probe-watchdog");
+        }, "graal-startup-watchdog");
         watchdog.setDaemon(true);
         watchdog.start();
 
-        SwingUtilities.invokeLater(() -> {
-            try {
-                MainWindow window = new MainWindow();
-                window.setVisible(true);
+        MainWindow.main(new String[0]);
+        Thread.sleep(10000);
 
-                Timer timer = new Timer(8000, event -> {
-                    for (Window open : Window.getWindows()) {
-                        open.dispose();
-                    }
-                    System.out.println("Graal startup probe: MainWindow and embedded WebView initialized");
-                    System.exit(0);
-                });
-                timer.setRepeats(false);
-                timer.start();
-            } catch (Throwable error) {
-                error.printStackTrace();
-                System.exit(1);
+        AtomicBoolean mainWindowShowing = new AtomicBoolean(false);
+        SwingUtilities.invokeAndWait(() -> {
+            for (Window open : Window.getWindows()) {
+                if (open instanceof MainWindow && open.isShowing()) {
+                    mainWindowShowing.set(true);
+                }
             }
         });
+        if (!mainWindowShowing.get()) {
+            throw new IllegalStateException("MainWindow was not showing after startup");
+        }
 
-        // Keep the launcher thread alive while the Swing event thread performs the probe.
-        Thread.sleep(30000);
+        SwingUtilities.invokeAndWait(() -> {
+            for (Window open : Window.getWindows()) {
+                open.dispose();
+            }
+        });
+        System.out.println("Graal startup probe: real MainWindow remained active");
+        System.exit(0);
+    }
+
+    private static void installFatalUncaughtHandler() {
+        Thread.setDefaultUncaughtExceptionHandler((thread, error) -> {
+            System.err.println("Uncaught failure on " + thread.getName());
+            error.printStackTrace();
+            Runtime.getRuntime().halt(1);
+        });
+    }
+
+    private static void failProbe(String message, Throwable error) {
+        System.err.println(message);
+        if (error != null) {
+            error.printStackTrace();
+        }
+        Runtime.getRuntime().halt(1);
     }
 }
