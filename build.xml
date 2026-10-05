@@ -23,8 +23,15 @@
     <property name="tools.dir" location="tools"/>
     <property name="resources.dir" location="resources"/>
     <property name="icons.dir" location="${resources.dir}/icons"/>
-    <property name="yguard.jar" location="${tools.dir}/yguard.jar"/>
     <property name="custom.runtime.dir" location="${build.dir}/custom-runtime"/>
+    <property name="release.build.dir" location="${build.dir}/release"/>
+    <property name="release.classes.dir" location="${release.build.dir}/classes"/>
+    <property name="private.build.dir" location="${build.dir}/private"/>
+    <property name="proguard.version" value="7.10.0"/>
+    <property name="proguard.sha256" value="5aa88c434766a057a2ead3412acc01022bb444f9f1bfbae690a1d48b2006b242"/>
+    <property name="proguard.zip" location="${tools.dir}/proguard-${proguard.version}.zip"/>
+    <property name="proguard.home" location="${tools.dir}/proguard-${proguard.version}"/>
+    <property name="proguard.jar" location="${proguard.home}/lib/proguard.jar"/>
 
     <!-- Icon files for different platforms -->
     <property name="icon.windows" location="${icons.dir}/warestat.ico"/>
@@ -33,8 +40,13 @@
 
     <!-- Output files -->
     <property name="jar.file" value="${dist.dir}/${app.name}-${app.version}.jar"/>
-    <property name="jar.obfuscated.file" value="${dist.dir}/${app.name}-${app.version}-obfuscated.jar"/>
+    <property name="jar.release.input.file" value="${release.build.dir}/${app.name}-${app.version}-input.jar"/>
+    <property name="jar.obfuscated.file" value="${dist.dir}/${app.name}-${app.version}-protected.jar"/>
     <property name="jar.license.file" value="${dist.dir}/License-Viewer.jar"/>
+    <property name="proguard.mapping.file" value="${private.build.dir}/proguard-mapping-${app.version}.txt"/>
+    <property name="proguard.usage.file" value="${private.build.dir}/proguard-usage-${app.version}.txt"/>
+    <property name="proguard.seeds.file" value="${private.build.dir}/proguard-seeds-${app.version}.txt"/>
+    <property name="proguard.config.file" value="${private.build.dir}/proguard-config-${app.version}.txt"/>
 
     <!-- Classpath for compilation -->
     <path id="compile.classpath">
@@ -173,81 +185,163 @@
     </target>
 
     <!-- =================================
-          Target: check-yguard
+          Target: compile-release
          ================================= -->
-    <target name="check-yguard">
-        <available file="${yguard.jar}" property="yguard.available"/>
+    <target name="compile-release" depends="init" description="Compile production classes without local debug metadata">
+        <echo message="Compiling production classes..."/>
+        <mkdir dir="${release.classes.dir}"/>
+        <javac srcdir="${src.dir}"
+               destdir="${release.classes.dir}"
+               includeantruntime="false"
+               debug="false"
+               encoding="UTF-8"
+               source="21"
+               target="21">
+            <classpath refid="compile.classpath"/>
+        </javac>
+        <copy todir="${release.classes.dir}">
+            <fileset dir="${resources.dir}">
+                <include name="i18n/**"/>
+                <include name="icons/**"/>
+                <include name="fonts/**"/>
+            </fileset>
+            <fileset dir=".">
+                <include name="LICENSE-THIRD-PARTY.txt"/>
+                <include name="NOTICE.txt"/>
+            </fileset>
+        </copy>
+        <echo message="Production compilation complete."/>
     </target>
 
     <!-- =================================
-          Target: download-yguard
+          Target: jar-release-input
          ================================= -->
-    <target name="download-yguard" depends="check-yguard" unless="yguard.available"
-            description="Download yGuard if not present">
-        <echo message="yGuard not found. Downloading..."/>
-        <mkdir dir="${tools.dir}"/>
+    <target name="jar-release-input" depends="compile-release"
+            description="Create a clean production input JAR for ProGuard">
+        <delete dir="${release.build.dir}/jar-temp"/>
+        <mkdir dir="${release.build.dir}/jar-temp"/>
 
-        <get src="https://repo1.maven.org/maven2/com/yworks/yguard/4.1.0/yguard-4.1.0.jar"
-             dest="${yguard.jar}"
-             verbose="true"
-             usetimestamp="true"/>
+        <unzip dest="${release.build.dir}/jar-temp">
+            <fileset dir="${lib.dir}">
+                <include name="**/*.jar"/>
+                <exclude name="webview-1.0.10.jar"/>
+            </fileset>
+        </unzip>
 
-        <echo message="yGuard downloaded successfully!"/>
+        <jar destfile="${jar.release.input.file}" filesetmanifest="mergewithoutmain">
+            <manifest>
+                <attribute name="Main-Class" value="${main.class}"/>
+                <attribute name="Implementation-Title" value="${app.name}"/>
+                <attribute name="Implementation-Version" value="${app.version}"/>
+                <attribute name="Implementation-Vendor" value="${app.vendor}"/>
+                <attribute name="Class-Path" value="webview-1.0.10.jar"/>
+            </manifest>
+            <fileset dir="${release.classes.dir}"/>
+            <fileset dir="${release.build.dir}/jar-temp">
+                <exclude name="META-INF/*.SF"/>
+                <exclude name="META-INF/*.DSA"/>
+                <exclude name="META-INF/*.RSA"/>
+            </fileset>
+        </jar>
+
+        <delete dir="${release.build.dir}/jar-temp"/>
+        <echo message="Production input JAR created: ${jar.release.input.file}"/>
+    </target>
+
+    <!-- =================================
+          Target: download-proguard
+         ================================= -->
+    <target name="download-proguard" depends="init" description="Download and verify ProGuard">
+        <get src="https://github.com/Guardsquare/proguard/releases/download/v${proguard.version}/proguard-${proguard.version}.zip"
+             dest="${proguard.zip}"
+             skipexisting="true"
+             verbose="true"/>
+
+        <checksum file="${proguard.zip}" algorithm="SHA-256" property="proguard.actual.sha256"/>
+        <fail message="ProGuard archive checksum mismatch. Delete ${proguard.zip} and rebuild.">
+            <condition>
+                <not>
+                    <equals arg1="${proguard.actual.sha256}" arg2="${proguard.sha256}"/>
+                </not>
+            </condition>
+        </fail>
+
+        <unzip src="${proguard.zip}" dest="${tools.dir}" overwrite="false"/>
+        <available file="${proguard.jar}" property="proguard.available"/>
+        <fail unless="proguard.available"
+              message="Verified ProGuard archive does not contain the expected lib/proguard.jar."/>
     </target>
 
     <!-- =================================
           Target: obfuscate
          ================================= -->
-    <target name="obfuscate" depends="verify-runtime-jar,download-yguard" description="Obfuscate JAR with yGuard">
-        <echo message="Obfuscating JAR with yGuard..."/>
+    <target name="obfuscate" depends="jar-release-input,download-proguard"
+            description="Shrink, optimize and obfuscate the production JAR with ProGuard">
+        <echo message="Protecting production JAR with ProGuard ${proguard.version}..."/>
+        <mkdir dir="${private.build.dir}"/>
+        <delete file="${jar.obfuscated.file}"/>
 
-        <taskdef name="yguard" classname="com.yworks.yguard.YGuardTask" classpath="${yguard.jar}"/>
+        <java jar="${proguard.jar}" fork="true" failonerror="true" maxmemory="2048m">
+            <arg value="@proguard.pro"/>
+            <arg value="-injars"/>
+            <arg value="${jar.release.input.file}"/>
+            <arg value="-outjars"/>
+            <arg value="${jar.obfuscated.file}"/>
+            <arg value="-printmapping"/>
+            <arg value="${proguard.mapping.file}"/>
+            <arg value="-printusage"/>
+            <arg value="${proguard.usage.file}"/>
+            <arg value="-printseeds"/>
+            <arg value="${proguard.seeds.file}"/>
+            <arg value="-printconfiguration"/>
+            <arg value="${proguard.config.file}"/>
+        </java>
 
-        <yguard>
-            <!-- Input/Output -->
-            <inoutpair in="${jar.file}" out="${jar.obfuscated.file}"/>
+        <echo message="Protected JAR created: ${jar.obfuscated.file}"/>
+        <echo message="Private mapping: ${proguard.mapping.file}"/>
+    </target>
 
-            <!-- Rename settings -->
-            <rename mainclass="${main.class}" logfile="${dist.dir}/yguard-log.xml">
-                <!-- Keep main class and external libraries -->
-                <keep>
-                    <class classes="public" methods="public" fields="public">
-                        <patternset>
-                            <include name="${main.class}"/>
-                            <!-- Referenced by the macOS application menu; keep its stable name. -->
-                            <include name="AboutDialog"/>
-                        </patternset>
-                    </class>
-                    <class classes="private" methods="private" fields="private">
-                        <patternset>
-                            <include name="org.sqlite.**"/>
-                            <include name="org.apache.**"/>
-                        </patternset>
-                    </class>
-                </keep>
-
-                <!-- Disable pedantic error checking to ignore missing external dependencies -->
-                <property name="error-checking" value="none"/>
-            </rename>
-        </yguard>
-
-        <available classname="AboutDialog" ignoresystemclasses="true"
-                   property="runtime.obfuscated.jar.about.available">
+    <!-- =================================
+          Target: verify-protected-jar
+         ================================= -->
+    <target name="verify-protected-jar" depends="obfuscate"
+            description="Verify required entry points and resources in the protected JAR">
+        <available classname="${main.class}" ignoresystemclasses="true"
+                   property="runtime.protected.main.available">
             <classpath>
                 <pathelement location="${jar.obfuscated.file}"/>
             </classpath>
         </available>
-        <fail unless="runtime.obfuscated.jar.about.available"
-              message="Invalid obfuscated JAR: AboutDialog.class is missing."/>
-        <resourcecount property="runtime.obfuscated.jar.font.count">
-            <zipfileset src="${jar.obfuscated.file}" includes="fonts/DejaVuSans.ttf,fonts/DejaVuSans-Bold.ttf,fonts/LICENSE-DejaVu.txt"/>
+        <fail unless="runtime.protected.main.available"
+              message="Invalid protected JAR: main class is missing."/>
+
+        <available classname="AboutDialog" ignoresystemclasses="true"
+                   property="runtime.protected.about.available">
+            <classpath>
+                <pathelement location="${jar.obfuscated.file}"/>
+            </classpath>
+        </available>
+        <fail unless="runtime.protected.about.available"
+              message="Invalid protected JAR: AboutDialog stable entry is missing."/>
+
+        <resourcecount property="runtime.protected.jar.font.count">
+            <zipfileset src="${jar.obfuscated.file}"
+                        includes="fonts/DejaVuSans.ttf,fonts/DejaVuSans-Bold.ttf,fonts/LICENSE-DejaVu.txt"/>
         </resourcecount>
-        <fail message="Invalid obfuscated JAR: PDF fonts or their license are missing.">
-            <condition><not><equals arg1="${runtime.obfuscated.jar.font.count}" arg2="3"/></not></condition>
+        <fail message="Invalid protected JAR: PDF fonts or their license are missing.">
+            <condition>
+                <not><equals arg1="${runtime.protected.jar.font.count}" arg2="3"/></not>
+            </condition>
         </fail>
 
-        <echo message="Obfuscation complete: ${jar.obfuscated.file}"/>
-        <echo message="Mapping file saved to: ${dist.dir}/yguard-log.xml"/>
+        <resourcecount property="runtime.protected.jar.sqlite.driver.count">
+            <zipfileset src="${jar.obfuscated.file}" includes="org/sqlite/JDBC.class"/>
+        </resourcecount>
+        <fail message="Invalid protected JAR: SQLite JDBC entry point is missing.">
+            <condition>
+                <not><equals arg1="${runtime.protected.jar.sqlite.driver.count}" arg2="1"/></not>
+            </condition>
+        </fail>
     </target>
 
     <!-- =================================
@@ -435,14 +529,14 @@
     </target>
 
     <!-- =================================
-          Target: package-exe-release (Production - With obfuscation)
+          Target: package-exe-release (Production - Protected)
          ================================= -->
-    <target name="package-exe-release" depends="obfuscate,create-custom-runtime,jpackage-check"
-            description="Create native executable (production build, obfuscated, with custom JRE)">
+    <target name="package-exe-release" depends="verify-protected-jar,create-custom-runtime,jpackage-check"
+            description="Create native executable (production build, protected, with custom JRE)">
         <fail unless="jpackage.available"
               message="jpackage not found! Please ensure you have JDK 14+ with jpackage in your PATH."/>
 
-        <echo message="Creating native executable from obfuscated JAR (production build)..."/>
+        <echo message="Creating native executable from protected JAR (production build)..."/>
         <echo message="Using custom JRE to reduce size by ~60%"/>
         <echo message="This may take several minutes..."/>
 
@@ -533,6 +627,59 @@
 
         <echo message="Native executable (obfuscated, optimized) created in: ${dist.dir}/${app.name}/"/>
         <echo message="This build uses a custom JRE (~50MB instead of ~200MB)"/>
+    </target>
+
+    <!-- =================================
+          Target: package-installer-windows
+         ================================= -->
+    <target name="package-installer-windows" depends="package-exe-release" if="is.windows.release"
+            description="Create the Windows EXE installer from the protected app image">
+        <mkdir dir="${dist.dir}/installers"/>
+        <exec executable="jpackage" failonerror="true">
+            <arg value="--type"/><arg value="exe"/>
+            <arg value="--app-image"/><arg value="${dist.dir}/${app.name}"/>
+            <arg value="--dest"/><arg value="${dist.dir}/installers"/>
+            <arg value="--name"/><arg value="${app.name}"/>
+            <arg value="--app-version"/><arg value="${app.version}"/>
+            <arg value="--vendor"/><arg value="${app.vendor}"/>
+            <arg value="--win-dir-chooser"/>
+            <arg value="--win-menu"/>
+            <arg value="--win-shortcut"/>
+            <arg value="--win-menu-group"/><arg value="${app.name}"/>
+        </exec>
+    </target>
+
+    <!-- =================================
+          Target: package-installer-mac
+         ================================= -->
+    <target name="package-installer-mac" depends="package-exe-release" if="is.mac.release"
+            description="Create the macOS DMG installer from the protected app image">
+        <mkdir dir="${dist.dir}/installers"/>
+        <exec executable="jpackage" failonerror="true">
+            <arg value="--type"/><arg value="dmg"/>
+            <arg value="--app-image"/><arg value="${dist.dir}/${app.name}.app"/>
+            <arg value="--dest"/><arg value="${dist.dir}/installers"/>
+            <arg value="--name"/><arg value="${app.name}"/>
+            <arg value="--app-version"/><arg value="${app.version}"/>
+            <arg value="--vendor"/><arg value="${app.vendor}"/>
+        </exec>
+    </target>
+
+    <!-- =================================
+          Target: package-installer-release
+         ================================= -->
+    <target name="package-installer-release"
+            depends="package-installer-windows,package-installer-mac"
+            description="Create the platform-native production installer">
+        <condition property="installer.supported">
+            <or>
+                <isset property="is.windows.release"/>
+                <isset property="is.mac.release"/>
+            </or>
+        </condition>
+        <fail unless="installer.supported"
+              message="Production installers are currently supported on Windows and macOS only."/>
+        <echo message="Installer created in: ${dist.dir}/installers"/>
     </target>
 
     <!-- =================================
@@ -649,17 +796,17 @@
     <!-- =================================
           Target: build-release (Production)
          ================================= -->
-    <target name="build-release" depends="package-exe-release"
-            description="Full release build: compile, obfuscated JAR, and native executable">
+    <target name="build-release" depends="package-installer-release"
+            description="Full release build: protected JAR, optimized runtime, app image, and native installer">
         <echo message=""/>
         <echo message="======================================"/>
         <echo message="Production Build Complete!"/>
         <echo message="======================================"/>
-        <echo message="Obfuscated JAR: ${jar.obfuscated.file}"/>
+        <echo message="Protected JAR: ${jar.obfuscated.file}"/>
         <echo message="Executable: ${dist.dir}/${app.name}/ (optimized with custom JRE)"/>
-        <echo message="Mapping file: ${dist.dir}/yguard-log.xml"/>
+        <echo message="Private mapping: ${proguard.mapping.file}"/>
         <echo message=""/>
-        <echo message="IMPORTANT: Keep yguard-log.xml safe to decode stack traces!"/>
+        <echo message="IMPORTANT: Never distribute files from ${private.build.dir}; keep the mapping private for crash retracing."/>
         <echo message="Size reduction: ~60% smaller than standard JRE bundle"/>
         <echo message=""/>
     </target>
@@ -685,12 +832,12 @@
         <echo message="======================================"/>
         <echo message="Production Build Complete (with License)!"/>
         <echo message="======================================"/>
-        <echo message="Obfuscated JAR: ${jar.obfuscated.file}"/>
+        <echo message="Protected JAR: ${jar.obfuscated.file}"/>
         <echo message="Executable: ${dist.dir}/${app.name}/ (optimized with custom JRE)"/>
         <echo message="License Viewer: ${dist.dir}/${app.name}/${license.exe.name}"/>
-        <echo message="Mapping file: ${dist.dir}/yguard-log.xml"/>
+        <echo message="Private mapping: ${proguard.mapping.file}"/>
         <echo message=""/>
-        <echo message="IMPORTANT: Keep yguard-log.xml safe to decode stack traces!"/>
+        <echo message="IMPORTANT: Never distribute files from ${private.build.dir}; keep the mapping private for crash retracing."/>
         <echo message="Size reduction: ~60% smaller than standard JRE bundle"/>
         <echo message=""/>
     </target>
@@ -716,12 +863,12 @@
         <echo message="Available targets:"/>
         <echo message=""/>
         <echo message="  ant build                      - Development build (JAR + executable, no obfuscation)"/>
-        <echo message="  ant build-release              - Production build (obfuscated JAR + executable)"/>
+        <echo message="  ant build-release              - Production build (protected JAR + executable)"/>
         <echo message="  ant build-release-with-license - Production build with license.exe included"/>
         <echo message="  ant jar                        - Create JAR only (no obfuscation)"/>
-        <echo message="  ant obfuscate          - Create obfuscated JAR only"/>
+        <echo message="  ant obfuscate          - Create protected JAR only"/>
         <echo message="  ant package-exe        - Create native executable from JAR"/>
-        <echo message="  ant package-exe-release - Create native executable from obfuscated JAR"/>
+        <echo message="  ant package-exe-release - Create native executable from protected JAR"/>
         <echo message="  ant test-jar           - Test the JAR file"/>
         <echo message="  ant clean              - Clean build artifacts"/>
         <echo message="  ant help               - Display this help"/>
