@@ -41,7 +41,8 @@
     <!-- Output files -->
     <property name="jar.file" value="${dist.dir}/${app.name}-${app.version}.jar"/>
     <property name="jar.release.input.file" value="${release.build.dir}/${app.name}-${app.version}-input.jar"/>
-    <property name="jar.obfuscated.file" value="${dist.dir}/${app.name}-${app.version}-protected.jar"/>
+    <property name="jar.obfuscated.file" value="${release.build.dir}/${app.name}-${app.version}-protected.jar"/>
+    <property name="jar.platform.file" value="${release.build.dir}/${app.name}-${app.version}-runtime.jar"/>
     <property name="jar.license.file" value="${dist.dir}/License-Viewer.jar"/>
     <property name="proguard.mapping.file" value="${private.build.dir}/proguard-mapping-${app.version}.txt"/>
     <property name="proguard.usage.file" value="${private.build.dir}/proguard-usage-${app.version}.txt"/>
@@ -345,6 +346,72 @@
     </target>
 
     <!-- =================================
+          Target: strip-platform-natives
+         ================================= -->
+    <target name="strip-platform-natives" depends="verify-protected-jar"
+            description="Remove SQLite native binaries for platforms other than the current release target">
+        <condition property="sqlite.native.keep" value="org/sqlite/native/Windows/x86_64/**">
+            <and>
+                <os family="windows"/>
+                <or><os arch="amd64"/><os arch="x86_64"/></or>
+            </and>
+        </condition>
+        <condition property="sqlite.native.expected"
+                   value="${release.build.dir}/platform-jar/org/sqlite/native/Windows/x86_64/sqlitejdbc.dll">
+            <and>
+                <os family="windows"/>
+                <or><os arch="amd64"/><os arch="x86_64"/></or>
+            </and>
+        </condition>
+
+        <condition property="sqlite.native.keep" value="org/sqlite/native/Mac/aarch64/**">
+            <and><os family="mac"/><os arch="aarch64"/></and>
+        </condition>
+        <condition property="sqlite.native.expected"
+                   value="${release.build.dir}/platform-jar/org/sqlite/native/Mac/aarch64/libsqlitejdbc.dylib">
+            <and><os family="mac"/><os arch="aarch64"/></and>
+        </condition>
+
+        <condition property="sqlite.native.keep" value="org/sqlite/native/Mac/x86_64/**">
+            <and>
+                <os family="mac"/>
+                <or><os arch="x86_64"/><os arch="amd64"/></or>
+            </and>
+        </condition>
+        <condition property="sqlite.native.expected"
+                   value="${release.build.dir}/platform-jar/org/sqlite/native/Mac/x86_64/libsqlitejdbc.dylib">
+            <and>
+                <os family="mac"/>
+                <or><os arch="x86_64"/><os arch="amd64"/></or>
+            </and>
+        </condition>
+
+        <fail unless="sqlite.native.keep"
+              message="Unsupported release architecture for SQLite native pruning: ${os.name} / ${os.arch}"/>
+
+        <delete dir="${release.build.dir}/platform-jar"/>
+        <mkdir dir="${release.build.dir}/platform-jar"/>
+        <unzip src="${jar.obfuscated.file}" dest="${release.build.dir}/platform-jar"/>
+
+        <delete>
+            <fileset dir="${release.build.dir}/platform-jar">
+                <include name="org/sqlite/native/**"/>
+                <exclude name="${sqlite.native.keep}"/>
+            </fileset>
+        </delete>
+
+        <available file="${sqlite.native.expected}" property="sqlite.native.expected.available"/>
+        <fail unless="sqlite.native.expected.available"
+              message="The protected JAR does not contain the SQLite native binary expected for this platform."/>
+
+        <delete file="${jar.platform.file}"/>
+        <zip destfile="${jar.platform.file}" basedir="${release.build.dir}/platform-jar"/>
+        <delete dir="${release.build.dir}/platform-jar"/>
+
+        <echo message="Platform-specific runtime JAR created: ${jar.platform.file}"/>
+    </target>
+
+    <!-- =================================
           Target: compile-license-viewer
          ================================= -->
     <target name="compile-license-viewer" depends="init" description="Compile license viewer sources">
@@ -531,7 +598,7 @@
     <!-- =================================
           Target: package-exe-release (Production - Protected)
          ================================= -->
-    <target name="package-exe-release" depends="verify-protected-jar,create-custom-runtime,jpackage-check"
+    <target name="package-exe-release" depends="strip-platform-natives,create-custom-runtime,jpackage-check"
             description="Create native executable (production build, protected, with custom JRE)">
         <fail unless="jpackage.available"
               message="jpackage not found! Please ensure you have JDK 14+ with jpackage in your PATH."/>
@@ -542,8 +609,10 @@
 
         <!-- Create clean input directory for jpackage -->
         <mkdir dir="${build.dir}/jpackage-input-release"/>
-        <copy file="${jar.obfuscated.file}" todir="${build.dir}/jpackage-input-release"/>
+        <copy file="${jar.platform.file}" todir="${build.dir}/jpackage-input-release"/>
         <copy file="${lib.dir}/webview-1.0.10.jar" todir="${build.dir}/jpackage-input-release"/>
+        <copy file="LICENSE-THIRD-PARTY.txt" todir="${build.dir}/jpackage-input-release"/>
+        <copy file="NOTICE.txt" todir="${build.dir}/jpackage-input-release"/>
 
         <!-- Detect OS and set icon file accordingly (same as dev build) -->
         <condition property="is.windows.release">
@@ -593,7 +662,7 @@
               xmlns:if="ant:if">
             <arg value="--input"/><arg value="${build.dir}/jpackage-input-release"/>
             <arg value="--name"/><arg value="${app.name}"/>
-            <arg value="--main-jar"/><arg value="${app.name}-${app.version}-obfuscated.jar"/>
+            <arg value="--main-jar"/><arg value="${app.name}-${app.version}-runtime.jar"/>
             <arg value="--main-class"/><arg value="${main.class}"/>
             <arg value="--type"/><arg value="app-image"/>
             <arg value="--dest"/><arg value="${dist.dir}"/>
@@ -611,7 +680,7 @@
               xmlns:unless="ant:unless">
             <arg value="--input"/><arg value="${build.dir}/jpackage-input-release"/>
             <arg value="--name"/><arg value="${app.name}"/>
-            <arg value="--main-jar"/><arg value="${app.name}-${app.version}-obfuscated.jar"/>
+            <arg value="--main-jar"/><arg value="${app.name}-${app.version}-runtime.jar"/>
             <arg value="--main-class"/><arg value="${main.class}"/>
             <arg value="--type"/><arg value="app-image"/>
             <arg value="--dest"/><arg value="${dist.dir}"/>
