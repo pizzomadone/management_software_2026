@@ -11,6 +11,23 @@ import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 /** External probe: never added to the production JAR or installer. */
 public final class RuntimeSmoke {
     public static void main(String[] args) throws Exception {
+        if (args.length > 1 && args[1].equals("startup")) {
+            Thread.setDefaultUncaughtExceptionHandler((thread, error) -> { error.printStackTrace(); System.exit(1); });
+            Class.forName("MainWindow").getMethod("main", String[].class).invoke(null, (Object) new String[0]);
+            long deadline = System.currentTimeMillis() + 20000;
+            while (System.currentTimeMillis() < deadline) {
+                final boolean[] shown = {false};
+                javax.swing.SwingUtilities.invokeAndWait(() -> {
+                    for (java.awt.Window window : java.awt.Window.getWindows()) {
+                        if (window.isShowing() && window instanceof javax.swing.JDialog dialog
+                                && "WareStat - Language".equals(dialog.getTitle())) shown[0] = true;
+                    }
+                });
+                if (shown[0]) { System.out.println("Protected MainWindow opened the first-run language dialog"); System.exit(0); }
+                Thread.sleep(100);
+            }
+            throw new AssertionError("First-run language dialog did not appear");
+        }
         Class.forName("MainWindow", false, RuntimeSmoke.class.getClassLoader())
             .getMethod("main", String[].class);
         Class.forName("AboutDialog", false, RuntimeSmoke.class.getClassLoader());
@@ -46,7 +63,7 @@ public final class RuntimeSmoke {
                 }
                 BufferedImage image = new BufferedImage(8, 8, BufferedImage.TYPE_INT_RGB);
                 ByteArrayOutputStream png = new ByteArrayOutputStream(); ImageIO.write(image, "png", png);
-                out.drawImage(PDImageXObject.createFromByteArray(doc, png.toByteArray(), "smoke.png"), 40, 600);
+                out.drawImage(PDImageXObject.createFromByteArray(doc, png.toByteArray(), "smoke.png"), 40, 600, 8, 8);
             }
             doc.save(new File(args[0], "smoke.pdf"));
         }

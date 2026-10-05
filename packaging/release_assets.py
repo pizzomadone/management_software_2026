@@ -28,7 +28,7 @@ else:
     if len(sys.argv) > 3 and sys.argv[3] == 'all' and len(installers) != 3:
         raise SystemExit('Release requires all three platform installers')
     for p in installers:
-        actual = hashlib.file_digest(p.open('rb'), 'sha256').hexdigest()
+        actual = hashlib.sha256(p.read_bytes()).hexdigest()
         recorded = (root / (p.name + '.sha256')).read_text().strip()
         if recorded != f'{actual}  {p.name}': raise SystemExit('Checksum mismatch: ' + p.name)
         print(f'{p.name}: {p.stat().st_size} bytes; SHA-256 verified')

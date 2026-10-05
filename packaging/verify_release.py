@@ -49,6 +49,9 @@ with tempfile.TemporaryDirectory(prefix='warestat-smoke-') as tmp:
     subprocess.run([str(java.resolve()), '-Xverify:all', '-Djava.awt.headless=true',
                     f'-Duser.home={tmp}', '-cp', tmp + os.pathsep + cp, 'RuntimeSmoke', tmp],
                    cwd=tmp, check=True, timeout=90)
+    subprocess.run([str(java.resolve()), '-Xverify:all', f'-Duser.home={tmp}',
+                    '-cp', tmp + os.pathsep + cp, 'RuntimeSmoke', tmp, 'startup'],
+                   cwd=tmp, check=True, timeout=45)
 
 # Compare static module requirements to modules actually shipped; JNI and resources
 # are checked by the runtime probe above. Optional absent integrations are ignored.
