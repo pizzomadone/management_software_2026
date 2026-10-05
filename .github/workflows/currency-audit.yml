@@ -5,6 +5,7 @@ on:
     branches:
       - fix/macos-filechooser-i18n
       - feature/product-suppliers-fifo
+      - build/release-hardening
 
 jobs:
   test:
