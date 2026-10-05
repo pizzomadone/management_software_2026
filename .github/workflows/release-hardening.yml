@@ -176,6 +176,7 @@ jobs:
               }
           }
           JAVA
+          mkdir -p build/smoke-classes
           if [[ "$RUNNER_OS" == "Windows" ]]; then
             cp_sep=';'
           else
