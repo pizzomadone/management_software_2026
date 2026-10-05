@@ -1,0 +1,176 @@
+import java.sql.*;
+import java.nio.file.*;
+import java.math.BigDecimal;
+import java.util.*;
+import javax.swing.*;
+import javax.swing.table.*;
+
+/** Exercises the actual price, payment, invoice and backup paths on synthetic data. */
+public class VatRegressionTest extends RegressionTest {
+    static Order loadOrder(int id) throws Exception {
+        return (Order)call(new OrdersPanel(), "loadOrderDetails", new Class<?>[]{int.class}, id);
+    }
+    static int invoiceOrder(int id) throws Exception {
+        Order order=loadOrder(id);
+        DatabaseManager.beginTransaction(db);
+        try {
+            int invoiceId=OrdersPanel.createInvoiceFromOrder(db,order).id();
+            db.commit();return invoiceId;
+        } catch(Exception e) {db.rollback();throw e;}
+        finally {db.setAutoCommit(true);}
+    }
+    static void exportInvoice(int id,String filename) throws Exception {
+        Invoice invoice=new Invoice(id,"TEST",new java.util.Date(),1,"",0,0,0,"Draft");
+        Path pdf=OUT.resolve(filename);
+        call(new InvoicePDFGenerator(invoice,customer()),"generatePDF",new Class<?>[]{java.io.File.class},pdf.toFile());
+        require(!ExtendedRegressionTest.pdfText(pdf).isBlank(),"Empty invoice PDF");
+    }
+    static void oldSchema() throws Exception {
+        for(String table:List.of("products","orders","order_details","invoice_details"))
+            for(String action:List.of("INSERT","UPDATE"))
+                sql("DROP TRIGGER IF EXISTS numeric_guard_"+table+"_"+action);
+        sql("DELETE FROM schema_migrations WHERE version='017'");
+        sql("ALTER TABLE products RENAME COLUMN sale_price_ex_vat TO price");
+        sql("ALTER TABLE products DROP COLUMN sale_price_inc_vat");
+        sql("ALTER TABLE orders RENAME COLUMN total_ex_vat TO total");
+        sql("ALTER TABLE orders DROP COLUMN total_inc_vat");
+        sql("ALTER TABLE order_details RENAME COLUMN sale_unit_price_ex_vat TO unit_price");
+        sql("ALTER TABLE order_details DROP COLUMN sale_unit_price_inc_vat");
+        sql("ALTER TABLE order_details DROP COLUMN vat_rate");
+        sql("ALTER TABLE invoice_details RENAME COLUMN sale_unit_price_ex_vat TO unit_price");
+        sql("ALTER TABLE invoice_details DROP COLUMN sale_unit_price_inc_vat");
+    }
+    static void vat() throws Exception {
+        test("product price preview updates live for gross price VAT and purchase cost",()->{
+            fresh();PD dialog=OperationalRegressionTest.productEditor(0);put(dialog,"product",null);
+            JPanel preview=(JPanel)call(dialog,"createPricePreview");
+            JTextField price=(JTextField)get(dialog,"priceField");
+            JTextField vat=(JTextField)get(dialog,"vatRateField");
+            JTextField cost=(JTextField)get(dialog,"acquisitionCostField");
+            price.setText("122");vat.setText("22");cost.setText("80");
+            JLabel breakdown=(JLabel)get(dialog,"priceBreakdownLabel");
+            JLabel margin=(JLabel)get(dialog,"estimatedMarginLabel");
+            require(breakdown.getText().equals(I18n.format("{0} net + {1} VAT",SettingsPanel.formatCurrency(100),SettingsPanel.formatCurrency(22))),"Net/VAT preview is incorrect");
+            require(margin.getText().contains("20%") && margin.getText().contains(SettingsPanel.formatCurrency(20)),"Margin was confused with markup");
+            cost.setText("120");require(margin.getText().contains("-20%"),"Loss is hidden");
+            vat.setText("0");require(breakdown.getText().contains(SettingsPanel.formatCurrency(122)),"VAT edit did not update preview");
+            price.setText("100,00");cost.setText("80");require(margin.getText().contains("20%"),"Decimal comma input did not update preview");
+            price.setText("0");require(!margin.getText().contains("%"),"Zero price produced an invalid margin");
+            price.setText("100");cost.setText("");require(!margin.getText().contains("%"),"Missing cost retained a stale margin");
+            price.setText("-");require(breakdown.getText().isBlank() && margin.getText().isBlank(),"Incomplete input retained old estimates");
+            require("10.0".equals(value("SELECT sale_price_inc_vat FROM products WHERE id=1")),"Preview wrote to the database");
+        });
+        test("existing product margin preview uses preferred supplier cost and translates",()->{
+            fresh();PD dialog=OperationalRegressionTest.productEditor(10);
+            ((Product)get(dialog,"product")).setAcquisitionCost(95);
+            put(dialog,"preferredSupplierCurrentCost",80.0);
+            call(dialog,"createPricePreview");
+            ((JTextField)get(dialog,"priceField")).setText("122");
+            JLabel margin=(JLabel)get(dialog,"estimatedMarginLabel");
+            require(margin.getText().contains("20%"),"Existing preview did not use preferred supplier cost");
+            String previous=I18n.getLanguage();
+            try {for(String language:List.of("it","es","fr","de","pl","pt_BR")) {
+                I18n.setLanguage(language);call(dialog,"updatePricePreview");
+                require(!margin.getText().contains("Estimated margin"),"Missing margin translation in "+language);
+            }} finally {I18n.setLanguage(previous);}
+        });
+        test("122 gross sale keeps 100 revenue 22 VAT and 40 FIFO profit through invoicing",()->{
+            fresh();
+            PD product=OperationalRegressionTest.productEditor(10);
+            ((JTextField)get(product,"priceField")).setText("122");
+            ((JTextField)get(product,"vatRateField")).setText("22");
+            call(product,"saveProduct");
+            require("100.0|122.0".equals(value("SELECT sale_price_ex_vat||'|'||sale_price_inc_vat FROM products WHERE id=1")),"Product gross input did not produce net 100");
+            sql("UPDATE products SET acquisition_cost=60 WHERE id=1");seedOpeningLots();
+            OD dialog=order(false,1,"Completed");
+            DefaultTableModel rows=(DefaultTableModel)get(dialog,"itemsTableModel");
+            rows.setValueAt("122",0,3);rows.setValueAt("22",0,5);
+            put(dialog,"paymentStatusCombo",new JComboBox<>(new String[]{"Paid"}));
+            call(dialog,"saveOrder");
+            require("100.0|122.0|122.0|PAID".equals(value("SELECT total_ex_vat||'|'||total_inc_vat||'|'||paid_amount||'|'||payment_status FROM orders")),"Order gross payment or net revenue incorrect");
+            require("60.0".equals(value("SELECT cost_total FROM order_details")) && qty()==9,"FIFO or stock incorrect");
+            sql("UPDATE products SET vat_rate=10,sale_price_inc_vat=110 WHERE id=1");
+            int invoice=invoiceOrder(1);
+            require("100.0|22.0|122.0".equals(value("SELECT taxable_amount||'|'||vat||'|'||total FROM invoices")),"Invoice used current product VAT");
+            exportInvoice(invoice,"vat-122-100-22.pdf");
+            DashboardPanel dashboard=new DashboardPanel(null);call(dashboard,"loadKPIData");
+            require(OperationalRegressionTest.kpi(dashboard,"monthRevenueLabel").equals(SettingsPanel.formatCurrency(100)),"Dashboard includes VAT as revenue");
+            SalesReportPanel report=new SalesReportPanel();call(report,"loadReportData");
+            require((double)get(report,"summaryProfit")==40.0,"Gross profit includes VAT");
+        });
+        test("editing paid pending orders preserves receipts and derives payment status",()->{
+            fresh();OD first=order(false,1,"New");
+            put(first,"paymentStatusCombo",new JComboBox<>(new String[]{"Paid"}));call(first,"saveOrder");
+            OD edit=order(true,2,"New");put(edit,"order",loadOrder(1));
+            put(edit,"paymentStatusCombo",new JComboBox<>(new String[]{"Paid"}));call(edit,"saveOrder");
+            require("20.0|10.0|PARTIALLY_PAID".equals(value("SELECT total_inc_vat||'|'||paid_amount||'|'||payment_status FROM orders")),"Quantity edit invented a payment");
+            for(String[] sample:new String[][]{{"0","NOT_PAID"},{"10","PARTIALLY_PAID"},{"20","PAID"}}) {
+                OD partial=order(true,2,"New");put(partial,"order",loadOrder(1));
+                put(partial,"paymentStatusCombo",new JComboBox<>(new String[]{"Partially Paid"}));
+                put(partial,"paidAmountField",new JTextField(sample[0]));call(partial,"saveOrder");
+                require(sample[1].equals(value("SELECT payment_status FROM orders")),"Payment state disagrees with amount received");
+            }
+        });
+        test("draft invoice content edits preserve recorded receipts",()->{
+            fresh();ID first=invoice();put(first,"statusCombo",new JComboBox<>(new String[]{"Draft"}));
+            put(first,"paymentStatusCombo",new JComboBox<>(new String[]{"Paid"}));call(first,"saveInvoice");
+            ID edit=invoice();put(edit,"invoice",new Invoice(1,"DRAFT",new java.util.Date(),1,"",30,6.6,36.6,"Draft"));
+            put(edit,"statusCombo",new JComboBox<>(new String[]{"Draft"}));
+            put(edit,"paymentStatusCombo",new JComboBox<>(new String[]{"Not Paid","Partially Paid","Paid"}));
+            call(edit,"loadPaymentData");
+            ((DefaultTableModel)get(edit,"itemsTableModel")).setValueAt(6,0,2);call(edit,"saveInvoice");
+            require("73.2|36.6|PARTIALLY_PAID".equals(value("SELECT total||'|'||paid_amount||'|'||payment_status FROM invoices")),"Draft edit result: "+value("SELECT total||'|'||paid_amount||'|'||payment_status FROM invoices"));
+        });
+        test("currency conversion preserves receipt amounts and order line net reconciliation",()->{
+            fresh();
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat,payment_status,paid_amount) VALUES(1,1,0,'Completed',100,122,'PAID',100)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate) VALUES(1,1,1,100,122,22)");
+            sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status,payment_status,paid_amount) VALUES(1,'DRAFT',0,1,100,22,122,'Draft','PAID',100)");
+            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate,total) VALUES(1,1,1,100,122,22,100)");
+            DatabaseCurrency.change("USD",DatabaseCurrency.ChangeMode.CONVERT,new BigDecimal("1.23"));
+            require("123.0|PARTIALLY_PAID".equals(value("SELECT paid_amount||'|'||payment_status FROM orders")),"Order currency conversion invented money");
+            require("123.0|PARTIALLY_PAID".equals(value("SELECT paid_amount||'|'||payment_status FROM invoices")),"Invoice currency conversion invented money");
+            DatabaseCurrency.change("EUR",DatabaseCurrency.ChangeMode.CONVERT,new BigDecimal("0.17"));
+            require("0".equals(value("SELECT COUNT(*) FROM orders o WHERE ABS(total_ex_vat-(SELECT SUM(warestat_line_total(quantity,sale_unit_price_ex_vat)) FROM order_details d WHERE d.order_id=o.id))>0.004")),"Converted order header differs from net lines");
+        });
+        test("legacy subcent order migration produces a reconciling invoice and unchanged FIFO cost",()->{
+            fresh();oldSchema();
+            sql("UPDATE products SET price=2.675,vat_rate=22 WHERE id=1");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) VALUES(1,1,0,'Completed',8.03,'PAID',8.03)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price,cost_total) VALUES(1,1,3,2.675,3)");
+            DatabaseMigrationManager.migrate(db);int id=invoiceOrder(1);
+            require("8.03|1.77|9.8".equals(value("SELECT taxable_amount||'|'||vat||'|'||total FROM invoices")),"Migrated rounding does not reconcile");
+            require("2.675|3.0".equals(value("SELECT sale_unit_price_ex_vat||'|'||cost_total FROM order_details")),"Historical net or FIFO cost changed");
+            exportInvoice(id,"vat-legacy-rounding.pdf");
+        });
+        test("importing a pre-017 database preserves money and migrates once",()->{
+            fresh();oldSchema();
+            sql("UPDATE products SET price=100,vat_rate=22 WHERE id=1");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) VALUES(1,1,0,'Completed',100,'PAID',100)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price,cost_total) VALUES(1,1,1,100,60)");
+            Path source=OUT.resolve("pre-017.db");sql("VACUUM INTO '"+source+"'");
+            BackupManager.getInstance().importDatabase(source);db=DatabaseManager.getInstance().getConnection();
+            require("100.0|122.0".equals(value("SELECT sale_price_ex_vat||'|'||sale_price_inc_vat FROM products WHERE id=1")),"Backup product repriced");
+            require("100.0|PARTIALLY_PAID".equals(value("SELECT paid_amount||'|'||payment_status FROM orders")),"Backup import invented money");
+            DatabaseMigrationManager.migrate(db);
+            require("1".equals(value("SELECT COUNT(*) FROM schema_migrations WHERE version='017'")),"Migration reran");
+            require("60.0".equals(value("SELECT cost_total FROM order_details")),"Import altered historical cost");
+        });
+        test("all VAT labels translate across the seven supported languages",()->{
+            String previous=I18n.getLanguage();
+            try {for(String language:List.of("en","it","es","fr","de","pl","pt_BR")) {
+                I18n.setLanguage(language);
+                for(String key:List.of("Sale Price incl. VAT","Customer sale price incl. VAT","Unit Price incl. VAT","Total incl. VAT","Unit price excl. VAT","Total excl. VAT","Stock at net sale price"))
+                    require(language.equals("en") || !I18n.tr(key).equals(key),"Missing VAT label: "+language+" "+key);
+            }} finally {I18n.setLanguage(previous);}
+        });
+        test("population script matches final schema and invoice totals",()->{
+            fresh();
+            try(Statement s=db.createStatement()){s.executeUpdate(Files.readString(Path.of("script_populate.sql")));}
+            require(Integer.parseInt(value("SELECT COUNT(*) FROM products"))>=120,"Population script incomplete");
+            require("0".equals(value("SELECT COUNT(*) FROM orders o WHERE ABS(total_inc_vat-(SELECT SUM(warestat_line_total(quantity,sale_unit_price_inc_vat)) FROM order_details d WHERE d.order_id=o.id))>0.004")),"Demo order gross mismatch");
+            require("0".equals(value("SELECT COUNT(*) FROM invoices i WHERE ABS(total-(SELECT SUM(warestat_line_total(quantity,sale_unit_price_inc_vat)) FROM invoice_details d WHERE d.invoice_id=i.id))>0.004")),"Demo invoice gross mismatch");
+            exportInvoice(1,"vat-demo.pdf");
+        });
+    }
+}

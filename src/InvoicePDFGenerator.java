@@ -171,13 +171,22 @@ public class InvoicePDFGenerator {
                 p.setInt(1,invoice.getId());try(ResultSet r=p.executeQuery()) {
                     while(r.next()) {
                         int quantity=Numbers.positiveQuantity(r.getObject("quantity"));
-                        double price=Numbers.nonNegative(r.getObject("unit_price")),rate=Numbers.vat(r.getObject("vat_rate"));
-                        double total=Numbers.lineTotal(quantity,price);
-                        if(Math.abs(total-r.getDouble("total"))>0.004)throw new SQLException("Invoice line totals require reconciliation");
-                        taxable=Numbers.add(taxable,total);vat=Numbers.add(vat,Numbers.tax(total,rate));
+                        double priceExVat=Numbers.nonNegative(r.getObject("sale_unit_price_ex_vat"));
+                        double priceIncVat=Numbers.nonNegative(r.getObject("sale_unit_price_inc_vat"));
+                        double rate=Numbers.vat(r.getObject("vat_rate"));
+                        double totalExVat=Numbers.nonNegative(r.getObject("total"));
+                        double expectedNet=SalePrice.lineExVat(quantity,priceIncVat,rate);
+                        if(Math.abs(expectedNet-totalExVat)>0.004)
+                            throw new SQLException("Invoice line totals require reconciliation");
+                        double lineGross=SalePrice.lineIncVat(quantity,priceIncVat);
+                        double lineVat=Numbers.money(java.math.BigDecimal.valueOf(lineGross)
+                            .subtract(java.math.BigDecimal.valueOf(totalExVat)));
+                        taxable=Numbers.add(taxable,totalExVat);
+                        vat=Numbers.add(vat,lineVat);
                         String code=r.getString("product_code"),name=r.getString("product_name");
                         if(code==null || name==null)throw new SQLException("Invoice product snapshot is missing");
-                        invoiceItems.add(new InvoiceItem(r.getInt("id"),invoice.getId(),r.getInt("product_id"),name,code,quantity,price,rate,total));
+                        invoiceItems.add(new InvoiceItem(r.getInt("id"),invoice.getId(),r.getInt("product_id"),
+                            name,code,quantity,priceExVat,priceIncVat,rate,totalExVat));
                     }
                 }
             }
@@ -210,7 +219,7 @@ public class InvoicePDFGenerator {
                     I18n.tr("FROM"),companyName,companyLines,
                     I18n.tr("BILL TO"),customerName,customerLines);
 
-                pdf.startTable(new String[]{I18n.tr("Code"),I18n.tr("Description"),I18n.tr("Qty"),I18n.tr("Unit price")+" "+currency,I18n.tr("VAT %"),I18n.tr("Total")+" "+currency},new float[]{1.6f,3.1f,.7f,1.6f,.9f,1.6f});
+                pdf.startTable(new String[]{I18n.tr("Code"),I18n.tr("Description"),I18n.tr("Qty"),I18n.tr("Unit price excl. VAT")+" "+currency,I18n.tr("VAT %"),I18n.tr("Total excl. VAT")+" "+currency},new float[]{1.6f,3.1f,.7f,1.6f,.9f,1.6f});
                 for(InvoiceItem item:invoiceItems)pdf.row(item.getProductCode(),item.getProductName(),Integer.toString(item.getQuantity()),
                     Numbers.unitText(item.getUnitPrice()),decimal(item.getVatRate()),money(item.getTotal()));
 

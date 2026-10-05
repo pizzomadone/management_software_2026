@@ -50,12 +50,13 @@ public class WarehouseReportPanel extends JPanel {
         JPanel panel = new JPanel(new BorderLayout());
 
         // General Statistics
-        JPanel statsPanel = new JPanel(new GridLayout(1, 4, 10, 10));
+        JPanel statsPanel = new JPanel(new GridLayout(2, 2, 10, 4));
         statsPanel.setBorder(BorderFactory.createTitledBorder("General Statistics"));
 
         JLabel totalProductsLabel = new JLabel("Total Products: 0");
-        JLabel totalValueLabel = new JLabel("Stock at standard cost: " + SettingsPanel.formatCurrency(0));
-        totalValueLabel.setToolTipText("Only active products with positive stock are valued at current catalog prices.");
+        JLabel totalValueLabel = new JLabel("Stock at preferred supplier cost: " + SettingsPanel.formatCurrency(0));
+        totalValueLabel.setToolTipText(I18n.tr(
+            "Positive physical stock is valued at the current preferred supplier cost, including inactive products that still remain in stock. Reserved units remain included."));
         JLabel lowStockLabel = new JLabel("Low Stock Products: 0");
         JLabel outOfStockLabel = new JLabel("Out of Stock Products: 0");
 
@@ -65,7 +66,7 @@ public class WarehouseReportPanel extends JPanel {
         statsPanel.add(outOfStockLabel);
 
         // Products Table
-        String[] columns = {"Code", "Product", "Physical", "Reserved", "Available", "Acquisition Cost", "Stock at standard cost", "Status"};
+        String[] columns = {"Code", "Product", "Physical", "Reserved", "Available", "Preferred Supplier Cost", "Stock at preferred supplier cost", "Status"};
         productsModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -73,6 +74,9 @@ public class WarehouseReportPanel extends JPanel {
             }
         };
         productsTable = new JTable(productsModel);
+        TableStyleUtil.setColumnPersistenceKey(productsTable, "warehouse_report.products.v2");
+        TableStyleUtil.applyCompact(productsTable);
+        I18n.localize(productsTable);
 
         // Enable column sorting
         TableSorterUtil.enableSorting(productsTable);
@@ -143,6 +147,9 @@ public class WarehouseReportPanel extends JPanel {
             }
         };
         movementsTable = new JTable(movementsModel);
+        TableStyleUtil.setColumnPersistenceKey(movementsTable, "warehouse_report.movements.v2");
+        TableStyleUtil.applyCompact(movementsTable);
+        I18n.localize(movementsTable);
 
         // Enable column sorting with date support (column 0 is "Date")
         TableSorterUtil.enableSorting(movementsTable, new int[]{0}, dateFormat);
@@ -186,10 +193,13 @@ public class WarehouseReportPanel extends JPanel {
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
-                SELECT p.*, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity
+                SELECT p.*, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity,
+                       COALESCE(ps.purchase_price,0) AS preferred_supplier_cost
                 FROM products p
                 LEFT JOIN minimum_stock sm ON sm.product_id = p.id
-                WHERE p.active=1
+                LEFT JOIN product_suppliers ps
+                  ON ps.product_id=p.id AND ps.is_preferred=1
+                WHERE p.active=1 OR p.quantity<>0
                 ORDER BY p.name
             """;
 
@@ -208,7 +218,7 @@ public class WarehouseReportPanel extends JPanel {
                     int physicalStock = Numbers.quantity(rs.getObject("quantity"));
                     int reservedStock = Numbers.quantity(rs.getObject("reserved_quantity"));
                     long availableStock = (long) physicalStock - reservedStock;
-                    double price = Numbers.nonNegative(rs.getObject("acquisition_cost"));
+                    double price = Numbers.nonNegative(rs.getObject("preferred_supplier_cost"));
                     double totalValueProduct = Numbers.stockValue(physicalStock, price);
                     int minQuantity = rs.getInt("minimum_quantity");
 
@@ -221,7 +231,10 @@ public class WarehouseReportPanel extends JPanel {
                     // Stock thresholds are based on what is actually available
                     // after customer reservations. Valuation remains physical stock.
                     String status;
-                    if (availableStock <= 0) {
+                    boolean active = rs.getInt("active") == 1;
+                    if (!active) {
+                        status = I18n.tr("Inactive");
+                    } else if (availableStock <= 0) {
                         status = "OUT OF STOCK";
                         outOfStock++;
                     } else if (minQuantity > 0 && availableStock < minQuantity) {
@@ -259,7 +272,7 @@ public class WarehouseReportPanel extends JPanel {
 
             if (statsPanel.getComponentCount() >= 4) {
                 updateLocalizedStatistic((JLabel) statsPanel.getComponent(0), "Total Products", totalProducts);
-                updateLocalizedStatistic((JLabel) statsPanel.getComponent(1), "Stock at standard cost",
+                updateLocalizedStatistic((JLabel) statsPanel.getComponent(1), "Stock at preferred supplier cost",
                     SettingsPanel.formatCurrency(totalValue));
                 updateLocalizedStatistic((JLabel) statsPanel.getComponent(2), "Low Stock Products", lowStock);
                 updateLocalizedStatistic((JLabel) statsPanel.getComponent(3), "Out of Stock Products", outOfStock);
@@ -344,15 +357,15 @@ public class WarehouseReportPanel extends JPanel {
 
                     String productName = rs.getString("product_name");
                     row.add(productName != null ? productName : "Product N/A");
-                    row.add(rs.getString("type"));
+                    row.add(StockManager.displayWarehouseText(rs.getString("type")));
                     row.add(rs.getInt("quantity"));
-                    row.add(rs.getString("reason"));
+                    row.add(StockManager.displayWarehouseText(rs.getString("reason")));
 
                     String document = rs.getString("document_type");
                     if (document != null && !document.isEmpty()) {
                         String docNumber = rs.getString("document_number");
                         if (docNumber != null && !docNumber.isEmpty()) {
-                            document += " " + docNumber;
+                            document = StockManager.displayWarehouseText(document) + " " + docNumber;
                         }
                     } else {
                         document = "";

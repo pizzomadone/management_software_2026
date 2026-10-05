@@ -47,6 +47,7 @@ public class CustomersPanel extends JPanel {
             }
         };
         customersTable = new JTable(tableModel);
+        TableStyleUtil.applyCompact(customersTable);
         customersTable.getSelectionModel().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         customersTable.getSelectionModel().addListSelectionListener(e -> updateButtonStates());
 

@@ -169,7 +169,7 @@ public class SettingsPanel extends JPanel {
 
         // Default VAT
         gbc.gridx = 0; gbc.gridy = 2;
-        panel.add(new JLabel("Default VAT Rate (%):"), gbc);
+        panel.add(new JLabel("Default VAT Rate (%) *:"), gbc);
 
         gbc.gridx = 1;
         defaultVatField = new JTextField(getSetting("default_vat", "22.0"));
@@ -185,8 +185,13 @@ public class SettingsPanel extends JPanel {
         languageCombo.setSelectedItem(I18n.nameForCode(getSetting("language", "it")));
         panel.add(languageCombo, gbc);
 
+        // Required-fields legend
+        gbc.gridx = 0; gbc.gridy = 4; gbc.gridwidth = 2; gbc.weighty = 0.0;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        panel.add(Dialogs.requiredLegendPanel(), gbc);
+
         // Add vertical glue to push components to top
-        gbc.gridx = 0; gbc.gridy = 4; gbc.gridwidth = 2; gbc.weighty = 1.0;
+        gbc.gridx = 0; gbc.gridy = 5; gbc.gridwidth = 2; gbc.weighty = 1.0;
         gbc.fill = GridBagConstraints.VERTICAL;
         panel.add(Box.createVerticalGlue(), gbc);
 
@@ -240,7 +245,7 @@ public class SettingsPanel extends JPanel {
 
         // Company Name
         gbc.gridx = 0; gbc.gridy = 0;
-        formPanel.add(new JLabel("* Company Name:"), gbc);
+        formPanel.add(new JLabel("Company Name *:"), gbc);
 
         gbc.gridx = 1; gbc.weightx = 1.0;
         companyNameField = new JTextField(25);
@@ -337,10 +342,7 @@ public class SettingsPanel extends JPanel {
         formPanel.add(Box.createVerticalGlue(), gbc);
 
         // Legend
-        JPanel legendPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        legendPanel.add(new JLabel("* Required fields"));
-
-        panel.add(legendPanel, BorderLayout.NORTH);
+        panel.add(Dialogs.requiredLegendPanel(), BorderLayout.NORTH);
         panel.add(new JScrollPane(formPanel), BorderLayout.CENTER);
 
         return panel;
@@ -593,7 +595,7 @@ public class SettingsPanel extends JPanel {
 
                 String confirmation=I18n.tr("Existing operational monetary values will be converted using:")+"\n"+
                     "1 "+oldCode+" = "+rate.stripTrailingZeros().toPlainString()+" "+newCode+"\n\n"+
-                    I18n.tr("Changing the operating currency affects products, costs, supplier price lists, customer orders, supplier orders and Draft invoices.")+
+                    I18n.tr("Changing the operating currency affects products, costs, supplier product prices, customer orders, supplier orders and Draft invoices.")+
                     "\n\n"+I18n.tr("Issued, Paid and Canceled invoices will not be changed.");
                 int confirm=Dialogs.showConfirmDialog(this,confirmation,I18n.tr("Confirm Currency Conversion"),
                     JOptionPane.OK_CANCEL_OPTION,JOptionPane.WARNING_MESSAGE);
@@ -801,6 +803,32 @@ public class SettingsPanel extends JPanel {
             return formatter.format(java.math.BigDecimal.valueOf(amount));
         } catch (IllegalArgumentException e) {
             return String.format("%s %.2f", getCurrencySymbol(currencyCode), amount);
+        }
+    }
+
+    /**
+     * Currency formatting for unit prices/costs. Unlike totals, unit values may
+     * legitimately carry more than two decimal places, so their stored precision
+     * remains visible while the currency is still shown in the cell.
+     */
+    public static String formatUnitCurrency(double amount) {
+        return formatUnitCurrency(amount, getCurrencyCode());
+    }
+
+    public static String formatUnitCurrency(double amount, String currencyCode) {
+        if (currencyCode == null || currencyCode.isBlank()) currencyCode = getCurrencyCode();
+        try {
+            NumberFormat formatter = NumberFormat.getCurrencyInstance(Locale.getDefault());
+            Currency currency = Currency.getInstance(currencyCode);
+            formatter.setCurrency(currency);
+            formatter.setRoundingMode(java.math.RoundingMode.HALF_UP);
+            BigDecimal decimal = BigDecimal.valueOf(Numbers.nonNegative(amount)).stripTrailingZeros();
+            int fractionDigits = Math.max(2, Math.min(8, Math.max(0, decimal.scale())));
+            formatter.setMinimumFractionDigits(2);
+            formatter.setMaximumFractionDigits(fractionDigits);
+            return formatter.format(decimal);
+        } catch (IllegalArgumentException e) {
+            return getCurrencySymbol(currencyCode) + " " + Numbers.unitText(amount);
         }
     }
 

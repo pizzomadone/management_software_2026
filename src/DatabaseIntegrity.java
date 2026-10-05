@@ -5,21 +5,26 @@ import java.util.*;
 public final class DatabaseIntegrity {
     private DatabaseIntegrity() {}
 
-    private static final Map<String, String> CORE = Map.of(
-        "products", "id code name price quantity",
+    /** Minimal shape accepted before migrations when validating an older backup. */
+    private static final Map<String, String> LEGACY_CORE = Map.of(
+        "products", "id code name quantity",
         "customers", "id first_name last_name email phone address",
-        "orders", "id customer_id order_date status total",
-        "order_details", "id order_id product_id quantity unit_price");
+        "orders", "id customer_id order_date status",
+        "order_details", "id order_id product_id quantity");
+
     private static final Map<String, String> CURRENT = Map.ofEntries(
-        Map.entry("products", "description reserved_quantity category alternative_sku weight unit_of_measure acquisition_cost active supplier_id warehouse_position vat_rate"),
+        Map.entry("products", "id code name description sale_price_ex_vat sale_price_inc_vat quantity reserved_quantity category alternative_sku weight unit_of_measure acquisition_cost active supplier_id warehouse_position vat_rate"),
         Map.entry("product_images", "id product_id filename is_primary sort_order"),
         Map.entry("suppliers", "id company_name vat_number tax_code address phone email certified_email website notes"),
-        Map.entry("orders", "payment_status paid_amount"),
-        Map.entry("invoices", "id number date customer_id taxable_amount vat total status order_id currency_code customer_snapshot company_snapshot logo_snapshot snapshot_version"),
-        Map.entry("invoice_details", "id invoice_id product_id quantity unit_price vat_rate total product_code product_name"),
-        Map.entry("supplier_orders", "id supplier_id number order_date expected_delivery_date status total notes"),
+        Map.entry("orders", "id customer_id order_date completed_date status total_ex_vat total_inc_vat payment_status paid_amount"),
+        Map.entry("order_details", "id order_id product_id quantity sale_unit_price_ex_vat sale_unit_price_inc_vat vat_rate cost_total"),
+        Map.entry("invoices", "id number date customer_id taxable_amount vat total status payment_status paid_amount order_id currency_code customer_snapshot company_snapshot logo_snapshot snapshot_version"),
+        Map.entry("invoice_details", "id invoice_id product_id quantity sale_unit_price_ex_vat sale_unit_price_inc_vat vat_rate total product_code product_name"),
+        Map.entry("supplier_orders", "id supplier_id number order_date expected_delivery_date received_date status total notes"),
         Map.entry("supplier_order_details", "id order_id product_id quantity unit_price total notes"),
-        Map.entry("supplier_price_lists", "id supplier_id product_id supplier_product_code price minimum_quantity validity_start_date validity_end_date notes"),
+        Map.entry("product_suppliers", "id product_id supplier_id supplier_product_code purchase_price is_preferred notes"),
+        Map.entry("inventory_lots", "id product_id supplier_id supplier_order_detail_id warehouse_movement_id received_date initial_quantity remaining_quantity unit_cost source_type"),
+        Map.entry("inventory_lot_consumptions", "id lot_id order_detail_id warehouse_movement_id quantity unit_cost"),
         Map.entry("warehouse_movements", "id product_id date type quantity reason document_number document_type notes"),
         Map.entry("stock_reservations", "id product_id document_type document_id reserved_quantity status"),
         Map.entry("minimum_stock", "product_id minimum_quantity reorder_quantity lead_time_days preferred_supplier_id notes"),
@@ -32,15 +37,14 @@ public final class DatabaseIntegrity {
             if (!r.next() || !"ok".equalsIgnoreCase(r.getString(1)))
                 throw new SQLException("SQLite integrity check failed");
         }
-        requireColumns(c, CORE);
-        if (!legacy) requireColumns(c, CURRENT);
+        requireColumns(c, legacy ? LEGACY_CORE : CURRENT);
         try (Statement s = c.createStatement(); ResultSet r = s.executeQuery("PRAGMA foreign_key_check")) {
             if (r.next()) throw new SQLException("Orphaned database reference in " + r.getString(1));
         }
         if (!legacy) {
             String currency=DatabaseCurrency.read(c);
             try {DatabaseCurrency.codeFromSetting(currency);} catch(IllegalArgumentException e) {throw new SQLException("Database currency is missing or invalid",e);}
-            for(var rule:rules().entrySet()) {
+            for(var rule:rules(c).entrySet()) {
                 try(Statement s=c.createStatement();ResultSet r=s.executeQuery("SELECT rowid FROM "+rule.getKey()+" WHERE "+rule.getValue().replace("NEW.","")+" LIMIT 1")) {
                     if(r.next())throw new SQLException("Invalid existing numeric data in "+rule.getKey()+", row "+r.getLong(1)+". Reconcile the source database before import or release.");
                 }
@@ -65,24 +69,72 @@ public final class DatabaseIntegrity {
     private static String integer(String column,int min) {
         return "typeof(NEW."+column+")<>'integer' OR NEW."+column+" NOT BETWEEN "+min+" AND 2147483647";
     }
-    private static Map<String,String> rules() {
+    private static String nullableAmount(String column) {
+        return "NEW."+column+" IS NOT NULL AND ("+amount(column)+")";
+    }
+
+    private static Map<String,String> rules(Connection c) throws SQLException {
         Map<String,String> rules=new LinkedHashMap<>();
-        rules.put("products",integer("quantity",Integer.MIN_VALUE)+" OR "+integer("reserved_quantity",0)+" OR "+amount("price")+" OR "+amount("acquisition_cost")+" OR "+amount("vat_rate")+" OR NEW.vat_rate>100 OR "+amount("weight"));
-        String line=integer("quantity",1)+" OR "+amount("unit_price");
-        rules.put("order_details",line);
-        rules.put("invoice_details",line+" OR "+amount("vat_rate")+" OR NEW.vat_rate>100 OR "+amount("total"));
-        rules.put("supplier_order_details",line+" OR "+amount("total"));
-        rules.put("orders",amount("total")+" OR "+amount("paid_amount"));
-        rules.put("invoices",amount("taxable_amount")+" OR "+amount("vat")+" OR "+amount("total"));
+
+        String productPrice = hasColumn(c,"products","sale_price_ex_vat")
+            ? "sale_price_ex_vat" : "price";
+        String productRule = integer("quantity",Integer.MIN_VALUE)
+            +" OR "+integer("reserved_quantity",0)
+            +" OR "+amount(productPrice)
+            +" OR "+amount("acquisition_cost")
+            +" OR "+amount("vat_rate")+" OR NEW.vat_rate>100 OR "+amount("weight");
+        if (hasColumn(c,"products","sale_price_inc_vat"))
+            productRule += " OR " + amount("sale_price_inc_vat");
+        rules.put("products",productRule);
+
+        String orderUnitPrice = hasColumn(c,"order_details","sale_unit_price_ex_vat")
+            ? "sale_unit_price_ex_vat" : "unit_price";
+        String orderLine = integer("quantity",1)+" OR "+amount(orderUnitPrice);
+        if (hasColumn(c,"order_details","sale_unit_price_inc_vat"))
+            orderLine += " OR " + amount("sale_unit_price_inc_vat");
+        if (hasColumn(c,"order_details","vat_rate"))
+            orderLine += " OR " + amount("vat_rate") + " OR NEW.vat_rate>100";
+        rules.put("order_details",orderLine+" OR ("+nullableAmount("cost_total")+")");
+
+        String invoiceUnitPrice = hasColumn(c,"invoice_details","sale_unit_price_ex_vat")
+            ? "sale_unit_price_ex_vat" : "unit_price";
+        String invoiceLine = integer("quantity",1)+" OR "+amount(invoiceUnitPrice);
+        if (hasColumn(c,"invoice_details","sale_unit_price_inc_vat"))
+            invoiceLine += " OR " + amount("sale_unit_price_inc_vat");
+        invoiceLine += " OR "+amount("vat_rate")+" OR NEW.vat_rate>100 OR "+amount("total");
+        rules.put("invoice_details",invoiceLine);
+
+        String supplierLine=integer("quantity",1)+" OR "+amount("unit_price");
+        rules.put("supplier_order_details",supplierLine+" OR "+amount("total"));
+
+        String orderTotal = hasColumn(c,"orders","total_ex_vat") ? "total_ex_vat" : "total";
+        String orderRule = amount(orderTotal)+" OR "+amount("paid_amount");
+        if (hasColumn(c,"orders","total_inc_vat")) orderRule += " OR " + amount("total_inc_vat");
+        rules.put("orders",orderRule);
+
+        String invoiceRule=amount("taxable_amount")+" OR "+amount("vat")+" OR "+amount("total");
+        if (hasColumn(c, "invoices", "paid_amount")) invoiceRule += " OR " + amount("paid_amount");
+        rules.put("invoices", invoiceRule);
         rules.put("supplier_orders",amount("total"));
-        rules.put("supplier_price_lists",amount("price")+" OR "+integer("minimum_quantity",1));
+        rules.put("product_suppliers",amount("purchase_price")+" OR "+integer("is_preferred",0)+" OR NEW.is_preferred>1");
+        rules.put("inventory_lots",integer("initial_quantity",0)+" OR "+integer("remaining_quantity",0)+" OR NEW.remaining_quantity>NEW.initial_quantity OR "+amount("unit_cost"));
+        rules.put("inventory_lot_consumptions",integer("quantity",1)+" OR "+amount("unit_cost"));
         rules.put("warehouse_movements",integer("quantity",1));
         rules.put("stock_reservations",integer("reserved_quantity",1));
         rules.put("minimum_stock",integer("minimum_quantity",0)+" OR "+integer("reorder_quantity",0)+" OR (NEW.lead_time_days IS NOT NULL AND ("+integer("lead_time_days",0)+"))");
         return rules;
     }
+
     public static void installGuards(Connection c) throws SQLException {
-        for(var rule:rules().entrySet())guard(c,rule.getKey(),rule.getValue());
+        for(var rule:rules(c).entrySet())guard(c,rule.getKey(),rule.getValue());
+    }
+
+    private static boolean hasColumn(Connection c, String table, String column) throws SQLException {
+        try (Statement s = c.createStatement();
+             ResultSet r = s.executeQuery("PRAGMA table_info(" + table + ")")) {
+            while (r.next()) if (column.equals(r.getString("name"))) return true;
+            return false;
+        }
     }
 
     private static void guard(Connection c, String table, String condition) throws SQLException {

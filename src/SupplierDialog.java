@@ -54,7 +54,7 @@ public class SupplierDialog extends JDialog {
 
         // Company Name
         gbc.gridx = 0; gbc.gridy = 0;
-        formPanel.add(new JLabel("* Company Name:"), gbc);
+        formPanel.add(new JLabel("Company Name *:"), gbc);
 
         gbc.gridx = 1;
         companyNameField = new JTextField(30);
@@ -62,7 +62,7 @@ public class SupplierDialog extends JDialog {
 
         // VAT Number
         gbc.gridx = 0; gbc.gridy = 1;
-        formPanel.add(new JLabel("* VAT Number:"), gbc);
+        formPanel.add(new JLabel("VAT Number *:"), gbc);
 
         gbc.gridx = 1;
         vatNumberField = new JTextField(20);
@@ -140,9 +140,7 @@ public class SupplierDialog extends JDialog {
         add(buttonPanel, BorderLayout.SOUTH);
 
         // Add legend for required fields
-        JPanel legendPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        legendPanel.add(new JLabel("* Required fields"));
-        add(legendPanel, BorderLayout.NORTH);
+        add(Dialogs.requiredLegendPanel(), BorderLayout.NORTH);
 
         pack();
         Dialogs.centerWindow(this);

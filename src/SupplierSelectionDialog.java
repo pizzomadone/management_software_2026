@@ -81,6 +81,7 @@ public class SupplierSelectionDialog extends JDialog {
             }
         };
         suppliersTable = new JTable(tableModel);
+        TableStyleUtil.applyCompact(suppliersTable);
 
         // Hide ID column but keep it for data
         suppliersTable.getColumnModel().getColumn(0).setMinWidth(0);

@@ -21,7 +21,11 @@ public class OrderDialog extends JDialog {
     private JComboBox<String> statusCombo;
     private JComboBox<String> paymentStatusCombo;
     private JTextField paidAmountField;
+    private JLabel paidAmountLabel;
     private JPanel paymentPanel;
+    private JButton newCustomerButton;
+    private JButton addItemButton;
+    private JButton removeItemButton;
     private JTable itemsTable;
     private DefaultTableModel itemsTableModel;
     private JLabel totalLabel;
@@ -29,7 +33,11 @@ public class OrderDialog extends JDialog {
     private Map<Integer, Product> productsCache;
     private volatile boolean updatingTotals = false;
     private TableModelListener tableListener;
-    private double currentTotal = 0.0; // Track total instead of parsing from label
+    private double currentTotal = 0.0; // Customer-facing total, VAT included
+    private double currentTotalExVat = 0.0;
+    private boolean paymentSelectionChanged;
+    private boolean loadingPayment;
+    private boolean linkedInvoiceLocked;
     private String previousStatus = null; // Track previous status for state changes
     
     // Constructor for JFrame parent
@@ -45,6 +53,8 @@ public class OrderDialog extends JDialog {
         if (order != null) {
             loadOrderData();
         }
+        initializeLinkedInvoiceLock();
+        configureEditability();
     }
     
     // Constructor for JDialog parent
@@ -60,6 +70,8 @@ public class OrderDialog extends JDialog {
         if (order != null) {
             loadOrderData();
         }
+        initializeLinkedInvoiceLock();
+        configureEditability();
     }
     
     @Override
@@ -89,7 +101,7 @@ public class OrderDialog extends JDialog {
         
         // Customer Selection
         gbc.gridx = 0; gbc.gridy = 0;
-        orderPanel.add(new JLabel("* Customer:"), gbc);
+        orderPanel.add(new JLabel("Customer *:"), gbc);
         
         gbc.gridx = 1; gbc.gridwidth = 2;
         selectCustomerButton = new JButton("Click to select customer...");
@@ -100,7 +112,7 @@ public class OrderDialog extends JDialog {
         orderPanel.add(selectCustomerButton, gbc);
         
         gbc.gridx = 3; gbc.gridwidth = 1;
-        JButton newCustomerButton = new JButton("New Customer");
+        newCustomerButton = new JButton("New Customer");
         newCustomerButton.addActionListener(e -> createNewCustomer());
         orderPanel.add(newCustomerButton, gbc);
         
@@ -117,9 +129,17 @@ public class OrderDialog extends JDialog {
         orderPanel.add(new JLabel("Status:"), gbc);
 
         gbc.gridx = 3;
-        statusCombo = new JComboBox<>(new String[]{"New", "In Progress", "Completed", "Cancelled"});
+        statusCombo = new JComboBox<>(new String[]{"New", "Reservation", "In Progress", "Completed", "Cancelled"});
         statusCombo.putClientProperty("i18n.values", true);
         orderPanel.add(statusCombo, gbc);
+
+        JLabel orderStatusHelp = Dialogs.clickHelpLabel(I18n.tr("tooltip.order.statusFlow"));
+        gbc.gridx = 4; gbc.gridy = 0; gbc.gridwidth = 1;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.anchor = GridBagConstraints.NORTHEAST;
+        orderPanel.add(orderStatusHelp, gbc);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.anchor = GridBagConstraints.CENTER;
 
         // Payment Status
         gbc.gridx = 0; gbc.gridy = 2; gbc.gridwidth = 1;
@@ -128,12 +148,16 @@ public class OrderDialog extends JDialog {
         gbc.gridx = 1;
         paymentStatusCombo = new JComboBox<>(new String[]{"Not Paid", "Partially Paid", "Paid"});
         paymentStatusCombo.putClientProperty("i18n.values", true);
-        paymentStatusCombo.addActionListener(e -> updatePaymentAmountField());
+        paymentStatusCombo.addActionListener(e -> {
+            if (!loadingPayment) paymentSelectionChanged = true;
+            updatePaymentAmountField();
+        });
         orderPanel.add(paymentStatusCombo, gbc);
 
         // Paid Amount
         gbc.gridx = 2;
-        orderPanel.add(new JLabel("Paid Amount:"), gbc);
+        paidAmountLabel = new JLabel("Paid Amount:");
+        orderPanel.add(paidAmountLabel, gbc);
 
         gbc.gridx = 3;
         paidAmountField = new JTextField("0.00");
@@ -141,19 +165,24 @@ public class OrderDialog extends JDialog {
         orderPanel.add(paidAmountField, gbc);
 
         // Products table
-        String[] columns = {"ID", "Product", "Quantity", "Unit Price", "Total"};
+        String[] columns = {"ID", "Product", "Quantity *", "Unit Price incl. VAT", "Total incl. VAT", "VAT %"};
         itemsTableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
-                return column == 2; // Only quantity is editable
+                return column == 2 && !isProtectedHistoricalOrder(); // Only quantity is editable
             }
         };
         itemsTable = new JTable(itemsTableModel);
+        TableStyleUtil.applyCompact(itemsTable);
         
         // Hide ID column
         itemsTable.getColumnModel().getColumn(0).setMinWidth(0);
         itemsTable.getColumnModel().getColumn(0).setMaxWidth(0);
         itemsTable.getColumnModel().getColumn(0).setPreferredWidth(0);
+        // VAT is snapshotted for accounting, but the order table keeps the customer view simple.
+        itemsTable.getColumnModel().getColumn(5).setMinWidth(0);
+        itemsTable.getColumnModel().getColumn(5).setMaxWidth(0);
+        itemsTable.getColumnModel().getColumn(5).setPreferredWidth(0);
         
         itemsTable.getColumnModel().getColumn(1).setPreferredWidth(250);
         itemsTable.getColumnModel().getColumn(2).setPreferredWidth(80);
@@ -178,8 +207,8 @@ public class OrderDialog extends JDialog {
         
         // Panel for table buttons
         JPanel tableButtonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        JButton addItemButton = new JButton("Add Product");
-        JButton removeItemButton = new JButton("Remove Product");
+        addItemButton = new JButton("Add Product");
+        removeItemButton = new JButton("Remove Product");
         
         addItemButton.addActionListener(e -> showProductSelectionDialog());
         removeItemButton.addActionListener(e -> removeSelectedProduct());
@@ -210,13 +239,69 @@ public class OrderDialog extends JDialog {
         centerPanel.add(new JScrollPane(itemsTable), BorderLayout.CENTER);
         centerPanel.add(totalPanel, BorderLayout.SOUTH);
         
+        JPanel footer = new JPanel(new BorderLayout());
+        footer.add(Dialogs.requiredLegendPanel(), BorderLayout.WEST);
+        footer.add(buttonPanel, BorderLayout.EAST);
+
         mainPanel.add(orderPanel, BorderLayout.NORTH);
         mainPanel.add(centerPanel, BorderLayout.CENTER);
-        mainPanel.add(buttonPanel, BorderLayout.SOUTH);
+        mainPanel.add(footer, BorderLayout.SOUTH);
         
         add(mainPanel);
     }
     
+    private void initializeLinkedInvoiceLock() {
+        linkedInvoiceLocked = order != null && hasLinkedInvoice(order.getId());
+    }
+
+    private boolean hasLinkedInvoice(int orderId) {
+        try (PreparedStatement p = DatabaseManager.getInstance().getConnection().prepareStatement(
+                "SELECT 1 FROM invoices WHERE order_id=? LIMIT 1")) {
+            p.setInt(1, orderId);
+            try (ResultSet r = p.executeQuery()) {
+                return r.next();
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Unable to verify linked invoice", e);
+        }
+    }
+
+    private boolean isCompletedPaymentOnly() {
+        return order != null && "Completed".equals(order.getStatus());
+    }
+
+    private boolean isPaymentOnlyOrder() {
+        return order != null && !isReversedOrder()
+            && (isCompletedPaymentOnly() || linkedInvoiceLocked);
+    }
+
+    private boolean isReversedOrder() {
+        return order != null && "Reversed".equals(order.getStatus());
+    }
+
+    private boolean isProtectedHistoricalOrder() {
+        return isPaymentOnlyOrder() || isReversedOrder();
+    }
+
+    private void configureEditability() {
+        if (!isProtectedHistoricalOrder()) return;
+
+        selectCustomerButton.setEnabled(false);
+        newCustomerButton.setEnabled(false);
+        dateField.setEnabled(false);
+        statusCombo.setEnabled(false);
+        addItemButton.setEnabled(false);
+        removeItemButton.setEnabled(false);
+
+        boolean paymentEditable = isPaymentOnlyOrder();
+        paymentStatusCombo.setEnabled(paymentEditable);
+        if (paymentEditable) {
+            updatePaymentAmountField();
+        } else {
+            paidAmountField.setEnabled(false);
+        }
+    }
+
     private void showCustomerSelectionDialog() {
         CustomerSelectionDialog dialog = new CustomerSelectionDialog(this);
         dialog.setVisible(true);
@@ -238,7 +323,7 @@ public class OrderDialog extends JDialog {
             }
 
             selectCustomerButton.setText(buttonText);
-            selectCustomerButton.setToolTipText("Customer: " + buttonText);
+            selectCustomerButton.setToolTipText(I18n.tr("Customer") + ": " + buttonText);
         }
     }
     
@@ -264,7 +349,7 @@ public class OrderDialog extends JDialog {
                         rs.getString("code"),
                         rs.getString("name"),
                         rs.getString("description"),
-                        rs.getDouble("price"),
+                        rs.getDouble("sale_price_inc_vat"),
                         rs.getInt("quantity")
                     );
                     productsCache.put(product.getId(), product);
@@ -297,6 +382,7 @@ public class OrderDialog extends JDialog {
         previousStatus = order.getStatus(); // Store current status as previous
 
         // Load payment status
+        loadingPayment = true;
         String paymentStatus = order.getPaymentStatus();
         if ("PAID".equals(paymentStatus)) {
             paymentStatusCombo.setSelectedItem("Paid");
@@ -305,6 +391,8 @@ public class OrderDialog extends JDialog {
         } else {
             paymentStatusCombo.setSelectedItem("Not Paid");
         }
+        loadingPayment = false;
+        paymentSelectionChanged = false;
         paidAmountField.setText(Numbers.moneyText(order.getPaidAmount()));
         updatePaymentAmountField();
 
@@ -313,8 +401,9 @@ public class OrderDialog extends JDialog {
             row.add(item.getProductId());
             row.add(item.getProductName());
             row.add(item.getQuantity());
-            row.add(item.getUnitPrice());
-            row.add(Numbers.moneyText(item.getTotal()));
+            row.add(item.getUnitPriceIncVat());
+            row.add(Numbers.moneyText(item.getTotalIncVat()));
+            row.add(item.getVatRate());
             itemsTableModel.addRow(row);
         }
 
@@ -343,12 +432,13 @@ public class OrderDialog extends JDialog {
     }
     
     private void showProductSelectionDialog() {
-        ProductSelectionDialog dialog = new ProductSelectionDialog(this);
+        ProductSelectionDialog dialog = new ProductSelectionDialog(this, true, true);
         dialog.setVisible(true);
         
         if (dialog.isProductSelected()) {
             Product product = dialog.getSelectedProduct();
             int quantity = dialog.getSelectedQuantity();
+            double vatRate = dialog.getSelectedVatRate();
             
             // Check if product already exists in the table
             for (int i = 0; i < itemsTableModel.getRowCount(); i++) {
@@ -374,8 +464,9 @@ public class OrderDialog extends JDialog {
             row.add(product.getId());
             row.add(product.getName());
             row.add(quantity);
-            row.add(product.getPrice());
-            row.add(Numbers.moneyText(Numbers.lineTotal(quantity, product.getPrice())));
+            row.add(product.getSalePriceIncVat());
+            row.add(Numbers.moneyText(SalePrice.lineIncVat(quantity, product.getSalePriceIncVat())));
+            row.add(vatRate);
             itemsTableModel.addRow(row);
             
             updateTotals();
@@ -404,12 +495,15 @@ public class OrderDialog extends JDialog {
     
     private void updatePaymentAmountField() {
         String selectedPayment = (String) paymentStatusCombo.getSelectedItem();
-        if ("Partially Paid".equals(selectedPayment)) {
+        boolean required = "Partially Paid".equals(selectedPayment);
+        paidAmountLabel.setText(required ? "Paid Amount *:" : "Paid Amount:");
+        if (required) {
             paidAmountField.setEnabled(true);
         } else {
             paidAmountField.setEnabled(false);
             if ("Paid".equals(selectedPayment)) {
-                paidAmountField.setText(Numbers.moneyText(currentTotal));
+                paidAmountField.setText(Numbers.moneyText(order != null && !paymentSelectionChanged
+                    ? order.getPaidAmount() : currentTotal));
             } else {
                 paidAmountField.setText("0.00");
             }
@@ -421,32 +515,34 @@ public class OrderDialog extends JDialog {
 
         updatingTotals = true;
         try {
-            double total = 0;
+            double totalIncVat = 0;
+            double totalExVat = 0;
 
             for (int i = 0; i < itemsTableModel.getRowCount(); i++) {
-                Object quantityObj = itemsTableModel.getValueAt(i, 2);
-                Object priceObj = itemsTableModel.getValueAt(i, 3);
+                int quantity = parseInteger(itemsTableModel.getValueAt(i, 2));
+                double unitPriceIncVat = parseDouble(itemsTableModel.getValueAt(i, 3));
+                double vatRate = Numbers.vat(itemsTableModel.getValueAt(i, 5));
 
-                int quantity = parseInteger(quantityObj);
-                double price = parseDouble(priceObj);
+                double lineIncVat = SalePrice.lineIncVat(quantity, unitPriceIncVat);
+                double lineExVat = SalePrice.lineExVat(quantity, unitPriceIncVat, vatRate);
+                totalIncVat = Numbers.add(totalIncVat, lineIncVat);
+                totalExVat = Numbers.add(totalExVat, lineExVat);
 
-                double itemTotal = Numbers.lineTotal(quantity, price);
-                total = Numbers.add(total, itemTotal);
-
-                // Update row total
-                String newTotal = Numbers.moneyText(itemTotal);
-                String currentTotalStr = (String) itemsTableModel.getValueAt(i, 4);
+                String newTotal = Numbers.moneyText(lineIncVat);
+                String currentTotalStr = String.valueOf(itemsTableModel.getValueAt(i, 4));
                 if (!newTotal.equals(currentTotalStr)) {
                     itemsTableModel.setValueAt(newTotal, i, 4);
                 }
             }
 
-            currentTotal = total; // Store total value
-            totalLabel.setText("Total: " + SettingsPanel.formatCurrency(total));
+            currentTotal = totalIncVat;
+            currentTotalExVat = totalExVat;
+            totalLabel.setText(I18n.tr("Total incl. VAT") + ": " +
+                SettingsPanel.formatCurrency(totalIncVat));
 
-            // Update paid amount if payment status is "Paid"
-            if ("Paid".equals(paymentStatusCombo.getSelectedItem())) {
-                paidAmountField.setText(Numbers.moneyText(total));
+            if ("Paid".equals(paymentStatusCombo.getSelectedItem()) &&
+                    (order == null || paymentSelectionChanged)) {
+                paidAmountField.setText(Numbers.moneyText(totalIncVat));
             }
 
         } catch (IllegalArgumentException e) {
@@ -463,20 +559,74 @@ public class OrderDialog extends JDialog {
     private void validateRows() {
         Numbers.commitEdits(itemsTable);
         java.util.Set<Integer> products = new java.util.HashSet<>();
-        double validatedTotal = 0;
+        double validatedIncVat = 0;
+        double validatedExVat = 0;
         for (int i = 0; i < itemsTableModel.getRowCount(); i++) {
             int id = Numbers.positiveQuantity(itemsTableModel.getValueAt(i, 0));
             if (!products.add(id)) throw new IllegalArgumentException("Duplicate product in order");
-            Numbers.positiveQuantity(itemsTableModel.getValueAt(i, 2));
-            double price = Numbers.nonNegative(itemsTableModel.getValueAt(i, 3));
-            validatedTotal = Numbers.add(validatedTotal, Numbers.lineTotal(Numbers.positiveQuantity(itemsTableModel.getValueAt(i, 2)), price));
+            int quantity = Numbers.positiveQuantity(itemsTableModel.getValueAt(i, 2));
+            double priceIncVat = Numbers.nonNegative(itemsTableModel.getValueAt(i, 3));
+            double vatRate = Numbers.vat(itemsTableModel.getValueAt(i, 5));
+            validatedIncVat = Numbers.add(validatedIncVat,
+                SalePrice.lineIncVat(quantity, priceIncVat));
+            validatedExVat = Numbers.add(validatedExVat,
+                SalePrice.lineExVat(quantity, priceIncVat, vatRate));
         }
-        currentTotal = validatedTotal;
+        currentTotal = validatedIncVat;
+        currentTotalExVat = validatedExVat;
         updateTotals();
+    }
+
+    private void saveCompletedPaymentOnly() {
+        Connection conn = null;
+        try {
+            String selected = String.valueOf(paymentStatusCombo.getSelectedItem());
+            String paymentCode;
+            double paidAmount = 0.0;
+
+            if ("Paid".equals(selected)) {
+                paymentCode = "PAID";
+            } else if ("Partially Paid".equals(selected)) {
+                paymentCode = "PARTIALLY_PAID";
+                paidAmount = Numbers.money(Numbers.decimal(paidAmountField.getText()));
+            } else {
+                paymentCode = "NOT_PAID";
+            }
+
+            conn = DatabaseManager.getInstance().getConnection();
+            DatabaseManager.beginTransaction(conn);
+            try {
+                OrdersPanel.updateOrderPayment(conn, order.getId(), paymentCode, paidAmount);
+                conn.commit();
+            } catch (Exception e) {
+                conn.rollback();
+                throw e;
+            } finally {
+                conn.setAutoCommit(true);
+            }
+
+            orderSaved = true;
+            dispose();
+        } catch (Exception e) {
+            e.printStackTrace();
+            Dialogs.showMessageDialog(this,
+                I18n.tr("Error while updating payment") + ": " + e.getMessage(),
+                I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
+        }
     }
 
     private void saveOrder() {
         try {
+            if (isReversedOrder()) {
+                Dialogs.showMessageDialog(this,
+                    I18n.tr("This sale has already been reversed and is kept as historical data."),
+                    I18n.tr("Historical Sale"), JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            if (isPaymentOnlyOrder()) {
+                saveCompletedPaymentOnly();
+                return;
+            }
             validateRows();
             if (selectedCustomer == null) {
                 Dialogs.showMessageDialog(this,
@@ -502,7 +652,8 @@ public class OrderDialog extends JDialog {
 
             if ("Paid".equals(paymentStatusUI)) {
                 paymentStatus = "PAID";
-                paidAmount = currentTotal;
+                paidAmount = order != null && !paymentSelectionChanged
+                    ? order.getPaidAmount() : currentTotal;
             } else if ("Partially Paid".equals(paymentStatusUI)) {
                 paymentStatus = "PARTIALLY_PAID";
                 try {
@@ -534,6 +685,8 @@ public class OrderDialog extends JDialog {
                 paidAmount = 0.0;
             }
 
+            paymentStatus = PaymentAmounts.status(paidAmount, currentTotal);
+
             // Build list of stock items
             List<StockManager.StockItem> stockItems = new ArrayList<>();
             for (int i = 0; i < itemsTableModel.getRowCount(); i++) {
@@ -544,6 +697,14 @@ public class OrderDialog extends JDialog {
             }
 
             Connection conn = DatabaseManager.getInstance().getConnection();
+            java.util.List<Integer> productIds = new java.util.ArrayList<>();
+            for (StockManager.StockItem item : stockItems) productIds.add(item.getProductId());
+            String missingCost = CostIntegrity.missingPurchaseCostMessage(conn, productIds);
+            if (missingCost != null) {
+                Dialogs.showMessageDialog(this, missingCost,
+                    I18n.tr("Purchase Cost Required"), JOptionPane.WARNING_MESSAGE);
+                return;
+            }
             DatabaseManager.beginTransaction(conn);
             try {
             if (order != null) {
@@ -553,7 +714,8 @@ public class OrderDialog extends JDialog {
                     }
                 }
             }
-            // Check stock availability for New, In Progress and Completed states
+            // Reservation is the only state that does not touch warehouse availability.
+            // New and In Progress reserve the full requested quantity; Completed consumes it.
             if ("New".equals(newStatus) || "In Progress".equals(newStatus) || "Completed".equals(newStatus)) {
                 Map<String, StockManager.StockAvailability> insufficient =
                     StockManager.checkStockAvailability(
@@ -564,41 +726,48 @@ public class OrderDialog extends JDialog {
                     );
 
                 if (!insufficient.isEmpty()) {
-                    StringBuilder message = new StringBuilder("Insufficient stock for the following products:\n\n");
+                    StringBuilder message = new StringBuilder(
+                        I18n.tr("Insufficient stock for the following products:"))
+                        .append("\n\n");
                     for (Map.Entry<String, StockManager.StockAvailability> entry : insufficient.entrySet()) {
-                        message.append(String.format("- %s: %s\n",
-                            entry.getKey(), entry.getValue().getFormattedMessage()));
+                        message.append("- ")
+                               .append(entry.getKey())
+                               .append(": ")
+                               .append(entry.getValue().getFormattedMessage())
+                               .append("\n");
                     }
-                    message.append("\n").append(I18n.tr("Do you want to proceed anyway?")).append("\n").append(I18n.tr("This will result in negative stock."));
 
-                    int choice = Dialogs.showConfirmDialog(this,
+                    message.append("\n").append(I18n.tr(
+                        "With insufficient available stock, the order can only be saved as Reservation. Reservation does not change stock, reserved quantities, lots or FIFO."));
+                    statusCombo.setSelectedItem("Reservation");
+
+                    Dialogs.showMessageDialog(this,
                         message.toString(),
-                        "Insufficient Stock",
-                        JOptionPane.YES_NO_OPTION,
+                        I18n.tr("Insufficient Stock"),
                         JOptionPane.WARNING_MESSAGE);
-
-                    if (choice != JOptionPane.YES_OPTION) {
-                        conn.rollback();
-                        return;
-                    }
+                    conn.rollback();
+                    return;
                 }
             }
 
                 int orderId;
+                Date completedDate = "Completed".equals(newStatus) ? new Date() : null;
 
                 if (order == null) {
                     // New order
                     String orderQuery = """
-                        INSERT INTO orders (customer_id, order_date, status, total, payment_status, paid_amount)
-                        VALUES (?, ?, ?, ?, ?, ?)
+                        INSERT INTO orders (customer_id, order_date, completed_date, status, total_ex_vat, total_inc_vat, payment_status, paid_amount)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """;
                     try (PreparedStatement pstmt = conn.prepareStatement(orderQuery, Statement.RETURN_GENERATED_KEYS)) {
                         pstmt.setInt(1, selectedCustomer.getId());
                         pstmt.setTimestamp(2, DateUtils.toSqlTimestamp(orderDate));
-                        pstmt.setString(3, newStatus);
-                        pstmt.setDouble(4, currentTotal);
-                        pstmt.setString(5, paymentStatus);
-                        pstmt.setDouble(6, paidAmount);
+                        pstmt.setTimestamp(3, DateUtils.toSqlTimestamp(completedDate));
+                        pstmt.setString(4, newStatus);
+                        pstmt.setDouble(5, currentTotalExVat);
+                        pstmt.setDouble(6, currentTotal);
+                        pstmt.setString(7, paymentStatus);
+                        pstmt.setDouble(8, paidAmount);
                         pstmt.executeUpdate();
 
                         try (ResultSet rs = pstmt.getGeneratedKeys()) {
@@ -614,7 +783,7 @@ public class OrderDialog extends JDialog {
                     insertOrderDetails(conn, orderId);
 
                     // Handle stock based on status
-                    handleStockForNewStatus(conn, orderId, newStatus, stockItems, orderDate);
+                    handleStockForNewStatus(conn, orderId, newStatus, stockItems, completedDate);
 
                 } else {
                     // Update existing order
@@ -623,17 +792,19 @@ public class OrderDialog extends JDialog {
 
                     String orderQuery = """
                         UPDATE orders
-                        SET customer_id = ?, order_date = ?, status = ?, total = ?, payment_status = ?, paid_amount = ?
+                        SET customer_id = ?, order_date = ?, completed_date = ?, status = ?, total_ex_vat = ?, total_inc_vat = ?, payment_status = ?, paid_amount = ?
                         WHERE id = ?
                     """;
                     try (PreparedStatement pstmt = conn.prepareStatement(orderQuery)) {
                         pstmt.setInt(1, selectedCustomer.getId());
                         pstmt.setTimestamp(2, DateUtils.toSqlTimestamp(orderDate));
-                        pstmt.setString(3, newStatus);
-                        pstmt.setDouble(4, currentTotal);
-                        pstmt.setString(5, paymentStatus);
-                        pstmt.setDouble(6, paidAmount);
-                        pstmt.setInt(7, orderId);
+                        pstmt.setTimestamp(3, DateUtils.toSqlTimestamp(completedDate));
+                        pstmt.setString(4, newStatus);
+                        pstmt.setDouble(5, currentTotalExVat);
+                        pstmt.setDouble(6, currentTotal);
+                        pstmt.setString(7, paymentStatus);
+                        pstmt.setDouble(8, paidAmount);
+                        pstmt.setInt(9, orderId);
                         pstmt.executeUpdate();
                     }
 
@@ -648,7 +819,7 @@ public class OrderDialog extends JDialog {
                     insertOrderDetails(conn, orderId);
 
                     // Handle status change (now reservations are clean if they existed)
-                    handleStockForNewStatus(conn, orderId, newStatus, stockItems, orderDate);
+                    handleStockForNewStatus(conn, orderId, newStatus, stockItems, completedDate);
                 }
 
                 conn.commit();
@@ -672,26 +843,37 @@ public class OrderDialog extends JDialog {
 
     private void insertOrderDetails(Connection conn, int orderId) throws SQLException {
         String detailQuery = """
-            INSERT INTO order_details (order_id, product_id, quantity, unit_price)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO order_details
+                (order_id, product_id, quantity, sale_unit_price_ex_vat,
+                 sale_unit_price_inc_vat, vat_rate)
+            VALUES (?, ?, ?, ?, ?, ?)
         """;
         try (PreparedStatement pstmt = conn.prepareStatement(detailQuery)) {
             for (int i = 0; i < itemsTableModel.getRowCount(); i++) {
+                int quantity = parseInteger(itemsTableModel.getValueAt(i, 2));
+                double incVat = parseDouble(itemsTableModel.getValueAt(i, 3));
+                double vatRate = Numbers.vat(itemsTableModel.getValueAt(i, 5));
+                double exVat = SalePrice.unitExVatForLine(quantity, incVat, vatRate);
                 pstmt.setInt(1, orderId);
                 pstmt.setInt(2, (int)itemsTableModel.getValueAt(i, 0));
-                pstmt.setInt(3, parseInteger(itemsTableModel.getValueAt(i, 2)));
-                pstmt.setDouble(4, parseDouble(itemsTableModel.getValueAt(i, 3)));
+                pstmt.setInt(3, quantity);
+                pstmt.setDouble(4, exVat);
+                pstmt.setDouble(5, incVat);
+                pstmt.setDouble(6, vatRate);
                 pstmt.executeUpdate();
             }
         }
     }
 
     private void handleStockForNewStatus(Connection conn, int orderId, String status,
-                                         List<StockManager.StockItem> items, Date orderDate) throws SQLException {
+                                         List<StockManager.StockItem> items, Date completedDate) throws SQLException {
         switch (status) {
+            case "Reservation":
+                // Commercial reservation only: no warehouse reservation, stock movement or FIFO effect.
+                break;
             case "New":
             case "In Progress":
-                // Create reservations for both New and In Progress
+                // Fully covered order: reserve the entire requested quantity without changing physical stock.
                 for (StockManager.StockItem item : items) {
                     StockManager.createOrUpdateReservation(conn, item.getProductId(),
                         "ORDER", orderId, item.getQuantity(), "Order #" + orderId);
@@ -705,7 +887,7 @@ public class OrderDialog extends JDialog {
                         "ORDER", orderId, item.getQuantity(), "Order #" + orderId);
                 }
                 StockManager.completeReservationAndDecrementStock(conn, "ORDER", orderId,
-                    orderDate, String.valueOf(orderId));
+                    completedDate, String.valueOf(orderId));
                 break;
             case "Cancelled":
                 // No stock action
@@ -717,3 +899,4 @@ public class OrderDialog extends JDialog {
         return orderSaved;
     }
 }
+

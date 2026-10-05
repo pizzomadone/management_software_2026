@@ -20,10 +20,22 @@ public class ProductSelectionDialog extends JDialog {
     private int selectedQuantity = 1;
     private double selectedVatRate = 22.0;
     private Timer searchTimer;
-    
+    private final boolean activeOnly;
+    private final boolean useAvailableStock;
+
     public ProductSelectionDialog(JDialog parent) {
+        this(parent, true, false);
+    }
+
+    public ProductSelectionDialog(JDialog parent, boolean activeOnly) {
+        this(parent, activeOnly, false);
+    }
+
+    public ProductSelectionDialog(JDialog parent, boolean activeOnly, boolean useAvailableStock) {
         super(parent, "Select Product", true);
-        
+        this.activeOnly = activeOnly;
+        this.useAvailableStock = useAvailableStock;
+
         setupWindow();
         initComponents();
         loadAllProducts();
@@ -83,7 +95,8 @@ public class ProductSelectionDialog extends JDialog {
         searchPanel.add(searchInputPanel, BorderLayout.CENTER);
 
         // Products table with detailed information
-        String[] columns = {"ID", "Code", "Name", "Description", "Price " + SettingsPanel.getCurrencySymbol(), "Stock", "Status"};
+        String[] columns = {"ID", "Code", "Name", "Description", "Sale Price incl. VAT",
+            useAvailableStock ? "Available" : "Stock", "Status"};
         tableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -91,6 +104,7 @@ public class ProductSelectionDialog extends JDialog {
             }
         };
         productsTable = new JTable(tableModel);
+        TableStyleUtil.applyCompact(productsTable);
 
         // Hide ID column
         productsTable.getColumnModel().getColumn(0).setMinWidth(0);
@@ -174,7 +188,7 @@ public class ProductSelectionDialog extends JDialog {
     private JPanel createDetailsPanel() {
         JPanel panel = new JPanel(new BorderLayout(10, 5));
         panel.setBorder(BorderFactory.createTitledBorder("Selected Product Details"));
-        panel.setPreferredSize(new Dimension(900, 120)); // Fixed height
+        panel.setPreferredSize(new Dimension(900, 145)); // Includes required-fields legend
 
         // Product information panel with improved layout
         JPanel infoPanel = new JPanel(new GridBagLayout());
@@ -184,7 +198,7 @@ public class ProductSelectionDialog extends JDialog {
 
         // First row: Quantity and VAT Rate
         gbc.gridx = 0; gbc.gridy = 0;
-        infoPanel.add(new JLabel("Quantity:"), gbc);
+        infoPanel.add(new JLabel("Quantity *:"), gbc);
 
         gbc.gridx = 1;
         SpinnerNumberModel spinnerModel = new SpinnerNumberModel(1, 1, 9999, 1);
@@ -228,6 +242,7 @@ public class ProductSelectionDialog extends JDialog {
         infoPanel.add(noteLabel, gbc);
         
         panel.add(infoPanel, BorderLayout.CENTER);
+        panel.add(Dialogs.requiredLegendPanel(), BorderLayout.SOUTH);
         
         return panel;
     }
@@ -246,8 +261,9 @@ public class ProductSelectionDialog extends JDialog {
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
-                SELECT id, code, name, description, price, quantity
+                SELECT id, code, name, description, sale_price_inc_vat, quantity, reserved_quantity
                 FROM products
+                """ + (activeOnly ? "WHERE active=1\n" : "") + """
                 ORDER BY name
                 LIMIT 1000
             """;
@@ -277,11 +293,12 @@ public class ProductSelectionDialog extends JDialog {
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
-                SELECT id, code, name, description, price, quantity
+                SELECT id, code, name, description, sale_price_inc_vat, quantity, reserved_quantity
                 FROM products
-                WHERE LOWER(code) LIKE LOWER(?)
+                WHERE """ + (activeOnly ? "active=1 AND " : "") + """
+                      (LOWER(code) LIKE LOWER(?)
                    OR LOWER(name) LIKE LOWER(?)
-                   OR LOWER(description) LIKE LOWER(?)
+                   OR LOWER(description) LIKE LOWER(?))
                 ORDER BY
                     CASE
                         WHEN LOWER(code) LIKE LOWER(?) THEN 1
@@ -330,12 +347,17 @@ public class ProductSelectionDialog extends JDialog {
         }
         row.add(description);
 
-        row.add(rs.getDouble("price"));
+        row.add(rs.getDouble("sale_price_inc_vat"));
 
-        int stock = rs.getInt("quantity");
+        int physicalStock = rs.getInt("quantity");
+        int reservedStock = rs.getInt("reserved_quantity");
+        int stock = useAvailableStock
+            ? Math.subtractExact(physicalStock, reservedStock)
+            : physicalStock;
         row.add(stock);
 
-        // Status based on availability
+        // In customer-order mode the status is based on real availability
+        // (physical stock minus quantities already reserved).
         String status;
         if (stock <= 0) {
             status = "Out of Stock";
@@ -385,9 +407,12 @@ public class ProductSelectionDialog extends JDialog {
 
             // Update note with detailed and better formatted information
             if (noteLabel != null) {
+                String stockLabel = I18n.tr(useAvailableStock ? "Available" : "Stock");
                 String info = String.format(
-                    "Selected: %s - %s | Price: %s | Stock: %d units (%s)",
-                    code, name, SettingsPanel.formatCurrency(parsePrice(priceStr)), stock, status
+                    "%s: %s - %s | %s: %s | %s: %d %s (%s)",
+                    I18n.tr("Selected"), code, name,
+                    I18n.tr("Price"), SettingsPanel.formatCurrency(parsePrice(priceStr)),
+                    stockLabel, stock, I18n.tr("units"), I18n.tr(status)
                 );
                 noteLabel.setText(info);
 

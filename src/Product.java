@@ -4,27 +4,20 @@ public class Product {
     private String code;
     private String name;
     private String description;
+    /** Customer-facing sale price, VAT included. */
     private double price;
+    private double salePriceExVat;
     private int quantity;
 
-    // Category & Management
     private String category;
     private String alternativeSku;
-
-    // Dimensions & Weight
     private double weight;
     private String unitOfMeasure;
-
-    // Stock Management
     private int minimumQuantity;
     private double acquisitionCost;
-
-    // Logistics
     private boolean active;
     private Integer supplierId;
-    private String supplierName; // For display purposes
-
-    // Warehouse & Tax
+    private String supplierName;
     private String warehousePosition;
     private double vatRate;
 
@@ -34,6 +27,7 @@ public class Product {
         this.name = name;
         this.description = description;
         this.price = price;
+        this.salePriceExVat = price;
         this.quantity = quantity;
         this.category = "";
         this.alternativeSku = "";
@@ -57,6 +51,8 @@ public class Product {
         this.name = name;
         this.description = description;
         this.price = price;
+        this.vatRate = vatRate;
+        this.salePriceExVat = SalePrice.exVatFromIncVat(price, vatRate);
         this.quantity = quantity;
         this.category = category;
         this.alternativeSku = alternativeSku;
@@ -68,15 +64,16 @@ public class Product {
         this.supplierId = supplierId;
         this.supplierName = supplierName;
         this.warehousePosition = warehousePosition;
-        this.vatRate = vatRate;
     }
 
-    // Getters
     public int getId() { return id; }
     public String getCode() { return code; }
     public String getName() { return name; }
     public String getDescription() { return description; }
+    /** Compatibility getter: customer-facing price, VAT included. */
     public double getPrice() { return price; }
+    public double getSalePriceIncVat() { return price; }
+    public double getSalePriceExVat() { return salePriceExVat; }
     public int getQuantity() { return quantity; }
     public String getCategory() { return category; }
     public String getAlternativeSku() { return alternativeSku; }
@@ -90,12 +87,19 @@ public class Product {
     public String getWarehousePosition() { return warehousePosition; }
     public double getVatRate() { return vatRate; }
 
-    // Setters
     public void setId(int id) { this.id = id; }
     public void setCode(String code) { this.code = code; }
     public void setName(String name) { this.name = name; }
     public void setDescription(String description) { this.description = description; }
-    public void setPrice(double price) { this.price = price; }
+    public void setPrice(double price) {
+        this.price = Numbers.nonNegative(price);
+        this.salePriceExVat = SalePrice.exVatFromIncVat(this.price, vatRate);
+    }
+    public void setSalePriceIncVat(double price) { setPrice(price); }
+    public void setSalePriceExVat(double price) {
+        this.salePriceExVat = Numbers.nonNegative(price);
+        this.price = SalePrice.incVatFromExVat(this.salePriceExVat, vatRate);
+    }
     public void setQuantity(int quantity) { this.quantity = quantity; }
     public void setCategory(String category) { this.category = category; }
     public void setAlternativeSku(String alternativeSku) { this.alternativeSku = alternativeSku; }
@@ -107,5 +111,8 @@ public class Product {
     public void setSupplierId(Integer supplierId) { this.supplierId = supplierId; }
     public void setSupplierName(String supplierName) { this.supplierName = supplierName; }
     public void setWarehousePosition(String warehousePosition) { this.warehousePosition = warehousePosition; }
-    public void setVatRate(double vatRate) { this.vatRate = vatRate; }
+    public void setVatRate(double vatRate) {
+        this.vatRate = Numbers.vat(vatRate);
+        this.salePriceExVat = SalePrice.exVatFromIncVat(price, this.vatRate);
+    }
 }

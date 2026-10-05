@@ -132,7 +132,7 @@ public class SupplierOrderDialog extends JDialog {
         orderPanel.add(new JScrollPane(notesArea), gbc);
 
         // Products table
-        String[] columns = {"Code", "Product", "Quantity", "Unit Price", "Total", "Notes", "Product ID"};
+        String[] columns = {"Code", "Product", "Quantity *", "Unit Price", "Total", "Notes", "Product ID"};
         itemsTableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -140,7 +140,8 @@ public class SupplierOrderDialog extends JDialog {
             }
         };
         itemsTable = new JTable(itemsTableModel);
-        itemsTable.setToolTipText(I18n.tr("Unit prices are quoted when added. After changing quantities or dates, use Update Prices from Price List to refresh them; negotiated prices can be edited manually."));
+        TableStyleUtil.applyCompact(itemsTable);
+        itemsTable.setToolTipText(I18n.tr("Unit prices start from the supplier's current product price and can be edited for discounts or negotiated terms."));
         itemsTable.removeColumn(itemsTable.getColumnModel().getColumn(6));
 
         // FIXED: Improved listener to prevent infinite recursion
@@ -161,9 +162,9 @@ public class SupplierOrderDialog extends JDialog {
 
         tableButtonPanel.add(addItemButton);
         tableButtonPanel.add(removeItemButton);
-        JButton reprice = new JButton("Update Prices from Price List");
-        reprice.setToolTipText(I18n.tr("Replace order prices with the current supplier price list."));
-        reprice.addActionListener(e -> applyPriceList());
+        JButton reprice = new JButton("Refresh Supplier Prices");
+        reprice.setToolTipText(I18n.tr("Replace order prices with the current prices saved for this supplier."));
+        reprice.addActionListener(e -> refreshSupplierPrices());
         tableButtonPanel.add(reprice);
 
         // Total panel
@@ -189,9 +190,13 @@ public class SupplierOrderDialog extends JDialog {
         centerPanel.add(new JScrollPane(itemsTable), BorderLayout.CENTER);
         centerPanel.add(totalPanel, BorderLayout.SOUTH);
 
+        JPanel footer = new JPanel(new BorderLayout());
+        footer.add(Dialogs.requiredLegendPanel(), BorderLayout.WEST);
+        footer.add(buttonPanel, BorderLayout.EAST);
+
         mainPanel.add(orderPanel, BorderLayout.NORTH);
         mainPanel.add(centerPanel, BorderLayout.CENTER);
-        mainPanel.add(buttonPanel, BorderLayout.SOUTH);
+        mainPanel.add(footer, BorderLayout.SOUTH);
 
         add(mainPanel);
         pack();
@@ -225,7 +230,13 @@ public class SupplierOrderDialog extends JDialog {
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             productsCache.clear();
-            String query = "SELECT * FROM products WHERE supplier_id=? ORDER BY name";
+            String query = """
+                SELECT p.*, ps.purchase_price
+                FROM product_suppliers ps
+                JOIN products p ON p.id=ps.product_id
+                WHERE ps.supplier_id=? AND p.active=1
+                ORDER BY p.name,p.code
+                """;
             try (PreparedStatement pstmt = conn.prepareStatement(query)) {
                 pstmt.setInt(1, supplierId);
                 ResultSet rs = pstmt.executeQuery();
@@ -236,7 +247,7 @@ public class SupplierOrderDialog extends JDialog {
                         rs.getString("code"),
                         rs.getString("name"),
                         rs.getString("description"),
-                        SupplierPricing.price(conn, supplierId, rs.getInt("id"), 1, new Date()),
+                        rs.getDouble("purchase_price"),
                         rs.getInt("quantity")
                     );
                     productsCache.put(product.getId(), product);
@@ -288,7 +299,7 @@ public class SupplierOrderDialog extends JDialog {
 
         // Product
         gbc.gridx = 0; gbc.gridy = 0;
-        panel.add(new JLabel("Product:"), gbc);
+        panel.add(new JLabel("Product *:"), gbc);
 
         gbc.gridx = 1;
         gbc.fill = GridBagConstraints.HORIZONTAL;
@@ -305,7 +316,7 @@ public class SupplierOrderDialog extends JDialog {
         gbc.gridx = 0; gbc.gridy = 1;
         gbc.weightx = 0;
         gbc.fill = GridBagConstraints.NONE;
-        panel.add(new JLabel("Quantity:"), gbc);
+        panel.add(new JLabel("Quantity *:"), gbc);
 
         gbc.gridx = 1;
         SpinnerNumberModel spinnerModel = new SpinnerNumberModel(1, 1, 9999, 1);
@@ -338,8 +349,23 @@ public class SupplierOrderDialog extends JDialog {
             ProductDisplay selectedProduct = (ProductDisplay)productCombo.getSelectedItem();
             if (selectedProduct == null) {
                 Dialogs.showMessageDialog(dialog,
-                    "Please select a product",
-                    "Warning", JOptionPane.WARNING_MESSAGE);
+                    I18n.tr("Please select a product"),
+                    I18n.tr("Warning"), JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+
+            try {
+                Connection c = DatabaseManager.getInstance().getConnection();
+                String missingCost = CostIntegrity.missingPurchaseCostMessage(
+                    c, java.util.List.of(selectedProduct.getProduct().getId()));
+                if (missingCost != null) {
+                    Dialogs.showMessageDialog(dialog, missingCost,
+                        I18n.tr("Purchase Cost Required"), JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
+            } catch (SQLException costError) {
+                Dialogs.showMessageDialog(dialog, I18n.tr(costError.getMessage()),
+                    I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
                 return;
             }
 
@@ -350,9 +376,7 @@ public class SupplierOrderDialog extends JDialog {
                 quotedPrice = SupplierPricing.price(
                     DatabaseManager.getInstance().getConnection(),
                     supplierId,
-                    selectedProduct.getProduct().getId(),
-                    quantity,
-                    DateUtils.parseDate(dateField.getText(), dateFormat));
+                    selectedProduct.getProduct().getId());
             } catch (Exception ex) {
                 Dialogs.showMessageDialog(dialog, ex.getMessage(),
                     "Invalid product", JOptionPane.ERROR_MESSAGE);
@@ -390,8 +414,12 @@ public class SupplierOrderDialog extends JDialog {
         buttonPanel.add(addButton);
         buttonPanel.add(cancelButton);
 
+        JPanel dialogFooter = new JPanel(new BorderLayout());
+        dialogFooter.add(Dialogs.requiredLegendPanel(), BorderLayout.WEST);
+        dialogFooter.add(buttonPanel, BorderLayout.EAST);
+
         dialog.add(panel, BorderLayout.CENTER);
-        dialog.add(buttonPanel, BorderLayout.SOUTH);
+        dialog.add(dialogFooter, BorderLayout.SOUTH);
         I18n.localize(dialog);
         dialog.pack();
         dialog.setResizable(false);
@@ -423,28 +451,26 @@ public class SupplierOrderDialog extends JDialog {
         }
     }
 
-    private void applyPriceList() {
-        applyPriceList(true);
+    private void refreshSupplierPrices() {
+        refreshSupplierPrices(true);
     }
 
-    private void applyPriceList(boolean askConfirmation) {
+    private void refreshSupplierPrices(boolean askConfirmation) {
         try {
             Numbers.commitEdits(itemsTable);
             if (askConfirmation && Dialogs.showConfirmDialog(
                     this,
-                    I18n.tr("Replace all entered unit prices with the current price list for this date and these quantities?"),
-                    I18n.tr("Update Prices from Price List"),
+                    I18n.tr("Replace all entered unit prices with the current supplier prices?"),
+                    I18n.tr("Refresh Supplier Prices"),
                     JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) {
                 return;
             }
 
-            Date date = DateUtils.parseDate(dateField.getText(), dateFormat);
             Connection c = DatabaseManager.getInstance().getConnection();
             double[] prices = new double[itemsTableModel.getRowCount()];
             for (int i = 0; i < prices.length; i++) {
                 prices[i] = SupplierPricing.price(
-                    c, supplierId, productIdForRow(c, i),
-                    parseInteger(itemsTableModel.getValueAt(i, 2)), date);
+                    c, supplierId, productIdForRow(c, i));
             }
             for (int i = 0; i < prices.length; i++) {
                 itemsTableModel.setValueAt(prices[i], i, 3);
@@ -453,7 +479,7 @@ public class SupplierOrderDialog extends JDialog {
         } catch (Exception e) {
             Dialogs.showMessageDialog(
                 this, I18n.tr(e.getMessage()),
-                I18n.tr("Unable to apply prices"), JOptionPane.ERROR_MESSAGE);
+                I18n.tr("Unable to refresh supplier prices"), JOptionPane.ERROR_MESSAGE);
         }
     }
 
@@ -475,6 +501,12 @@ public class SupplierOrderDialog extends JDialog {
     // Helper methods for safe parsing
     private int parseInteger(Object value) { return Numbers.positiveQuantity(value); }
     private double parseDouble(Object value) { return Numbers.nonNegative(value); }
+    private double parsePurchasePrice(Object value) {
+        double price = Numbers.nonNegative(value);
+        if (price <= 0) throw new IllegalArgumentException(
+            I18n.tr("Purchase price must be greater than zero"));
+        return price;
+    }
 
     private int productIdForRow(Connection c, int row) throws SQLException {
         if (itemsTableModel.getColumnCount()>6 && itemsTableModel.getValueAt(row,6)!=null)
@@ -535,7 +567,7 @@ public class SupplierOrderDialog extends JDialog {
             double total = 0.0;
             for (int i = 0; i < itemsTableModel.getRowCount(); i++) {
                 total = Numbers.add(total, Numbers.lineTotal(parseInteger(itemsTableModel.getValueAt(i, 2)),
-                    parseDouble(itemsTableModel.getValueAt(i, 3))));
+                    parsePurchasePrice(itemsTableModel.getValueAt(i, 3))));
             }
 
             String newStatus = (String)statusCombo.getSelectedItem();
@@ -552,6 +584,14 @@ public class SupplierOrderDialog extends JDialog {
             }
 
             Connection conn = DatabaseManager.getInstance().getConnection();
+            java.util.List<Integer> productIds = new java.util.ArrayList<>();
+            for (StockManager.StockItem item : stockItems) productIds.add(item.getProductId());
+            String missingCost = CostIntegrity.missingPurchaseCostMessage(conn, productIds);
+            if (missingCost != null) {
+                Dialogs.showMessageDialog(this, missingCost,
+                    I18n.tr("Purchase Cost Required"), JOptionPane.WARNING_MESSAGE);
+                return;
+            }
             DatabaseManager.beginTransaction(conn);
 
             try {
@@ -559,12 +599,13 @@ public class SupplierOrderDialog extends JDialog {
 
                 if (order == null) {
                     numberField.setText(DocumentNumbers.nextSupplierNumber(conn, orderDate));
+                    Date receiptDate = "Completed".equals(newStatus) ? new Date() : null;
                     // Insert new order
                     String orderQuery = """
                         INSERT INTO supplier_orders (
                             supplier_id, number, order_date, expected_delivery_date,
-                            status, total, notes
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                            received_date, status, total, notes
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """;
 
                     try (PreparedStatement pstmt = conn.prepareStatement(orderQuery, Statement.RETURN_GENERATED_KEYS)) {
@@ -572,9 +613,10 @@ public class SupplierOrderDialog extends JDialog {
                         pstmt.setString(2, numberField.getText());
                         pstmt.setTimestamp(3, DateUtils.toSqlTimestamp(orderDate));
                         pstmt.setTimestamp(4, deliveryDate != null ? DateUtils.toSqlTimestamp(deliveryDate) : null);
-                        pstmt.setString(5, newStatus);
-                        pstmt.setDouble(6, total);
-                        pstmt.setString(7, notesArea.getText().trim());
+                        pstmt.setTimestamp(5, receiptDate != null ? DateUtils.toSqlTimestamp(receiptDate) : null);
+                        pstmt.setString(6, newStatus);
+                        pstmt.setDouble(7, total);
+                        pstmt.setString(8, notesArea.getText().trim());
                         pstmt.executeUpdate();
 
                         try (ResultSet rs = pstmt.getGeneratedKeys()) {
@@ -591,8 +633,8 @@ public class SupplierOrderDialog extends JDialog {
 
                     // Handle stock if Completed
                     if ("Completed".equals(newStatus)) {
-                        StockManager.incrementStock(conn, stockItems, orderDate,
-                            numberField.getText(), "SUPPLIER_ORDER");
+                        InventoryLotManager.receiveSupplierOrder(
+                            conn, orderId, receiptDate, numberField.getText());
                     }
 
                 } else {
@@ -600,20 +642,27 @@ public class SupplierOrderDialog extends JDialog {
                     orderId = order.getId();
                     List<StockManager.StockItem> oldStockItems = loadStoredStockItems(conn, orderId);
 
-                    try (PreparedStatement p = conn.prepareStatement("SELECT status FROM supplier_orders WHERE id=?")) {
+                    Date previousReceiptDate = null;
+                    try (PreparedStatement p = conn.prepareStatement(
+                            "SELECT status,received_date FROM supplier_orders WHERE id=?")) {
                         p.setInt(1, orderId);
                         try (ResultSet r = p.executeQuery()) {
                             if (!r.next()) throw new SQLException("Supplier order no longer exists");
-                            previousStatus = r.getString(1);
+                            previousStatus = r.getString("status");
+                            previousReceiptDate = DateUtils.parseDate(r, "received_date");
                         }
                     }
                     if ("Completed".equals(previousStatus)) {
-                        StockManager.reverseSupplierOrder(conn, oldStockItems, order.getNumber());
+                        InventoryLotManager.reverseSupplierOrder(conn, orderId, order.getNumber());
                     }
+                    Date receiptDate = "Completed".equals(newStatus)
+                        ? ("Completed".equals(previousStatus) && previousReceiptDate != null
+                            ? previousReceiptDate : new Date())
+                        : null;
 
                     String orderQuery = """
                         UPDATE supplier_orders SET
-                            order_date = ?, expected_delivery_date = ?,
+                            order_date = ?, expected_delivery_date = ?, received_date = ?,
                             status = ?, total = ?, notes = ?
                         WHERE id = ?
                     """;
@@ -621,10 +670,11 @@ public class SupplierOrderDialog extends JDialog {
                     try (PreparedStatement pstmt = conn.prepareStatement(orderQuery)) {
                         pstmt.setTimestamp(1, DateUtils.toSqlTimestamp(orderDate));
                         pstmt.setTimestamp(2, deliveryDate != null ? DateUtils.toSqlTimestamp(deliveryDate) : null);
-                        pstmt.setString(3, newStatus);
-                        pstmt.setDouble(4, total);
-                        pstmt.setString(5, notesArea.getText().trim());
-                        pstmt.setInt(6, orderId);
+                        pstmt.setTimestamp(3, receiptDate != null ? DateUtils.toSqlTimestamp(receiptDate) : null);
+                        pstmt.setString(4, newStatus);
+                        pstmt.setDouble(5, total);
+                        pstmt.setString(6, notesArea.getText().trim());
+                        pstmt.setInt(7, orderId);
                         pstmt.executeUpdate();
                     }
 
@@ -639,8 +689,8 @@ public class SupplierOrderDialog extends JDialog {
                     insertOrderDetails(conn, orderId);
 
                     if ("Completed".equals(newStatus)) {
-                        StockManager.incrementStock(conn, stockItems, orderDate,
-                            numberField.getText(), "SUPPLIER_ORDER");
+                        InventoryLotManager.receiveSupplierOrder(
+                            conn, orderId, receiptDate, numberField.getText());
                     }
                 }
 
@@ -697,7 +747,7 @@ public class SupplierOrderDialog extends JDialog {
                 int productId = productIdForRow(conn, i);
 
                 int quantity = parseInteger(itemsTableModel.getValueAt(i, 2));
-                double unitPrice = parseDouble(itemsTableModel.getValueAt(i, 3));
+                double unitPrice = parsePurchasePrice(itemsTableModel.getValueAt(i, 3));
                 double total = Numbers.lineTotal(quantity, unitPrice);
                 String notes = (String)itemsTableModel.getValueAt(i, 5);
 

@@ -590,48 +590,45 @@ public class MainWindow extends JFrame {
     }
     
     private void showKeyboardShortcuts() {
-        String shortcutsText = """
-            Keyboard Shortcuts:
-            
-            File Menu:
-            Ctrl+Shift+N    New Customer
-            Ctrl+Shift+P    New Product
-            Ctrl+Shift+O    New Customer Order
-            Ctrl+Shift+I    New Invoice
-            Ctrl+Q          Exit
-            
-            Navigation:
-            Ctrl+1          Customers
-            Ctrl+2          Products
-            Ctrl+3          Orders
-            Ctrl+4          Invoices
-            Ctrl+5          Suppliers
-            Ctrl+6          Warehouse
-            Ctrl+H          Dashboard
-            
-            Reports:
-            Ctrl+Shift+R    Sales Report
-            Ctrl+Shift+S    Advanced Statistics
-            Ctrl+Shift+W    Warehouse Report
-            
-            Tools:
-            Ctrl+B          Backup Management
-            F1              This Help
-            """;
-        
+        int shortcutMask = Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx();
+        String modifier = (shortcutMask & KeyEvent.META_DOWN_MASK) != 0 ? "Cmd+" : "Ctrl+";
+        String shortcutsText =
+            I18n.tr("Keyboard Shortcuts") + ":\n\n" +
+            I18n.tr("File") + ":\n" +
+            modifier + "Shift+N    " + I18n.tr("New Customer") + "\n" +
+            modifier + "Shift+P    " + I18n.tr("New Product") + "\n" +
+            modifier + "Shift+O    " + I18n.tr("New Customer Order") + "\n" +
+            modifier + "Shift+I    " + I18n.tr("New Invoice") + "\n" +
+            modifier + "Q          " + I18n.tr("Exit") + "\n\n" +
+            I18n.tr("Navigation") + ":\n" +
+            modifier + "1          " + I18n.tr("Customers") + "\n" +
+            modifier + "2          " + I18n.tr("Products") + "\n" +
+            modifier + "3          " + I18n.tr("Customer Orders") + "\n" +
+            modifier + "4          " + I18n.tr("Invoices") + "\n" +
+            modifier + "5          " + I18n.tr("Suppliers") + "\n" +
+            modifier + "6          " + I18n.tr("Warehouse") + "\n" +
+            modifier + "H          " + I18n.tr("Dashboard") + "\n\n" +
+            I18n.tr("Reports") + ":\n" +
+            modifier + "Shift+R    " + I18n.tr("Sales Report") + "\n" +
+            modifier + "Shift+S    " + I18n.tr("Advanced Statistics") + "\n" +
+            modifier + "Shift+W    " + I18n.tr("Warehouse Report") + "\n\n" +
+            I18n.tr("Tools") + ":\n" +
+            modifier + "B          " + I18n.tr("Backup Management") + "\n" +
+            "F1              " + I18n.tr("This Help") + "\n";
+
         JTextArea textArea = new JTextArea(shortcutsText);
         textArea.setEditable(false);
         textArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
-        
+
         JScrollPane scrollPane = new JScrollPane(textArea);
         scrollPane.setPreferredSize(new Dimension(400, 300));
-        
+
         Dialogs.showMessageDialog(this,
             scrollPane,
-            "Keyboard Shortcuts",
+            I18n.tr("Keyboard Shortcuts"),
             JOptionPane.INFORMATION_MESSAGE);
     }
-    
+
     private void showPanel(String panelName) {
         try {
             // Create panel if it doesn't exist
@@ -1027,6 +1024,9 @@ public class MainWindow extends JFrame {
             try {
                 MainWindow mainWindow = new MainWindow();
                 mainWindow.setVisible(true);
+                CostIntegrity.Audit audit=DatabaseManager.getInstance().takeStartupCostAudit();
+                if (audit != null) Dialogs.showMessageDialog(mainWindow,
+                    CostIntegrity.summary(audit), I18n.tr("Database Updated"), JOptionPane.INFORMATION_MESSAGE);
             } catch (RuntimeException error) {
                 Dialogs.showMessageDialog(null,error.getMessage(),"WareStat",JOptionPane.ERROR_MESSAGE);
                 System.exit(1);
@@ -1034,3 +1034,4 @@ public class MainWindow extends JFrame {
         });
     }
 }
+

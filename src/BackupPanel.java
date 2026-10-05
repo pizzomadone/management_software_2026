@@ -33,7 +33,7 @@ public class BackupPanel extends JPanel {
         gbc.fill = GridBagConstraints.HORIZONTAL;
 
         gbc.gridx = 0; gbc.gridy = 0;
-        configPanel.add(new JLabel("Backup Directory:"), gbc);
+        configPanel.add(new JLabel("Backup Directory *:"), gbc);
         gbc.gridx = 1; gbc.weightx = 1;
         backupDirField = new JTextField(backupManager.getBackupDirectory(), 24);
         configPanel.add(backupDirField, gbc);
@@ -71,6 +71,9 @@ public class BackupPanel extends JPanel {
         JLabel autoInfo = new JLabel(I18n.tr("Automatic backups include the database and product photos."));
         autoInfo.setFont(autoInfo.getFont().deriveFont(Font.PLAIN, autoInfo.getFont().getSize2D() - 1f));
         configPanel.add(autoInfo, gbc);
+
+        gbc.gridy = 5;
+        configPanel.add(Dialogs.requiredLegendPanel(), gbc);
         gbc.gridwidth = 1;
 
         String[] columns = {"Registry ID", "Date", "File Name", "Size", "Path", "Status"};
@@ -82,6 +85,7 @@ public class BackupPanel extends JPanel {
         TableSorterUtil.enableSorting(backupsTable, new int[]{0}, dateTimeFormat);
         backupsTable.getColumnModel().getColumn(3).setPreferredWidth(420);
         backupsTable.getColumnModel().getColumn(4).setCellRenderer(new StatusRenderer());
+        TableStyleUtil.applyCompact(backupsTable);
         TableInteractionUtil.addDeleteKeyAction(backupsTable, this::deleteSelectedBackup);
         TableInteractionUtil.addContextMenu(backupsTable,
             new TableInteractionUtil.TableAction("Perform Backup", this::performBackup, false),
@@ -286,9 +290,12 @@ public class BackupPanel extends JPanel {
                 currency = DatabaseCurrency.confirmLegacyCurrency(this, path);
                 if (currency == null) return;
             }
-            backupManager.restoreBackup(path.toString(), currency);
-            Dialogs.showMessageDialog(this,
-                I18n.tr("Backup restored successfully.") + "\n" + I18n.tr("WareStat will now close. Reopen it to use the restored database."),
+            CostIntegrity.Audit audit = backupManager.restoreBackup(path.toString(), currency);
+            StringBuilder restored = new StringBuilder(I18n.tr("Backup restored successfully."));
+            restored.append("\n\n").append(CostIntegrity.summary(audit));
+            restored.append("\n\n").append(I18n.tr(
+                "WareStat will now close. Reopen it to use the restored database."));
+            Dialogs.showMessageDialog(this, restored.toString(),
                 I18n.tr("Restore Completed"), JOptionPane.INFORMATION_MESSAGE);
             System.exit(0);
         } catch (Exception exception) {
@@ -363,3 +370,4 @@ public class BackupPanel extends JPanel {
         }
     }
 }
+

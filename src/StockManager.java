@@ -8,6 +8,18 @@ import java.util.Date;
  */
 public class StockManager {
 
+    public static String displayWarehouseText(String value) {
+        if (value == null || value.isBlank()) return "";
+        String translated = I18n.tr(value);
+        if (!translated.equals(value)) return translated;
+        if (value.matches("[A-Z0-9_]+")) {
+            String human = value.toLowerCase(java.util.Locale.ROOT).replace('_', ' ');
+            return Character.toUpperCase(human.charAt(0)) + human.substring(1);
+        }
+        return value;
+    }
+
+
     /**
      * Check if there is sufficient stock for products in an order/invoice
      *
@@ -184,6 +196,45 @@ public class StockManager {
         }
     }
 
+    private static void requireAvailableStockForCompletion(
+            Connection conn, String documentType, int documentId) throws SQLException {
+        String query = """
+            SELECT p.id, p.code, p.name, p.quantity,
+                   SUM(r.reserved_quantity) AS requested_quantity,
+                   COALESCE((
+                       SELECT SUM(other.reserved_quantity)
+                       FROM stock_reservations other
+                       WHERE other.product_id = p.id
+                         AND other.status = 'ACTIVE'
+                         AND NOT (other.document_type = ? AND other.document_id = ?)
+                   ), 0) AS other_reserved
+            FROM stock_reservations r
+            JOIN products p ON p.id = r.product_id
+            WHERE r.document_type = ? AND r.document_id = ? AND r.status = 'ACTIVE'
+            GROUP BY p.id, p.code, p.name, p.quantity
+        """;
+
+        try (PreparedStatement pstmt = conn.prepareStatement(query)) {
+            pstmt.setString(1, documentType);
+            pstmt.setInt(2, documentId);
+            pstmt.setString(3, documentType);
+            pstmt.setInt(4, documentId);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                while (rs.next()) {
+                    long requested = rs.getLong("requested_quantity");
+                    long available = (long)rs.getInt("quantity") - rs.getLong("other_reserved");
+                    if (requested > available) {
+                        throw new SQLException(
+                            I18n.tr("Insufficient Stock") + ": "
+                            + rs.getString("name") + " [" + rs.getString("code") + "]. "
+                            + I18n.format("Insufficient quantity. Current availability: {0}", available)
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     /**
      * Complete a stock reservation and decrement actual stock
      * This converts reserved stock into actual stock decrease
@@ -194,6 +245,17 @@ public class StockManager {
             int documentId,
             Date documentDate,
             String documentNumber) throws SQLException {
+
+        // Never post FIFO consumption or warehouse movements when the document
+        // would consume stock already unavailable because of physical stock or
+        // other active reservations.
+        requireAvailableStockForCompletion(conn, documentType, documentId);
+
+        // Freeze the economic cost of a completed customer sale before changing
+        // physical stock. A line may consume more than one FIFO lot.
+        if ("ORDER".equals(documentType)) {
+            InventoryLotManager.consumeOrder(conn, documentId);
+        }
 
         // Get all active reservations for this document
         String getReservationsQuery = """
@@ -233,61 +295,6 @@ public class StockManager {
             pstmt.setInt(2, documentId);
             pstmt.executeUpdate();
         }
-    }
-
-    /**
-     * Decrement stock directly (for invoices without prior reservation)
-     */
-    public static void decrementStockDirectly(
-            Connection conn,
-            List<StockItem> items,
-            Date documentDate,
-            String documentNumber,
-            String documentType) throws SQLException {
-
-        for (StockItem item : items) {
-            // Decrement stock
-            decrementStock(conn, item.getProductId(), item.getQuantity());
-
-            // Create warehouse movement
-            createWarehouseMovement(conn, item.getProductId(), documentDate,
-                item.getQuantity(), "SALE", documentNumber, documentType,
-                documentType + " " + documentNumber);
-        }
-    }
-
-    /**
-     * Increment stock (for supplier orders)
-     */
-    public static void incrementStock(
-            Connection conn,
-            List<StockItem> items,
-            Date documentDate,
-            String documentNumber,
-            String documentType) throws SQLException {
-
-        for (StockItem item : items) {
-            // Increment stock
-            String updateQuery = "UPDATE products SET quantity = quantity + ? WHERE id = ?";
-            try (PreparedStatement pstmt = conn.prepareStatement(updateQuery)) {
-                pstmt.setInt(1, item.getQuantity());
-                pstmt.setInt(2, item.getProductId());
-                pstmt.executeUpdate();
-            }
-
-            // Create warehouse movement
-            createWarehouseMovement(conn, item.getProductId(), documentDate,
-                item.getQuantity(), "PURCHASE", documentNumber, documentType,
-                "Supplier order " + documentNumber);
-        }
-    }
-
-    public static void reverseSupplierOrder(Connection conn, List<StockItem> items,
-                                            String documentNumber) throws SQLException {
-        for (StockItem item : items) {
-            decrementStock(conn, item.getProductId(), item.getQuantity());
-        }
-        deleteWarehouseMovements(conn, "SUPPLIER_ORDER", documentNumber);
     }
 
     /**
@@ -401,6 +408,77 @@ public class StockManager {
     }
 
     /**
+     * Reverse a completed customer sale without deleting or rewriting its history.
+     * Original FIFO consumptions and cost_total remain frozen; stock is returned
+     * to the exact original layers and a compensating inward movement is posted.
+     */
+    public static void reverseCompletedOrder(Connection conn,int orderId) throws SQLException {
+        boolean ownTransaction=conn.getAutoCommit();
+        if (ownTransaction) DatabaseManager.beginTransaction(conn);
+        Savepoint checkpoint=conn.setSavepoint();
+        try {
+            reverseCompletedOrderInTransaction(conn,orderId);
+            conn.releaseSavepoint(checkpoint);
+            if (ownTransaction) conn.commit();
+        } catch (SQLException | RuntimeException e) {
+            conn.rollback(checkpoint);
+            conn.releaseSavepoint(checkpoint);
+            if (ownTransaction) conn.rollback();
+            throw e;
+        } finally {
+            if (ownTransaction) conn.setAutoCommit(true);
+        }
+    }
+
+    private static void reverseCompletedOrderInTransaction(Connection conn,int orderId) throws SQLException {
+        String status;
+        try(PreparedStatement p=conn.prepareStatement("SELECT status FROM orders WHERE id=?")) {
+            p.setInt(1,orderId);
+            try(ResultSet r=p.executeQuery()) {
+                if(!r.next()) throw new SQLException("Order no longer exists");
+                status=r.getString(1);
+            }
+        }
+        if("Reversed".equals(status))
+            throw new SQLException("This completed sale has already been reversed");
+        if(!"Completed".equals(status))
+            throw new SQLException("Only completed customer orders can be reversed");
+
+        InventoryLotManager.reverseOrderKeepingHistory(conn,orderId);
+        restoreStockFromDocument(conn,orderId,"ORDER");
+
+        try(PreparedStatement p=conn.prepareStatement("""
+                SELECT product_id,SUM(quantity) AS quantity
+                FROM order_details
+                WHERE order_id=?
+                GROUP BY product_id
+                """)) {
+            p.setInt(1,orderId);
+            try(ResultSet r=p.executeQuery()) {
+                while(r.next()) {
+                    try(PreparedStatement m=conn.prepareStatement("""
+                            INSERT INTO warehouse_movements
+                            (product_id,date,type,quantity,reason,document_number,document_type,notes)
+                            VALUES(?,CURRENT_TIMESTAMP,'INWARD',?,'SALE_REVERSAL',?,'ORDER_REVERSAL',?)
+                            """)) {
+                        m.setInt(1,r.getInt("product_id"));
+                        m.setInt(2,r.getInt("quantity"));
+                        m.setString(3,String.valueOf(orderId));
+                        m.setString(4,"Reversal of customer order #"+orderId);
+                        m.executeUpdate();
+                    }
+                }
+            }
+        }
+
+        try(PreparedStatement p=conn.prepareStatement(
+                "UPDATE orders SET status='Reversed' WHERE id=?")) {
+            p.setInt(1,orderId);
+            if(p.executeUpdate()!=1) throw new SQLException("Order no longer exists");
+        }
+    }
+
+    /**
      * Delete an order and restore stock based on its status
      * Handles: restoring stock if Completed, cancelling reservations if New or In Progress
      */
@@ -412,12 +490,12 @@ public class StockManager {
                 orderStatus = r.getString(1);
             }
         }
-        // If order was Completed, restore stock
-        if ("Completed".equals(orderStatus)) {
-            restoreStockFromDocument(conn, orderId, "ORDER");
+        if ("Completed".equals(orderStatus) || "Reversed".equals(orderStatus)) {
+            throw new SQLException(
+                "Completed or reversed customer sales cannot be deleted. Reverse completed sales instead.");
         }
 
-        // If order was New or In Progress, cancel active reservations
+        // New and In Progress orders reserve warehouse stock.
         if ("New".equals(orderStatus) || "In Progress".equals(orderStatus)) {
             cancelReservation(conn, "ORDER", orderId);
         }
@@ -439,18 +517,8 @@ public class StockManager {
             ordersStmt.setInt(1, supplierId);
             try (ResultSet orders = ordersStmt.executeQuery()) {
                 while (orders.next()) {
-                    List<StockItem> items = new ArrayList<>();
-                    try (PreparedStatement itemsStmt = conn.prepareStatement(
-                            "SELECT product_id, quantity FROM supplier_order_details WHERE order_id = ?")) {
-                        itemsStmt.setInt(1, orders.getInt("id"));
-                        try (ResultSet itemRows = itemsStmt.executeQuery()) {
-                            while (itemRows.next()) {
-                                items.add(new StockItem(itemRows.getInt("product_id"), "",
-                                    itemRows.getInt("quantity")));
-                            }
-                        }
-                    }
-                    reverseSupplierOrder(conn, items, orders.getString("number"));
+                    InventoryLotManager.reverseSupplierOrder(
+                        conn, orders.getInt("id"), orders.getString("number"));
                 }
             }
         }
@@ -490,7 +558,8 @@ public class StockManager {
             p.setInt(1, movementId);
             try (ResultSet r = p.executeQuery()) {
                 if (!r.next()) throw new SQLException("Movement no longer exists");
-                if ("ORDER".equals(r.getString(1)) || "SUPPLIER_ORDER".equals(r.getString(1)) || "INVENTORY_ADJUSTMENT".equals(r.getString(1)))
+                if ("ORDER".equals(r.getString(1)) || "SUPPLIER_ORDER".equals(r.getString(1)) || "INVENTORY_ADJUSTMENT".equals(r.getString(1))
+                        || "ORDER_REVERSAL".equals(r.getString(1)) || "MOVEMENT_REVERSAL".equals(r.getString(1)))
                     throw new SQLException("Edit the source document to change this automatic movement");
             }
         }
@@ -553,10 +622,11 @@ public class StockManager {
         public int getRequestedQuantity() { return requestedQuantity; }
 
         public String getFormattedMessage() {
-            return String.format(
-                "Physical: %d, Reserved: %d, Available: %d, Requested: %d",
-                physicalStock, reservedStock, availableStock, requestedQuantity
-            );
+            return I18n.tr("Physical") + ": " + physicalStock
+                + ", " + I18n.tr("Reserved") + ": " + reservedStock
+                + ", " + I18n.tr("Available") + ": " + availableStock
+                + ", " + I18n.tr("Requested") + ": " + requestedQuantity;
         }
     }
 }
+

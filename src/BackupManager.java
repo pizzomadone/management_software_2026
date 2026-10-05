@@ -283,10 +283,16 @@ public class BackupManager {
 
     public void restoreBackup(String file) { restoreBackup(file, null); }
 
-    public synchronized void restoreBackup(String file, String legacyCurrency) {
+    public synchronized CostIntegrity.Audit restoreBackup(String file, String legacyCurrency) {
         Path path = Path.of(file);
         if (isArchive(path)) restoreArchive(path);
         else importDatabase(path, legacyCurrency);
+        try {
+            return CostIntegrity.audit(DatabaseManager.getInstance().getConnection());
+        } catch (SQLException e) {
+            throw new IllegalStateException(
+                "Database restored but cost completeness could not be checked: " + e.getMessage(), e);
+        }
     }
 
     private void restoreArchive(Path archive) {

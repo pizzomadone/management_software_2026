@@ -7,12 +7,16 @@ import java.awt.*;
 import java.awt.event.*;
 import java.sql.*;
 import java.util.Vector;
+import java.util.HashSet;
+import java.util.Set;
 
 public class ProductsPanel extends JPanel {
     private static final String PRODUCT_COLUMN_WIDTHS_SETTING =
         "products.column_widths";
+    private static final String PRODUCT_COLUMN_ORDER_SETTING =
+        "products.column_order";
     private static final String[] PRODUCT_COLUMN_KEYS = {
-        "id", "code", "name", "description", "price", "physical",
+        "id", "code", "name", "description", "sale_price_inc_vat", "physical",
         "reserved", "available", "on_order", "category", "unit",
         "min_qty", "active", "supplier", "position", "vat", "photo"
     };
@@ -29,7 +33,7 @@ public class ProductsPanel extends JPanel {
         "Product code or SKU",
         "Product name",
         "Product description",
-        "Current selling price",
+        "Customer sale price incl. VAT",
         "Units physically in stock",
         "Units committed to customer orders",
         "Physical stock minus reserved units",
@@ -51,11 +55,13 @@ public class ProductsPanel extends JPanel {
     private JButton addButton;
     private JButton detailsButton;
     private JButton editButton;
+    private JButton lotsButton;
     private JButton deleteButton;
     private JButton refreshButton;
     private Timer photoPreviewTimer;
     private JWindow photoPreviewWindow;
     private boolean photoPreviewVisible;
+    private final Set<Integer> missingPurchaseCostProductIds = new HashSet<>();
     
     public ProductsPanel() {
         setupPanel();
@@ -82,7 +88,7 @@ public class ProductsPanel extends JPanel {
         searchPanel.add(searchButton);
         
         // Products table
-        String[] columns = {"ID", "Code", "Name", "Description", "Price", "Physical", "Reserved", "Available", "On Order", "Category", "Unit", "Min Qty", "Active", "Supplier", "Position", "VAT %", "Photo"};
+        String[] columns = {"ID", "Code", "Name", "Description", "Sale Price incl. VAT", "Physical", "Reserved", "Available", "On Order", "Category", "Unit", "Min Qty", "Active", "Supplier", "Position", "VAT %", "Photo"};
         for (int i = 0; i < columns.length; i++) columns[i] = columns[i].trim();
         tableModel = new DefaultTableModel(columns, 0) {
             @Override public boolean isCellEditable(int row, int column) { return false; }
@@ -90,15 +96,39 @@ public class ProductsPanel extends JPanel {
                 return columnIndex == 16 ? ImageIcon.class : Object.class;
             }
         };
-        productsTable = new JTable(tableModel);
+        productsTable = new JTable(tableModel) {
+            @Override
+            public Component prepareRenderer(TableCellRenderer renderer, int row, int column) {
+                Component component = super.prepareRenderer(renderer, row, column);
+                int modelRow = convertRowIndexToModel(row);
+                Object idValue = tableModel.getValueAt(modelRow, 0);
+                boolean missingCost = idValue instanceof Number
+                    && missingPurchaseCostProductIds.contains(((Number)idValue).intValue());
+                if (!isCellSelected(row, column) && missingCost) {
+                    component.setBackground(new Color(255, 226, 170));
+                }
+                if (component instanceof JComponent jc && missingCost) {
+                    String current = jc.getToolTipText();
+                    String warning = I18n.tr(
+                        "Purchase cost is missing. Purchases and sales are blocked until the product is corrected.");
+                    jc.setToolTipText(current == null || current.isBlank()
+                        ? warning : current + " — " + warning);
+                }
+                return component;
+            }
+        };
         productsTable.setRowHeight(34);
         productsTable.setRowMargin(0);
+        if (!restoreProductColumnOrder()) {
+            int defaultPhotoView = productsTable.convertColumnIndexToView(16);
+            if (defaultPhotoView >= 0) productsTable.moveColumn(defaultPhotoView, 0);
+        }
         int photoViewColumn = productsTable.convertColumnIndexToView(16);
-        productsTable.moveColumn(photoViewColumn, 0);
-        productsTable.getColumnModel().getColumn(0).setMinWidth(52);
-        productsTable.getColumnModel().getColumn(0).setPreferredWidth(52);
-        productsTable.getColumnModel().getColumn(0).setMaxWidth(Integer.MAX_VALUE);
-        productsTable.getColumnModel().getColumn(0).setCellRenderer(new DefaultTableCellRenderer() {
+        TableColumn photoColumn = productsTable.getColumnModel().getColumn(photoViewColumn);
+        photoColumn.setMinWidth(52);
+        photoColumn.setPreferredWidth(52);
+        photoColumn.setMaxWidth(Integer.MAX_VALUE);
+        photoColumn.setCellRenderer(new DefaultTableCellRenderer() {
             @Override
             public Component getTableCellRendererComponent(JTable table, Object value,
                     boolean selected, boolean focus, int row, int column) {
@@ -114,6 +144,7 @@ public class ProductsPanel extends JPanel {
             }
         });
         configureProductTablePresentation();
+        TableStyleUtil.applyProductEnhancements(productsTable);
         productsTable.getSelectionModel().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         productsTable.getSelectionModel().addListSelectionListener(e -> updateButtonStates());
 
@@ -128,6 +159,7 @@ public class ProductsPanel extends JPanel {
             new TableInteractionUtil.TableAction("Add Product", () -> showProductDialog(null), false),
             new TableInteractionUtil.TableAction("View Details", this::viewSelectedProduct),
             new TableInteractionUtil.TableAction("Edit", this::editSelectedProduct),
+            new TableInteractionUtil.TableAction("Lots", this::showSelectedProductLots),
             new TableInteractionUtil.TableAction("Delete", this::deleteSelectedProduct),
             null, // Separator
             new TableInteractionUtil.TableAction("Refresh", this::loadProducts, false)
@@ -164,18 +196,29 @@ public class ProductsPanel extends JPanel {
         addButton = new JButton("Add");
         detailsButton = new JButton("View Details");
         editButton = new JButton("Edit");
+        lotsButton = new JButton("Lots");
         deleteButton = new JButton("Delete");
         refreshButton = new JButton("Refresh");
+
+        searchButton.setToolTipText(I18n.tr("Search products by code, name or description."));
+        addButton.setToolTipText(I18n.tr("Create a new product."));
+        detailsButton.setToolTipText(I18n.tr("Open the selected product details."));
+        editButton.setToolTipText(I18n.tr("Edit the selected product."));
+        lotsButton.setToolTipText(I18n.tr("View FIFO lots for the selected product."));
+        deleteButton.setToolTipText(I18n.tr("Delete the selected product."));
+        refreshButton.setToolTipText(I18n.tr("Reload the product list."));
         
         addButton.addActionListener(e -> showProductDialog(null));
         detailsButton.addActionListener(e -> viewSelectedProduct());
         editButton.addActionListener(e -> editSelectedProduct());
+        lotsButton.addActionListener(e -> showSelectedProductLots());
         deleteButton.addActionListener(e -> deleteSelectedProduct());
         refreshButton.addActionListener(e -> loadProducts());
         
         buttonPanel.add(addButton);
         buttonPanel.add(detailsButton);
         buttonPanel.add(editButton);
+        buttonPanel.add(lotsButton);
         buttonPanel.add(deleteButton);
         buttonPanel.add(refreshButton);
         
@@ -198,7 +241,9 @@ public class ProductsPanel extends JPanel {
     }
     
     private void configureProductTablePresentation() {
-        productsTable.setAutoResizeMode(JTable.AUTO_RESIZE_SUBSEQUENT_COLUMNS);
+        // Keep the table width fixed while redistributing a manual resize
+        // across all remaining columns, as in the original product-table behavior.
+        productsTable.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
 
         TableCellRenderer headerDelegate = productsTable.getTableHeader().getDefaultRenderer();
         productsTable.getTableHeader().setDefaultRenderer((table, value, selected, focus, row, column) -> {
@@ -252,7 +297,7 @@ public class ProductsPanel extends JPanel {
         TableCellRenderer textRenderer =
             new AdaptiveProductCellRenderer(SwingConstants.LEFT);
 
-        int[] numericModelColumns = {0, 4, 5, 6, 7, 8, 11, 15};
+        int[] numericModelColumns = {0, 4, 5, 6, 7, 8, 11, 12, 15};
         for (int modelColumn : numericModelColumns) {
             int viewColumn = productsTable.convertColumnIndexToView(modelColumn);
             if (viewColumn >= 0) {
@@ -261,7 +306,7 @@ public class ProductsPanel extends JPanel {
             }
         }
 
-        int[] textModelColumns = {1, 2, 3, 9, 10, 12, 13, 14};
+        int[] textModelColumns = {1, 2, 3, 9, 10, 13, 14};
         for (int modelColumn : textModelColumns) {
             int viewColumn = productsTable.convertColumnIndexToView(modelColumn);
             if (viewColumn >= 0) {
@@ -274,7 +319,10 @@ public class ProductsPanel extends JPanel {
             @Override
             public void mouseReleased(MouseEvent e) {
                 if (SwingUtilities.isLeftMouseButton(e)) {
-                    SwingUtilities.invokeLater(() -> saveProductColumnWidths());
+                    SwingUtilities.invokeLater(() -> {
+                        saveProductColumnWidths();
+                        saveProductColumnOrder();
+                    });
                 }
             }
         });
@@ -455,6 +503,54 @@ public class ProductsPanel extends JPanel {
             value.toString());
     }
 
+    private boolean restoreProductColumnOrder() {
+        String raw = SettingsPanel.getGlobalSetting(
+            PRODUCT_COLUMN_ORDER_SETTING, "").trim();
+        if (raw.isEmpty()) return false;
+
+        String[] keys = raw.split(",");
+        if (keys.length != PRODUCT_COLUMN_KEYS.length) return false;
+
+        boolean[] seen = new boolean[PRODUCT_COLUMN_KEYS.length];
+        int[] modelOrder = new int[PRODUCT_COLUMN_KEYS.length];
+        for (int view = 0; view < keys.length; view++) {
+            int model = productModelColumnForKey(keys[view].trim());
+            if (model < 0 || seen[model]) return false;
+            seen[model] = true;
+            modelOrder[view] = model;
+        }
+
+        for (int targetView = 0; targetView < modelOrder.length; targetView++) {
+            int currentView = productsTable.convertColumnIndexToView(modelOrder[targetView]);
+            if (currentView < 0) return false;
+            if (currentView != targetView)
+                productsTable.moveColumn(currentView, targetView);
+        }
+        return true;
+    }
+
+    private void saveProductColumnOrder() {
+        if (productsTable == null || tableModel == null) return;
+
+        StringBuilder value = new StringBuilder();
+        for (int view = 0; view < productsTable.getColumnCount(); view++) {
+            int model = productsTable.convertColumnIndexToModel(view);
+            if (model < 0 || model >= PRODUCT_COLUMN_KEYS.length) continue;
+            if (value.length() > 0) value.append(',');
+            value.append(PRODUCT_COLUMN_KEYS[model]);
+        }
+        if (value.length() > 0)
+            SettingsPanel.setGlobalSetting(PRODUCT_COLUMN_ORDER_SETTING,
+                value.toString());
+    }
+
+    private int productModelColumnForKey(String key) {
+        for (int i = 0; i < PRODUCT_COLUMN_KEYS.length; i++) {
+            if (PRODUCT_COLUMN_KEYS[i].equals(key)) return i;
+        }
+        return -1;
+    }
+
     private int[] fitWidthsToViewport(int[] requested, int viewportWidth) {
         int[] result = requested.clone();
         if (viewportWidth <= 0) return result;
@@ -590,16 +686,19 @@ public class ProductsPanel extends JPanel {
         boolean isRowSelected = productsTable.getSelectedRow() != -1;
         detailsButton.setEnabled(isRowSelected);
         editButton.setEnabled(isRowSelected);
+        lotsButton.setEnabled(isRowSelected);
         deleteButton.setEnabled(isRowSelected);
     }
     
     public void loadProducts() {
         tableModel.setRowCount(0);
+        missingPurchaseCostProductIds.clear();
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
                 SELECT p.*, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity,
                        f.company_name as supplier_name,
+                       ps.purchase_price AS preferred_supplier_cost,
                        (SELECT filename FROM product_images pi WHERE pi.product_id=p.id ORDER BY pi.is_primary DESC,pi.sort_order,pi.id LIMIT 1) AS primary_image,
                        COALESCE(SUM(CASE
                            WHEN so.status IN ('Draft', 'Confirmed', 'In Transit')
@@ -608,7 +707,8 @@ public class ProductsPanel extends JPanel {
                        END), 0) as on_order_quantity
                 FROM products p
                 LEFT JOIN minimum_stock sm ON sm.product_id = p.id
-                LEFT JOIN suppliers f ON p.supplier_id = f.id
+                LEFT JOIN product_suppliers ps ON ps.product_id=p.id AND ps.is_preferred=1
+                LEFT JOIN suppliers f ON ps.supplier_id = f.id
                 LEFT JOIN supplier_order_details sod ON p.id = sod.product_id
                 LEFT JOIN supplier_orders so ON sod.order_id = so.id
                 GROUP BY p.id
@@ -622,7 +722,7 @@ public class ProductsPanel extends JPanel {
                     row.add(trimCellText(rs.getString("code")));
                     row.add(trimCellText(rs.getString("name")));
                     row.add(trimCellText(rs.getString("description")));
-                    row.add(rs.getDouble("price"));
+                    row.add(rs.getDouble("sale_price_inc_vat"));
 
                     int physicalStock = rs.getInt("quantity");
                     int reservedStock = rs.getInt("reserved_quantity");
@@ -642,6 +742,11 @@ public class ProductsPanel extends JPanel {
                     row.add(trimCellText(rs.getString("warehouse_position")));
                     row.add(rs.getDouble("vat_rate"));
                     row.add(ProductImageStore.getInstance().iconCover(rs.getString("primary_image"), 48, 30));
+                    if ((rs.getInt("active") == 1 || physicalStock > 0)
+                            && (rs.getObject("preferred_supplier_cost") == null ||
+                                Numbers.nonNegative(rs.getObject("preferred_supplier_cost")) <= 0)) {
+                        missingPurchaseCostProductIds.add(rs.getInt("id"));
+                    }
                     tableModel.addRow(row);
                 }
             }
@@ -661,11 +766,13 @@ public class ProductsPanel extends JPanel {
         }
 
         tableModel.setRowCount(0);
+        missingPurchaseCostProductIds.clear();
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
                 SELECT p.*, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity,
                        f.company_name as supplier_name,
+                       ps.purchase_price AS preferred_supplier_cost,
                        (SELECT filename FROM product_images pi WHERE pi.product_id=p.id ORDER BY pi.is_primary DESC,pi.sort_order,pi.id LIMIT 1) AS primary_image,
                        COALESCE(SUM(CASE
                            WHEN so.status IN ('Draft', 'Confirmed', 'In Transit')
@@ -674,7 +781,8 @@ public class ProductsPanel extends JPanel {
                        END), 0) as on_order_quantity
                 FROM products p
                 LEFT JOIN minimum_stock sm ON sm.product_id = p.id
-                LEFT JOIN suppliers f ON p.supplier_id = f.id
+                LEFT JOIN product_suppliers ps ON ps.product_id=p.id AND ps.is_preferred=1
+                LEFT JOIN suppliers f ON ps.supplier_id = f.id
                 LEFT JOIN supplier_order_details sod ON p.id = sod.product_id
                 LEFT JOIN supplier_orders so ON sod.order_id = so.id
                 WHERE p.code LIKE ? OR p.name LIKE ? OR p.description LIKE ?
@@ -695,7 +803,7 @@ public class ProductsPanel extends JPanel {
                         row.add(trimCellText(rs.getString("code")));
                         row.add(trimCellText(rs.getString("name")));
                         row.add(trimCellText(rs.getString("description")));
-                        row.add(rs.getDouble("price"));
+                        row.add(rs.getDouble("sale_price_inc_vat"));
 
                         int physicalStock = rs.getInt("quantity");
                         int reservedStock = rs.getInt("reserved_quantity");
@@ -715,7 +823,12 @@ public class ProductsPanel extends JPanel {
                         row.add(trimCellText(rs.getString("warehouse_position")));
                         row.add(rs.getDouble("vat_rate"));
                         row.add(ProductImageStore.getInstance().iconCover(rs.getString("primary_image"), 48, 30));
-                        tableModel.addRow(row);
+                        if ((rs.getInt("active") == 1 || physicalStock > 0)
+                                && (rs.getObject("preferred_supplier_cost") == null ||
+                                    Numbers.nonNegative(rs.getObject("preferred_supplier_cost")) <= 0)) {
+                            missingPurchaseCostProductIds.add(rs.getInt("id"));
+                        }
+                    tableModel.addRow(row);
                     }
                 }
             }
@@ -740,7 +853,26 @@ public class ProductsPanel extends JPanel {
         
         dialog.setVisible(true);
         if (dialog.isProductSaved()) {
+            Integer productIdToReselect = product != null ? product.getId() : null;
             loadProducts();
+            if (productIdToReselect != null) {
+                selectProductById(productIdToReselect);
+            }
+        }
+    }
+
+    private void selectProductById(int productId) {
+        for (int modelRow = 0; modelRow < tableModel.getRowCount(); modelRow++) {
+            Object value = tableModel.getValueAt(modelRow, 0);
+            if (value instanceof Number number && number.intValue() == productId) {
+                int viewRow = productsTable.convertRowIndexToView(modelRow);
+                if (viewRow >= 0) {
+                    productsTable.setRowSelectionInterval(viewRow, viewRow);
+                    Rectangle rect = productsTable.getCellRect(viewRow, 0, true);
+                    productsTable.scrollRectToVisible(rect);
+                }
+                return;
+            }
         }
     }
     
@@ -765,20 +897,22 @@ public class ProductsPanel extends JPanel {
     private Product loadProduct(int productId) throws SQLException {
         Connection conn = DatabaseManager.getInstance().getConnection();
         String query = """
-            SELECT p.*, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity, f.company_name as supplier_name
+            SELECT p.*, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity,
+                   ps.supplier_id AS preferred_supplier_id, f.company_name as supplier_name
             FROM products p
             LEFT JOIN minimum_stock sm ON sm.product_id = p.id
-            LEFT JOIN suppliers f ON p.supplier_id = f.id
+            LEFT JOIN product_suppliers ps ON ps.product_id=p.id AND ps.is_preferred=1
+                LEFT JOIN suppliers f ON ps.supplier_id = f.id
             WHERE p.id = ?
         """;
         try (PreparedStatement pstmt = conn.prepareStatement(query)) {
             pstmt.setInt(1, productId);
             try (ResultSet rs = pstmt.executeQuery()) {
                 if (!rs.next()) return null;
-                Integer supplierId = getIntegerFromResultSet(rs, "supplier_id");
+                Integer supplierId = getIntegerFromResultSet(rs, "preferred_supplier_id");
                 return new Product(
                     rs.getInt("id"), rs.getString("code"), rs.getString("name"),
-                    rs.getString("description"), rs.getDouble("price"),
+                    rs.getString("description"), rs.getDouble("sale_price_inc_vat"),
                     getIntegerFromResultSet(rs, "quantity", 0),
                     rs.getString("category") != null ? rs.getString("category") : "",
                     rs.getString("alternative_sku") != null ? rs.getString("alternative_sku") : "",
@@ -796,6 +930,16 @@ public class ProductsPanel extends JPanel {
         }
     }
 
+    private void showSelectedProductLots() {
+        int selectedRow=productsTable.getSelectedRow();
+        if(selectedRow<0)return;
+        int row=productsTable.convertRowIndexToModel(selectedRow);
+        int productId=((Number)tableModel.getValueAt(row,0)).intValue();
+        String productName=String.valueOf(tableModel.getValueAt(row,2));
+        Window owner=SwingUtilities.getWindowAncestor(this);
+        new InventoryLotsDialog(owner,productId,productName).setVisible(true);
+    }
+
     private void editSelectedProduct() {
         int selectedRow = productsTable.getSelectedRow();
         if (selectedRow != -1) {
@@ -806,10 +950,12 @@ public class ProductsPanel extends JPanel {
             try {
                 Connection conn = DatabaseManager.getInstance().getConnection();
                 String query = """
-                    SELECT p.*, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity, f.company_name as supplier_name
+                    SELECT p.*, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity,
+                   ps.supplier_id AS preferred_supplier_id, f.company_name as supplier_name
                     FROM products p
                     LEFT JOIN minimum_stock sm ON sm.product_id = p.id
-                    LEFT JOIN suppliers f ON p.supplier_id = f.id
+                    LEFT JOIN product_suppliers ps ON ps.product_id=p.id AND ps.is_preferred=1
+                LEFT JOIN suppliers f ON ps.supplier_id = f.id
                     WHERE p.id = ?
                 """;
                 try (PreparedStatement pstmt = conn.prepareStatement(query)) {
@@ -817,7 +963,7 @@ public class ProductsPanel extends JPanel {
                     try (ResultSet rs = pstmt.executeQuery()) {
                         if (rs.next()) {
                             // Safely read integer and double fields with proper type handling
-                            Integer supplierId = getIntegerFromResultSet(rs, "supplier_id");
+                            Integer supplierId = getIntegerFromResultSet(rs, "preferred_supplier_id");
                             String supplierName = rs.getString("supplier_name");
 
                             int quantity = getIntegerFromResultSet(rs, "quantity", 0);
@@ -832,7 +978,7 @@ public class ProductsPanel extends JPanel {
                                 rs.getString("code"),
                                 rs.getString("name"),
                                 rs.getString("description"),
-                                rs.getDouble("price"),
+                                rs.getDouble("sale_price_inc_vat"),
                                 quantity,
                                 rs.getString("category") != null ? rs.getString("category") : "",
                                 rs.getString("alternative_sku") != null ? rs.getString("alternative_sku") : "",
@@ -873,7 +1019,7 @@ public class ProductsPanel extends JPanel {
                 boolean hasOrders = hasProductInOrders(conn, id);
                 boolean hasInvoices = hasProductInInvoices(conn, id);
                 boolean hasSupplierOrders = hasProductInSupplierOrders(conn, id);
-                boolean hasPriceLists = hasProductInPriceLists(conn, id);
+                boolean hasSupplierLinks = hasProductInSupplierLinks(conn, id);
                 boolean hasWarehouseMovements = hasProductInWarehouseMovements(conn, id);
                 boolean hasMinStock = hasProductInMinStock(conn, id);
                 boolean hasReservations = hasProductInReservations(conn, id);
@@ -888,7 +1034,7 @@ public class ProductsPanel extends JPanel {
                     if (hasOrders) message.append("- Customer orders\n");
                     if (hasInvoices) message.append("- Invoice entries\n");
                     if (hasSupplierOrders) message.append("- Supplier orders\n");
-                    if (hasPriceLists) message.append("- Price list entries\n");
+                    if (hasSupplierLinks) message.append("- Supplier associations\n");
                     if (hasWarehouseMovements) message.append("- Warehouse movements\n");
                     if (hasReservations) message.append("- Active or historical stock reservations\n");
                     message.append("\nDeleting it would alter orders, invoices or stock history. " +
@@ -899,8 +1045,8 @@ public class ProductsPanel extends JPanel {
                     return;
                 }
 
-                if (hasPriceLists || hasMinStock || hasNotifications) {
-                    String details = (hasPriceLists ? "- Price list entries\n" : "") +
+                if (hasSupplierLinks || hasMinStock || hasNotifications) {
+                    String details = (hasSupplierLinks ? "- Supplier associations\n" : "") +
                         (hasMinStock ? "- Minimum stock settings\n" : "") +
                         (hasNotifications ? "- Warehouse notifications\n" : "");
                     int cleanup = Dialogs.showConfirmDialog(this,
@@ -951,7 +1097,7 @@ public class ProductsPanel extends JPanel {
         DatabaseManager.beginTransaction(conn);
         try {
             String[] statements = {
-                "DELETE FROM supplier_price_lists WHERE product_id = ?",
+                "DELETE FROM product_suppliers WHERE product_id = ?",
                 "DELETE FROM warehouse_notifications WHERE product_id = ?",
                 "DELETE FROM minimum_stock WHERE product_id = ?",
                 "DELETE FROM products WHERE id = ?"
@@ -1016,8 +1162,8 @@ public class ProductsPanel extends JPanel {
         }
     }
 
-    private boolean hasProductInPriceLists(Connection conn, int productId) throws SQLException {
-        String query = "SELECT COUNT(*) FROM supplier_price_lists WHERE product_id = ?";
+    private boolean hasProductInSupplierLinks(Connection conn, int productId) throws SQLException {
+        String query = "SELECT COUNT(*) FROM product_suppliers WHERE product_id = ?";
         try (PreparedStatement pstmt = conn.prepareStatement(query)) {
             pstmt.setInt(1, productId);
             ResultSet rs = pstmt.executeQuery();

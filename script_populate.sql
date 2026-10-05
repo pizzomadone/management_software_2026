@@ -1,5 +1,5 @@
 -- WareStat test database population script
--- Target: current schema on feature/product-images-backup (migrations through 011)
+-- Target: current schema on feature/product-suppliers-fifo (migrations through 012)
 --
 -- IMPORTANT
 -- 1) Start WareStat at least once so that the database and all migrations are created.
@@ -22,7 +22,7 @@
 -- - customer orders in every supported status/payment state
 -- - active/completed/cancelled stock reservations
 -- - invoices in Draft/Issued/Paid/Canceled states with immutable snapshots
--- - supplier orders and price lists
+-- - supplier orders, product/supplier prices and FIFO inventory lots
 -- - warehouse movements and notifications
 -- - long product codes/names/descriptions for UI testing
 
@@ -49,11 +49,13 @@ SET status = 'CANCELLED'
 WHERE status = 'ACTIVE';
 
 DELETE FROM stock_reservations;
+DELETE FROM inventory_lot_consumptions;
+DELETE FROM inventory_lots;
 DELETE FROM product_images;
 DELETE FROM warehouse_notifications;
 DELETE FROM warehouse_movements;
 DELETE FROM minimum_stock;
-DELETE FROM supplier_price_lists;
+DELETE FROM product_suppliers;
 DELETE FROM supplier_order_details;
 DELETE FROM supplier_orders;
 DELETE FROM invoice_details;
@@ -71,8 +73,8 @@ DELETE FROM sqlite_sequence
 WHERE name IN (
     'customers','suppliers','products','product_images','orders','order_details',
     'invoices','invoice_details','supplier_orders','supplier_order_details',
-    'supplier_price_lists','warehouse_movements','warehouse_notifications',
-    'stock_reservations','company_data'
+    'product_suppliers','inventory_lots','inventory_lot_consumptions',
+    'warehouse_movements','warehouse_notifications','stock_reservations','company_data'
 );
 
 -- The current schema always has application_metadata after migrations.
@@ -189,7 +191,7 @@ WITH RECURSIVE seq(x) AS (
     SELECT x + 1 FROM seq WHERE x < 120
 )
 INSERT INTO products(
-    code, name, description, price, quantity, reserved_quantity, category,
+    code, name, description, sale_price_ex_vat, sale_price_inc_vat, quantity, reserved_quantity, category,
     alternative_sku, weight, unit_of_measure, acquisition_cost, active,
     supplier_id, warehouse_position, vat_rate
 )
@@ -222,6 +224,7 @@ SELECT
         ELSE 'General inventory item for reports, invoices and dashboard statistics.'
     END,
     ROUND(9.90 + ((x * 37) % 850) / 2.7, 2),
+    ROUND(9.90 + ((x * 37) % 850) / 2.7, 2),
     CASE
         WHEN x % 29 = 0 THEN -5
         WHEN x % 11 = 0 THEN 0
@@ -253,7 +256,7 @@ SELECT
         ELSE ROUND((9.90 + ((x * 37) % 850) / 2.7) * (0.42 + (x % 5) * 0.06), 2)
     END,
     CASE WHEN x % 20 = 0 THEN 0 ELSE 1 END,
-    1 + ((x - 1) % 18),
+    NULL,
     char(65 + ((x - 1) % 6)) || '-' ||
         printf('%02d', 1 + ((x * 3) % 30)) || '-S' || (1 + (x % 5)),
     CASE x % 5
@@ -265,6 +268,11 @@ SELECT
     END
 FROM seq;
 
+-- The generated catalog value is the customer-facing VAT-inclusive price.
+-- Keep the accounting net price derived from that exact gross value.
+UPDATE products
+SET sale_price_ex_vat = sale_price_inc_vat / (1.0 + vat_rate / 100.0);
+
 -- Minimum/reorder settings for every product.
 INSERT INTO minimum_stock(
     product_id, minimum_quantity, reorder_quantity,
@@ -275,7 +283,7 @@ SELECT
     CASE WHEN id % 13 = 0 THEN 0 ELSE 5 + (id % 12) END,
     15 + (id % 45),
     2 + (id % 14),
-    supplier_id,
+    NULL,
     CASE
         WHEN id % 11 = 0 THEN 'Out-of-stock test case'
         WHEN id % 7 = 0 THEN 'Low-stock test case'
@@ -284,39 +292,49 @@ SELECT
 FROM products;
 
 -- ---------------------------------------------------------------------------
--- SUPPLIER PRICE LISTS: 360
+-- PRODUCT / SUPPLIER RELATIONS: 360 (3 suppliers per product)
 -- ---------------------------------------------------------------------------
-WITH RECURSIVE seq(x) AS (
-    SELECT 1
-    UNION ALL
-    SELECT x + 1 FROM seq WHERE x < 360
-)
-INSERT INTO supplier_price_lists(
-    supplier_id, product_id, supplier_product_code, price, minimum_quantity,
-    validity_start_date, validity_end_date, notes
+-- Preferred supplier: current reference price initially matches the product's
+-- last purchase cost. It remains independent from future negotiated order prices.
+INSERT INTO product_suppliers(
+    product_id,supplier_id,supplier_product_code,purchase_price,is_preferred,notes
 )
 SELECT
-    1 + ((x * 5) % 18),
+    p.id,1 + ((p.id - 1) % 18),
+    'SUP-' || printf('%02d',1 + ((p.id - 1) % 18)) || '-' || p.code,
+    ROUND(CASE WHEN p.acquisition_cost=0 THEN p.sale_price_ex_vat*0.45 ELSE p.acquisition_cost END,2),
+    1,'Preferred supplier'
+FROM products p;
+
+-- Two alternative suppliers with independent current reference prices.
+WITH alternatives(n) AS (VALUES(1),(2))
+INSERT INTO product_suppliers(
+    product_id,supplier_id,supplier_product_code,purchase_price,is_preferred,notes
+)
+SELECT
     p.id,
-    'SUP-' || printf('%02d', 1 + ((x * 5) % 18)) || '-' || p.code,
+    1 + ((pref.supplier_id - 1 + alternatives.n * 5) % 18),
+    'SUP-' || printf('%02d',1 + ((pref.supplier_id - 1 + alternatives.n * 5) % 18)) || '-' || p.code,
     ROUND(
-        CASE WHEN p.acquisition_cost = 0
-             THEN p.price * 0.45
-             ELSE p.acquisition_cost * (0.92 + (x % 5) * 0.03)
-        END, 2
+        CASE WHEN p.acquisition_cost=0 THEN p.sale_price_ex_vat*0.45
+             ELSE p.acquisition_cost*(0.94 + alternatives.n*0.04) END,2
     ),
-    1 + (x % 10),
-    datetime('now', '-' || (x % 180) || ' days'),
-    CASE WHEN x % 4 = 0
-         THEN datetime('now', '+' || (30 + (x % 150)) || ' days')
-         ELSE NULL END,
-    CASE x % 3
-        WHEN 0 THEN 'Preferred bulk price'
-        WHEN 1 THEN 'Standard supplier quotation'
-        ELSE 'Alternative supplier price for comparison'
-    END
-FROM seq
-JOIN products p ON p.id = 1 + ((x * 11) % 120);
+    0,'Alternative supplier'
+FROM products p
+JOIN product_suppliers pref ON pref.product_id=p.id AND pref.is_preferred=1
+CROSS JOIN alternatives;
+
+-- Demo opening stock. This is the current economic inventory layer; historical
+-- pre-script purchases are intentionally not fabricated.
+INSERT INTO inventory_lots(
+    product_id,supplier_id,received_date,initial_quantity,remaining_quantity,unit_cost,source_type
+)
+SELECT
+    p.id,pref.supplier_id,datetime('now','-365 days'),
+    p.quantity,p.quantity,p.acquisition_cost,'DEMO_OPENING'
+FROM products p
+LEFT JOIN product_suppliers pref ON pref.product_id=p.id AND pref.is_preferred=1
+WHERE p.quantity>0;
 
 -- ---------------------------------------------------------------------------
 -- CUSTOMER ORDERS: 240 + 720 lines
@@ -330,7 +348,7 @@ WITH RECURSIVE seq(x) AS (
     SELECT x + 1 FROM seq WHERE x < 240
 )
 INSERT INTO orders(
-    customer_id, order_date, status, total, payment_status, paid_amount
+    customer_id, order_date, status, total_ex_vat, total_inc_vat, payment_status, paid_amount
 )
 SELECT
     1 + ((x * 7) % 120),
@@ -341,6 +359,7 @@ SELECT
         WHEN 2 THEN 'Completed'
         ELSE 'Cancelled'
     END,
+    0,
     0,
     CASE x % 3
         WHEN 0 THEN 'NOT_PAID'
@@ -355,28 +374,96 @@ WITH RECURSIVE seq(x) AS (
     UNION ALL
     SELECT x + 1 FROM seq WHERE x < 720
 )
-INSERT INTO order_details(order_id, product_id, quantity, unit_price)
+INSERT INTO order_details(
+    order_id, product_id, quantity,
+    sale_unit_price_ex_vat, sale_unit_price_inc_vat, vat_rate, cost_total
+)
 SELECT
     1 + ((x - 1) / 3),
     p.id,
     1 + (x % 5),
-    ROUND(p.price * (0.90 + (x % 3) * 0.05), 2)
+    ROUND(
+        ROUND(
+            ROUND((1 + (x % 5)) * ROUND(p.sale_price_inc_vat * (0.90 + (x % 3) * 0.05), 2), 2) /
+            (1.0 + p.vat_rate / 100.0),
+            2
+        ) / (1 + (x % 5)),
+        12
+    ),
+    ROUND(p.sale_price_inc_vat * (0.90 + (x % 3) * 0.05), 2),
+    p.vat_rate,
+    NULL
 FROM seq
 JOIN products p ON p.id = 1 + ((x * 17) % 120);
 
 UPDATE orders
-SET total = ROUND(COALESCE((
-    SELECT SUM(d.quantity * d.unit_price)
-    FROM order_details d
-    WHERE d.order_id = orders.id
-), 0), 2);
+SET total_inc_vat = ROUND(COALESCE((
+        SELECT SUM(ROUND(d.quantity * d.sale_unit_price_inc_vat, 2))
+        FROM order_details d
+        WHERE d.order_id = orders.id
+    ), 0), 2),
+    total_ex_vat = ROUND(COALESCE((
+        SELECT SUM(ROUND(
+            ROUND(d.quantity * d.sale_unit_price_inc_vat, 2) /
+            (1.0 + d.vat_rate / 100.0), 2
+        ))
+        FROM order_details d
+        WHERE d.order_id = orders.id
+    ), 0), 2);
 
 UPDATE orders
 SET paid_amount = CASE payment_status
-    WHEN 'PAID' THEN total
-    WHEN 'PARTIALLY_PAID' THEN ROUND(total * 0.40, 2)
+    WHEN 'PAID' THEN total_inc_vat
+    WHEN 'PARTIALLY_PAID' THEN ROUND(total_inc_vat * 0.40, 2)
     ELSE 0
 END;
+
+-- Completed demo sales have explicit historical FIFO layers. They are exhausted
+-- and separate from current opening stock, so the demo report can show historical
+-- cost/profit without altering today's physical quantity.
+INSERT INTO inventory_lots(
+    id,product_id,supplier_id,received_date,
+    initial_quantity,remaining_quantity,unit_cost,source_type
+)
+SELECT
+    -(100000 + d.id),
+    d.product_id,
+    pref.supplier_id,
+    o.order_date,
+    d.quantity,
+    0,
+    p.acquisition_cost,
+    'DEMO_SALE_HISTORY'
+FROM order_details d
+JOIN orders o ON o.id=d.order_id
+JOIN products p ON p.id=d.product_id
+LEFT JOIN product_suppliers pref
+       ON pref.product_id=p.id AND pref.is_preferred=1
+WHERE o.status='Completed';
+
+INSERT INTO inventory_lot_consumptions(
+    lot_id,order_detail_id,warehouse_movement_id,quantity,unit_cost
+)
+SELECT
+    -(100000 + d.id),
+    d.id,
+    NULL,
+    d.quantity,
+    p.acquisition_cost
+FROM order_details d
+JOIN orders o ON o.id=d.order_id
+JOIN products p ON p.id=d.product_id
+WHERE o.status='Completed';
+
+UPDATE order_details
+SET cost_total = ROUND(quantity * (
+    SELECT p.acquisition_cost
+    FROM products p
+    WHERE p.id=order_details.product_id
+), 2)
+WHERE order_id IN (
+    SELECT id FROM orders WHERE status='Completed'
+);
 
 -- Active reservations for open orders.
 INSERT INTO stock_reservations(
@@ -454,19 +541,20 @@ INSERT INTO supplier_order_details(
     order_id, product_id, quantity, unit_price, total, notes
 )
 SELECT
-    1 + ((x - 1) / 3),
+    o.id,
     p.id,
     5 + (x % 26),
-    ROUND(CASE WHEN p.acquisition_cost > 0
-               THEN p.acquisition_cost
-               ELSE p.price * 0.45 END, 2),
+    ROUND(ps.purchase_price * CASE WHEN x % 5 = 0 THEN 0.90 ELSE 1.00 END, 2),
     ROUND((5 + (x % 26)) *
-        (CASE WHEN p.acquisition_cost > 0
-              THEN p.acquisition_cost
-              ELSE p.price * 0.45 END), 2),
-    'Supplier order line generated for testing'
+        ROUND(ps.purchase_price * CASE WHEN x % 5 = 0 THEN 0.90 ELSE 1.00 END, 2), 2),
+    CASE WHEN x % 5 = 0
+         THEN 'Negotiated discount below current supplier price'
+         ELSE 'Supplier order line generated for testing' END
 FROM seq
-JOIN products p ON p.id = 1 + ((x * 13) % 120);
+JOIN supplier_orders o ON o.id = 1 + ((x - 1) / 3)
+JOIN products p ON p.id = o.supplier_id + 18 * ((o.id + ((x - 1) % 3)) % 6)
+JOIN product_suppliers ps
+  ON ps.product_id=p.id AND ps.supplier_id=o.supplier_id;
 
 UPDATE supplier_orders
 SET total = ROUND(COALESCE((
@@ -474,6 +562,19 @@ SET total = ROUND(COALESCE((
     FROM supplier_order_details d
     WHERE d.order_id = supplier_orders.id
 ), 0), 2);
+
+-- Completed supplier orders are historical receipts. They are represented as
+-- exhausted lots because the demo's current stock was created separately above.
+INSERT INTO inventory_lots(
+    product_id,supplier_id,supplier_order_detail_id,received_date,
+    initial_quantity,remaining_quantity,unit_cost,source_type
+)
+SELECT
+    d.product_id,o.supplier_id,d.id,o.order_date,
+    d.quantity,0,d.unit_price,'LEGACY_SUPPLIER_ORDER'
+FROM supplier_order_details d
+JOIN supplier_orders o ON o.id=d.order_id
+WHERE o.status='Completed';
 
 -- ---------------------------------------------------------------------------
 -- INVOICES: 180 + 540 lines
@@ -528,17 +629,27 @@ WITH RECURSIVE seq(x) AS (
     SELECT x + 1 FROM seq WHERE x < 540
 )
 INSERT INTO invoice_details(
-    invoice_id, product_id, quantity, unit_price, vat_rate, total,
-    product_code, product_name
+    invoice_id, product_id, quantity, sale_unit_price_ex_vat,
+    sale_unit_price_inc_vat, vat_rate, total, product_code, product_name
 )
 SELECT
     1 + ((x - 1) / 3),
     p.id,
     1 + (x % 4),
-    ROUND(p.price * (0.92 + (x % 3) * 0.04), 2),
+    ROUND(
+        ROUND(
+            ROUND((1 + (x % 4)) * ROUND(p.sale_price_inc_vat * (0.92 + (x % 3) * 0.04), 2), 2) /
+            (1.0 + p.vat_rate / 100.0),
+            2
+        ) / (1 + (x % 4)),
+        12
+    ),
+    ROUND(p.sale_price_inc_vat * (0.92 + (x % 3) * 0.04), 2),
     p.vat_rate,
     ROUND(
-        (1 + (x % 4)) * ROUND(p.price * (0.92 + (x % 3) * 0.04), 2),
+        ROUND((1 + (x % 4)) *
+            ROUND(p.sale_price_inc_vat * (0.92 + (x % 3) * 0.04), 2), 2) /
+        (1.0 + p.vat_rate / 100.0),
         2
     ),
     p.code,
@@ -547,10 +658,13 @@ FROM seq
 JOIN products p ON p.id = 1 + ((x * 19) % 120);
 
 -- Final reconciliation from the values actually stored in SQLite.
--- This deliberately derives every line total from quantity * stored unit_price,
--- matching InvoicePDFGenerator/Numbers.lineTotal.
+-- Reconcile net line totals from the exact VAT-inclusive customer price.
 UPDATE invoice_details
-SET total = ROUND(quantity * unit_price, 2);
+SET total = ROUND(
+    ROUND(quantity * sale_unit_price_inc_vat, 2) /
+    (1.0 + vat_rate / 100.0),
+    2
+);
 
 UPDATE invoices
 SET taxable_amount = ROUND(COALESCE((
@@ -559,7 +673,7 @@ SET taxable_amount = ROUND(COALESCE((
         WHERE d.invoice_id = invoices.id
     ), 0), 2),
     vat = ROUND(COALESCE((
-        SELECT SUM(ROUND(d.total * d.vat_rate / 100.0, 2))
+        SELECT SUM(ROUND(d.quantity * d.sale_unit_price_inc_vat, 2) - d.total)
         FROM invoice_details d
         WHERE d.invoice_id = invoices.id
     ), 0), 2);
@@ -659,7 +773,7 @@ UNION ALL SELECT '  Active reservations: ' || COUNT(*) FROM stock_reservations W
 UNION ALL SELECT 'Invoices: ' || COUNT(*) FROM invoices
 UNION ALL SELECT '  Invoice line mismatches: ' || COUNT(*)
     FROM invoice_details
-    WHERE ABS(total - ROUND(quantity * unit_price, 2)) > 0.004
+    WHERE ABS(total - ROUND(ROUND(quantity * sale_unit_price_inc_vat, 2) / (1.0 + vat_rate / 100.0), 2)) > 0.004
 UNION ALL SELECT '  Invoice header mismatches: ' || COUNT(*)
     FROM invoices i
     WHERE ABS(i.taxable_amount - COALESCE((
@@ -667,12 +781,14 @@ UNION ALL SELECT '  Invoice header mismatches: ' || COUNT(*)
               FROM invoice_details d WHERE d.invoice_id=i.id
           ), 0)) > 0.004
        OR ABS(i.vat - COALESCE((
-              SELECT ROUND(SUM(ROUND(d.total * d.vat_rate / 100.0, 2)), 2)
+              SELECT ROUND(SUM(ROUND(d.quantity * d.sale_unit_price_inc_vat, 2) - d.total), 2)
               FROM invoice_details d WHERE d.invoice_id=i.id
           ), 0)) > 0.004
        OR ABS(i.total - ROUND(i.taxable_amount + i.vat, 2)) > 0.004
 UNION ALL SELECT 'Supplier orders: ' || COUNT(*) FROM supplier_orders
-UNION ALL SELECT 'Supplier price rows: ' || COUNT(*) FROM supplier_price_lists
+UNION ALL SELECT 'Product/supplier relations: ' || COUNT(*) FROM product_suppliers
+UNION ALL SELECT 'FIFO lots: ' || COUNT(*) FROM inventory_lots
+UNION ALL SELECT 'Sales with historical cost: ' || COUNT(*) FROM order_details WHERE cost_total IS NOT NULL
 UNION ALL SELECT 'Warehouse movements: ' || COUNT(*) FROM warehouse_movements
 UNION ALL SELECT 'Warehouse notifications: ' || COUNT(*) FROM warehouse_notifications
 UNION ALL SELECT 'Product images: ' || COUNT(*) || ' (add from UI for photo/backup tests)' FROM product_images;

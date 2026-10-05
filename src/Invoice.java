@@ -14,6 +14,9 @@ public class Invoice {
     private double vat;
     private double total;
     private String status;
+    private Integer orderId;
+    private String paymentStatus;
+    private double paidAmount;
     private List<InvoiceItem> items;
 
     public Invoice(int id, String number, Date date, int customerId, String customerName,
@@ -27,6 +30,9 @@ public class Invoice {
         this.vat = vat;
         this.total = total;
         this.status = status;
+        this.orderId = null;
+        this.paymentStatus = "NOT_PAID";
+        this.paidAmount = 0.0;
         this.items = new ArrayList<>();
     }
 
@@ -40,6 +46,9 @@ public class Invoice {
     public double getVat() { return vat; }
     public double getTotal() { return total; }
     public String getStatus() { return status; }
+    public Integer getOrderId() { return orderId; }
+    public String getPaymentStatus() { return paymentStatus; }
+    public double getPaidAmount() { return paidAmount; }
     public List<InvoiceItem> getItems() { return items; }
 
     // Setters
@@ -52,5 +61,8 @@ public class Invoice {
     public void setVat(double vat) { this.vat = vat; }
     public void setTotal(double total) { this.total = total; }
     public void setStatus(String status) { this.status = status; }
+    public void setOrderId(Integer orderId) { this.orderId = orderId; }
+    public void setPaymentStatus(String paymentStatus) { this.paymentStatus = paymentStatus; }
+    public void setPaidAmount(double paidAmount) { this.paidAmount = paidAmount; }
     public void setItems(List<InvoiceItem> items) { this.items = items; }
 }

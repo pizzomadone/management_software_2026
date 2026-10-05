@@ -51,7 +51,7 @@ public final class DatabaseCurrency {
      * Explicit currency change. RELABEL preserves every numeric value and only changes the
      * operating currency. CONVERT updates every non-final monetary value using the supplied
      * rate, where 1 unit of the old currency equals {@code rate} units of the new currency.
-     * Finalized invoices (Issued/Paid/Canceled) are immutable historical amounts and currencies.
+     * Finalized invoices (Issued/Canceled) are immutable historical amounts and currencies.
      */
     public static void change(String code, ChangeMode mode, BigDecimal rate) throws SQLException {
         Currency.getInstance(code);
@@ -69,10 +69,11 @@ public final class DatabaseCurrency {
             if(mode==ChangeMode.CONVERT) {
                 verifyConvertibleDocuments(c);
                 convertProducts(c,rate);
-                convertSupplierPriceLists(c,rate);
+                convertSupplierRelationsAndLots(c,rate);
                 convertCustomerOrders(c,rate);
                 convertSupplierOrders(c,rate);
                 convertDraftInvoices(c,rate,code);
+                reconcilePayments(c);
             } else {
                 // Drafts are not historical documents: they follow the new operating currency.
                 try(PreparedStatement p=c.prepareStatement(
@@ -104,11 +105,29 @@ public final class DatabaseCurrency {
         try(Statement s=c.createStatement();ResultSet r=s.executeQuery(
                 "SELECT (SELECT COUNT(*) FROM products)+(SELECT COUNT(*) FROM orders)+"+
                 "(SELECT COUNT(*) FROM invoices)+(SELECT COUNT(*) FROM supplier_orders)+"+
-                "(SELECT COUNT(*) FROM supplier_price_lists)")) {
+                "(SELECT COUNT(*) FROM product_suppliers)+(SELECT COUNT(*) FROM inventory_lots)")) {
             if(r.next() && r.getLong(1)>0)
                 throw new SQLException("Choose whether to relabel or convert existing monetary values.");
         }
         change(code,ChangeMode.RELABEL,null);
+    }
+
+    private static void reconcilePayments(Connection c) throws SQLException {
+        try (Statement s=c.createStatement()) {
+            s.executeUpdate("""
+                UPDATE orders SET payment_status=CASE
+                    WHEN paid_amount<=0 THEN 'NOT_PAID'
+                    WHEN paid_amount+0.004>=COALESCE(
+                        (SELECT total FROM invoices WHERE order_id=orders.id),total_inc_vat)
+                        THEN 'PAID' ELSE 'PARTIALLY_PAID' END
+                """);
+            s.executeUpdate("""
+                UPDATE invoices SET payment_status=CASE
+                    WHEN paid_amount<=0 THEN 'NOT_PAID'
+                    WHEN paid_amount+0.004>=total THEN 'PAID' ELSE 'PARTIALLY_PAID' END
+                WHERE status='Draft' AND order_id IS NULL
+                """);
+        }
     }
 
     private static boolean sameMoney(double left,double right) {
@@ -121,22 +140,26 @@ public final class DatabaseCurrency {
      * already inconsistent with its own lines, stop before changing any monetary value.
      */
     private static void verifyConvertibleDocuments(Connection c) throws SQLException {
-        try(PreparedStatement orders=c.prepareStatement("SELECT id,total FROM orders ORDER BY id");
-            PreparedStatement lines=c.prepareStatement("SELECT quantity,unit_price FROM order_details WHERE order_id=? ORDER BY id");
+        try(PreparedStatement orders=c.prepareStatement("SELECT id,total_ex_vat,total_inc_vat FROM orders ORDER BY id");
+            PreparedStatement lines=c.prepareStatement(
+                "SELECT quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate FROM order_details WHERE order_id=? ORDER BY id");
             ResultSet r=orders.executeQuery()) {
             while(r.next()) {
-                int id=r.getInt("id"),count=0;double total=0;
+                int id=r.getInt("id"),count=0;double totalExVat=0,totalIncVat=0;
                 lines.setInt(1,id);
                 try(ResultSet d=lines.executeQuery()) {
                     while(d.next()) {
                         count++;
-                        total=Numbers.add(total,Numbers.lineTotal(
-                            Numbers.positiveQuantity(d.getObject("quantity")),
-                            Numbers.nonNegative(d.getObject("unit_price"))));
+                        int quantity=Numbers.positiveQuantity(d.getObject("quantity"));
+                        double net=Numbers.nonNegative(d.getObject("sale_unit_price_ex_vat"));
+                        double gross=Numbers.nonNegative(d.getObject("sale_unit_price_inc_vat"));
+                        totalExVat=Numbers.add(totalExVat,Numbers.lineTotal(quantity,net));
+                        totalIncVat=Numbers.add(totalIncVat,SalePrice.lineIncVat(quantity,gross));
                     }
                 }
-                if(count>0 && !sameMoney(total,Numbers.nonNegative(r.getObject("total"))))
-                    throw new SQLException("Customer order "+id+" total does not match its lines; reconcile it before currency conversion.");
+                if(count>0 && (!sameMoney(totalExVat,Numbers.nonNegative(r.getObject("total_ex_vat"))) ||
+                        !sameMoney(totalIncVat,Numbers.nonNegative(r.getObject("total_inc_vat")))))
+                    throw new SQLException("Customer order "+id+" totals do not match its lines; reconcile it before currency conversion.");
             }
         }
 
@@ -164,25 +187,29 @@ public final class DatabaseCurrency {
         try(PreparedStatement invoices=c.prepareStatement(
                 "SELECT id,taxable_amount,vat,total FROM invoices WHERE status='Draft' ORDER BY id");
             PreparedStatement lines=c.prepareStatement(
-                "SELECT quantity,unit_price,vat_rate,total FROM invoice_details WHERE invoice_id=? ORDER BY id");
+                "SELECT quantity,sale_unit_price_inc_vat,vat_rate,total FROM invoice_details WHERE invoice_id=? ORDER BY id");
             ResultSet r=invoices.executeQuery()) {
             while(r.next()) {
-                int id=r.getInt("id"),count=0;double taxable=0,vat=0;
+                int id=r.getInt("id"),count=0;double taxable=0,vat=0,gross=0;
                 lines.setInt(1,id);
                 try(ResultSet d=lines.executeQuery()) {
                     while(d.next()) {
                         count++;
-                        double line=Numbers.lineTotal(Numbers.positiveQuantity(d.getObject("quantity")),
-                            Numbers.nonNegative(d.getObject("unit_price")));
-                        if(!sameMoney(line,Numbers.nonNegative(d.getObject("total"))))
+                        int quantity=Numbers.positiveQuantity(d.getObject("quantity"));
+                        double incVat=Numbers.nonNegative(d.getObject("sale_unit_price_inc_vat"));
+                        double rate=Numbers.vat(d.getObject("vat_rate"));
+                        double net=SalePrice.lineExVat(quantity,incVat,rate);
+                        double lineGross=SalePrice.lineIncVat(quantity,incVat);
+                        if(!sameMoney(net,Numbers.nonNegative(d.getObject("total"))))
                             throw new SQLException("Draft invoice "+id+" contains an inconsistent line; reconcile it before currency conversion.");
-                        taxable=Numbers.add(taxable,line);
-                        vat=Numbers.add(vat,Numbers.tax(line,Numbers.vat(d.getObject("vat_rate"))));
+                        taxable=Numbers.add(taxable,net);
+                        gross=Numbers.add(gross,lineGross);
+                        vat=Numbers.add(vat,Numbers.money(BigDecimal.valueOf(lineGross).subtract(BigDecimal.valueOf(net))));
                     }
                 }
                 if(count>0 && (!sameMoney(taxable,Numbers.nonNegative(r.getObject("taxable_amount"))) ||
                         !sameMoney(vat,Numbers.nonNegative(r.getObject("vat"))) ||
-                        !sameMoney(Numbers.add(taxable,vat),Numbers.nonNegative(r.getObject("total")))))
+                        !sameMoney(gross,Numbers.nonNegative(r.getObject("total")))))
                     throw new SQLException("Draft invoice "+id+" totals do not match its lines; reconcile it before currency conversion.");
             }
         }
@@ -204,25 +231,47 @@ public final class DatabaseCurrency {
     }
 
     private static void convertProducts(Connection c,BigDecimal rate) throws SQLException {
-        try(PreparedStatement read=c.prepareStatement("SELECT id,price,acquisition_cost FROM products");
+        try(PreparedStatement read=c.prepareStatement(
+                "SELECT id,sale_price_inc_vat,vat_rate,acquisition_cost FROM products");
             PreparedStatement write=c.prepareStatement(
-                "UPDATE products SET price=?,acquisition_cost=? WHERE id=?");
+                "UPDATE products SET sale_price_ex_vat=?,sale_price_inc_vat=?,acquisition_cost=? WHERE id=?");
             ResultSet r=read.executeQuery()) {
             while(r.next()) {
-                write.setDouble(1,convertUnit(r.getObject("price"),rate));
-                write.setDouble(2,convertUnit(r.getObject("acquisition_cost"),rate));
-                write.setInt(3,r.getInt("id"));write.addBatch();
+                double gross=convertUnit(r.getObject("sale_price_inc_vat"),rate);
+                double vatRate=Numbers.vat(r.getObject("vat_rate"));
+                write.setDouble(1,SalePrice.exVatFromIncVat(gross,vatRate));
+                write.setDouble(2,gross);
+                write.setDouble(3,convertUnit(r.getObject("acquisition_cost"),rate));
+                write.setInt(4,r.getInt("id"));write.addBatch();
             }
             write.executeBatch();
         }
     }
 
-    private static void convertSupplierPriceLists(Connection c,BigDecimal rate) throws SQLException {
-        try(PreparedStatement read=c.prepareStatement("SELECT id,price FROM supplier_price_lists");
-            PreparedStatement write=c.prepareStatement("UPDATE supplier_price_lists SET price=? WHERE id=?");
+    private static void convertSupplierRelationsAndLots(Connection c,BigDecimal rate) throws SQLException {
+        try(PreparedStatement read=c.prepareStatement("SELECT id,purchase_price FROM product_suppliers");
+            PreparedStatement write=c.prepareStatement("UPDATE product_suppliers SET purchase_price=? WHERE id=?");
             ResultSet r=read.executeQuery()) {
             while(r.next()) {
-                write.setDouble(1,convertUnit(r.getObject("price"),rate));
+                write.setDouble(1,convertUnit(r.getObject("purchase_price"),rate));
+                write.setInt(2,r.getInt("id"));write.addBatch();
+            }
+            write.executeBatch();
+        }
+        try(PreparedStatement read=c.prepareStatement("SELECT id,unit_cost FROM inventory_lots");
+            PreparedStatement write=c.prepareStatement("UPDATE inventory_lots SET unit_cost=? WHERE id=?");
+            ResultSet r=read.executeQuery()) {
+            while(r.next()) {
+                write.setDouble(1,convertUnit(r.getObject("unit_cost"),rate));
+                write.setInt(2,r.getInt("id"));write.addBatch();
+            }
+            write.executeBatch();
+        }
+        try(PreparedStatement read=c.prepareStatement("SELECT id,unit_cost FROM inventory_lot_consumptions");
+            PreparedStatement write=c.prepareStatement("UPDATE inventory_lot_consumptions SET unit_cost=? WHERE id=?");
+            ResultSet r=read.executeQuery()) {
+            while(r.next()) {
+                write.setDouble(1,convertUnit(r.getObject("unit_cost"),rate));
                 write.setInt(2,r.getInt("id"));write.addBatch();
             }
             write.executeBatch();
@@ -231,43 +280,69 @@ public final class DatabaseCurrency {
 
     private static void convertCustomerOrders(Connection c,BigDecimal rate) throws SQLException {
         try(PreparedStatement read=c.prepareStatement(
-                "SELECT id,unit_price FROM order_details ORDER BY id");
+                "SELECT id,quantity,vat_rate,sale_unit_price_inc_vat,cost_total FROM order_details ORDER BY id");
             PreparedStatement write=c.prepareStatement(
-                "UPDATE order_details SET unit_price=? WHERE id=?");
+                "UPDATE order_details SET sale_unit_price_ex_vat=?,sale_unit_price_inc_vat=?,cost_total=? WHERE id=?");
             ResultSet r=read.executeQuery()) {
             while(r.next()) {
-                write.setDouble(1,convertUnit(r.getObject("unit_price"),rate));
-                write.setInt(2,r.getInt("id"));write.addBatch();
+                double gross=convertUnit(r.getObject("sale_unit_price_inc_vat"),rate);
+                double vatRate=Numbers.vat(r.getObject("vat_rate"));
+                write.setDouble(1,SalePrice.unitExVatForLine(Numbers.positiveQuantity(r.getObject("quantity")),gross,vatRate));
+                write.setDouble(2,gross);
+                Object cost=r.getObject("cost_total");
+                if(cost==null) write.setNull(3,Types.REAL);
+                else write.setDouble(3,convertMoney(cost,rate));
+                write.setInt(4,r.getInt("id"));write.addBatch();
             }
             write.executeBatch();
         }
 
-        try(PreparedStatement orders=c.prepareStatement(
-                "SELECT id,total,payment_status,paid_amount FROM orders ORDER BY id");
+        try(PreparedStatement orders=c.prepareStatement("""
+                SELECT o.id,o.total_ex_vat,o.total_inc_vat,o.payment_status,o.paid_amount,
+                       i.id AS invoice_id,i.status AS invoice_status,
+                       i.total AS invoice_total
+                FROM orders o
+                LEFT JOIN invoices i ON i.order_id=o.id
+                ORDER BY o.id
+                """);
             PreparedStatement lines=c.prepareStatement(
-                "SELECT quantity,unit_price FROM order_details WHERE order_id=? ORDER BY id");
+                "SELECT quantity,sale_unit_price_inc_vat,vat_rate FROM order_details WHERE order_id=? ORDER BY id");
             PreparedStatement update=c.prepareStatement(
-                "UPDATE orders SET total=?,paid_amount=? WHERE id=?");
+                "UPDATE orders SET total_ex_vat=?,total_inc_vat=?,paid_amount=? WHERE id=?");
             ResultSet r=orders.executeQuery()) {
             while(r.next()) {
                 int id=r.getInt("id");
-                double total=0;int lineCount=0;
+                double totalExVat=0,totalIncVat=0;int lineCount=0;
                 lines.setInt(1,id);
                 try(ResultSet d=lines.executeQuery()) {
                     while(d.next()) {
                         lineCount++;
-                        total=Numbers.add(total,
-                            Numbers.lineTotal(Numbers.positiveQuantity(d.getObject("quantity")),
-                                Numbers.nonNegative(d.getObject("unit_price"))));
+                        int quantity=Numbers.positiveQuantity(d.getObject("quantity"));
+                        double gross=Numbers.nonNegative(d.getObject("sale_unit_price_inc_vat"));
+                        double vatRate=Numbers.vat(d.getObject("vat_rate"));
+                        totalExVat=Numbers.add(totalExVat,SalePrice.lineExVat(quantity,gross,vatRate));
+                        totalIncVat=Numbers.add(totalIncVat,SalePrice.lineIncVat(quantity,gross));
                     }
                 }
-                if(lineCount==0) total=convertMoney(r.getObject("total"),rate);
-                String payment=r.getString("payment_status");
-                double paid;
-                if("PAID".equals(payment)) paid=total;
-                else if("NOT_PAID".equals(payment)) paid=0;
-                else paid=convertMoney(r.getObject("paid_amount"),rate);
-                update.setDouble(1,total);update.setDouble(2,paid);update.setInt(3,id);update.addBatch();
+                if(lineCount==0) {
+                    totalExVat=convertMoney(r.getObject("total_ex_vat"),rate);
+                    totalIncVat=convertMoney(r.getObject("total_inc_vat"),rate);
+                }
+
+                Object invoiceId=r.getObject("invoice_id");
+                String invoiceStatus=r.getString("invoice_status");
+                boolean linked=invoiceId!=null;
+                boolean historicalLinked=linked && !"Draft".equals(invoiceStatus);
+
+                double paid = historicalLinked
+                    ? Numbers.nonNegative(r.getObject("paid_amount"))
+                    : convertMoney(r.getObject("paid_amount"),rate);
+
+                update.setDouble(1,totalExVat);
+                update.setDouble(2,totalIncVat);
+                update.setDouble(3,paid);
+                update.setInt(4,id);
+                update.addBatch();
             }
             update.executeBatch();
         }
@@ -308,49 +383,57 @@ public final class DatabaseCurrency {
 
     private static void convertDraftInvoices(Connection c,BigDecimal rate,String newCode) throws SQLException {
         try(PreparedStatement read=c.prepareStatement(
-                "SELECT d.id,d.quantity,d.unit_price FROM invoice_details d "+
+                "SELECT d.id,d.quantity,d.vat_rate,d.sale_unit_price_inc_vat FROM invoice_details d "+
                 "JOIN invoices i ON i.id=d.invoice_id WHERE i.status='Draft' ORDER BY d.id");
             PreparedStatement write=c.prepareStatement(
-                "UPDATE invoice_details SET unit_price=?,total=? WHERE id=?");
+                "UPDATE invoice_details SET sale_unit_price_ex_vat=?,sale_unit_price_inc_vat=?,total=? WHERE id=?");
             ResultSet r=read.executeQuery()) {
             while(r.next()) {
                 int quantity=Numbers.positiveQuantity(r.getObject("quantity"));
-                double price=convertUnit(r.getObject("unit_price"),rate);
-                write.setDouble(1,price);write.setDouble(2,Numbers.lineTotal(quantity,price));
-                write.setInt(3,r.getInt("id"));write.addBatch();
+                double vatRate=Numbers.vat(r.getObject("vat_rate"));
+                double gross=convertUnit(r.getObject("sale_unit_price_inc_vat"),rate);
+                double netUnit=SalePrice.unitExVatForLine(Numbers.positiveQuantity(r.getObject("quantity")),gross,vatRate);
+                double netLine=SalePrice.lineExVat(quantity,gross,vatRate);
+                write.setDouble(1,netUnit);
+                write.setDouble(2,gross);
+                write.setDouble(3,netLine);
+                write.setInt(4,r.getInt("id"));write.addBatch();
             }
             write.executeBatch();
         }
 
         try(PreparedStatement drafts=c.prepareStatement(
-                "SELECT id,taxable_amount,vat,total FROM invoices WHERE status='Draft' ORDER BY id");
+                "SELECT id,taxable_amount,vat,total,payment_status,paid_amount FROM invoices WHERE status='Draft' ORDER BY id");
             PreparedStatement lines=c.prepareStatement(
-                "SELECT quantity,unit_price,vat_rate FROM invoice_details WHERE invoice_id=? ORDER BY id");
+                "SELECT quantity,sale_unit_price_inc_vat,vat_rate FROM invoice_details WHERE invoice_id=? ORDER BY id");
             PreparedStatement update=c.prepareStatement(
-                "UPDATE invoices SET taxable_amount=?,vat=?,total=?,currency_code=? WHERE id=?");
+                "UPDATE invoices SET taxable_amount=?,vat=?,total=?,paid_amount=?,currency_code=? WHERE id=?");
             ResultSet r=drafts.executeQuery()) {
             while(r.next()) {
-                int id=r.getInt("id");double taxable=0,vat=0;int lineCount=0;
+                int id=r.getInt("id");double taxable=0,vat=0,total=0;int lineCount=0;
                 lines.setInt(1,id);
                 try(ResultSet d=lines.executeQuery()) {
                     while(d.next()) {
                         lineCount++;
-                        double line=Numbers.lineTotal(
-                            Numbers.positiveQuantity(d.getObject("quantity")),
-                            Numbers.nonNegative(d.getObject("unit_price")));
-                        taxable=Numbers.add(taxable,line);
-                        vat=Numbers.add(vat,Numbers.tax(line,Numbers.vat(d.getObject("vat_rate"))));
+                        int quantity=Numbers.positiveQuantity(d.getObject("quantity"));
+                        double grossUnit=Numbers.nonNegative(d.getObject("sale_unit_price_inc_vat"));
+                        double vatRate=Numbers.vat(d.getObject("vat_rate"));
+                        double lineGross=SalePrice.lineIncVat(quantity,grossUnit);
+                        double lineNet=SalePrice.lineExVat(quantity,grossUnit,vatRate);
+                        taxable=Numbers.add(taxable,lineNet);
+                        total=Numbers.add(total,lineGross);
+                        vat=Numbers.add(vat,Numbers.money(BigDecimal.valueOf(lineGross).subtract(BigDecimal.valueOf(lineNet))));
                     }
                 }
-                double total;
                 if(lineCount==0) {
                     taxable=convertMoney(r.getObject("taxable_amount"),rate);
                     vat=convertMoney(r.getObject("vat"),rate);
                     total=convertMoney(r.getObject("total"),rate);
-                } else total=Numbers.add(taxable,vat);
+                }
+                double paidAmount = convertMoney(r.getObject("paid_amount"),rate);
                 update.setDouble(1,taxable);update.setDouble(2,vat);
-                update.setDouble(3,total);update.setString(4,newCode);
-                update.setInt(5,id);update.addBatch();
+                update.setDouble(3,total);update.setDouble(4,paidAmount);
+                update.setString(5,newCode);update.setInt(6,id);update.addBatch();
             }
             update.executeBatch();
         }
@@ -368,3 +451,4 @@ public final class DatabaseCurrency {
         return codeFromSetting(chosen.toUpperCase(java.util.Locale.ROOT));
     }
 }
+

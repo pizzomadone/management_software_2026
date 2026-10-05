@@ -106,6 +106,18 @@ public final class I18n {
             String translated = tr(source.substring(2));
             return translated.equals(source.substring(2)) ? source : "* " + translated;
         }
+        // Required-field markers are displayed after the field name (for example
+        // "Customer *:"). Translate the field name while preserving the marker.
+        if (source.endsWith(" *:")) {
+            String base = source.substring(0, source.length() - 3).trim();
+            String translated = translations.get(base);
+            if (translated != null) return translated + " *:";
+        }
+        if (source.endsWith(" *")) {
+            String base = source.substring(0, source.length() - 2).trim();
+            String translated = translations.get(base);
+            if (translated != null) return translated + " *";
+        }
         if (source.endsWith(":")) {
             String base = source.substring(0, source.length() - 1).trim();
             String translated = translations.get(base);
@@ -203,17 +215,10 @@ public final class I18n {
         if (component instanceof Frame frame) frame.setTitle(localized(frame, frame.getTitle()));
         if (component instanceof Dialog dialog) dialog.setTitle(localized(dialog, dialog.getTitle()));
         if (component instanceof AbstractButton button) {
-            String originalButtonText = ORIGINAL_TEXT.getOrDefault(button, button.getText());
             button.setText(localized(button, button.getText()));
             watchText(button);
-            if (button.getToolTipText() == null && originalButtonText != null &&
-                    !originalButtonText.isBlank()) {
-                String tooltipKey = "tooltip." + originalButtonText;
-                ORIGINAL_TOOLTIPS.put(button, tooltipKey);
-                String translatedTooltip = translations.getOrDefault(tooltipKey, tr(originalButtonText));
-                LAST_TOOLTIPS.put(button, translatedTooltip);
-                button.setToolTipText(translatedTooltip);
-            }
+            // Do not generate a tooltip that merely repeats the button label.
+            // Buttons get tooltips only when the screen defines useful extra information.
         }
         if (component instanceof JLabel label) {
             label.setText(localized(label, label.getText()));
@@ -227,6 +232,7 @@ public final class I18n {
             }
         }
         if (component instanceof JTable table) {
+            installLocalizedHeaderRenderer(table);
             for (Enumeration<TableColumn> columns = table.getColumnModel().getColumns();
                     columns.hasMoreElements();) {
                 TableColumn column = columns.nextElement();
@@ -359,6 +365,27 @@ public final class I18n {
                 displayValue = value;
             }
             return delegate.getListCellRendererComponent(list, displayValue, index, selected, focus);
+        }
+    }
+
+    private static void installLocalizedHeaderRenderer(JTable table) {
+        if (table == null || table.getTableHeader() == null) return;
+        JComponent header = table.getTableHeader();
+        if (Boolean.TRUE.equals(header.getClientProperty("i18n.header.renderer"))) return;
+        TableCellRenderer delegate = table.getTableHeader().getDefaultRenderer();
+        table.getTableHeader().setDefaultRenderer(new LocalizedHeaderRenderer(delegate));
+        header.putClientProperty("i18n.header.renderer", Boolean.TRUE);
+    }
+
+    private static final class LocalizedHeaderRenderer implements TableCellRenderer {
+        private final TableCellRenderer delegate;
+        private LocalizedHeaderRenderer(TableCellRenderer delegate) { this.delegate = delegate; }
+        @Override
+        public Component getTableCellRendererComponent(JTable table, Object value,
+                boolean selected, boolean focus, int row, int column) {
+            Object displayValue = value instanceof String text ? tr(text) : value;
+            return delegate.getTableCellRendererComponent(table, displayValue,
+                selected, focus, row, column);
         }
     }
 

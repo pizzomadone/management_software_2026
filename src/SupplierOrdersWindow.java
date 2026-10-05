@@ -51,7 +51,7 @@ public class SupplierOrdersWindow extends JDialog {
 
     private void initComponents() {
         // Orders table
-        String[] columns = {"Number", "Date", "Delivery Date", "Status", "Total " + SettingsPanel.getCurrencySymbol(), "Notes"};
+        String[] columns = {"Number", "Date", "Delivery Date", "Status", "Total", "Notes"};
         tableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -59,6 +59,7 @@ public class SupplierOrdersWindow extends JDialog {
             }
         };
         ordersTable = new JTable(tableModel);
+        TableStyleUtil.applyCompact(ordersTable);
         ordersTable.getSelectionModel().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         ordersTable.getSelectionModel().addListSelectionListener(e -> updateButtonStates());
 
@@ -251,56 +252,31 @@ public class SupplierOrdersWindow extends JDialog {
                     DatabaseManager.beginTransaction(conn);
 
                     try {
-                        int orderId = 0;
-                        String status = null;
-                        List<StockManager.StockItem> stockItems = new ArrayList<>();
+                        int orderId;
+                        String status;
                         try (PreparedStatement orderStmt = conn.prepareStatement(
                                 "SELECT id, status FROM supplier_orders WHERE number = ? AND supplier_id = ?")) {
                             orderStmt.setString(1, number);
                             orderStmt.setInt(2, supplierId);
                             try (ResultSet rs = orderStmt.executeQuery()) {
-                                if (rs.next()) {
-                                    orderId = rs.getInt("id");
-                                    status = rs.getString("status");
-                                }
-                            }
-                        }
-                        try (PreparedStatement itemStmt = conn.prepareStatement("""
-                                SELECT d.product_id, d.quantity, COALESCE(p.name, '') AS product_name
-                                FROM supplier_order_details d LEFT JOIN products p ON p.id = d.product_id
-                                WHERE d.order_id = ?
-                            """)) {
-                            itemStmt.setInt(1, orderId);
-                            try (ResultSet rs = itemStmt.executeQuery()) {
-                                while (rs.next()) {
-                                    stockItems.add(new StockManager.StockItem(rs.getInt("product_id"),
-                                        rs.getString("product_name"), rs.getInt("quantity")));
-                                }
+                                if (!rs.next()) throw new SQLException("Supplier order no longer exists");
+                                orderId = rs.getInt("id");
+                                status = rs.getString("status");
                             }
                         }
                         if ("Completed".equals(status)) {
-                            StockManager.reverseSupplierOrder(conn, stockItems, number);
+                            InventoryLotManager.reverseSupplierOrder(conn, orderId, number);
                         }
 
-                        // First delete order details
-                        String deleteDetailsQuery = """
-                            DELETE FROM supplier_order_details
-                            WHERE order_id = (
-                                SELECT id FROM supplier_orders
-                                WHERE number = ? AND supplier_id = ?
-                            )
-                        """;
-                        try (PreparedStatement pstmt = conn.prepareStatement(deleteDetailsQuery)) {
-                            pstmt.setString(1, number);
-                            pstmt.setInt(2, supplierId);
+                        try (PreparedStatement pstmt = conn.prepareStatement(
+                                "DELETE FROM supplier_order_details WHERE order_id = ?")) {
+                            pstmt.setInt(1, orderId);
                             pstmt.executeUpdate();
                         }
 
-                        // Then delete the order
-                        String deleteOrderQuery = "DELETE FROM supplier_orders WHERE number = ? AND supplier_id = ?";
-                        try (PreparedStatement pstmt = conn.prepareStatement(deleteOrderQuery)) {
-                            pstmt.setString(1, number);
-                            pstmt.setInt(2, supplierId);
+                        try (PreparedStatement pstmt = conn.prepareStatement(
+                                "DELETE FROM supplier_orders WHERE id = ?")) {
+                            pstmt.setInt(1, orderId);
                             pstmt.executeUpdate();
                         }
 

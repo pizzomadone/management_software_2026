@@ -33,6 +33,14 @@ public class DatabaseManager {
         return instance;
     }
 
+    private CostIntegrity.Audit startupCostAudit;
+
+    public synchronized CostIntegrity.Audit takeStartupCostAudit() {
+        CostIntegrity.Audit audit=startupCostAudit;
+        startupCostAudit=null;
+        return audit;
+    }
+
     public synchronized void initDatabase() {
         try {
             // Load the SQLite JDBC driver
@@ -55,10 +63,20 @@ public class DatabaseManager {
                 stmt.execute("PRAGMA busy_timeout = 10000");
             }
 
+            boolean upgraded=false;
+            if (existing) {
+                try (Statement s=connection.createStatement(); ResultSet r=s.executeQuery(
+                        "SELECT 1 FROM schema_migrations WHERE version='014'")) {
+                    upgraded=!r.next();
+                } catch (SQLException missingMigrationHistory) {
+                    upgraded=true;
+                }
+            }
             // Create tables if they do not exist
             createTables();
             DatabaseIntegrity.validate(connection, false);
             DatabaseCurrency.bind(connection);
+            startupCostAudit=upgraded ? CostIntegrity.audit(connection) : null;
 
             System.out.println("Database initialized successfully");
 
@@ -143,7 +161,8 @@ public class DatabaseManager {
                 code TEXT UNIQUE NOT NULL,
                 name TEXT NOT NULL,
                 description TEXT,
-                price REAL NOT NULL,
+                sale_price_ex_vat REAL NOT NULL,
+                sale_price_inc_vat REAL NOT NULL,
                 quantity INTEGER DEFAULT 0,
                 reserved_quantity INTEGER DEFAULT 0,
                 category TEXT DEFAULT '',
@@ -176,8 +195,12 @@ public class DatabaseManager {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 customer_id INTEGER,
                 order_date DATETIME NOT NULL,
+                completed_date DATETIME,
                 status TEXT NOT NULL,
-                total REAL NOT NULL,
+                total_ex_vat REAL NOT NULL,
+                total_inc_vat REAL NOT NULL,
+                payment_status TEXT NOT NULL DEFAULT 'NOT_PAID',
+                paid_amount REAL NOT NULL DEFAULT 0.0,
                 FOREIGN KEY (customer_id) REFERENCES customers (id)
             )
         """;
@@ -189,7 +212,10 @@ public class DatabaseManager {
                 order_id INTEGER,
                 product_id INTEGER,
                 quantity INTEGER NOT NULL,
-                unit_price REAL NOT NULL,
+                sale_unit_price_ex_vat REAL NOT NULL,
+                sale_unit_price_inc_vat REAL NOT NULL,
+                vat_rate REAL NOT NULL,
+                cost_total REAL,
                 FOREIGN KEY (order_id) REFERENCES orders (id),
                 FOREIGN KEY (product_id) REFERENCES products (id)
             )
@@ -206,7 +232,14 @@ public class DatabaseManager {
                 vat REAL NOT NULL,
                 total REAL NOT NULL,
                 status TEXT NOT NULL,
+                payment_status TEXT NOT NULL DEFAULT 'NOT_PAID',
+                paid_amount REAL NOT NULL DEFAULT 0.0,
                 order_id INTEGER,
+                currency_code TEXT,
+                customer_snapshot TEXT,
+                company_snapshot TEXT,
+                logo_snapshot BLOB,
+                snapshot_version INTEGER,
                 FOREIGN KEY (order_id) REFERENCES orders (id),
                 FOREIGN KEY (customer_id) REFERENCES customers (id)
             )
@@ -219,9 +252,12 @@ public class DatabaseManager {
                 invoice_id INTEGER,
                 product_id INTEGER,
                 quantity INTEGER NOT NULL,
-                unit_price REAL NOT NULL,
+                sale_unit_price_ex_vat REAL NOT NULL,
+                sale_unit_price_inc_vat REAL NOT NULL,
                 vat_rate REAL NOT NULL,
                 total REAL NOT NULL,
+                product_code TEXT,
+                product_name TEXT,
                 FOREIGN KEY (invoice_id) REFERENCES invoices (id),
                 FOREIGN KEY (product_id) REFERENCES products (id)
             )
@@ -259,6 +295,7 @@ public class DatabaseManager {
                 number TEXT NOT NULL,
                 order_date DATETIME NOT NULL,
                 expected_delivery_date DATETIME,
+                received_date DATETIME,
                 status TEXT NOT NULL,
                 total REAL NOT NULL,
                 notes TEXT,
@@ -281,20 +318,53 @@ public class DatabaseManager {
             )
         """;
 
-        // Supplier Price Lists Table - FIXED: Changed to DATETIME
-        String createSupplierPriceListsTable = """
-            CREATE TABLE IF NOT EXISTS supplier_price_lists (
+        // Products supplied by each supplier. One supplier may be preferred per product.
+        String createProductSuppliersTable = """
+            CREATE TABLE IF NOT EXISTS product_suppliers (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                supplier_id INTEGER NOT NULL,
                 product_id INTEGER NOT NULL,
+                supplier_id INTEGER NOT NULL,
                 supplier_product_code TEXT,
-                price REAL NOT NULL,
-                minimum_quantity INTEGER DEFAULT 1,
-                validity_start_date DATETIME NOT NULL,
-                validity_end_date DATETIME,
+                purchase_price REAL NOT NULL DEFAULT 0.0,
+                is_preferred INTEGER NOT NULL DEFAULT 0 CHECK(is_preferred IN (0,1)),
                 notes TEXT,
-                FOREIGN KEY (supplier_id) REFERENCES suppliers (id),
-                FOREIGN KEY (product_id) REFERENCES products (id)
+                UNIQUE(product_id, supplier_id),
+                FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE CASCADE,
+                FOREIGN KEY (supplier_id) REFERENCES suppliers (id) ON DELETE CASCADE
+            )
+        """;
+
+        // FIFO inventory layers. Historical sales keep their exact consumed costs.
+        String createInventoryLotsTable = """
+            CREATE TABLE IF NOT EXISTS inventory_lots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                product_id INTEGER NOT NULL,
+                supplier_id INTEGER,
+                supplier_order_detail_id INTEGER,
+                warehouse_movement_id INTEGER,
+                received_date DATETIME NOT NULL,
+                initial_quantity INTEGER NOT NULL CHECK(initial_quantity >= 0),
+                remaining_quantity INTEGER NOT NULL CHECK(remaining_quantity >= 0 AND remaining_quantity <= initial_quantity),
+                unit_cost REAL NOT NULL CHECK(unit_cost >= 0),
+                source_type TEXT NOT NULL,
+                FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE CASCADE,
+                FOREIGN KEY(supplier_id) REFERENCES suppliers(id),
+                FOREIGN KEY(supplier_order_detail_id) REFERENCES supplier_order_details(id),
+                FOREIGN KEY(warehouse_movement_id) REFERENCES warehouse_movements(id)
+            )
+        """;
+
+        String createInventoryLotConsumptionsTable = """
+            CREATE TABLE IF NOT EXISTS inventory_lot_consumptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                lot_id INTEGER,
+                order_detail_id INTEGER,
+                warehouse_movement_id INTEGER,
+                quantity INTEGER NOT NULL CHECK(quantity > 0),
+                unit_cost REAL NOT NULL CHECK(unit_cost >= 0),
+                FOREIGN KEY(lot_id) REFERENCES inventory_lots(id),
+                FOREIGN KEY(order_detail_id) REFERENCES order_details(id) ON DELETE CASCADE,
+                FOREIGN KEY(warehouse_movement_id) REFERENCES warehouse_movements(id) ON DELETE CASCADE
             )
         """;
 
@@ -386,8 +456,10 @@ public class DatabaseManager {
             stmt.execute(createInvoiceNumberingTable);
             stmt.execute(createSupplierOrdersTable);
             stmt.execute(createSupplierOrderDetailsTable);
-            stmt.execute(createSupplierPriceListsTable);
             stmt.execute(createWarehouseMovementsTable);
+            stmt.execute(createProductSuppliersTable);
+            stmt.execute(createInventoryLotsTable);
+            stmt.execute(createInventoryLotConsumptionsTable);
             stmt.execute(createMinimumStockTable);
             stmt.execute(createWarehouseNotificationsTable);
             stmt.execute(createStockReservationsTable);
@@ -550,3 +622,4 @@ public class DatabaseManager {
         return String.format("%d/%04d", year, nextNumber);
     }
 }
+

@@ -10,10 +10,13 @@ public class WarehousePanel extends JPanel {
     private JTabbedPane tabbedPane;
     private JTable stockTable;
     private JTable movementsTable;
+    private JTable lotsTable;
     private JTable notificationsTable;
     private DefaultTableModel stockModel;
     private DefaultTableModel movementsModel;
+    private DefaultTableModel lotsModel;
     private DefaultTableModel notificationsModel;
+    private JCheckBox showExhaustedLots;
     private SimpleDateFormat dateFormat;
 
     public WarehousePanel() {
@@ -40,6 +43,10 @@ public class WarehousePanel extends JPanel {
         JPanel movementsPanel = createMovementsPanel();
         tabbedPane.addTab("Movements", movementsPanel);
 
+        // Tab FIFO lots
+        JPanel lotsPanel = createLotsPanel();
+        tabbedPane.addTab("Lots", lotsPanel);
+
         // Tab Notifications
         JPanel notificationsPanel = createNotificationsPanel();
         tabbedPane.addTab("Notifications", notificationsPanel);
@@ -59,6 +66,8 @@ public class WarehousePanel extends JPanel {
             }
         };
         stockTable = new JTable(stockModel);
+        TableStyleUtil.applyCompact(stockTable);
+        I18n.localize(stockTable);
 
         // Enable column sorting
         TableSorterUtil.enableSorting(stockTable);
@@ -112,6 +121,8 @@ public class WarehousePanel extends JPanel {
             }
         };
         movementsTable = new JTable(movementsModel);
+        TableStyleUtil.applyCompact(movementsTable);
+        I18n.localize(movementsTable);
 
         // Enable column sorting with date support (column 1 is "Date")
         TableSorterUtil.enableSorting(movementsTable, new int[]{1}, dateFormat);
@@ -124,6 +135,7 @@ public class WarehousePanel extends JPanel {
             new TableInteractionUtil.TableAction("New Movement", () -> showMovementDialog(null), false),
             new TableInteractionUtil.TableAction("Edit", this::editSelectedMovement),
             new TableInteractionUtil.TableAction("Delete", this::deleteSelectedMovement),
+            new TableInteractionUtil.TableAction("Reverse Movement", this::reverseSelectedMovement),
             null, // Separator
             new TableInteractionUtil.TableAction("Refresh", this::loadMovementsData, false)
         );
@@ -155,6 +167,9 @@ public class WarehousePanel extends JPanel {
         newButton.addActionListener(e -> showMovementDialog(null));
         editButton.addActionListener(e -> editSelectedMovement());
         deleteButton.addActionListener(e -> deleteSelectedMovement());
+        JButton reverseButton=new JButton(I18n.tr("Reverse Movement"));
+        reverseButton.addActionListener(e -> reverseSelectedMovement());
+        buttonPanel.add(reverseButton);
         refreshButton.addActionListener(e -> loadMovementsData());
 
         buttonPanel.add(newButton);
@@ -169,6 +184,54 @@ public class WarehousePanel extends JPanel {
         return panel;
     }
 
+    private JPanel createLotsPanel() {
+        JPanel panel=new JPanel(new BorderLayout());
+
+        lotsModel=new DefaultTableModel(new String[]{
+            "Date","Product","Supplier","Supplier Order","Initial Qty","Remaining Qty","Unit Cost","Source"
+        },0){@Override public boolean isCellEditable(int r,int c){return false;}};
+        lotsTable=new JTable(lotsModel);
+        TableStyleUtil.applyCompact(lotsTable);
+        I18n.localize(lotsTable);
+        TableSorterUtil.enableSorting(lotsTable,new int[]{0},dateFormat);
+
+        showExhaustedLots=new JCheckBox("Show exhausted lots",true);
+        showExhaustedLots.addActionListener(e->loadLotsData());
+        JButton refresh=new JButton("Refresh");refresh.addActionListener(e->loadLotsData());
+        JPanel controls=new JPanel(new FlowLayout(FlowLayout.LEFT));
+        controls.add(showExhaustedLots);controls.add(refresh);
+
+        JLabel help=new JLabel("?");
+        help.setFont(help.getFont().deriveFont(Font.BOLD));
+        help.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        help.setToolTipText(I18n.tr("Explain FIFO lots"));
+        help.addMouseListener(new java.awt.event.MouseAdapter(){
+            @Override public void mouseClicked(java.awt.event.MouseEvent e){ showLotsHelp(); }
+        });
+        JPanel top=new JPanel(new BorderLayout());
+        top.add(controls,BorderLayout.WEST);
+        JPanel helpPanel=new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        helpPanel.add(help);top.add(helpPanel,BorderLayout.EAST);
+
+        panel.add(top,BorderLayout.NORTH);
+        panel.add(new JScrollPane(lotsTable),BorderLayout.CENTER);
+        return panel;
+    }
+
+    private void showLotsHelp() {
+        String message=I18n.tr(
+                "Each stock entry creates a FIFO lot with its own quantity and unit cost.")
+            +"\n"+I18n.tr(
+                "When stock leaves the warehouse, WareStat consumes the oldest available lot first.")
+            +"\n"+I18n.tr(
+                "Initial Qty is the quantity received; Remaining Qty is what is still available in that lot.")
+            +"\n\n"+I18n.tr("Example:")
+            +"\n"+I18n.tr(
+                "5 units at cost 5.00, then 5 units at cost 10.00. If 7 units are sold, FIFO uses all 5 units from the first lot and 2 from the second: historical cost = 45.00. The second lot keeps 3 units at cost 10.00.");
+        Dialogs.showMessageDialog(this,message,I18n.tr("FIFO Lots Help"),
+            JOptionPane.INFORMATION_MESSAGE);
+    }
+
     private JPanel createNotificationsPanel() {
         JPanel panel = new JPanel(new BorderLayout());
 
@@ -181,6 +244,8 @@ public class WarehousePanel extends JPanel {
             }
         };
         notificationsTable = new JTable(notificationsModel);
+        TableStyleUtil.applyCompact(notificationsTable);
+        I18n.localize(notificationsTable);
         notificationsTable.removeColumn(notificationsTable.getColumnModel().getColumn(5));
 
         // Enable column sorting with date support (column 0 is "Date")
@@ -217,6 +282,7 @@ public class WarehousePanel extends JPanel {
     private void loadData() {
         loadStockData();
         loadMovementsData();
+        loadLotsData();
         checkLowStock();
         loadNotificationsData();
     }
@@ -230,7 +296,8 @@ public class WarehousePanel extends JPanel {
                         s.company_name as supplier_name
                 FROM products p
                 LEFT JOIN minimum_stock sm ON p.id = sm.product_id
-                LEFT JOIN suppliers s ON sm.preferred_supplier_id = s.id
+                LEFT JOIN product_suppliers ps ON ps.product_id=p.id AND ps.is_preferred=1
+                LEFT JOIN suppliers s ON ps.supplier_id = s.id
                 ORDER BY p.name
             """;
 
@@ -279,6 +346,47 @@ public class WarehousePanel extends JPanel {
         }
     }
 
+    private void loadLotsData() {
+        if(lotsModel==null)return;
+        lotsModel.setRowCount(0);
+        String query="""
+            SELECT l.received_date,p.code,p.name,s.company_name,o.number,
+                   l.initial_quantity,l.remaining_quantity,l.unit_cost,l.source_type
+            FROM inventory_lots l
+            JOIN products p ON p.id=l.product_id
+            LEFT JOIN suppliers s ON s.id=l.supplier_id
+            LEFT JOIN supplier_order_details d ON d.id=l.supplier_order_detail_id
+            LEFT JOIN supplier_orders o ON o.id=d.order_id
+            WHERE (?=1 OR l.remaining_quantity>0)
+            ORDER BY l.received_date DESC,l.id DESC
+            """;
+        try{
+            Connection conn=DatabaseManager.getInstance().getConnection();
+            try(PreparedStatement p=conn.prepareStatement(query)){
+                p.setInt(1,showExhaustedLots!=null && showExhaustedLots.isSelected()?1:0);
+                try(ResultSet r=p.executeQuery()){
+                    while(r.next()){
+                        Date d=DateUtils.parseDate(r,"received_date");
+                        Vector<Object> row=new Vector<>();
+                        row.add(d==null?"":DateUtils.formatDate(d,dateFormat));
+                        row.add(r.getString("code")+" - "+r.getString("name"));
+                        row.add(r.getString("company_name")==null?"":r.getString("company_name"));
+                        row.add(r.getString("number")==null?"":r.getString("number"));
+                        row.add(r.getInt("initial_quantity"));
+                        row.add(r.getInt("remaining_quantity"));
+                        row.add(r.getDouble("unit_cost")==0 && "MIGRATION".equals(r.getString("source_type"))
+                            ? I18n.tr("Historical cost unavailable") : Numbers.unitText(r.getDouble("unit_cost")));
+                        row.add(InventoryLotManager.sourceDisplayName(r.getString("source_type")));
+                        lotsModel.addRow(row);
+                    }
+                }
+            }
+        }catch(SQLException e){
+            Dialogs.showMessageDialog(this,"Error loading inventory lots: "+e.getMessage(),
+                "Error",JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
     private void loadMovementsData() {
         movementsModel.setRowCount(0);
         try {
@@ -307,17 +415,17 @@ public class WarehousePanel extends JPanel {
                     }
 
                     row.add(rs.getString("product_name"));
-                    row.add(rs.getString("type"));
+                    row.add(StockManager.displayWarehouseText(rs.getString("type")));
                     row.add(rs.getInt("quantity"));
-                    row.add(rs.getString("reason"));
+                    row.add(StockManager.displayWarehouseText(rs.getString("reason")));
 
                     String document = rs.getString("document_type");
                     if (document != null && !document.isEmpty()) {
-                        document += " " + rs.getString("document_number");
+                        document = StockManager.displayWarehouseText(document) + " " + rs.getString("document_number");
                     }
                     row.add(document);
 
-                    row.add(rs.getString("notes"));
+                    row.add(StockManager.displayWarehouseText(rs.getString("notes")));
                     movementsModel.addRow(row);
                 }
             }
@@ -354,8 +462,8 @@ public class WarehousePanel extends JPanel {
                     }
 
                     row.add(rs.getString("product_name"));
-                    row.add(rs.getString("type"));
-                    row.add(rs.getString("message"));
+                    row.add(StockManager.displayWarehouseText(rs.getString("type")));
+                    row.add(StockManager.displayWarehouseText(rs.getString("message")));
                     row.add(rs.getString("status"));
                     row.add(rs.getInt("id"));
                     notificationsModel.addRow(row);
@@ -475,17 +583,17 @@ public class WarehousePanel extends JPanel {
                         }
 
                         row.add(rs.getString("product_name"));
-                        row.add(rs.getString("type"));
+                        row.add(StockManager.displayWarehouseText(rs.getString("type")));
                         row.add(rs.getInt("quantity"));
-                        row.add(rs.getString("reason"));
+                        row.add(StockManager.displayWarehouseText(rs.getString("reason")));
 
                         String document = rs.getString("document_type");
                         if (document != null && !document.isEmpty()) {
-                            document += " " + rs.getString("document_number");
+                            document = StockManager.displayWarehouseText(document) + " " + rs.getString("document_number");
                         }
                         row.add(document);
 
-                        row.add(rs.getString("notes"));
+                        row.add(StockManager.displayWarehouseText(rs.getString("notes")));
                         movementsModel.addRow(row);
                     }
                 }
@@ -597,11 +705,12 @@ public class WarehousePanel extends JPanel {
         Connection conn = DatabaseManager.getInstance().getConnection();
         String query = """
             SELECT p.id, p.name, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity, sm.reorder_quantity,
-                    sm.lead_time_days, sm.preferred_supplier_id,
+                    sm.lead_time_days, ps.supplier_id AS preferred_supplier_id,
                     s.company_name as supplier_name, sm.notes
             FROM products p
             LEFT JOIN minimum_stock sm ON p.id = sm.product_id
-            LEFT JOIN suppliers s ON sm.preferred_supplier_id = s.id
+            LEFT JOIN product_suppliers ps ON ps.product_id=p.id AND ps.is_preferred=1
+            LEFT JOIN suppliers s ON ps.supplier_id = s.id
             WHERE p.code = ?
         """;
 
@@ -628,6 +737,23 @@ public class WarehousePanel extends JPanel {
         );
     }
 
+    private void reverseSelectedMovement() {
+        int selected=movementsTable.getSelectedRow();
+        if (selected<0) return;
+        int id=((Number)movementsModel.getValueAt(movementsTable.convertRowIndexToModel(selected),0)).intValue();
+        if (Dialogs.showConfirmDialog(this, I18n.tr(
+                "Reverse this outward movement? The original remains in history, quantities return to their original FIFO lots and later sales are not changed."),
+                I18n.tr("Reverse Movement"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE)!=JOptionPane.YES_OPTION) return;
+        try {
+            InventoryLotManager.reverseOutwardMovement(DatabaseManager.getInstance().getConnection(),id);
+            loadData();
+            Dialogs.showMessageDialog(this,I18n.tr("Movement reversed successfully."),
+                I18n.tr("Success"),JOptionPane.INFORMATION_MESSAGE);
+        } catch (SQLException | RuntimeException e) {
+            Dialogs.showMessageDialog(this,I18n.tr(e.getMessage()),I18n.tr("Error"),JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
     private void editSelectedMovement() {
         int selectedRow = movementsTable.getSelectedRow();
         if (selectedRow != -1) {
@@ -649,6 +775,9 @@ public class WarehousePanel extends JPanel {
                     ResultSet rs = pstmt.executeQuery();
 
                     if (rs.next()) {
+                        StockManager.requireManualMovement(conn,movementId);
+                        if ("OUTWARD".equals(rs.getString("type"))) throw new SQLException(
+                            "Posted outward movements cannot be edited or deleted. Use Reverse Movement.");
                         WarehouseMovement movement = new WarehouseMovement(
                             rs.getInt("id"),
                             rs.getInt("product_id"),
@@ -668,7 +797,7 @@ public class WarehousePanel extends JPanel {
             } catch (SQLException e) {
                 e.printStackTrace();
                 Dialogs.showMessageDialog(this,
-                    "Error loading movement: " + e.getMessage(),
+                    I18n.tr("Error loading movement") + ": " + I18n.tr(e.getMessage()),
                     "Error", JOptionPane.ERROR_MESSAGE);
             }
         }
@@ -717,15 +846,10 @@ public class WarehousePanel extends JPanel {
                             }
                         }
 
-                        // Reverse the stock movement
+                        // Reverse the exact FIFO effect before deleting the manual movement.
                         if (productId > 0) {
-                            String updateStockQuery = "UPDATE products SET quantity = quantity + ? WHERE id = ?";
-                            try (PreparedStatement pstmt = conn.prepareStatement(updateStockQuery)) {
-                                int quantityDelta = "INWARD".equals(movementType) ? -movementQuantity : movementQuantity;
-                                pstmt.setInt(1, quantityDelta);
-                                pstmt.setInt(2, productId);
-                                pstmt.executeUpdate();
-                            }
+                            InventoryLotManager.reverseManualMovement(
+                                conn,movementId,productId,movementType,movementQuantity);
                         }
 
                         // Delete the movement
@@ -752,7 +876,7 @@ public class WarehousePanel extends JPanel {
                 } catch (SQLException e) {
                     e.printStackTrace();
                     Dialogs.showMessageDialog(this,
-                        "Error deleting movement: " + e.getMessage(),
+                        I18n.tr("Error deleting movement") + ": " + I18n.tr(e.getMessage()),
                         "Error", JOptionPane.ERROR_MESSAGE);
                 }
             }
@@ -760,3 +884,4 @@ public class WarehousePanel extends JPanel {
     }
     public void refreshData() { loadData(); }
 }
+

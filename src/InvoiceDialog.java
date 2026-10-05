@@ -19,6 +19,9 @@ public class InvoiceDialog extends JDialog {
     private JButton selectCustomerButton;
     private Customer selectedCustomer;
     private JComboBox<String> statusCombo;
+    private JComboBox<String> paymentStatusCombo;
+    private JLabel paidAmountLabel;
+    private JTextField paidAmountField;
     private JTable itemsTable;
     private DefaultTableModel itemsTableModel;
     private JLabel taxableAmountLabel;
@@ -35,6 +38,9 @@ public class InvoiceDialog extends JDialog {
     private boolean historicalForeignCurrencyLocked;
     private boolean linkedOrderLocked;
     private JCheckBox createCompletedOrderCheckBox;
+    private boolean paymentSelectionChanged;
+    private boolean paymentLoaded;
+    private double loadedPaidAmount;
 
     // Constructor for JFrame parent
     public InvoiceDialog(JFrame parent, Invoice invoice) {
@@ -82,6 +88,12 @@ public class InvoiceDialog extends JDialog {
 
     static boolean isFinalizedStatus(String status) {
         return status!=null && !"Draft".equals(status);
+    }
+
+    static boolean canRestoreCanceledLinkedInvoice(
+            String currentInvoiceStatus, String newInvoiceStatus, String linkedOrderStatus) {
+        return !("Canceled".equals(currentInvoiceStatus) && "Issued".equals(newInvoiceStatus))
+            || "Completed".equals(linkedOrderStatus);
     }
 
     private boolean hasLinkedOrder(int invoiceId) {
@@ -162,7 +174,7 @@ public class InvoiceDialog extends JDialog {
 
         // Customer Selection
         gbc.gridx = 0; gbc.gridy = 1;
-        invoicePanel.add(new JLabel("* Customer:"), gbc);
+        invoicePanel.add(new JLabel("Customer *:"), gbc);
 
         gbc.gridx = 1; gbc.gridwidth = 2;
         selectCustomerButton = new JButton("Click to select customer...");
@@ -177,18 +189,40 @@ public class InvoiceDialog extends JDialog {
         newCustomerButton.addActionListener(e -> createNewCustomer());
         invoicePanel.add(newCustomerButton, gbc);
 
-        // Status
+        // Document status
         gbc.gridx = 0; gbc.gridy = 2; gbc.gridwidth = 1;
         invoicePanel.add(new JLabel("Status:"), gbc);
 
         gbc.gridx = 1;
-        statusCombo = new JComboBox<>(new String[]{"Draft", "Issued", "Paid", "Canceled"});
+        statusCombo = new JComboBox<>(new String[]{"Draft", "Issued", "Canceled"});
         statusCombo.putClientProperty("i18n.values", true);
         invoicePanel.add(statusCombo, gbc);
 
+        // Payment is separate from the document lifecycle.
+        gbc.gridx = 0; gbc.gridy = 3; gbc.gridwidth = 1;
+        invoicePanel.add(new JLabel("Payment Status:"), gbc);
+
+        gbc.gridx = 1;
+        paymentStatusCombo = new JComboBox<>(new String[]{"Not Paid", "Partially Paid", "Paid"});
+        paymentStatusCombo.putClientProperty("i18n.values", true);
+        paymentStatusCombo.addActionListener(e -> {
+            paymentSelectionChanged = true;
+            updatePaymentAmountField();
+        });
+        invoicePanel.add(paymentStatusCombo, gbc);
+
+        gbc.gridx = 2;
+        paidAmountLabel = new JLabel("Paid Amount:");
+        invoicePanel.add(paidAmountLabel, gbc);
+
+        gbc.gridx = 3;
+        paidAmountField = new JTextField("0.00");
+        paidAmountField.setEnabled(false);
+        invoicePanel.add(paidAmountField, gbc);
+
         if (invoice == null) {
             gbc.gridx = 0;
-            gbc.gridy = 3;
+            gbc.gridy = 4;
             gbc.gridwidth = 4;
 
             JPanel stockOptionPanel = new JPanel();
@@ -201,6 +235,7 @@ public class InvoiceDialog extends JDialog {
             createCompletedOrderCheckBox.setToolTipText(I18n.tr(
                 "Creates a completed customer order with the same invoice products and updates stock."));
             createCompletedOrderCheckBox.setAlignmentX(Component.LEFT_ALIGNMENT);
+            createCompletedOrderCheckBox.addActionListener(e -> updatePaymentAmountField());
 
             JLabel stockWarning = new JLabel(I18n.tr(
                 "If this option is not selected, the invoice will not change warehouse quantities."));
@@ -216,10 +251,11 @@ public class InvoiceDialog extends JDialog {
         }
 
         // Products table
-        String symbol = SettingsPanel.getCurrencySymbol(currencyCode());
-        String[] columns = {"Code", "Product", "Quantity", "Unit Price " + symbol, "VAT Rate %", "Total " + symbol, "Product ID"};
+        String[] columns = {"Code", "Product", "Quantity *", "Unit Price incl. VAT", "VAT Rate %", "Total incl. VAT", "Product ID"};
         itemsTableModel = new InvoiceTableModel(columns, 0);
         itemsTable = new JTable(itemsTableModel);
+        TableStyleUtil.setCurrencyCode(itemsTable, currencyCode());
+        TableStyleUtil.applyCompact(itemsTable);
         itemsTable.removeColumn(itemsTable.getColumnModel().getColumn(6));
 
         // Configure table
@@ -293,9 +329,13 @@ public class InvoiceDialog extends JDialog {
         bottomPanel.add(totalsPanel, BorderLayout.EAST);
         centerPanel.add(bottomPanel, BorderLayout.SOUTH);
 
+        JPanel footer = new JPanel(new BorderLayout());
+        footer.add(Dialogs.requiredLegendPanel(), BorderLayout.WEST);
+        footer.add(buttonPanel, BorderLayout.EAST);
+
         mainPanel.add(invoicePanel, BorderLayout.NORTH);
         mainPanel.add(centerPanel, BorderLayout.CENTER);
-        mainPanel.add(buttonPanel, BorderLayout.SOUTH);
+        mainPanel.add(footer, BorderLayout.SOUTH);
 
         add(mainPanel);
     }
@@ -405,7 +445,7 @@ public class InvoiceDialog extends JDialog {
             }
 
             selectCustomerButton.setText(buttonText);
-            selectCustomerButton.setToolTipText("Customer: " + buttonText);
+            selectCustomerButton.setToolTipText(I18n.tr("Customer") + ": " + buttonText);
         }
     }
 
@@ -454,9 +494,9 @@ public class InvoiceDialog extends JDialog {
             row.add(product.getCode());
             row.add(product.getName());
             row.add(quantity);
-            row.add(product.getPrice());
+            row.add(product.getSalePriceIncVat());
             row.add(vatRate);
-            row.add(Numbers.moneyText(Numbers.lineTotal(quantity, product.getPrice())));
+            row.add(Numbers.moneyText(SalePrice.lineIncVat(quantity, product.getSalePriceIncVat())));
             row.add(product.getId());
             itemsTableModel.addRow(row);
 
@@ -536,7 +576,7 @@ public class InvoiceDialog extends JDialog {
                         rs.getString("code"),
                         rs.getString("name"),
                         rs.getString("description"),
-                        rs.getDouble("price"),
+                        rs.getDouble("sale_price_inc_vat"),
                         rs.getInt("quantity")
                     );
                     productsCache.put(product.getId(), product);
@@ -576,14 +616,15 @@ public class InvoiceDialog extends JDialog {
             row.add(item.getProductCode());
             row.add(item.getProductName());
             row.add(item.getQuantity());
-            row.add(item.getUnitPrice());
+            row.add(item.getUnitPriceIncVat());
             row.add(item.getVatRate());
-            row.add(Numbers.moneyText(item.getTotal()));
+            row.add(Numbers.moneyText(item.getTotalIncVat()));
             row.add(item.getProductId());
             itemsTableModel.addRow(row);
         }
 
         updateTotals();
+        loadPaymentData();
         if (contentLocked()) {
             dateField.setEnabled(false);
             selectCustomerButton.setEnabled(false);
@@ -591,7 +632,7 @@ public class InvoiceDialog extends JDialog {
 
             if (historicalForeignCurrencyLocked) {
                 statusCombo.setModel(new DefaultComboBoxModel<>(
-                    new String[]{"Issued", "Paid", "Canceled"}));
+                    new String[]{"Issued", "Canceled"}));
                 statusCombo.putClientProperty("i18n.values", true);
                 statusCombo.setSelectedItem(invoice.getStatus());
             }
@@ -599,12 +640,12 @@ public class InvoiceDialog extends JDialog {
             String notice;
             if (linkedOrderLocked) {
                 notice = I18n.tr(
-                    "Invoice linked to a customer order: only the status can be changed.");
+                    "Invoice linked to a customer order: document content is locked and payment is managed from the order.");
             } else if (!currencyCode().equals(SettingsPanel.getCurrencyCode())) {
                 notice = I18n.tr(
-                    "Historical invoice in a different currency: only the status can be changed.");
+                    "Historical invoice in a different currency: only status and payment can be changed.");
             } else {
-                notice = I18n.tr("Finalized invoice: only the status can be changed.");
+                notice = I18n.tr("Finalized invoice: only status and payment can be changed.");
             }
             itemsTable.setToolTipText(notice);
             dateField.setToolTipText(notice);
@@ -619,23 +660,119 @@ public class InvoiceDialog extends JDialog {
         String title;
         if (linkedOrderLocked) {
             message = I18n.tr(
-                "This invoice is linked to a customer order. Products, quantities, customer and date cannot be changed.");
+                "This invoice is linked to a customer order. Products, quantities, customer and date cannot be changed. Payment is managed from the order.");
             title = I18n.tr("Linked Invoice");
         } else if (!currencyCode().equals(SettingsPanel.getCurrencyCode())) {
             message = I18n.tr(
-                "This historical invoice uses {OLD}. The current operating currency is {NEW}. Only its status can be changed.")
+                "This historical invoice uses {OLD}. The current operating currency is {NEW}. Only status and payment can be changed.")
                 .replace("{OLD}", currencyCode())
                 .replace("{NEW}", SettingsPanel.getCurrencyCode());
             title = I18n.tr("Historical Invoice");
         } else {
             message = I18n.tr(
-                "Issued, Paid and Canceled invoices are historical documents. Only their status can be changed.");
+                "Issued and Canceled invoices are historical documents. Only status and payment can be changed.");
             title = I18n.tr("Historical Invoice");
         }
 
         Dialogs.showMessageDialog(
             this, message, title, JOptionPane.INFORMATION_MESSAGE);
         return true;
+    }
+
+    private String paymentStatusCode() {
+        String selected = paymentStatusCombo == null
+            ? "Not Paid" : String.valueOf(paymentStatusCombo.getSelectedItem());
+        if ("Paid".equals(selected)) return "PAID";
+        if ("Partially Paid".equals(selected)) return "PARTIALLY_PAID";
+        return "NOT_PAID";
+    }
+
+    private double paymentTargetTotal() {
+        // Payment refers to the customer's actual amount due. For an invoice this is
+        // the gross document total, including VAT, even when a linked order stores a
+        // net commercial total.
+        return currentTotal;
+    }
+
+    private double paymentAmountForSave(double targetTotal) {
+        String status = paymentStatusCode();
+        if (paymentLoaded && !paymentSelectionChanged &&
+                Numbers.money(Numbers.decimal(paidAmountField.getText())) ==
+                    Numbers.money(java.math.BigDecimal.valueOf(loadedPaidAmount)))
+            return loadedPaidAmount;
+        if ("NOT_PAID".equals(status)) return 0.0;
+        if ("PAID".equals(status)) return Numbers.money(java.math.BigDecimal.valueOf(targetTotal));
+
+        double amount = Numbers.money(Numbers.decimal(paidAmountField.getText()));
+        if (amount <= 0 || amount >= targetTotal) {
+            throw new IllegalArgumentException(I18n.tr(
+                "Partial paid amount must be greater than zero and less than the total."));
+        }
+        return amount;
+    }
+
+    private void updatePaymentAmountField() {
+        if (paymentStatusCombo == null || paidAmountField == null) return;
+        String selected = String.valueOf(paymentStatusCombo.getSelectedItem());
+        boolean linked = invoice != null && linkedOrderLocked;
+        paymentStatusCombo.setEnabled(!linked);
+        paidAmountLabel.setText("Partially Paid".equals(selected)
+            ? I18n.tr("Paid Amount *:") : I18n.tr("Paid Amount:"));
+
+        if (linked) {
+            paidAmountField.setEnabled(false);
+            return;
+        }
+        if ("Partially Paid".equals(selected)) {
+            paidAmountField.setEnabled(true);
+        } else {
+            paidAmountField.setEnabled(false);
+            paidAmountField.setText("Paid".equals(selected)
+                ? Numbers.moneyText(paymentLoaded && !paymentSelectionChanged
+                    ? loadedPaidAmount : paymentTargetTotal()) : "0.00");
+        }
+    }
+
+    private void loadPaymentData() {
+        if (invoice == null) {
+            paymentStatusCombo.setSelectedItem("Not Paid");
+            paidAmountField.setText("0.00");
+            updatePaymentAmountField();
+            return;
+        }
+
+        try (PreparedStatement p = DatabaseManager.getInstance().getConnection().prepareStatement("""
+                SELECT i.order_id,
+                       CASE WHEN i.order_id IS NOT NULL THEN o.payment_status ELSE i.payment_status END AS payment_status,
+                       CASE WHEN i.order_id IS NOT NULL THEN o.paid_amount ELSE i.paid_amount END AS paid_amount
+                FROM invoices i
+                LEFT JOIN orders o ON o.id=i.order_id
+                WHERE i.id=?
+                """)) {
+            p.setInt(1, invoice.getId());
+            try (ResultSet r = p.executeQuery()) {
+                if (!r.next()) throw new SQLException("Invoice no longer exists");
+                Object orderValue = r.getObject("order_id");
+                linkedOrderLocked = orderValue != null;
+                String status = r.getString("payment_status");
+                if ("PAID".equals(status)) paymentStatusCombo.setSelectedItem("Paid");
+                else if ("PARTIALLY_PAID".equals(status)) paymentStatusCombo.setSelectedItem("Partially Paid");
+                else paymentStatusCombo.setSelectedItem("Not Paid");
+                loadedPaidAmount = Numbers.nonNegative(r.getObject("paid_amount"));
+                paymentLoaded = true;
+                paymentSelectionChanged = false;
+                paidAmountField.setText(Numbers.moneyText(loadedPaidAmount));
+                updatePaymentAmountField();
+                if (linkedOrderLocked) {
+                    String tooltip = I18n.tr(
+                        "Payment is managed by the linked customer order and is read-only here.");
+                    paymentStatusCombo.setToolTipText(tooltip);
+                    paidAmountField.setToolTipText(tooltip);
+                }
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Unable to load invoice payment: " + e.getMessage(), e);
+        }
     }
 
     private void saveLockedStatusOnly() {
@@ -647,6 +784,7 @@ public class InvoiceDialog extends JDialog {
             try {
                 String currentStatus;
                 Integer currentOrderId;
+                String currentOrderStatus = null;
                 String storedCurrency;
 
                 try (PreparedStatement read = conn.prepareStatement(
@@ -665,6 +803,29 @@ public class InvoiceDialog extends JDialog {
                 if (!java.util.Objects.equals(storedCurrency, currencyCode()))
                     throw new SQLException("Invoice currency changed unexpectedly");
 
+                if (currentOrderId != null) {
+                    try (PreparedStatement order = conn.prepareStatement(
+                            "SELECT status FROM orders WHERE id=?")) {
+                        order.setInt(1, currentOrderId);
+                        try (ResultSet r = order.executeQuery()) {
+                            if (!r.next())
+                                throw new SQLException("Linked customer order no longer exists");
+                            currentOrderStatus = r.getString("status");
+                        }
+                    }
+                }
+
+                if (!canRestoreCanceledLinkedInvoice(
+                        currentStatus, newStatus, currentOrderStatus)) {
+                    Dialogs.showMessageDialog(
+                        this,
+                        I18n.tr("A canceled invoice linked to a reversed sale cannot be issued again."),
+                        I18n.tr("Historical Invoice"),
+                        JOptionPane.WARNING_MESSAGE);
+                    conn.rollback();
+                    return;
+                }
+
                 if (!"Draft".equals(currentStatus) && "Draft".equals(newStatus)) {
                     Dialogs.showMessageDialog(
                         this,
@@ -679,12 +840,29 @@ public class InvoiceDialog extends JDialog {
                 if ("Draft".equals(currentStatus) && currentOrderId == null)
                     throw new SQLException("Invoice is no longer linked to an order");
 
-                try (PreparedStatement p = conn.prepareStatement(
-                        "UPDATE invoices SET status=? WHERE id=?")) {
-                    p.setString(1, newStatus);
-                    p.setInt(2, invoice.getId());
-                    if (p.executeUpdate() != 1)
-                        throw new SQLException("Invoice changed or no longer exists");
+                if (currentOrderId != null) {
+                    try (PreparedStatement p = conn.prepareStatement(
+                            "UPDATE invoices SET status=? WHERE id=?")) {
+                        p.setString(1, newStatus);
+                        p.setInt(2, invoice.getId());
+                        if (p.executeUpdate() != 1)
+                            throw new SQLException("Invoice changed or no longer exists");
+                    }
+                } else {
+                    String paymentStatus = paymentStatusCode();
+                    double paidAmount = paymentAmountForSave(currentTotal);
+                    paymentStatus = PaymentAmounts.status(paidAmount, currentTotal);
+                    try (PreparedStatement p = conn.prepareStatement(
+                            "UPDATE invoices SET status=?,payment_status=?,paid_amount=? WHERE id=?")) {
+                        p.setString(1, newStatus);
+                        p.setString(2, paymentStatus);
+                        p.setDouble(3, paidAmount);
+                        p.setInt(4, invoice.getId());
+                        if (p.executeUpdate() != 1)
+                            throw new SQLException("Invoice changed or no longer exists");
+                    }
+                    invoice.setPaymentStatus(paymentStatus);
+                    invoice.setPaidAmount(paidAmount);
                 }
 
                 InvoiceSnapshots.capture(conn, invoice.getId(), false);
@@ -718,26 +896,26 @@ public class InvoiceDialog extends JDialog {
         try {
             double taxableAmount = 0;
             double totalVat = 0;
+            double grossTotal = 0;
 
             for (int i = 0; i < itemsTableModel.getRowCount(); i++) {
                 try {
-                    Object quantityObj = itemsTableModel.getValueAt(i, 2);
-                    Object priceObj = itemsTableModel.getValueAt(i, 3);
-                    Object vatRateObj = itemsTableModel.getValueAt(i, 4);
+                    int quantity = parseInteger(itemsTableModel.getValueAt(i, 2));
+                    double unitPriceIncVat = parseDouble(itemsTableModel.getValueAt(i, 3));
+                    double vatRate = Numbers.vat(itemsTableModel.getValueAt(i, 4));
 
-                    int quantity = parseInteger(quantityObj);
-                    double price = parseDouble(priceObj);
-                    double vatRate = parseDouble(vatRateObj);
+                    double lineGross = SalePrice.lineIncVat(quantity, unitPriceIncVat);
+                    double lineNet = SalePrice.lineExVat(quantity, unitPriceIncVat, vatRate);
+                    double lineVat = Numbers.money(java.math.BigDecimal.valueOf(lineGross)
+                        .subtract(java.math.BigDecimal.valueOf(lineNet)));
 
-                    double subtotal = Numbers.lineTotal(quantity, price);
-                    double vat = Numbers.tax(subtotal, vatRate);
+                    taxableAmount = Numbers.add(taxableAmount, lineNet);
+                    totalVat = Numbers.add(totalVat, lineVat);
+                    grossTotal = Numbers.add(grossTotal, lineGross);
 
-                    taxableAmount = Numbers.add(taxableAmount, subtotal);
-                    totalVat = Numbers.add(totalVat, vat);
-
-                    String currentTotal = (String) itemsTableModel.getValueAt(i, 5);
-                    String newTotal = Numbers.moneyText(subtotal);
-                    if (!newTotal.equals(currentTotal)) {
+                    String currentLineTotal = String.valueOf(itemsTableModel.getValueAt(i, 5));
+                    String newTotal = Numbers.moneyText(lineGross);
+                    if (!newTotal.equals(currentLineTotal)) {
                         itemsTableModel.setValueAt(newTotal, i, 5);
                     }
 
@@ -746,15 +924,16 @@ public class InvoiceDialog extends JDialog {
                 }
             }
 
-            double total = Numbers.add(taxableAmount, totalVat);
-
             currentTaxableAmount = taxableAmount;
             currentVat = totalVat;
-            currentTotal = total;
+            currentTotal = grossTotal;
 
             taxableAmountLabel.setText("Taxable Amount: " + SettingsPanel.formatCurrency(taxableAmount,currencyCode()));
             vatLabel.setText("VAT: " + SettingsPanel.formatCurrency(totalVat,currencyCode()));
-            totalLabel.setText("TOTAL: " + SettingsPanel.formatCurrency(total,currencyCode()));
+            totalLabel.setText("TOTAL: " + SettingsPanel.formatCurrency(grossTotal,currencyCode()));
+            if (paymentStatusCombo != null && "Paid".equals(paymentStatusCombo.getSelectedItem())) {
+                updatePaymentAmountField();
+            }
 
         } catch(IllegalArgumentException e) {
             taxableAmountLabel.setText("Invalid invoice row");vatLabel.setText("");totalLabel.setText("Correct quantity, price and VAT before saving");
@@ -768,14 +947,22 @@ public class InvoiceDialog extends JDialog {
 
     private void validateRows() {
         Numbers.commitEdits(itemsTable);
-        double taxable = 0, tax = 0;
+        double taxable = 0, tax = 0, gross = 0;
         for (int i=0; i<itemsTableModel.getRowCount(); i++) {
-            double line = Numbers.lineTotal(Numbers.positiveQuantity(itemsTableModel.getValueAt(i,2)),
-                Numbers.nonNegative(itemsTableModel.getValueAt(i,3)));
-            taxable = Numbers.add(taxable, line);
-            tax = Numbers.add(tax, Numbers.tax(line, Numbers.vat(itemsTableModel.getValueAt(i,4))));
+            int quantity = Numbers.positiveQuantity(itemsTableModel.getValueAt(i,2));
+            double unitPriceIncVat = Numbers.nonNegative(itemsTableModel.getValueAt(i,3));
+            double vatRate = Numbers.vat(itemsTableModel.getValueAt(i,4));
+            double lineGross = SalePrice.lineIncVat(quantity, unitPriceIncVat);
+            double lineNet = SalePrice.lineExVat(quantity, unitPriceIncVat, vatRate);
+            double lineVat = Numbers.money(java.math.BigDecimal.valueOf(lineGross)
+                .subtract(java.math.BigDecimal.valueOf(lineNet)));
+            taxable = Numbers.add(taxable, lineNet);
+            tax = Numbers.add(tax, lineVat);
+            gross = Numbers.add(gross, lineGross);
         }
-        currentTaxableAmount = taxable; currentVat = tax; currentTotal = Numbers.add(taxable, tax);
+        currentTaxableAmount = taxable;
+        currentVat = tax;
+        currentTotal = gross;
         updateTotals();
     }
 
@@ -803,21 +990,21 @@ public class InvoiceDialog extends JDialog {
     }
 
     private int createCompletedOrder(Connection conn, Date invoiceDate,
-            List<StockManager.StockItem> stockItems, String invoiceStatus) throws SQLException {
-        String paymentStatus = "Paid".equals(invoiceStatus) ? "PAID" : "NOT_PAID";
-        double paidAmount = "Paid".equals(invoiceStatus) ? currentTaxableAmount : 0.0;
-
+            List<StockManager.StockItem> stockItems, String paymentStatus,
+            double paidAmount) throws SQLException {
         int orderId;
         try (PreparedStatement p = conn.prepareStatement("""
                 INSERT INTO orders
-                    (customer_id, order_date, status, total, payment_status, paid_amount)
-                VALUES (?, ?, 'Completed', ?, ?, ?)
+                    (customer_id, order_date, completed_date, status, total_ex_vat, total_inc_vat, payment_status, paid_amount)
+                    VALUES (?, ?, ?, 'Completed', ?, ?, ?, ?)
                 """, Statement.RETURN_GENERATED_KEYS)) {
             p.setInt(1, selectedCustomer.getId());
             p.setTimestamp(2, DateUtils.toSqlTimestamp(invoiceDate));
-            p.setDouble(3, currentTaxableAmount);
-            p.setString(4, paymentStatus);
-            p.setDouble(5, paidAmount);
+            p.setTimestamp(3, DateUtils.toSqlTimestamp(invoiceDate));
+            p.setDouble(4, currentTaxableAmount);
+            p.setDouble(5, currentTotal);
+            p.setString(6, paymentStatus);
+            p.setDouble(7, paidAmount);
             p.executeUpdate();
             try (ResultSet keys = p.getGeneratedKeys()) {
                 if (!keys.next()) throw new SQLException("Failed to get order ID");
@@ -826,14 +1013,21 @@ public class InvoiceDialog extends JDialog {
         }
 
         try (PreparedStatement p = conn.prepareStatement("""
-                INSERT INTO order_details(order_id, product_id, quantity, unit_price)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO order_details
+                    (order_id, product_id, quantity, sale_unit_price_ex_vat,
+                     sale_unit_price_inc_vat, vat_rate)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """)) {
             for (int i = 0; i < itemsTableModel.getRowCount(); i++) {
+                int quantity = parseInteger(itemsTableModel.getValueAt(i, 2));
+                double incVat = parseDouble(itemsTableModel.getValueAt(i, 3));
+                double vatRate = Numbers.vat(itemsTableModel.getValueAt(i, 4));
                 p.setInt(1, orderId);
                 p.setInt(2, productIdForRow(conn, i));
-                p.setInt(3, parseInteger(itemsTableModel.getValueAt(i, 2)));
-                p.setDouble(4, parseDouble(itemsTableModel.getValueAt(i, 3)));
+                p.setInt(3, quantity);
+                p.setDouble(4, SalePrice.unitExVatForLine(quantity, incVat, vatRate));
+                p.setDouble(5, incVat);
+                p.setDouble(6, vatRate);
                 p.addBatch();
             }
             p.executeBatch();
@@ -887,6 +1081,16 @@ public class InvoiceDialog extends JDialog {
             boolean createCompletedOrder = invoice == null
                 && createCompletedOrderCheckBox != null
                 && createCompletedOrderCheckBox.isSelected();
+            String paymentStatus = paymentStatusCode();
+            double paidAmount;
+            try {
+                paidAmount = paymentAmountForSave(currentTotal);
+                paymentStatus = PaymentAmounts.status(paidAmount, currentTotal);
+            } catch (IllegalArgumentException e) {
+                Dialogs.showMessageDialog(this, e.getMessage(),
+                    I18n.tr("Invalid Payment"), JOptionPane.WARNING_MESSAGE);
+                return;
+            }
 
             Connection conn = DatabaseManager.getInstance().getConnection();
             DatabaseManager.beginTransaction(conn);
@@ -897,6 +1101,16 @@ public class InvoiceDialog extends JDialog {
                     Integer sourceOrderId = null;
                     if (createCompletedOrder) {
                         List<StockManager.StockItem> stockItems = invoiceStockItems(conn);
+                        java.util.List<Integer> productIds = new java.util.ArrayList<>();
+                        for (StockManager.StockItem item : stockItems)
+                            productIds.add(item.getProductId());
+                        String missingCost = CostIntegrity.missingPurchaseCostMessage(conn, productIds);
+                        if (missingCost != null) {
+                            conn.rollback();
+                            Dialogs.showMessageDialog(this, missingCost,
+                                I18n.tr("Purchase Cost Required"), JOptionPane.WARNING_MESSAGE);
+                            return;
+                        }
                         Map<String, StockManager.StockAvailability> insufficient =
                             StockManager.checkStockAvailability(conn, stockItems, null, "ORDER");
 
@@ -909,23 +1123,19 @@ public class InvoiceDialog extends JDialog {
                                     .append(entry.getValue().getFormattedMessage()).append("\n");
                             }
                             message.append("\n")
-                                .append(I18n.tr("Do you want to proceed anyway?"))
-                                .append("\n")
-                                .append(I18n.tr("This will result in negative stock."));
+                                .append(I18n.tr(
+                                    "The completed customer order cannot be created because stock cannot go below zero. Reduce the quantities or save the invoice without creating the order."));
 
-                            int choice = Dialogs.showConfirmDialog(this,
+                            Dialogs.showMessageDialog(this,
                                 message.toString(),
                                 I18n.tr("Insufficient Stock"),
-                                JOptionPane.YES_NO_OPTION,
                                 JOptionPane.WARNING_MESSAGE);
-                            if (choice != JOptionPane.YES_OPTION) {
-                                conn.rollback();
-                                return;
-                            }
+                            conn.rollback();
+                            return;
                         }
 
                         sourceOrderId = createCompletedOrder(
-                            conn, invoiceDate, stockItems, newStatus);
+                            conn, invoiceDate, stockItems, paymentStatus, paidAmount);
                     }
                     Calendar invoiceCalendar = Calendar.getInstance();
                     invoiceCalendar.setTime(invoiceDate);
@@ -934,8 +1144,9 @@ public class InvoiceDialog extends JDialog {
                     // New invoice
                     String invoiceQuery = """
                         INSERT INTO invoices
-                            (number, date, customer_id, taxable_amount, vat, total, status, order_id)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            (number, date, customer_id, taxable_amount, vat, total, status,
+                             payment_status, paid_amount, order_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """;
                     try (PreparedStatement pstmt = conn.prepareStatement(invoiceQuery, Statement.RETURN_GENERATED_KEYS)) {
                         pstmt.setString(1, number);
@@ -945,8 +1156,11 @@ public class InvoiceDialog extends JDialog {
                         pstmt.setDouble(5, currentVat);
                         pstmt.setDouble(6, currentTotal);
                         pstmt.setString(7, newStatus);
-                        if (sourceOrderId != null) pstmt.setInt(8, sourceOrderId);
-                        else pstmt.setNull(8, Types.INTEGER);
+                        // A linked invoice always reads payment from its order.
+                        pstmt.setString(8, sourceOrderId == null ? paymentStatus : "NOT_PAID");
+                        pstmt.setDouble(9, sourceOrderId == null ? paidAmount : 0.0);
+                        if (sourceOrderId != null) pstmt.setInt(10, sourceOrderId);
+                        else pstmt.setNull(10, Types.INTEGER);
                         pstmt.executeUpdate();
 
                         try (ResultSet rs = pstmt.getGeneratedKeys()) {
@@ -974,7 +1188,8 @@ public class InvoiceDialog extends JDialog {
 
                     String invoiceQuery = """
                         UPDATE invoices
-                        SET date = ?, customer_id = ?, taxable_amount = ?, vat = ?, total = ?, status = ?
+                        SET date = ?, customer_id = ?, taxable_amount = ?, vat = ?, total = ?,
+                            status = ?, payment_status = ?, paid_amount = ?
                         WHERE id = ?
                     """;
                     try (PreparedStatement pstmt = conn.prepareStatement(invoiceQuery)) {
@@ -984,7 +1199,9 @@ public class InvoiceDialog extends JDialog {
                         pstmt.setDouble(4, currentVat);
                         pstmt.setDouble(5, currentTotal);
                         pstmt.setString(6, newStatus);
-                        pstmt.setInt(7, invoiceId);
+                        pstmt.setString(7, paymentStatus);
+                        pstmt.setDouble(8, paidAmount);
+                        pstmt.setInt(9, invoiceId);
                         pstmt.executeUpdate();
                     }
 
@@ -1021,26 +1238,29 @@ public class InvoiceDialog extends JDialog {
     private void insertInvoiceDetails(Connection conn, int invoiceId) throws SQLException {
         String detailQuery = """
             INSERT INTO invoice_details
-            (invoice_id, product_id, quantity, unit_price, vat_rate, total, product_code, product_name)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (invoice_id, product_id, quantity, sale_unit_price_ex_vat,
+             sale_unit_price_inc_vat, vat_rate, total, product_code, product_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """;
         try (PreparedStatement pstmt = conn.prepareStatement(detailQuery)) {
             for (int i = 0; i < itemsTableModel.getRowCount(); i++) {
                 int productId = productIdForRow(conn, i);
 
                 int quantity = parseInteger(itemsTableModel.getValueAt(i, 2));
-                double unitPrice = parseDouble(itemsTableModel.getValueAt(i, 3));
+                double unitPriceIncVat = parseDouble(itemsTableModel.getValueAt(i, 3));
                 double vatRate = Numbers.vat(itemsTableModel.getValueAt(i, 4));
-                double productTotal = Numbers.lineTotal(quantity, unitPrice);
+                double unitPriceExVat = SalePrice.unitExVatForLine(quantity, unitPriceIncVat, vatRate);
+                double productTotalExVat = SalePrice.lineExVat(quantity, unitPriceIncVat, vatRate);
 
                 pstmt.setInt(1, invoiceId);
                 pstmt.setInt(2, productId);
                 pstmt.setInt(3, quantity);
-                pstmt.setDouble(4, unitPrice);
-                pstmt.setDouble(5, vatRate);
-                pstmt.setDouble(6, productTotal);
-                pstmt.setString(7,String.valueOf(itemsTableModel.getValueAt(i,0)));
-                pstmt.setString(8,String.valueOf(itemsTableModel.getValueAt(i,1)));
+                pstmt.setDouble(4, unitPriceExVat);
+                pstmt.setDouble(5, unitPriceIncVat);
+                pstmt.setDouble(6, vatRate);
+                pstmt.setDouble(7, productTotalExVat);
+                pstmt.setString(8,String.valueOf(itemsTableModel.getValueAt(i,0)));
+                pstmt.setString(9,String.valueOf(itemsTableModel.getValueAt(i,1)));
                 pstmt.executeUpdate();
             }
         }
@@ -1050,3 +1270,4 @@ public class InvoiceDialog extends JDialog {
         return invoiceSaved;
     }
 }
+
