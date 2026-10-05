@@ -41,6 +41,9 @@ public final class GraalProbe {
         }
 
         System.out.println("Graal native probe: libraries passed");
+        // AWT can keep a native event thread alive even after the probe has completed.
+        // Exit only after every library/resource assertion above has passed.
+        System.exit(0);
     }
 
     private static void runLibraries(Path workDir) throws Exception {
