@@ -467,7 +467,6 @@
             <arg value="--add-modules"/>
             <arg value="java.base,java.desktop,java.sql,java.logging,java.naming,java.management,java.net.http,jdk.crypto.ec,jdk.unsupported"/>
             <arg value="--strip-debug"/>
-            <arg value="--strip-native-commands"/>
             <arg value="--no-header-files"/>
             <arg value="--no-man-pages"/>
             <arg value="--compress=2"/>
@@ -978,3 +977,4 @@
         </java>
     </target>
 </project>
+

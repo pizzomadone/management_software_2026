@@ -72,6 +72,7 @@ jobs:
           fi
 
       - name: Upload internal retrace metadata
+        if: github.event.repository.private
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: internal-proguard-metadata
@@ -147,43 +148,17 @@ jobs:
       - name: Build hardened installer
         run: ant clean package-installer-release
 
-      - name: Smoke-test protected platform runtime
-        shell: bash
-        run: |
-          set -euo pipefail
-          version="$(sed -n 's/^app.version=//p' build.properties | head -n1 | tr -d '\r')"
-          runtime_jar="build/release/WareStat-${version}-runtime.jar"
-          test -f "$runtime_jar"
-          cat > build/RuntimeSmoke.java <<'JAVA'
-          import java.sql.Connection;
-          import java.sql.DriverManager;
-          import java.util.Locale;
-          import java.util.ResourceBundle;
-          import org.apache.pdfbox.pdmodel.PDDocument;
+      - name: Verify packaged runtime and payload
+        run: python packaging/verify_release.py
 
-          public final class RuntimeSmoke {
-              public static void main(String[] args) throws Exception {
-                  Class.forName("org.sqlite.JDBC");
-                  try (Connection connection = DriverManager.getConnection("jdbc:sqlite::memory:")) {
-                      if (!connection.isValid(2)) throw new IllegalStateException("SQLite connection is invalid");
-                  }
-                  try (PDDocument document = new PDDocument()) {
-                      if (document.getNumberOfPages() != 0) throw new IllegalStateException("Unexpected PDF state");
-                  }
-                  ResourceBundle.getBundle("i18n.messages", Locale.ITALIAN);
-                  Class.forName("ca.weblite.webview.swing.WebViewComponent");
-                  System.out.println("Protected runtime smoke test passed");
-              }
-          }
-          JAVA
-          mkdir -p build/smoke-classes
-          if [[ "$RUNNER_OS" == "Windows" ]]; then
-            cp_sep=';'
-          else
-            cp_sep=':'
-          fi
-          javac -cp "$runtime_jar${cp_sep}lib/webview-1.0.10.jar" -d build/smoke-classes build/RuntimeSmoke.java
-          java -cp "build/smoke-classes${cp_sep}$runtime_jar${cp_sep}lib/webview-1.0.10.jar" RuntimeSmoke
+      - name: Preserve exact platform retrace metadata
+        if: github.event.repository.private
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: internal-proguard-${{ matrix.suffix }}
+          path: build/private/
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Name and checksum Windows installer
         if: runner.os == 'Windows'
@@ -241,3 +216,4 @@ jobs:
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
+
