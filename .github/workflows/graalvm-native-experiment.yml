@@ -49,9 +49,10 @@ jobs:
           curl --fail --location --retry 4 --output "$RUNNER_TEMP/nik.zip" "$url"
           echo "${NIK_SHA256}  $RUNNER_TEMP/nik.zip" | shasum -a 256 -c -
           ditto -x -k "$RUNNER_TEMP/nik.zip" "$RUNNER_TEMP/nik"
-          native_image="$(find "$RUNNER_TEMP/nik" -type f -path '*/bin/native-image' -print -quit)"
-          test -n "$native_image"
-          nik_home="$(cd "$(dirname "$native_image")/.." && pwd)"
+          java_bin="$(find "$RUNNER_TEMP/nik" -type f -path '*/Contents/Home/bin/java' -print -quit)"
+          test -n "$java_bin"
+          nik_home="$(cd "$(dirname "$java_bin")/.." && pwd)"
+          test -x "$nik_home/bin/native-image"
           echo "NIK_HOME=$nik_home" >> "$GITHUB_ENV"
           echo "JAVA_HOME=$nik_home" >> "$GITHUB_ENV"
           echo "$nik_home/bin" >> "$GITHUB_PATH"
