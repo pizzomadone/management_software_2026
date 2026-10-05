@@ -10,9 +10,20 @@ permissions:
   contents: read
 
 jobs:
-  native-image-macos-arm64:
-    runs-on: macos-15
-    timeout-minutes: 45
+  native-image-macos:
+    name: GraalVM ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            label: macOS Apple Silicon
+            suffix: macos-arm64
+          - runner: macos-15-intel
+            label: macOS Intel
+            suffix: macos-x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
@@ -31,39 +42,242 @@ jobs:
         shell: bash
         run: command -v ant >/dev/null 2>&1 || brew install ant
 
-      - name: Compile release classes
-        run: ant clean compile-release
+      - name: Compile release classes and external probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          ant clean compile-release
+          mkdir -p build/graal-probe-classes
+          javac -encoding UTF-8 -cp "build/release/classes:lib/*" -d build/graal-probe-classes packaging/GraalProbe.java
 
-      - name: Build native image
+      - name: Seed first-run state
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_data="$HOME/Library/Application Support/WareStat"
+          rm -rf "$app_data"
+          mkdir -p "$app_data"
+          printf 'language=it\n' > "$app_data/app_settings.properties"
+          printf 'accepted by CI GraalVM probe\n' > "$app_data/eula_accepted.txt"
+
+      - name: Collect reachability metadata from real WareStat startup
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf native-config
+          mkdir -p native-config "$RUNNER_TEMP/graal-trace"
+          java -agentlib:native-image-agent=config-output-dir="$PWD/native-config" -cp "build/graal-probe-classes:build/release/classes:lib/*" GraalProbe trace "$RUNNER_TEMP/graal-trace"
+          find native-config -maxdepth 2 -type f -print -exec wc -c {} \;
+
+      - name: Inspect WebView native resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar tf lib/webview-1.0.10.jar | grep -E -i 'native|dylib|dll|framework|webview|META-INF' | head -200 || true
+
+      - name: Build final and probe native images
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p native-out
-          native-image \
-            --no-fallback \
-            -J-Xmx6g \
-            -Djava.awt.headless=false \
-            -Dorg.sqlite.lib.exportPath="$PWD/native-out" \
-            -H:+ReportExceptionStackTraces \
-            -H:Name=WareStat-native \
-            -H:Path="$PWD/native-out" \
-            -H:IncludeResources='^(i18n/.*|icons/.*|fonts/.*|META-INF/services/.*|LICENSE-THIRD-PARTY.txt|NOTICE.txt)$' \
-            -cp "build/release/classes:lib/*" \
-            MainWindow
+          config="$PWD/native-config"
+          out="$PWD/native-out"
+          (
+            cd native-out
+            native-image --no-fallback -J-Xmx6g -Djava.awt.headless=false -Dorg.sqlite.lib.exportPath="$out" -H:ConfigurationFileDirectories="$config" -H:+ReportExceptionStackTraces -H:IncludeResources='^(i18n/.*|icons/.*|fonts/.*|META-INF/services/.*|LICENSE-THIRD-PARTY.txt|NOTICE.txt)$' -o WareStat-native -cp "../build/release/classes:../lib/*" MainWindow
+            native-image --no-fallback -J-Xmx6g -Djava.awt.headless=false -Dorg.sqlite.lib.exportPath="$out" -H:ConfigurationFileDirectories="$config" -H:+ReportExceptionStackTraces -H:IncludeResources='^(i18n/.*|icons/.*|fonts/.*|META-INF/services/.*|LICENSE-THIRD-PARTY.txt|NOTICE.txt)$' -o WareStat-native-probe -cp "../build/graal-probe-classes:../build/release/classes:../lib/*" GraalProbe
+          )
+
+      - name: Run native SQLite i18n PDFBox and ImageIO probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/graal-native-probe"
+          mkdir -p "$RUNNER_TEMP/graal-native-probe"
+          ./native-out/WareStat-native-probe libraries "$RUNNER_TEMP/graal-native-probe"
+          test -s "$RUNNER_TEMP/graal-native-probe/smoke.pdf"
+
+      - name: Run actual native WareStat startup smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_data="$HOME/Library/Application Support/WareStat"
+          rm -f "$app_data/data.db"
+          : > native-out/startup.log
+          set +e
+          ./native-out/WareStat-native > native-out/startup.log 2>&1 &
+          pid=$!
+          set -e
+          for second in $(seq 1 12); do
+            sleep 1
+            if ! kill -0 "$pid" 2>/dev/null; then
+              set +e
+              wait "$pid"
+              code=$?
+              set -e
+              cat native-out/startup.log
+              echo "Native WareStat exited during startup with code $code" >&2
+              exit 1
+            fi
+          done
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          cat native-out/startup.log
+          if grep -E 'UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError' native-out/startup.log; then
+            echo "Fatal Native Image runtime problem detected" >&2
+            exit 1
+          fi
+          echo "Actual WareStat native executable remained healthy through startup"
 
       - name: Inspect native output
         shell: bash
         run: |
           set -euo pipefail
           file native-out/WareStat-native
-          du -h native-out/WareStat-native
+          du -h native-out/WareStat-native native-out/WareStat-native-probe
+          otool -L native-out/WareStat-native || true
           find native-out -maxdepth 1 -type f -print
 
-      - name: Upload experimental binary
+      - name: Upload experimental native artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: WareStat-graalvm-macos-arm64-experiment
-          path: native-out/
+          name: WareStat-graalvm-${{ matrix.suffix }}-experiment
+          path: |
+            native-out/
+            native-config/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 9
+
+  native-image-windows:
+    name: GraalVM Windows x64
+    runs-on: windows-2022
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Set up GraalVM Community 21
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: graalvm-community
+          java-version: '21'
+
+      - name: Ensure Ant is available
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ant -ErrorAction SilentlyContinue)) {
+            choco install ant -y --no-progress
+            $antBin = Get-ChildItem 'C:/ProgramData/chocolatey/lib/ant/tools/apache-ant-*/bin' -Directory | Select-Object -First 1
+            if ($antBin) {
+              $antBin.FullName | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+              $env:PATH = "$($antBin.FullName);$env:PATH"
+            }
+          }
+
+      - name: Compile release classes and external probe
+        shell: pwsh
+        run: |
+          ant clean compile-release
+          if ($LASTEXITCODE -ne 0) { throw "Ant release compilation failed" }
+          New-Item -ItemType Directory -Force build/graal-probe-classes | Out-Null
+          javac -encoding UTF-8 -cp "build/release/classes;lib/*" -d build/graal-probe-classes packaging/GraalProbe.java
+          if ($LASTEXITCODE -ne 0) { throw "Graal probe compilation failed" }
+
+      - name: Seed first-run state
+        shell: pwsh
+        run: |
+          $appData = Join-Path $HOME 'AppData/Local/WareStat'
+          Remove-Item $appData -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force $appData | Out-Null
+          Set-Content -Path (Join-Path $appData 'app_settings.properties') -Value 'language=it' -Encoding utf8
+          Set-Content -Path (Join-Path $appData 'eula_accepted.txt') -Value 'accepted by CI GraalVM probe' -Encoding utf8
+
+      - name: Collect reachability metadata from real WareStat startup
+        shell: pwsh
+        run: |
+          Remove-Item native-config -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force native-config | Out-Null
+          $trace = Join-Path $env:RUNNER_TEMP 'graal-trace'
+          Remove-Item $trace -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force $trace | Out-Null
+          java "-agentlib:native-image-agent=config-output-dir=$PWD/native-config" -cp "build/graal-probe-classes;build/release/classes;lib/*" GraalProbe trace $trace
+          if ($LASTEXITCODE -ne 0) { throw "Native Image tracing probe failed" }
+          Get-ChildItem native-config -Recurse -File | Select-Object FullName,Length | Format-Table -AutoSize
+
+      - name: Inspect WebView native resources
+        shell: pwsh
+        run: |
+          jar tf lib/webview-1.0.10.jar | Select-String -Pattern 'native|dylib|dll|framework|webview|META-INF' | Select-Object -First 200
+
+      - name: Build final and probe native images
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force native-out | Out-Null
+          $config = (Resolve-Path native-config).Path
+          $out = (Resolve-Path native-out).Path
+          Push-Location native-out
+          try {
+            $mainArgs = @('--no-fallback','-J-Xmx6g','-Djava.awt.headless=false',"-Dorg.sqlite.lib.exportPath=$out","-H:ConfigurationFileDirectories=$config",'-H:+ReportExceptionStackTraces','-H:IncludeResources=^(i18n/.*|icons/.*|fonts/.*|META-INF/services/.*|LICENSE-THIRD-PARTY.txt|NOTICE.txt)$','-o','WareStat-native','-cp','../build/release/classes;../lib/*','MainWindow')
+            & native-image @mainArgs
+            if ($LASTEXITCODE -ne 0) { throw "WareStat native-image build failed" }
+            $probeArgs = @('--no-fallback','-J-Xmx6g','-Djava.awt.headless=false',"-Dorg.sqlite.lib.exportPath=$out","-H:ConfigurationFileDirectories=$config",'-H:+ReportExceptionStackTraces','-H:IncludeResources=^(i18n/.*|icons/.*|fonts/.*|META-INF/services/.*|LICENSE-THIRD-PARTY.txt|NOTICE.txt)$','-o','WareStat-native-probe','-cp','../build/graal-probe-classes;../build/release/classes;../lib/*','GraalProbe')
+            & native-image @probeArgs
+            if ($LASTEXITCODE -ne 0) { throw "Graal native probe build failed" }
+          } finally {
+            Pop-Location
+          }
+
+      - name: Run native SQLite i18n PDFBox and ImageIO probe
+        shell: pwsh
+        run: |
+          $probeDir = Join-Path $env:RUNNER_TEMP 'graal-native-probe'
+          Remove-Item $probeDir -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force $probeDir | Out-Null
+          & ./native-out/WareStat-native-probe.exe libraries $probeDir
+          if ($LASTEXITCODE -ne 0) { throw "Native runtime probe failed" }
+          $pdf = Join-Path $probeDir 'smoke.pdf'
+          if (-not (Test-Path $pdf) -or (Get-Item $pdf).Length -lt 1000) { throw "Native PDF smoke output is missing or empty" }
+
+      - name: Run actual native WareStat startup smoke
+        shell: pwsh
+        run: |
+          $appData = Join-Path $HOME 'AppData/Local/WareStat'
+          Remove-Item (Join-Path $appData 'data.db') -Force -ErrorAction SilentlyContinue
+          $stdout = Join-Path $PWD 'native-out/startup.stdout.log'
+          $stderr = Join-Path $PWD 'native-out/startup.stderr.log'
+          $process = Start-Process -FilePath (Join-Path $PWD 'native-out/WareStat-native.exe') -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+          Start-Sleep -Seconds 12
+          if ($process.HasExited) {
+            Get-Content $stdout -ErrorAction SilentlyContinue
+            Get-Content $stderr -ErrorAction SilentlyContinue
+            throw "Native WareStat exited during startup with code $($process.ExitCode)"
+          }
+          Stop-Process -Id $process.Id -Force
+          Start-Sleep -Milliseconds 500
+          $logs = ''
+          if (Test-Path $stdout) { $logs += Get-Content $stdout -Raw }
+          if (Test-Path $stderr) { $logs += Get-Content $stderr -Raw }
+          Write-Host $logs
+          if ($logs -match 'UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError') { throw "Fatal Native Image runtime problem detected" }
+          Write-Host 'Actual WareStat native executable remained healthy through startup'
+
+      - name: Inspect native output
+        shell: pwsh
+        run: |
+          Get-ChildItem native-out -File | Select-Object Name,Length | Sort-Object Name | Format-Table -AutoSize
+
+      - name: Upload experimental native artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: WareStat-graalvm-windows-x64-experiment
+          path: |
+            native-out/
+            native-config/
           if-no-files-found: error
           retention-days: 7
           compression-level: 9
