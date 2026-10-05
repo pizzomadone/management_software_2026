@@ -20,7 +20,7 @@ JNIEXPORT jboolean JNICALL JAWT_GetAWT(JNIEnv* env, JAWT* awt) {
         return JNI_FALSE;
     }
 
-    if (awt->version != (JAWT_VERSION_1_4 | JAWT_MACOSX_USE_CALAYER) &&
+    if (awt->version != (jint) (JAWT_VERSION_1_4 | JAWT_MACOSX_USE_CALAYER) &&
         awt->version != JAWT_VERSION_1_7 &&
         awt->version != JAWT_VERSION_9) {
         return JNI_FALSE;
