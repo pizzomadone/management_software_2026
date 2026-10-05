@@ -405,7 +405,7 @@
               message="The protected JAR does not contain the SQLite native binary expected for this platform."/>
 
         <delete file="${jar.platform.file}"/>
-        <zip destfile="${jar.platform.file}" basedir="${release.build.dir}/platform-jar"/>
+        <zip destfile="${jar.platform.file}" basedir="${release.build.dir}/platform-jar" level="9"/>
         <delete dir="${release.build.dir}/platform-jar"/>
 
         <echo message="Platform-specific runtime JAR created: ${jar.platform.file}"/>
@@ -465,6 +465,7 @@
             <arg value="--add-modules"/>
             <arg value="java.base,java.desktop,java.sql,java.logging,java.naming,java.management,java.net.http,jdk.crypto.ec,jdk.unsupported"/>
             <arg value="--strip-debug"/>
+            <arg value="--strip-native-commands"/>
             <arg value="--no-header-files"/>
             <arg value="--no-man-pages"/>
             <arg value="--compress=2"/>
@@ -694,7 +695,7 @@
         <!-- Clean up temporary input directory -->
         <delete dir="${build.dir}/jpackage-input-release"/>
 
-        <echo message="Native executable (obfuscated, optimized) created in: ${dist.dir}/${app.name}/"/>
+        <echo message="Native executable (protected, optimized) created in: ${dist.dir}/${app.name}/"/>
         <echo message="This build uses a custom JRE (~50MB instead of ~200MB)"/>
     </target>
 
