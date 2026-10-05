@@ -163,6 +163,26 @@ jobs:
           fi
           grep -F 'Graal native WebView probe: JavaScript evaluation passed' native-out/webview-probe.log
           echo "Native WebView attached and executed JavaScript"
+      - name: Verify real MainWindow embedded WebView
+        shell: bash
+        run: |
+          set -euo pipefail
+          fatal='IllegalStateException|\[webview-embed\] No JAWT_GetAWT|could not obtain a native window handle|Native webview_embed_create returned 0|UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError|Could not instantiate Shell Folder Manager'
+          : > native-out/mainwindow-probe.log
+          set +e
+          DEBUG_WEBVIEW_EMBED=1 ./native-out/WareStat-native-probe startup "$RUNNER_TEMP/graal-native-probe" > native-out/mainwindow-probe.log 2>&1
+          code=$?
+          set -e
+          cat native-out/mainwindow-probe.log
+          if grep -E "$fatal" native-out/mainwindow-probe.log; then
+            echo "Fatal MainWindow/WebView runtime problem detected" >&2
+            exit 1
+          fi
+          if [ "$code" -ne 0 ]; then
+            echo "Native MainWindow probe exited with code $code" >&2
+            exit "$code"
+          fi
+          grep -F 'Graal startup probe: MainWindow and embedded WebView passed' native-out/mainwindow-probe.log
       - name: Run actual native WareStat startup smoke
         shell: bash
         run: |
@@ -327,6 +347,22 @@ jobs:
           if ($code -ne 0) { throw "Native WebView probe exited with code $code" }
           if ($logs -notmatch 'Graal native WebView probe: JavaScript evaluation passed') { throw "Native WebView success marker missing" }
           Write-Host 'Native WebView attached and executed JavaScript'
+      - name: Verify real MainWindow embedded WebView
+        shell: pwsh
+        run: |
+          $probeDir = Join-Path $env:RUNNER_TEMP 'graal-native-probe'
+          $stdout = Join-Path $PWD 'native-out/mainwindow-probe.stdout.log'
+          $stderr = Join-Path $PWD 'native-out/mainwindow-probe.stderr.log'
+          & ./native-out/WareStat-native-probe.exe startup $probeDir 1> $stdout 2> $stderr
+          $code = $LASTEXITCODE
+          $logs = ''
+          if (Test-Path $stdout) { $logs += Get-Content $stdout -Raw }
+          if (Test-Path $stderr) { $logs += Get-Content $stderr -Raw }
+          Write-Host $logs
+          $fatal = 'IllegalStateException|\[webview-embed\] No JAWT_GetAWT|could not obtain a native window handle|Native webview_embed_create returned 0|UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError|Could not instantiate Shell Folder Manager'
+          if ($logs -match $fatal) { throw "Fatal MainWindow/WebView runtime problem detected" }
+          if ($code -ne 0) { throw "Native MainWindow probe exited with code $code" }
+          if ($logs -notmatch 'Graal startup probe: MainWindow and embedded WebView passed') { throw "MainWindow/WebView success marker missing" }
       - name: Run actual native WareStat startup smoke
         shell: pwsh
         run: |
