@@ -18,8 +18,10 @@ echo "AWT LWAWT static archive: ${awt_lwawt_static:-<none>}"
 echo "AWT base static archive: ${awt_static:-<none>}"
 
 native_link_args=()
+jawt_mode="none"
 
 if [[ -n "$jawt_static" ]]; then
+  jawt_mode="static"
   echo "Using standalone static JAWT archive"
   file "$jawt_static" || true
   nm -g "$jawt_static" 2>/dev/null | grep -E 'JAWT_GetAWT|JAWT_' || true
@@ -27,6 +29,7 @@ if [[ -n "$jawt_static" ]]; then
   native_link_args+=("-H:NativeLinkerOption=-Wl,-force_load,$jawt_static")
   native_link_args+=("-H:NativeLinkerOption=-Wl,-exported_symbol,_JAWT_GetAWT")
 elif [[ -n "$awt_lwawt_static" && -n "$awt_static" ]]; then
+  jawt_mode="bridge"
   echo "No standalone libjawt.a; building packaging-only JAWT bridge"
 
   required_symbols=(
@@ -70,6 +73,7 @@ elif [[ -n "$awt_lwawt_static" && -n "$awt_static" ]]; then
   native_link_args+=("-H:NativeLinkerOption=$awt_static")
   native_link_args+=("-H:NativeLinkerOption=-Wl,-exported_symbol,_JAWT_GetAWT")
 elif [[ -n "$jawt_dynamic" ]]; then
+  jawt_mode="dynamic"
   echo "No static JAWT route; bundling the NIK dynamic JAWT library"
   file "$jawt_dynamic" || true
   nm -g "$jawt_dynamic" 2>/dev/null | grep -E 'JAWT_GetAWT|JAWT_' || true
@@ -96,7 +100,8 @@ common_args+=("-H:IncludeResources=^(i18n/.*|icons/.*|fonts/.*|META-INF/services
   native-image "${common_args[@]}" -o WareStat-native-probe -cp "../build/graal-probe-classes:../build/release/classes:../lib/*" GraalProbe
 )
 
-if [[ -n "$jawt_dynamic" && -z "$jawt_static" && -z "$awt_lwawt_static" ]]; then
+echo "Selected JAWT mode: $jawt_mode"
+if [[ "$jawt_mode" == "dynamic" ]]; then
   cp "$jawt_dynamic" native-out/libjawt.dylib
 fi
 
