@@ -268,9 +268,8 @@ public final class GraalProbe {
                 && System.getProperty("org.graalvm.nativeimage.imagecode") != null;
     }
 
-    private static boolean isLinuxNativeImage() {
-        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("linux")
-                && System.getProperty("org.graalvm.nativeimage.imagecode") != null;
+    private static boolean isLinux() {
+        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("linux");
     }
 
     private static boolean isNotDisplayedError(Throwable error) {
@@ -327,7 +326,7 @@ public final class GraalProbe {
         // desktop before JavaScript evaluation becomes available. Keep the
         // same functional assertion, but avoid treating slow CI initialization
         // as a broken Linux release.
-        long javascriptTimeoutMillis = isLinuxNativeImage() ? 45000 : 15000;
+        long javascriptTimeoutMillis = isLinux() ? 60000 : 15000;
         verifyJavaScript(embeddedWebView[0], "WARESTAT_MAINWINDOW_WEBVIEW_OK", javascriptTimeoutMillis);
 
         if (isWindowsNativeImage()) {

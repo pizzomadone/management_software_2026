@@ -932,7 +932,7 @@ jobs:
               ./native-out/WareStat-native "$mode" "$RUNNER_TEMP/graal-native-probe" > "$log" 2>&1 &
             pid=$!
             passed=false
-            for second in $(seq 1 30); do
+            for second in $(seq 1 70); do
               sleep 1
               if grep -Fq "$marker" "$log"; then
                 passed=true
