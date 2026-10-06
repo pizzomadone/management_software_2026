@@ -432,10 +432,10 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $probeDir = Join-Path $env:RUNNER_TEMP 'graal-native-probe'
           $appData = Join-Path $HOME 'AppData/Local/WareStat'
-          $home = Join-Path $PWD 'native-out'
+          $nativeHome = Join-Path $PWD 'native-out'
           $binaries = @('WareStat-native.exe', 'WareStat-native-probe.exe')
           foreach ($binary in $binaries) {
-            $path = Join-Path $home $binary
+            $path = Join-Path $nativeHome $binary
             $info = Get-Item $path
             $hash = (Get-FileHash $path -Algorithm SHA256).Hash
             Write-Host "BINARY $binary size=$($info.Length) sha256=$hash"
@@ -444,12 +444,12 @@ jobs:
             foreach ($mode in @('no-args', 'startup-no-libs')) {
               Remove-Item (Join-Path $appData 'data.db') -Force -ErrorAction SilentlyContinue
               $id = "$($binary.Replace('.exe',''))-$mode"
-              $stdout = Join-Path $home "diagnostic-$id.stdout.log"
-              $stderr = Join-Path $home "diagnostic-$id.stderr.log"
+              $stdout = Join-Path $nativeHome "diagnostic-$id.stdout.log"
+              $stderr = Join-Path $nativeHome "diagnostic-$id.stderr.log"
               Remove-Item $stdout,$stderr -Force -ErrorAction SilentlyContinue
-              $args = @("-Djava.home=$home")
+              $args = @("-Djava.home=$nativeHome")
               if ($mode -eq 'startup-no-libs') { $args += @('startup-no-libs', $probeDir) }
-              $process = Start-Process -FilePath (Join-Path $home $binary) -ArgumentList $args -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+              $process = Start-Process -FilePath (Join-Path $nativeHome $binary) -ArgumentList $args -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
               $marker = $false
               $earlyExit = $false
               for ($i = 0; $i -lt 30; $i++) {
