@@ -758,3 +758,275 @@ jobs:
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
+
+
+  native-image-linux:
+    name: Linux x64 via Liberica NIK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Set up Liberica NIK Full for Java 21
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: liberica-nik
+          java-version: '21.0.12+1.2'
+          java-package: jdk+fx
+
+      - name: Install Linux build and runtime dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ant xvfb xauth gcc libc6-dev \
+            libgtk-3-0t64 libwebkit2gtk-4.1-0 \
+            libx11-6 libxext6 libxrender1 libxtst6 libxi6 libxrandr2 \
+            libasound2t64 fontconfig fonts-dejavu-core
+
+      - name: Compile release classes and external probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          ant clean compile-release
+          mkdir -p build/graal-probe-classes
+          javac -encoding UTF-8 -cp "build/release/classes:lib/*" -d build/graal-probe-classes packaging/GraalProbe.java
+
+      - name: Seed first-run state
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_data="$HOME/.warestat"
+          rm -rf "$app_data"
+          mkdir -p "$app_data"
+          printf 'language=it\n' > "$app_data/app_settings.properties"
+          printf 'accepted by CI GraalVM probe\n' > "$app_data/eula_accepted.txt"
+
+      - name: Collect reachability metadata from real WareStat startup
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf native-config "$RUNNER_TEMP/graal-trace"
+          mkdir -p native-config "$RUNNER_TEMP/graal-trace"
+          xvfb-run -a java -agentlib:native-image-agent=config-output-dir="$PWD/native-config" \
+            -cp "build/graal-probe-classes:build/release/classes:lib/*" \
+            GraalProbe trace "$RUNNER_TEMP/graal-trace"
+          find native-config -maxdepth 2 -type f -print -exec wc -c {} \;
+
+      - name: Inspect WebView native resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar tf lib/webview-1.0.10.jar | grep -E -i 'native|so|linux|webview|META-INF' | head -200 || true
+
+      - name: Build Linux Native Image
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf native-out
+          mkdir -p native-out
+          config="$(cd native-config && pwd)"
+          out="$(cd native-out && pwd)"
+          cd native-out
+          native-image \
+            --no-fallback \
+            -J-Xmx6g \
+            -Djava.awt.headless=false \
+            "-Dorg.sqlite.lib.exportPath=$out" \
+            "-H:ConfigurationFileDirectories=$config" \
+            -H:+ReportExceptionStackTraces \
+            '-H:IncludeResources=i18n/.*' \
+            '-H:IncludeResources=icons/.*' \
+            '-H:IncludeResources=fonts/.*' \
+            '-H:IncludeResources=META-INF/services/.*' \
+            '-H:IncludeResources=LICENSE-THIRD-PARTY.txt' \
+            '-H:IncludeResources=NOTICE.txt' \
+            -o WareStat-native \
+            -cp '../build/graal-probe-classes:../build/release/classes:../lib/*' \
+            GraalProbe
+          file WareStat-native
+          find . -maxdepth 1 -type f -print
+
+      - name: Run Linux native library probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/graal-native-probe"
+          mkdir -p "$RUNNER_TEMP/graal-native-probe"
+          xvfb-run -a env LD_LIBRARY_PATH="$PWD/native-out:${LD_LIBRARY_PATH:-}" \
+            ./native-out/WareStat-native libraries "$RUNNER_TEMP/graal-native-probe"
+          test -s "$RUNNER_TEMP/graal-native-probe/smoke.pdf"
+
+      - name: Run Linux WebView and MainWindow probes
+        shell: bash
+        run: |
+          set -euo pipefail
+          fatal='IllegalStateException|UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError|could not obtain a native window handle|Segfault detected|EXCEPTION_ACCESS_VIOLATION'
+
+          : > native-out/webview-probe.log
+          xvfb-run -a env LD_LIBRARY_PATH="$PWD/native-out:${LD_LIBRARY_PATH:-}" \
+            ./native-out/WareStat-native webview "$RUNNER_TEMP/graal-native-probe" > native-out/webview-probe.log 2>&1
+          cat native-out/webview-probe.log
+          if grep -E "$fatal" native-out/webview-probe.log; then
+            echo "Fatal Linux WebView runtime problem detected" >&2
+            exit 1
+          fi
+          grep -F 'Graal native WebView probe: JavaScript evaluation passed' native-out/webview-probe.log
+
+          : > native-out/mainwindow-probe.log
+          xvfb-run -a env LD_LIBRARY_PATH="$PWD/native-out:${LD_LIBRARY_PATH:-}" \
+            ./native-out/WareStat-native startup "$RUNNER_TEMP/graal-native-probe" > native-out/mainwindow-probe.log 2>&1
+          cat native-out/mainwindow-probe.log
+          if grep -E "$fatal" native-out/mainwindow-probe.log; then
+            echo "Fatal Linux MainWindow/WebView runtime problem detected" >&2
+            exit 1
+          fi
+          grep -F 'Graal startup probe: MainWindow and embedded WebView passed' native-out/mainwindow-probe.log
+
+      - name: Run actual Linux WareStat startup smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f "$HOME/.warestat/data.db"
+          smoke="$RUNNER_TEMP/warestat-linux-startup.log"
+          : > "$smoke"
+          xvfb-run -a env LD_LIBRARY_PATH="$PWD/native-out:${LD_LIBRARY_PATH:-}" \
+            ./native-out/WareStat-native > "$smoke" 2>&1 &
+          pid=$!
+          for second in $(seq 1 12); do
+            sleep 1
+            if ! kill -0 "$pid" 2>/dev/null; then
+              set +e
+              wait "$pid"
+              code=$?
+              set -e
+              cat "$smoke"
+              echo "Native Linux WareStat exited during startup with code $code" >&2
+              exit 1
+            fi
+          done
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          cat "$smoke"
+          if grep -E 'IllegalStateException|UnsatisfiedLinkError|NoClassDefFoundError|MissingRegistrationError|Segfault detected|EXCEPTION_ACCESS_VIOLATION' "$smoke"; then
+            echo "Fatal Native Image runtime problem detected" >&2
+            exit 1
+          fi
+
+      - name: Package Linux tarball and DEB
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^app.version=//p' build.properties | head -n1 | tr -d '\r')"
+          stage="dist/native/linux/WareStat"
+          installers="dist/installers"
+          debroot="dist/debroot"
+          rm -rf dist/native/linux "$debroot" "$installers"
+          mkdir -p "$stage" "$installers"
+
+          cp native-out/WareStat-native "$stage/"
+          find native-out -maxdepth 1 -type f -name '*.so' -exec cp {} "$stage/" \;
+          cp LICENSE-THIRD-PARTY.txt NOTICE.txt "$stage/"
+          cat > "$stage/warestat" <<'SH'
+          #!/bin/sh
+          set -eu
+          HERE="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+          export LD_LIBRARY_PATH="$HERE${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          exec "$HERE/WareStat-native" "-Dorg.sqlite.lib.exportPath=$HERE" "$@"
+          SH
+          chmod 755 "$stage/warestat" "$stage/WareStat-native"
+
+          tarball="$installers/WareStat-$version-linux-x64.tar.gz"
+          tar -C "dist/native/linux" -czf "$tarball" WareStat
+
+          mkdir -p "$debroot/DEBIAN" "$debroot/opt/warestat" \
+                   "$debroot/usr/bin" "$debroot/usr/share/applications" \
+                   "$debroot/usr/share/icons/hicolor/256x256/apps"
+          cp -a "$stage/." "$debroot/opt/warestat/"
+          ln -s /opt/warestat/warestat "$debroot/usr/bin/warestat"
+          cp resources/icons/logo.png "$debroot/usr/share/icons/hicolor/256x256/apps/warestat.png"
+
+          cat > "$debroot/usr/share/applications/warestat.desktop" <<EOF
+          [Desktop Entry]
+          Type=Application
+          Name=WareStat
+          Comment=Inventory and warehouse management
+          Exec=/usr/bin/warestat
+          Icon=warestat
+          Terminal=false
+          Categories=Office;
+          StartupNotify=true
+          EOF
+
+          cat > "$debroot/DEBIAN/control" <<EOF
+          Package: warestat
+          Version: $version
+          Section: office
+          Priority: optional
+          Architecture: amd64
+          Maintainer: WareStat <info@warestat.com>
+          Depends: libgtk-3-0t64, libwebkit2gtk-4.1-0, fontconfig
+          Homepage: https://www.warestat.com
+          Description: WareStat inventory and warehouse management
+           Native desktop inventory and warehouse management application.
+          EOF
+
+          deb="$installers/WareStat-$version-linux-x64.deb"
+          dpkg-deb --build --root-owner-group "$debroot" "$deb"
+
+          sha256sum "$tarball" > "$tarball.sha256"
+          sha256sum "$deb" > "$deb.sha256"
+          ls -lh "$tarball" "$deb"
+
+      - name: Install and smoke-test Linux DEB
+        shell: bash
+        run: |
+          set -euo pipefail
+          deb="$(find dist/installers -maxdepth 1 -name 'WareStat-*-linux-x64.deb' -print -quit)"
+          test -n "$deb"
+          sudo dpkg -i "$deb"
+          test -x /opt/warestat/WareStat-native
+          test -x /usr/bin/warestat
+
+          smoke="$RUNNER_TEMP/warestat-linux-installed.log"
+          : > "$smoke"
+          xvfb-run -a /usr/bin/warestat > "$smoke" 2>&1 &
+          pid=$!
+          for second in $(seq 1 12); do
+            sleep 1
+            if ! kill -0 "$pid" 2>/dev/null; then
+              set +e
+              wait "$pid"
+              code=$?
+              set -e
+              cat "$smoke"
+              echo "Installed Linux WareStat exited during startup with code $code" >&2
+              exit 1
+            fi
+          done
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          cat "$smoke"
+          if grep -E 'IllegalStateException|UnsatisfiedLinkError|NoClassDefFoundError|MissingRegistrationError|Segfault detected|EXCEPTION_ACCESS_VIOLATION' "$smoke"; then
+            echo "Fatal installed Linux runtime problem detected" >&2
+            exit 1
+          fi
+
+      - name: Upload Linux distributable packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: WareStat-linux-x64
+          path: |
+            dist/installers/WareStat-*-linux-x64.deb
+            dist/installers/WareStat-*-linux-x64.deb.sha256
+            dist/installers/WareStat-*-linux-x64.tar.gz
+            dist/installers/WareStat-*-linux-x64.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
