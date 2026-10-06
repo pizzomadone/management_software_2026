@@ -32,8 +32,8 @@ import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import ca.weblite.webview.swing.WebViewComponent;
 
 /**
- * External GraalVM probe. It is compiled only by the experimental workflow and
- * is never included in the normal WareStat JAR or installers.
+ * External GraalVM probe. It is compiled only by the Native Image release workflow
+ * and is never included in the customer-facing WareStat application packages.
  */
 public final class GraalProbe {
     private static final String WEBVIEW_OK = "WARESTAT_WEBVIEW_OK";
@@ -268,6 +268,11 @@ public final class GraalProbe {
                 && System.getProperty("org.graalvm.nativeimage.imagecode") != null;
     }
 
+    private static boolean isLinuxNativeImage() {
+        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("linux")
+                && System.getProperty("org.graalvm.nativeimage.imagecode") != null;
+    }
+
     private static boolean isNotDisplayedError(Throwable error) {
         for (Throwable current = error; current != null; current = current.getCause()) {
             String message = current.getMessage();
@@ -318,7 +323,12 @@ public final class GraalProbe {
             throw new IllegalStateException("MainWindow did not contain an embedded WebViewComponent");
         }
 
-        verifyJavaScript(embeddedWebView[0], "WARESTAT_MAINWINDOW_WEBVIEW_OK", 15000);
+        // WebKitGTK under Xvfb can need substantially longer than the real
+        // desktop before JavaScript evaluation becomes available. Keep the
+        // same functional assertion, but avoid treating slow CI initialization
+        // as a broken Linux release.
+        long javascriptTimeoutMillis = isLinuxNativeImage() ? 45000 : 15000;
+        verifyJavaScript(embeddedWebView[0], "WARESTAT_MAINWINDOW_WEBVIEW_OK", javascriptTimeoutMillis);
 
         if (isWindowsNativeImage()) {
             System.out.println("Graal startup probe: MainWindow and embedded WebView passed");
