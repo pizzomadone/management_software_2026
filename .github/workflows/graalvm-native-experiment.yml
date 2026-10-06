@@ -814,9 +814,46 @@ jobs:
           set -euo pipefail
           rm -rf native-config "$RUNNER_TEMP/graal-trace"
           mkdir -p native-config "$RUNNER_TEMP/graal-trace"
-          xvfb-run -a java -agentlib:native-image-agent=config-output-dir="$PWD/native-config" \
+          trace_log="$RUNNER_TEMP/graal-linux-trace.log"
+          : > "$trace_log"
+
+          # WebKitGTK can abort while tearing down after the probe already
+          # succeeded. Ask the agent to flush metadata periodically, observe
+          # the real MainWindow/WebView success marker, then stop the trace.
+          xvfb-run -a java \
+            -agentlib:native-image-agent=config-output-dir="$PWD/native-config",config-write-period-secs=2,config-write-initial-delay-secs=1 \
             -cp "build/graal-probe-classes:build/release/classes:lib/*" \
-            GraalProbe trace "$RUNNER_TEMP/graal-trace"
+            GraalProbe trace "$RUNNER_TEMP/graal-trace" > "$trace_log" 2>&1 &
+          pid=$!
+          passed=false
+          for second in $(seq 1 35); do
+            sleep 1
+            if grep -Fq 'Graal startup probe: MainWindow and embedded WebView passed' "$trace_log"; then
+              passed=true
+              break
+            fi
+            if ! kill -0 "$pid" 2>/dev/null; then
+              break
+            fi
+          done
+          cat "$trace_log"
+          if [ "$passed" != true ]; then
+            set +e
+            wait "$pid"
+            code=$?
+            set -e
+            echo "Linux reachability trace did not reach the startup marker; exit=$code" >&2
+            exit 1
+          fi
+          sleep 3
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+
+          test -s native-config/reachability-metadata.json || {
+            echo "Reachability metadata was not flushed by the Linux trace" >&2
+            find native-config -maxdepth 2 -type f -print -exec wc -c {} \;
+            exit 1
+          }
           find native-config -maxdepth 2 -type f -print -exec wc -c {} \;
 
       - name: Inspect WebView native resources
