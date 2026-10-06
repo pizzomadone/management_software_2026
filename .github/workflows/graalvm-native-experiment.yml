@@ -294,12 +294,14 @@ jobs:
           $out = (Resolve-Path native-out).Path
           Push-Location native-out
           try {
-            $mainArgs = @('--no-fallback','-J-Xmx6g','-Djava.awt.headless=false',"-Dorg.sqlite.lib.exportPath=$out","-H:ConfigurationFileDirectories=$config",'-H:ReflectionConfigurationFiles=../packaging/graalvm-windows-reflect-config.json','-H:+ReportExceptionStackTraces','-H:IncludeResources=i18n/.*','-H:IncludeResources=icons/.*','-H:IncludeResources=fonts/.*','-H:IncludeResources=META-INF/services/.*','-H:IncludeResources=LICENSE-THIRD-PARTY.txt','-H:IncludeResources=NOTICE.txt','-o','WareStat-native','-cp','../build/graal-probe-classes;../build/release/classes;../lib/*','GraalProbe')
-            & native-image @mainArgs
-            if ($LASTEXITCODE -ne 0) { throw "WareStat native-image build failed" }
+            # Keep the native AWT and image-specific support libraries aligned:
+            # building two separate executables into one output directory can
+            # leave the first EXE referencing libraries produced by the second.
             $probeArgs = @('--no-fallback','-J-Xmx6g','-Djava.awt.headless=false',"-Dorg.sqlite.lib.exportPath=$out","-H:ConfigurationFileDirectories=$config",'-H:ReflectionConfigurationFiles=../packaging/graalvm-windows-reflect-config.json','-H:+ReportExceptionStackTraces','-H:IncludeResources=i18n/.*','-H:IncludeResources=icons/.*','-H:IncludeResources=fonts/.*','-H:IncludeResources=META-INF/services/.*','-H:IncludeResources=LICENSE-THIRD-PARTY.txt','-H:IncludeResources=NOTICE.txt','-o','WareStat-native-probe','-cp','../build/graal-probe-classes;../build/release/classes;../lib/*','GraalProbe')
             & native-image @probeArgs
-            if ($LASTEXITCODE -ne 0) { throw "Graal native probe build failed" }
+            if ($LASTEXITCODE -ne 0) { throw "Graal native image build failed" }
+            Copy-Item -LiteralPath (Join-Path $out 'WareStat-native-probe.exe') -Destination (Join-Path $out 'WareStat-native.exe') -Force
+            Write-Host "Single-image Windows build: application and probe are byte-identical"
           } finally {
             Pop-Location
           }
