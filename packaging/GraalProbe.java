@@ -232,13 +232,14 @@ public final class GraalProbe {
                 frameRef[0].dispose();
             }
         });
-        if (!isWindows()) {
+        if (!isWindowsNativeImage()) {
             System.exit(0);
         }
     }
 
-    private static boolean isWindows() {
-        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
+    private static boolean isWindowsNativeImage() {
+        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win")
+                && System.getProperty("org.graalvm.nativeimage.imagecode") != null;
     }
 
     private static boolean isNotDisplayedError(Throwable error) {
@@ -299,7 +300,7 @@ public final class GraalProbe {
             }
         });
         System.out.println("Graal startup probe: MainWindow and embedded WebView passed");
-        if (!isWindows()) {
+        if (!isWindowsNativeImage()) {
             System.exit(0);
         }
     }
