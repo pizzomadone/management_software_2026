@@ -849,11 +849,23 @@ jobs:
           kill "$pid" 2>/dev/null || true
           wait "$pid" 2>/dev/null || true
 
-          test -s native-config/reachability-metadata.json || {
+          # With periodic writes this NIK build may preserve the latest valid
+          # snapshot in an agent-*.tmp* directory. Promote that cumulative
+          # snapshot to the directory consumed by native-image.
+          snapshot="$(find native-config -mindepth 1 -maxdepth 1 -type d -name 'agent-*.tmp*' -print | sort | tail -n1)"
+          if [ -n "$snapshot" ]; then
+            mkdir -p "$RUNNER_TEMP/linux-native-config-final"
+            cp -a "$snapshot/." "$RUNNER_TEMP/linux-native-config-final/"
+            rm -rf native-config
+            mkdir -p native-config
+            cp -a "$RUNNER_TEMP/linux-native-config-final/." native-config/
+          fi
+
+          if ! find native-config -maxdepth 1 -type f -name '*-config.json' -size +0c -print -quit | grep -q .; then
             echo "Reachability metadata was not flushed by the Linux trace" >&2
             find native-config -maxdepth 2 -type f -print -exec wc -c {} \;
             exit 1
-          }
+          fi
           find native-config -maxdepth 2 -type f -print -exec wc -c {} \;
 
       - name: Inspect WebView native resources
