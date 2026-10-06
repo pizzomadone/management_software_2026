@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - main
-      - experiment/graalvm-native
-      - release/native-main
   workflow_dispatch:
 
 permissions:
