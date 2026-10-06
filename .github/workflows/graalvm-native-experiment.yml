@@ -304,13 +304,28 @@ jobs:
             Pop-Location
           }
 
+          # Windows Swing Native Image needs java.home only to locate the
+          # OpenJDK font configuration. Bundle those tiny files, not a JRE.
+          $fontConfigDir = Join-Path $PWD 'native-out/lib'
+          New-Item -ItemType Directory -Force $fontConfigDir | Out-Null
+          foreach ($name in @('fontconfig.bfc', 'fontconfig.properties.src')) {
+            $source = Join-Path $env:JAVA_HOME "lib/$name"
+            if (Test-Path $source) {
+              Copy-Item $source (Join-Path $fontConfigDir $name) -Force
+              Write-Host "Bundled $name"
+            }
+          }
+          if (-not (Test-Path (Join-Path $fontConfigDir 'fontconfig.bfc'))) {
+            throw "Required Windows fontconfig.bfc was not found"
+          }
+
       - name: Run native SQLite i18n PDFBox and ImageIO probe
         shell: pwsh
         run: |
           $probeDir = Join-Path $env:RUNNER_TEMP 'graal-native-probe'
           Remove-Item $probeDir -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force $probeDir | Out-Null
-          & ./native-out/WareStat-native-probe.exe libraries $probeDir
+          & ./native-out/WareStat-native-probe.exe "-Djava.home=$PWD/native-out" libraries $probeDir
           if ($LASTEXITCODE -ne 0) { throw "Native runtime probe failed" }
           $pdf = Join-Path $probeDir 'smoke.pdf'
           if (-not (Test-Path $pdf) -or (Get-Item $pdf).Length -lt 1000) { throw "Native PDF smoke output is missing or empty" }
@@ -321,7 +336,7 @@ jobs:
           $probeDir = Join-Path $env:RUNNER_TEMP 'graal-native-probe'
           $stdout = Join-Path $PWD 'native-out/webview-probe.stdout.log'
           $stderr = Join-Path $PWD 'native-out/webview-probe.stderr.log'
-          & ./native-out/WareStat-native-probe.exe webview $probeDir 1> $stdout 2> $stderr
+          & ./native-out/WareStat-native-probe.exe "-Djava.home=$PWD/native-out" webview $probeDir 1> $stdout 2> $stderr
           $code = $LASTEXITCODE
           $logs = ''
           if (Test-Path $stdout) { $logs += Get-Content $stdout -Raw }
@@ -338,7 +353,7 @@ jobs:
           $probeDir = Join-Path $env:RUNNER_TEMP 'graal-native-probe'
           $stdout = Join-Path $PWD 'native-out/mainwindow-probe.stdout.log'
           $stderr = Join-Path $PWD 'native-out/mainwindow-probe.stderr.log'
-          & ./native-out/WareStat-native-probe.exe startup $probeDir 1> $stdout 2> $stderr
+          & ./native-out/WareStat-native-probe.exe "-Djava.home=$PWD/native-out" startup $probeDir 1> $stdout 2> $stderr
           $code = $LASTEXITCODE
           $logs = ''
           if (Test-Path $stdout) { $logs += Get-Content $stdout -Raw }
@@ -355,7 +370,7 @@ jobs:
           Remove-Item (Join-Path $appData 'data.db') -Force -ErrorAction SilentlyContinue
           $stdout = Join-Path $PWD 'native-out/startup.stdout.log'
           $stderr = Join-Path $PWD 'native-out/startup.stderr.log'
-          $process = Start-Process -FilePath (Join-Path $PWD 'native-out/WareStat-native.exe') -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+          $process = Start-Process -FilePath (Join-Path $PWD 'native-out/WareStat-native.exe') -ArgumentList "-Djava.home=$PWD/native-out" -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
           Start-Sleep -Seconds 12
           if ($process.HasExited) {
             Get-Content $stdout -ErrorAction SilentlyContinue
