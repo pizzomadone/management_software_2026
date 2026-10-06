@@ -47,6 +47,10 @@ public final class GraalProbe {
         // Image the same AWT/WebView reachability that the verified probe has.
         if (args.length == 0) {
             MainWindow.main(new String[0]);
+            // Keep the Windows Native Image primary thread alive while Swing
+            // owns the application lifecycle. WareStat exits through
+            // JFrame.EXIT_ON_CLOSE/System.exit(0).
+            new CountDownLatch(1).await();
             return;
         }
 
