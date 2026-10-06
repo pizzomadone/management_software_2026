@@ -130,7 +130,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          fatal='IllegalStateException|\[webview-embed\] No JAWT_GetAWT|could not obtain a native window handle|Native webview_embed_create returned 0|UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError|Could not instantiate Shell Folder Manager'
+          fatal='IllegalStateException|\[webview-embed\] No JAWT_GetAWT|could not obtain a native window handle|Native webview_embed_create returned 0|UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError|Could not instantiate Shell Folder Manager|Uncaught failure on|java\\.lang\\.Error: java\\.home property not set|no ComponentUI class for|Segfault detected|EXCEPTION_ACCESS_VIOLATION'
           : > native-out/webview-probe.log
           set +e
           DYLD_LIBRARY_PATH="$PWD/native-out:${DYLD_LIBRARY_PATH:-}" DEBUG_WEBVIEW_EMBED=1 ./native-out/WareStat-native-probe webview "$RUNNER_TEMP/graal-native-probe" > native-out/webview-probe.log 2>&1
@@ -151,7 +151,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          fatal='IllegalStateException|\[webview-embed\] No JAWT_GetAWT|could not obtain a native window handle|Native webview_embed_create returned 0|UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError|Could not instantiate Shell Folder Manager'
+          fatal='IllegalStateException|\[webview-embed\] No JAWT_GetAWT|could not obtain a native window handle|Native webview_embed_create returned 0|UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError|Could not instantiate Shell Folder Manager|Uncaught failure on|java\\.lang\\.Error: java\\.home property not set|no ComponentUI class for|Segfault detected|EXCEPTION_ACCESS_VIOLATION'
           : > native-out/mainwindow-probe.log
           set +e
           DYLD_LIBRARY_PATH="$PWD/native-out:${DYLD_LIBRARY_PATH:-}" DEBUG_WEBVIEW_EMBED=1 ./native-out/WareStat-native-probe startup "$RUNNER_TEMP/graal-native-probe" > native-out/mainwindow-probe.log 2>&1
@@ -171,7 +171,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          fatal='IllegalStateException|\[webview-embed\] No JAWT_GetAWT|could not obtain a native window handle|Native webview_embed_create returned 0|UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError|Could not instantiate Shell Folder Manager'
+          fatal='IllegalStateException|\[webview-embed\] No JAWT_GetAWT|could not obtain a native window handle|Native webview_embed_create returned 0|UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError|Could not instantiate Shell Folder Manager|Uncaught failure on|java\\.lang\\.Error: java\\.home property not set|no ComponentUI class for|Segfault detected|EXCEPTION_ACCESS_VIOLATION'
           app_data="$HOME/Library/Application Support/WareStat"
           rm -f "$app_data/data.db"
           : > native-out/startup.log
@@ -221,7 +221,7 @@ jobs:
           compression-level: 9
 
   native-image-windows:
-    name: GraalVM Windows x64
+    name: Windows x64 via Liberica NIK
     runs-on: windows-2022
     timeout-minutes: 60
 
@@ -232,11 +232,12 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
-      - name: Set up GraalVM Community 21
+      - name: Set up Liberica NIK Full 23.1.12.1 for Java 21
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
-          distribution: graalvm-community
-          java-version: '21'
+          distribution: liberica-nik
+          java-version: '21.0.12.1+2'
+          java-package: jdk+fx
 
       - name: Ensure Ant is available
         shell: pwsh
@@ -326,7 +327,7 @@ jobs:
           if (Test-Path $stdout) { $logs += Get-Content $stdout -Raw }
           if (Test-Path $stderr) { $logs += Get-Content $stderr -Raw }
           Write-Host $logs
-          $fatal = 'IllegalStateException|\[webview-embed\] No JAWT_GetAWT|could not obtain a native window handle|Native webview_embed_create returned 0|UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError|Could not instantiate Shell Folder Manager'
+          $fatal = 'IllegalStateException|\[webview-embed\] No JAWT_GetAWT|could not obtain a native window handle|Native webview_embed_create returned 0|UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError|Could not instantiate Shell Folder Manager|Uncaught failure on|java\\.lang\\.Error: java\\.home property not set|no ComponentUI class for|Segfault detected|EXCEPTION_ACCESS_VIOLATION'
           if ($logs -match $fatal) { throw "Fatal WebView runtime problem detected" }
           if ($code -ne 0) { throw "Native WebView probe exited with code $code" }
           if ($logs -notmatch 'Graal native WebView probe: JavaScript evaluation passed') { throw "Native WebView success marker missing" }
@@ -343,7 +344,7 @@ jobs:
           if (Test-Path $stdout) { $logs += Get-Content $stdout -Raw }
           if (Test-Path $stderr) { $logs += Get-Content $stderr -Raw }
           Write-Host $logs
-          $fatal = 'IllegalStateException|\[webview-embed\] No JAWT_GetAWT|could not obtain a native window handle|Native webview_embed_create returned 0|UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError|Could not instantiate Shell Folder Manager'
+          $fatal = 'IllegalStateException|\[webview-embed\] No JAWT_GetAWT|could not obtain a native window handle|Native webview_embed_create returned 0|UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError|Could not instantiate Shell Folder Manager|Uncaught failure on|java\\.lang\\.Error: java\\.home property not set|no ComponentUI class for|Segfault detected|EXCEPTION_ACCESS_VIOLATION'
           if ($logs -match $fatal) { throw "Fatal MainWindow/WebView runtime problem detected" }
           if ($code -ne 0) { throw "Native MainWindow probe exited with code $code" }
           if ($logs -notmatch 'Graal startup probe: MainWindow and embedded WebView passed') { throw "MainWindow/WebView success marker missing" }
@@ -367,7 +368,7 @@ jobs:
           if (Test-Path $stdout) { $logs += Get-Content $stdout -Raw }
           if (Test-Path $stderr) { $logs += Get-Content $stderr -Raw }
           Write-Host $logs
-          $fatal = 'IllegalStateException|\[webview-embed\] No JAWT_GetAWT|could not obtain a native window handle|Native webview_embed_create returned 0|UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError|Could not instantiate Shell Folder Manager'
+          $fatal = 'IllegalStateException|\[webview-embed\] No JAWT_GetAWT|could not obtain a native window handle|Native webview_embed_create returned 0|UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError|Could not instantiate Shell Folder Manager|Uncaught failure on|java\\.lang\\.Error: java\\.home property not set|no ComponentUI class for|Segfault detected|EXCEPTION_ACCESS_VIOLATION'
           if ($logs -match $fatal) { throw "Fatal Native Image runtime problem detected" }
           Write-Host 'Actual WareStat native executable remained healthy through startup'
 
