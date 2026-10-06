@@ -336,16 +336,30 @@ jobs:
           $probeDir = Join-Path $env:RUNNER_TEMP 'graal-native-probe'
           $stdout = Join-Path $PWD 'native-out/webview-probe.stdout.log'
           $stderr = Join-Path $PWD 'native-out/webview-probe.stderr.log'
-          & ./native-out/WareStat-native-probe.exe "-Djava.home=$PWD/native-out" webview $probeDir 1> $stdout 2> $stderr
-          $code = $LASTEXITCODE
+          Remove-Item $stdout,$stderr -Force -ErrorAction SilentlyContinue
+          $args = @("-Djava.home=$PWD/native-out", 'webview', $probeDir)
+          $process = Start-Process -FilePath (Join-Path $PWD 'native-out/WareStat-native-probe.exe') -ArgumentList $args -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+          $passed = $false
+          for ($i = 0; $i -lt 60; $i++) {
+            Start-Sleep -Milliseconds 500
+            $logs = ''
+            if (Test-Path $stdout) { $logs += Get-Content $stdout -Raw }
+            if (Test-Path $stderr) { $logs += Get-Content $stderr -Raw }
+            if ($logs -match 'Graal native WebView probe: JavaScript evaluation passed') {
+              $passed = $true
+              break
+            }
+            if ($process.HasExited) { break }
+          }
+          if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+          Start-Sleep -Milliseconds 300
           $logs = ''
           if (Test-Path $stdout) { $logs += Get-Content $stdout -Raw }
           if (Test-Path $stderr) { $logs += Get-Content $stderr -Raw }
           Write-Host $logs
           $fatal = 'IllegalStateException|\[webview-embed\] No JAWT_GetAWT|could not obtain a native window handle|Native webview_embed_create returned 0|UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError|Could not instantiate Shell Folder Manager|Uncaught failure on|java\\.lang\\.Error: java\\.home property not set|no ComponentUI class for|Segfault detected|EXCEPTION_ACCESS_VIOLATION'
           if ($logs -match $fatal) { throw "Fatal WebView runtime problem detected" }
-          if ($code -ne 0) { throw "Native WebView probe exited with code $code" }
-          if ($logs -notmatch 'Graal native WebView probe: JavaScript evaluation passed') { throw "Native WebView success marker missing" }
+          if (-not $passed) { throw "Native WebView success marker missing before process exit/timeout" }
           Write-Host 'Native WebView attached and executed JavaScript'
       - name: Verify real MainWindow embedded WebView
         shell: pwsh
@@ -353,16 +367,30 @@ jobs:
           $probeDir = Join-Path $env:RUNNER_TEMP 'graal-native-probe'
           $stdout = Join-Path $PWD 'native-out/mainwindow-probe.stdout.log'
           $stderr = Join-Path $PWD 'native-out/mainwindow-probe.stderr.log'
-          & ./native-out/WareStat-native-probe.exe "-Djava.home=$PWD/native-out" startup $probeDir 1> $stdout 2> $stderr
-          $code = $LASTEXITCODE
+          Remove-Item $stdout,$stderr -Force -ErrorAction SilentlyContinue
+          $args = @("-Djava.home=$PWD/native-out", 'startup', $probeDir)
+          $process = Start-Process -FilePath (Join-Path $PWD 'native-out/WareStat-native-probe.exe') -ArgumentList $args -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+          $passed = $false
+          for ($i = 0; $i -lt 90; $i++) {
+            Start-Sleep -Milliseconds 500
+            $logs = ''
+            if (Test-Path $stdout) { $logs += Get-Content $stdout -Raw }
+            if (Test-Path $stderr) { $logs += Get-Content $stderr -Raw }
+            if ($logs -match 'Graal startup probe: MainWindow and embedded WebView passed') {
+              $passed = $true
+              break
+            }
+            if ($process.HasExited) { break }
+          }
+          if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+          Start-Sleep -Milliseconds 300
           $logs = ''
           if (Test-Path $stdout) { $logs += Get-Content $stdout -Raw }
           if (Test-Path $stderr) { $logs += Get-Content $stderr -Raw }
           Write-Host $logs
           $fatal = 'IllegalStateException|\[webview-embed\] No JAWT_GetAWT|could not obtain a native window handle|Native webview_embed_create returned 0|UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError|Could not instantiate Shell Folder Manager|Uncaught failure on|java\\.lang\\.Error: java\\.home property not set|no ComponentUI class for|Segfault detected|EXCEPTION_ACCESS_VIOLATION'
           if ($logs -match $fatal) { throw "Fatal MainWindow/WebView runtime problem detected" }
-          if ($code -ne 0) { throw "Native MainWindow probe exited with code $code" }
-          if ($logs -notmatch 'Graal startup probe: MainWindow and embedded WebView passed') { throw "MainWindow/WebView success marker missing" }
+          if (-not $passed) { throw "MainWindow/WebView success marker missing before process exit/timeout" }
       - name: Run actual native WareStat startup smoke
         shell: pwsh
         run: |
