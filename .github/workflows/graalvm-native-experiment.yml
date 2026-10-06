@@ -283,6 +283,14 @@ jobs:
             exit 1
           fi
 
+          # Native Image and the downloaded NIK consume several GB on Intel
+          # runners. They are no longer needed once WareStat.app passed its
+          # runtime smoke test, so free them before hdiutil creates the DMG.
+          rm -rf "$RUNNER_TEMP/nik" "$RUNNER_TEMP/nik.zip" native-config
+          rm -rf build/graal-probe-classes build/release
+          rm -f native-out/WareStat-native-probe native-out/*.log native-out/jawt_bridge.o
+          df -h .
+
           mkdir -p dist/dmg-root
           cp -R "$app" dist/dmg-root/
           ln -s /Applications dist/dmg-root/Applications
@@ -692,8 +700,8 @@ jobs:
           $installDir = Join-Path $env:RUNNER_TEMP 'WareStat-installed'
           Remove-Item $installDir -Recurse -Force -ErrorAction SilentlyContinue
 
-          & $installer.FullName /VERYSILENT /SUPPRESSMSGBOXES /NORESTART "/DIR=$installDir"
-          if ($LASTEXITCODE -ne 0) { throw "Silent installer test failed with code $LASTEXITCODE" }
+          $install = Start-Process -FilePath $installer.FullName -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$installDir") -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "Silent installer test failed with code $($install.ExitCode)" }
           if (-not (Test-Path (Join-Path $installDir 'WareStat.exe'))) { throw "Installed WareStat.exe is missing" }
 
           $stdout = Join-Path $env:RUNNER_TEMP 'warestat-installed.stdout.log'
