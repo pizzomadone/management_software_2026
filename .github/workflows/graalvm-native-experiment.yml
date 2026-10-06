@@ -310,9 +310,10 @@ jobs:
         run: |
           set -euo pipefail
           file native-out/WareStat-native
-          du -h native-out/WareStat-native native-out/WareStat-native-probe
+          du -h native-out/WareStat-native
           otool -L native-out/WareStat-native || true
           find native-out -maxdepth 1 -type f -print
+          find dist/installers -maxdepth 1 -type f -print -exec ls -lh {} \;
 
       - name: Upload macOS distributable packages
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
