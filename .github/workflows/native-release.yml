@@ -1,0 +1,1108 @@
+name: WareStat Native Release
+
+on:
+  push:
+    branches:
+      - main
+      - experiment/graalvm-native
+      - release/native-main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: warestat-native-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-image-macos:
+    name: ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            label: macOS Apple Silicon via Liberica NIK
+            suffix: macos-arm64
+            nik_arch: aarch64
+            nik_sha256: 69c26ed190a143ddfdb7072941a0ad96d924fc98a8d0497c55ae3d6b0cce5297
+          - runner: macos-15-intel
+            label: macOS Intel via Liberica NIK
+            suffix: macos-x64
+            nik_arch: amd64
+            nik_sha256: 00965a52e89d65e7abaa96bc6c58dd419e122bbf409a9d4966c2e490bb9cf77f
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Set up Liberica NIK 23.1.12.1 for Java 21
+        shell: bash
+        env:
+          NIK_ARCH: ${{ matrix.nik_arch }}
+          NIK_SHA256: ${{ matrix.nik_sha256 }}
+        run: |
+          set -euo pipefail
+          filename="bellsoft-liberica-vm-full-openjdk21.0.12.1+2-23.1.12.1+1-macos-${NIK_ARCH}.zip"
+          url="https://github.com/bell-sw/LibericaNIK/releases/download/23.1.12.1%2B1-21.0.12.1%2B2/${filename}"
+          mkdir -p "$RUNNER_TEMP/nik"
+          curl --fail --location --retry 4 --output "$RUNNER_TEMP/nik.zip" "$url"
+          echo "${NIK_SHA256}  $RUNNER_TEMP/nik.zip" | shasum -a 256 -c -
+          ditto -x -k "$RUNNER_TEMP/nik.zip" "$RUNNER_TEMP/nik"
+          java_bin="$(find "$RUNNER_TEMP/nik" -type f -path '*/Contents/Home/bin/java' -print -quit)"
+          test -n "$java_bin"
+          nik_home="$(cd "$(dirname "$java_bin")/.." && pwd)"
+          test -x "$nik_home/bin/native-image"
+          echo "NIK_HOME=$nik_home" >> "$GITHUB_ENV"
+          echo "JAVA_HOME=$nik_home" >> "$GITHUB_ENV"
+          echo "$nik_home/bin" >> "$GITHUB_PATH"
+          "$nik_home/bin/java" -version
+          "$nik_home/bin/native-image" --version
+
+      - name: Inspect Liberica NIK AWT and JAWT support
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Native Image linker options:"
+          native-image --expert-options-all 2>&1 | grep -E 'NativeLinkerOption|Linker|StaticExecutable' | head -80 || true
+          echo "Liberica NIK AWT/JAWT files:"
+          find "$NIK_HOME" -type f \( -iname '*jawt*' -o -iname '*javaaccessbridge*' -o -iname 'libawt*' \) -print | sort | tee "$RUNNER_TEMP/nik-awt-files.txt"
+          while IFS= read -r candidate; do
+            [ -f "$candidate" ] || continue
+            echo "=== $candidate ==="
+            file "$candidate" || true
+            case "$candidate" in
+              *.a|*.dylib)
+                nm -g "$candidate" 2>/dev/null | grep -E 'JAWT_GetAWT|JAWT_' || true
+                ;;
+            esac
+          done < "$RUNNER_TEMP/nik-awt-files.txt"
+      - name: Ensure Ant is available
+        shell: bash
+        run: command -v ant >/dev/null 2>&1 || brew install ant
+
+      - name: Compile release classes and external probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          ant clean compile-release
+          mkdir -p build/graal-probe-classes
+          javac -encoding UTF-8 -cp "build/release/classes:lib/*" -d build/graal-probe-classes packaging/GraalProbe.java
+
+      - name: Seed first-run state
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_data="$HOME/Library/Application Support/WareStat"
+          rm -rf "$app_data"
+          mkdir -p "$app_data"
+          printf 'language=it\n' > "$app_data/app_settings.properties"
+          printf 'accepted by CI GraalVM probe\n' > "$app_data/eula_accepted.txt"
+
+      - name: Collect reachability metadata from real WareStat startup
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf native-config
+          mkdir -p native-config "$RUNNER_TEMP/graal-trace"
+          java -agentlib:native-image-agent=config-output-dir="$PWD/native-config" -cp "build/graal-probe-classes:build/release/classes:lib/*" GraalProbe trace "$RUNNER_TEMP/graal-trace"
+          find native-config -maxdepth 2 -type f -print -exec wc -c {} \;
+
+      - name: Inspect WebView native resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar tf lib/webview-1.0.10.jar | grep -E -i 'native|dylib|dll|framework|webview|META-INF' | head -200 || true
+
+      - name: Build final and probe native images
+        shell: bash
+        run: bash packaging/graalvm-macos-build.sh
+      - name: Run native SQLite i18n PDFBox and ImageIO probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/graal-native-probe"
+          mkdir -p "$RUNNER_TEMP/graal-native-probe"
+          ./native-out/WareStat-native-probe libraries "$RUNNER_TEMP/graal-native-probe"
+          test -s "$RUNNER_TEMP/graal-native-probe/smoke.pdf"
+
+      - name: Run explicit native WebView attach and JavaScript probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          fatal='IllegalStateException|\[webview-embed\] No JAWT_GetAWT|could not obtain a native window handle|Native webview_embed_create returned 0|UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError|Could not instantiate Shell Folder Manager|Uncaught failure on|java\\.lang\\.Error: java\\.home property not set|no ComponentUI class for|Segfault detected|EXCEPTION_ACCESS_VIOLATION'
+          : > native-out/webview-probe.log
+          set +e
+          DYLD_LIBRARY_PATH="$PWD/native-out:${DYLD_LIBRARY_PATH:-}" DEBUG_WEBVIEW_EMBED=1 ./native-out/WareStat-native-probe webview "$RUNNER_TEMP/graal-native-probe" > native-out/webview-probe.log 2>&1
+          code=$?
+          set -e
+          cat native-out/webview-probe.log
+          if grep -E "$fatal" native-out/webview-probe.log; then
+            echo "Fatal WebView runtime problem detected" >&2
+            exit 1
+          fi
+          if [ "$code" -ne 0 ]; then
+            echo "Native WebView probe exited with code $code" >&2
+            exit "$code"
+          fi
+          grep -F 'Graal native WebView probe: JavaScript evaluation passed' native-out/webview-probe.log
+          echo "Native WebView attached and executed JavaScript"
+      - name: Verify real MainWindow embedded WebView
+        shell: bash
+        run: |
+          set -euo pipefail
+          fatal='IllegalStateException|\[webview-embed\] No JAWT_GetAWT|could not obtain a native window handle|Native webview_embed_create returned 0|UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError|Could not instantiate Shell Folder Manager|Uncaught failure on|java\\.lang\\.Error: java\\.home property not set|no ComponentUI class for|Segfault detected|EXCEPTION_ACCESS_VIOLATION'
+          : > native-out/mainwindow-probe.log
+          set +e
+          DYLD_LIBRARY_PATH="$PWD/native-out:${DYLD_LIBRARY_PATH:-}" DEBUG_WEBVIEW_EMBED=1 ./native-out/WareStat-native-probe startup "$RUNNER_TEMP/graal-native-probe" > native-out/mainwindow-probe.log 2>&1
+          code=$?
+          set -e
+          cat native-out/mainwindow-probe.log
+          if grep -E "$fatal" native-out/mainwindow-probe.log; then
+            echo "Fatal MainWindow/WebView runtime problem detected" >&2
+            exit 1
+          fi
+          if [ "$code" -ne 0 ]; then
+            echo "Native MainWindow probe exited with code $code" >&2
+            exit "$code"
+          fi
+          grep -F 'Graal startup probe: MainWindow and embedded WebView passed' native-out/mainwindow-probe.log
+      - name: Run actual native WareStat startup smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          fatal='IllegalStateException|\[webview-embed\] No JAWT_GetAWT|could not obtain a native window handle|Native webview_embed_create returned 0|UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError|Could not instantiate Shell Folder Manager|Uncaught failure on|java\\.lang\\.Error: java\\.home property not set|no ComponentUI class for|Segfault detected|EXCEPTION_ACCESS_VIOLATION'
+          app_data="$HOME/Library/Application Support/WareStat"
+          rm -f "$app_data/data.db"
+          : > native-out/startup.log
+          set +e
+          DYLD_LIBRARY_PATH="$PWD/native-out:${DYLD_LIBRARY_PATH:-}" ./native-out/WareStat-native > native-out/startup.log 2>&1 &
+          pid=$!
+          set -e
+          for second in $(seq 1 12); do
+            sleep 1
+            if ! kill -0 "$pid" 2>/dev/null; then
+              set +e
+              wait "$pid"
+              code=$?
+              set -e
+              cat native-out/startup.log
+              echo "Native WareStat exited during startup with code $code" >&2
+              exit 1
+            fi
+          done
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          cat native-out/startup.log
+          if grep -E "$fatal" native-out/startup.log; then
+            echo "Fatal Native Image runtime problem detected" >&2
+            exit 1
+          fi
+          echo "Actual WareStat native executable remained healthy through startup"
+
+      - name: Build and smoke-test macOS app bundle and DMG
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^app.version=//p' build.properties | head -n1 | tr -d '\r')"
+          suffix="${{ matrix.suffix }}"
+          app="dist/native/WareStat.app"
+          installers="dist/installers"
+          rm -rf dist/native dist/dmg-root "$installers"
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$installers"
+
+          cp native-out/WareStat-native "$app/Contents/MacOS/WareStat-native"
+          cp native-out/libsqlitejdbc.dylib "$app/Contents/MacOS/libsqlitejdbc.dylib"
+          cp resources/icons/warestat.icns "$app/Contents/Resources/warestat.icns"
+          cp LICENSE-THIRD-PARTY.txt NOTICE.txt "$app/Contents/Resources/"
+          app_license="$HOME/Library/Application Support/WareStat/LICENSE.txt"
+          if [ -f "$app_license" ]; then
+            cp "$app_license" "$app/Contents/Resources/LICENSE.txt"
+          fi
+
+          cc -O2 -Wall -Wextra packaging/native_launcher_macos.c -o "$app/Contents/MacOS/WareStat"
+          chmod 755 "$app/Contents/MacOS/WareStat" "$app/Contents/MacOS/WareStat-native"
+
+          cat > "$app/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleDevelopmentRegion</key><string>en</string>
+            <key>CFBundleDisplayName</key><string>WareStat</string>
+            <key>CFBundleExecutable</key><string>WareStat</string>
+            <key>CFBundleIconFile</key><string>warestat.icns</string>
+            <key>CFBundleIdentifier</key><string>com.warestat.app</string>
+            <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+            <key>CFBundleName</key><string>WareStat</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>$version</string>
+            <key>CFBundleVersion</key><string>$version</string>
+            <key>LSApplicationCategoryType</key><string>public.app-category.business</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          PLIST
+
+          # Ad-hoc signing validates the bundle structure in CI. Public
+          # distribution still requires a Developer ID signature/notarization.
+          codesign --force --sign - "$app/Contents/MacOS/libsqlitejdbc.dylib"
+          codesign --force --sign - "$app/Contents/MacOS/WareStat-native"
+          codesign --force --sign - "$app/Contents/MacOS/WareStat"
+          codesign --force --sign - "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+
+          app_data="$HOME/Library/Application Support/WareStat"
+          rm -f "$app_data/data.db"
+          smoke="$RUNNER_TEMP/warestat-packaged-app.log"
+          : > "$smoke"
+          "$app/Contents/MacOS/WareStat" > "$smoke" 2>&1 &
+          pid=$!
+          for second in $(seq 1 12); do
+            sleep 1
+            if ! kill -0 "$pid" 2>/dev/null; then
+              set +e
+              wait "$pid"
+              code=$?
+              set -e
+              cat "$smoke"
+              echo "Packaged WareStat.app exited during startup with code $code" >&2
+              exit 1
+            fi
+          done
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          cat "$smoke"
+          fatal='IllegalStateException|UnsatisfiedLinkError|NoClassDefFoundError|MissingRegistrationError|Segfault detected|EXCEPTION_ACCESS_VIOLATION|could not obtain a native window handle'
+          if grep -E "$fatal" "$smoke"; then
+            echo "Fatal packaged macOS runtime problem detected" >&2
+            exit 1
+          fi
+
+          # Native Image and the downloaded NIK consume several GB on Intel
+          # runners. They are no longer needed once WareStat.app passed its
+          # runtime smoke test, so free them before hdiutil creates the DMG.
+          rm -rf "$RUNNER_TEMP/nik" "$RUNNER_TEMP/nik.zip" native-config
+          rm -rf build/graal-probe-classes build/release
+          rm -f native-out/WareStat-native-probe native-out/*.log native-out/jawt_bridge.o
+          df -h .
+
+          dmg="$installers/WareStat-$version-$suffix.dmg"
+          rw_dmg="$RUNNER_TEMP/WareStat-$suffix-rw.dmg"
+          mount_dir="$RUNNER_TEMP/WareStat-$suffix-mount"
+          rm -f "$rw_dmg" "$dmg"
+          rm -rf "$mount_dir"
+          mkdir -p "$mount_dir"
+
+          # Intel runners can mis-estimate -srcfolder image size for the
+          # Native Image executable. Create a fixed-size writable image,
+          # populate it, then convert it to the final compressed DMG.
+          hdiutil create -size 256m -fs HFS+ -volname "WareStat $version" -ov "$rw_dmg"
+          hdiutil attach "$rw_dmg" -nobrowse -noverify -mountpoint "$mount_dir"
+          ditto "$app" "$mount_dir/WareStat.app"
+          ln -s /Applications "$mount_dir/Applications"
+          sync
+          hdiutil detach "$mount_dir"
+          hdiutil convert "$rw_dmg" -format UDZO -imagekey zlib-level=9 -o "$dmg"
+          rm -f "$rw_dmg"
+
+          app_zip="$installers/WareStat-$version-$suffix-app.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "$app_zip"
+          shasum -a 256 "$dmg" > "$dmg.sha256"
+          shasum -a 256 "$app_zip" > "$app_zip.sha256"
+
+          hdiutil verify "$dmg"
+          ls -lh "$dmg" "$app_zip"
+
+      - name: Inspect native output
+        shell: bash
+        run: |
+          set -euo pipefail
+          file native-out/WareStat-native
+          du -h native-out/WareStat-native
+          otool -L native-out/WareStat-native || true
+          find native-out -maxdepth 1 -type f -print
+          find dist/installers -maxdepth 1 -type f -print -exec ls -lh {} \;
+
+      - name: Upload macOS distributable packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: WareStat-${{ matrix.suffix }}
+          path: |
+            dist/installers/WareStat-*.dmg
+            dist/installers/WareStat-*-app.zip
+            dist/installers/*.sha256
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+  native-image-windows:
+    name: Windows x64 via Liberica NIK
+    runs-on: windows-2022
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Set up Liberica NIK Full 23.1.12.1 for Java 21
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: liberica-nik
+          java-version: '21.0.12+1.2'
+          java-package: jdk+fx
+
+      - name: Ensure Ant is available
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ant -ErrorAction SilentlyContinue)) {
+            choco install ant -y --no-progress
+            $antBin = Get-ChildItem 'C:/ProgramData/chocolatey/lib/ant/tools/apache-ant-*/bin' -Directory | Select-Object -First 1
+            if ($antBin) {
+              $antBin.FullName | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+              $env:PATH = "$($antBin.FullName);$env:PATH"
+            }
+          }
+
+      - name: Compile release classes and external probe
+        shell: pwsh
+        run: |
+          ant clean compile-release
+          if ($LASTEXITCODE -ne 0) { throw "Ant release compilation failed" }
+          New-Item -ItemType Directory -Force build/graal-probe-classes | Out-Null
+          javac -encoding UTF-8 -cp "build/release/classes;lib/*" -d build/graal-probe-classes packaging/GraalProbe.java packaging/WareStatNativeLauncher.java
+          if ($LASTEXITCODE -ne 0) { throw "Graal probe compilation failed" }
+
+      - name: Seed first-run state
+        shell: pwsh
+        run: |
+          $appData = Join-Path $HOME 'AppData/Local/WareStat'
+          Remove-Item $appData -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force $appData | Out-Null
+          Set-Content -Path (Join-Path $appData 'app_settings.properties') -Value 'language=it' -Encoding utf8
+          Set-Content -Path (Join-Path $appData 'eula_accepted.txt') -Value 'accepted by CI GraalVM probe' -Encoding utf8
+
+      - name: Collect reachability metadata from real WareStat startup
+        shell: pwsh
+        run: |
+          Remove-Item native-config -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force native-config | Out-Null
+          $trace = Join-Path $env:RUNNER_TEMP 'graal-trace'
+          Remove-Item $trace -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force $trace | Out-Null
+          java "-agentlib:native-image-agent=config-output-dir=$PWD/native-config" -cp "build/graal-probe-classes;build/release/classes;lib/*" GraalProbe trace $trace
+          if ($LASTEXITCODE -ne 0) { throw "Native Image tracing probe failed" }
+          Get-ChildItem native-config -Recurse -File | Select-Object FullName,Length | Format-Table -AutoSize
+
+      - name: Inspect WebView native resources
+        shell: pwsh
+        run: |
+          jar tf lib/webview-1.0.10.jar | Select-String -Pattern 'native|dylib|dll|framework|webview|META-INF' | Select-Object -First 200
+
+      - name: Build final and probe native images
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force native-out | Out-Null
+          $config = (Resolve-Path native-config).Path
+          $out = (Resolve-Path native-out).Path
+          Push-Location native-out
+          try {
+            # Keep the native AWT and image-specific support libraries aligned:
+            # building two separate executables into one output directory can
+            # leave the first EXE referencing libraries produced by the second.
+            $probeArgs = @('--no-fallback','-J-Xmx6g','-Djava.awt.headless=false',"-Dorg.sqlite.lib.exportPath=$out","-H:ConfigurationFileDirectories=$config",'-H:ReflectionConfigurationFiles=../packaging/graalvm-windows-reflect-config.json','-H:+ReportExceptionStackTraces','-H:IncludeResources=i18n/.*','-H:IncludeResources=icons/.*','-H:IncludeResources=fonts/.*','-H:IncludeResources=META-INF/services/.*','-H:IncludeResources=LICENSE-THIRD-PARTY.txt','-H:IncludeResources=NOTICE.txt','-o','WareStat-native','-cp','../build/graal-probe-classes;../build/release/classes;../lib/*','GraalProbe')
+            & native-image @probeArgs
+            if ($LASTEXITCODE -ne 0) { throw "Graal native image build failed" }
+            Write-Host "Single Native Image compiled with final executable name WareStat-native.exe"
+          } finally {
+            Pop-Location
+          }
+
+          # Windows Swing Native Image needs java.home only to locate the
+          # OpenJDK font configuration. Bundle those tiny files, not a JRE.
+          $fontConfigDir = Join-Path $PWD 'native-out/lib'
+          New-Item -ItemType Directory -Force $fontConfigDir | Out-Null
+          foreach ($name in @('fontconfig.bfc', 'fontconfig.properties.src')) {
+            $source = Join-Path $env:JAVA_HOME "lib/$name"
+            if (Test-Path $source) {
+              Copy-Item $source (Join-Path $fontConfigDir $name) -Force
+              Write-Host "Bundled $name"
+            }
+          }
+          if (-not (Test-Path (Join-Path $fontConfigDir 'fontconfig.bfc'))) {
+            throw "Required Windows fontconfig.bfc was not found"
+          }
+
+      - name: Run native SQLite i18n PDFBox and ImageIO probe
+        shell: pwsh
+        run: |
+          $probeDir = Join-Path $env:RUNNER_TEMP 'graal-native-probe'
+          Remove-Item $probeDir -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force $probeDir | Out-Null
+          & ./native-out/WareStat-native.exe "-Djava.home=$PWD/native-out" libraries $probeDir
+          if ($LASTEXITCODE -ne 0) { throw "Native runtime probe failed" }
+          $pdf = Join-Path $probeDir 'smoke.pdf'
+          if (-not (Test-Path $pdf) -or (Get-Item $pdf).Length -lt 1000) { throw "Native PDF smoke output is missing or empty" }
+
+      - name: Run explicit native WebView attach and JavaScript probe
+        shell: pwsh
+        run: |
+          $probeDir = Join-Path $env:RUNNER_TEMP 'graal-native-probe'
+          $stdout = Join-Path $PWD 'native-out/webview-probe.stdout.log'
+          $stderr = Join-Path $PWD 'native-out/webview-probe.stderr.log'
+          Remove-Item $stdout,$stderr -Force -ErrorAction SilentlyContinue
+          $args = @("-Djava.home=$PWD/native-out", 'webview', $probeDir)
+          $process = Start-Process -FilePath (Join-Path $PWD 'native-out/WareStat-native.exe') -ArgumentList $args -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+          $passed = $false
+          for ($i = 0; $i -lt 60; $i++) {
+            Start-Sleep -Milliseconds 500
+            $logs = ''
+            if (Test-Path $stdout) { $logs += Get-Content $stdout -Raw }
+            if (Test-Path $stderr) { $logs += Get-Content $stderr -Raw }
+            if ($logs -match 'Graal native WebView probe: JavaScript evaluation passed') {
+              $passed = $true
+              break
+            }
+            if ($process.HasExited) { break }
+          }
+          if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+          Start-Sleep -Milliseconds 300
+          $logs = ''
+          if (Test-Path $stdout) { $logs += Get-Content $stdout -Raw }
+          if (Test-Path $stderr) { $logs += Get-Content $stderr -Raw }
+          Write-Host $logs
+          $fatal = 'IllegalStateException|\[webview-embed\] No JAWT_GetAWT|could not obtain a native window handle|Native webview_embed_create returned 0|UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError|Could not instantiate Shell Folder Manager|Uncaught failure on|java\\.lang\\.Error: java\\.home property not set|no ComponentUI class for|Segfault detected|EXCEPTION_ACCESS_VIOLATION'
+          if ($logs -match $fatal) { throw "Fatal WebView runtime problem detected" }
+          if (-not $passed) { throw "Native WebView success marker missing before process exit/timeout" }
+          Write-Host 'Native WebView attached and executed JavaScript'
+
+      - name: Diagnose Windows MainWindow startup without library warmup
+        shell: pwsh
+        run: |
+          $probeDir = Join-Path $env:RUNNER_TEMP 'graal-native-probe'
+          $stdout = Join-Path $PWD 'native-out/mainwindow-no-libs.stdout.log'
+          $stderr = Join-Path $PWD 'native-out/mainwindow-no-libs.stderr.log'
+          Remove-Item $stdout,$stderr -Force -ErrorAction SilentlyContinue
+          $args = @("-Djava.home=$PWD/native-out", 'startup-no-libs', $probeDir)
+          $process = Start-Process -FilePath (Join-Path $PWD 'native-out/WareStat-native.exe') -ArgumentList $args -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+          $passed = $false
+          for ($i = 0; $i -lt 40; $i++) {
+            Start-Sleep -Milliseconds 500
+            $logs = ''
+            if (Test-Path $stdout) { $logs += Get-Content $stdout -Raw }
+            if (Test-Path $stderr) { $logs += Get-Content $stderr -Raw }
+            if ($logs -match 'Graal startup probe: MainWindow and embedded WebView passed') {
+              $passed = $true
+              break
+            }
+            if ($process.HasExited) { break }
+          }
+          $exitCode = if ($process.HasExited) { $process.ExitCode } else { $null }
+          if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+          Start-Sleep -Milliseconds 300
+          $logs = ''
+          if (Test-Path $stdout) { $logs += Get-Content $stdout -Raw }
+          if (Test-Path $stderr) { $logs += Get-Content $stderr -Raw }
+          Write-Host $logs
+          if ($passed) {
+            Write-Host 'DIAGNOSTIC startup-no-libs PASSED'
+          } else {
+            Write-Host "DIAGNOSTIC startup-no-libs FAILED; exit=$exitCode"
+          }
+
+      - name: Verify real MainWindow embedded WebView
+        shell: pwsh
+        run: |
+          $probeDir = Join-Path $env:RUNNER_TEMP 'graal-native-probe'
+          $stdout = Join-Path $PWD 'native-out/mainwindow-probe.stdout.log'
+          $stderr = Join-Path $PWD 'native-out/mainwindow-probe.stderr.log'
+          Remove-Item $stdout,$stderr -Force -ErrorAction SilentlyContinue
+          $args = @("-Djava.home=$PWD/native-out", 'startup', $probeDir)
+          $process = Start-Process -FilePath (Join-Path $PWD 'native-out/WareStat-native.exe') -ArgumentList $args -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+          $passed = $false
+          for ($i = 0; $i -lt 90; $i++) {
+            Start-Sleep -Milliseconds 500
+            $logs = ''
+            if (Test-Path $stdout) { $logs += Get-Content $stdout -Raw }
+            if (Test-Path $stderr) { $logs += Get-Content $stderr -Raw }
+            if ($logs -match 'Graal startup probe: MainWindow and embedded WebView passed') {
+              $passed = $true
+              break
+            }
+            if ($process.HasExited) { break }
+          }
+          if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+          Start-Sleep -Milliseconds 300
+          $logs = ''
+          if (Test-Path $stdout) { $logs += Get-Content $stdout -Raw }
+          if (Test-Path $stderr) { $logs += Get-Content $stderr -Raw }
+          Write-Host $logs
+          $fatal = 'IllegalStateException|\[webview-embed\] No JAWT_GetAWT|could not obtain a native window handle|Native webview_embed_create returned 0|UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError|Could not instantiate Shell Folder Manager|Uncaught failure on|java\\.lang\\.Error: java\\.home property not set|no ComponentUI class for|Segfault detected|EXCEPTION_ACCESS_VIOLATION'
+          if ($logs -match $fatal) { throw "Fatal MainWindow/WebView runtime problem detected" }
+          if (-not $passed) { throw "MainWindow/WebView success marker missing before process exit/timeout" }
+      - name: Diagnose Windows native executable and argument differences
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $probeDir = Join-Path $env:RUNNER_TEMP 'graal-native-probe'
+          $appData = Join-Path $HOME 'AppData/Local/WareStat'
+          $nativeHome = Join-Path $PWD 'native-out'
+          $binaries = @('WareStat-native.exe')
+          foreach ($binary in $binaries) {
+            $path = Join-Path $nativeHome $binary
+            $info = Get-Item $path
+            $hash = (Get-FileHash $path -Algorithm SHA256).Hash
+            Write-Host "BINARY $binary size=$($info.Length) sha256=$hash"
+          }
+          foreach ($binary in $binaries) {
+            foreach ($mode in @('no-args', 'startup-no-libs')) {
+              Remove-Item (Join-Path $appData 'data.db') -Force -ErrorAction SilentlyContinue
+              $id = "$($binary.Replace('.exe',''))-$mode"
+              $stdout = Join-Path $nativeHome "diagnostic-$id.stdout.log"
+              $stderr = Join-Path $nativeHome "diagnostic-$id.stderr.log"
+              Remove-Item $stdout,$stderr -Force -ErrorAction SilentlyContinue
+              $args = @("-Djava.home=$nativeHome")
+              if ($mode -eq 'startup-no-libs') { $args += @('startup-no-libs', $probeDir) }
+              $process = Start-Process -FilePath (Join-Path $nativeHome $binary) -ArgumentList $args -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+              $marker = $false
+              $earlyExit = $false
+              for ($i = 0; $i -lt 30; $i++) {
+                Start-Sleep -Milliseconds 500
+                if ($process.HasExited) { $earlyExit = $true; break }
+                if ($mode -eq 'startup-no-libs' -and (Test-Path $stdout)) {
+                  if ((Get-Content $stdout -Raw) -match 'Graal startup probe: MainWindow and embedded WebView passed') {
+                    $marker = $true
+                    break
+                  }
+                }
+              }
+              $exit = if ($process.HasExited) { $process.ExitCode } else { $null }
+              if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+              Start-Sleep -Milliseconds 350
+              $logs = ''
+              if (Test-Path $stdout) { $logs += Get-Content $stdout -Raw }
+              if (Test-Path $stderr) { $logs += Get-Content $stderr -Raw }
+              $fatal = $logs -match 'Segfault detected|EXCEPTION_ACCESS_VIOLATION|Uncaught failure on|UnsatisfiedLinkError|MissingRegistrationError'
+              $healthy = (-not $earlyExit) -and (-not $fatal) -and ($mode -eq 'no-args' -or $marker)
+              Write-Host "DIAGNOSTIC binary=$binary mode=$mode healthy=$healthy earlyExit=$earlyExit exit=$exit marker=$marker fatal=$fatal"
+              foreach ($match in ($logs -split "\r?\n" | Select-String -Pattern 'Win32GraphicsEnvironment.initDisplay|Graal startup probe:|Database initialized successfully|Segfault detected|java.lang.Error:' | Select-Object -First 6)) {
+                Write-Host "DETAIL $($match.Line)"
+              }
+            }
+          }
+
+      - name: Run actual native WareStat startup smoke
+        shell: pwsh
+        run: |
+          $appData = Join-Path $HOME 'AppData/Local/WareStat'
+          Remove-Item (Join-Path $appData 'data.db') -Force -ErrorAction SilentlyContinue
+          $stdout = Join-Path $PWD 'native-out/startup.stdout.log'
+          $stderr = Join-Path $PWD 'native-out/startup.stderr.log'
+          $process = Start-Process -FilePath (Join-Path $PWD 'native-out/WareStat-native.exe') -ArgumentList "-Djava.home=$PWD/native-out" -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+          Start-Sleep -Seconds 12
+          if ($process.HasExited) {
+            Get-Content $stdout -ErrorAction SilentlyContinue
+            Get-Content $stderr -ErrorAction SilentlyContinue
+            throw "Native WareStat exited during startup with code $($process.ExitCode)"
+          }
+          Stop-Process -Id $process.Id -Force
+          Start-Sleep -Milliseconds 500
+          $logs = ''
+          if (Test-Path $stdout) { $logs += Get-Content $stdout -Raw }
+          if (Test-Path $stderr) { $logs += Get-Content $stderr -Raw }
+          Write-Host $logs
+          $fatal = 'IllegalStateException|\[webview-embed\] No JAWT_GetAWT|could not obtain a native window handle|Native webview_embed_create returned 0|UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError|Could not instantiate Shell Folder Manager|Uncaught failure on|java\\.lang\\.Error: java\\.home property not set|no ComponentUI class for|Segfault detected|EXCEPTION_ACCESS_VIOLATION'
+          if ($logs -match $fatal) { throw "Fatal Native Image runtime problem detected" }
+          Write-Host 'Actual WareStat native executable remained healthy through startup'
+
+      - name: Build Windows distribution launcher
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\\Microsoft Visual Studio\\Installer\\vswhere.exe"
+          if (-not (Test-Path $vswhere)) { throw "vswhere.exe not found" }
+          $vsRoot = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vsRoot) { throw "Visual Studio C++ build tools not found" }
+          Import-Module (Join-Path $vsRoot 'Common7\\Tools\\Microsoft.VisualStudio.DevShell.dll')
+          Enter-VsDevShell -VsInstallPath $vsRoot -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+
+          rc.exe /nologo /fo native-out\\WareStatLauncher.res packaging\\native_launcher_windows.rc
+          if ($LASTEXITCODE -ne 0) { throw "Windows launcher resource compilation failed" }
+          cl.exe /nologo /O2 /MT packaging\\native_launcher_windows.c native-out\\WareStatLauncher.res user32.lib /Fe:native-out\\WareStat.exe /link /SUBSYSTEM:WINDOWS /INCREMENTAL:NO
+          if ($LASTEXITCODE -ne 0) { throw "Windows launcher compilation failed" }
+
+      - name: Assemble and smoke-test Windows distribution
+        shell: pwsh
+        run: |
+          $stage = Join-Path $PWD 'dist/native/windows'
+          Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force $stage | Out-Null
+
+          Copy-Item native-out/WareStat.exe,native-out/WareStat-native.exe -Destination $stage
+          Get-ChildItem native-out -File -Filter '*.dll' | Copy-Item -Destination $stage
+          Copy-Item native-out/lib -Destination (Join-Path $stage 'lib') -Recurse
+          Copy-Item LICENSE-THIRD-PARTY.txt,NOTICE.txt -Destination $stage
+          $license = Join-Path $HOME 'AppData/Local/WareStat/LICENSE.txt'
+          if (Test-Path $license) { Copy-Item $license (Join-Path $stage 'LICENSE.txt') }
+
+          $stdout = Join-Path $env:RUNNER_TEMP 'warestat-packaged.stdout.log'
+          $stderr = Join-Path $env:RUNNER_TEMP 'warestat-packaged.stderr.log'
+          Remove-Item $stdout,$stderr -Force -ErrorAction SilentlyContinue
+          $process = Start-Process -FilePath (Join-Path $stage 'WareStat.exe') -WorkingDirectory $stage -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+          Start-Sleep -Seconds 12
+          if ($process.HasExited) {
+            Get-Content $stdout -ErrorAction SilentlyContinue
+            Get-Content $stderr -ErrorAction SilentlyContinue
+            throw "Packaged WareStat launcher exited during startup with code $($process.ExitCode)"
+          }
+          & taskkill.exe /PID $process.Id /T /F | Out-Null
+          Start-Sleep -Milliseconds 500
+          $logs = ''
+          if (Test-Path $stdout) { $logs += Get-Content $stdout -Raw }
+          if (Test-Path $stderr) { $logs += Get-Content $stderr -Raw }
+          Write-Host $logs
+          $fatal = 'IllegalStateException|UnsatisfiedLinkError|NoClassDefFoundError|MissingRegistrationError|Segfault detected|EXCEPTION_ACCESS_VIOLATION|java\\.lang\\.Error: java\\.home property not set'
+          if ($logs -match $fatal) { throw "Fatal packaged Windows runtime problem detected" }
+
+          # WebView2 creates per-executable user data during the smoke test.
+          # Never ship CI browser state inside the installer.
+          Remove-Item (Join-Path $stage 'WareStat-native.exe.WebView2') -Recurse -Force -ErrorAction SilentlyContinue
+          $leaks = Get-ChildItem $stage -Recurse -File | Where-Object { $_.Name -match '\\.log$|BrowserMetrics|Crashpad' }
+          if ($leaks) {
+            $leaks | Format-Table FullName
+            throw "Runtime/test state leaked into Windows distribution"
+          }
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ISCC.exe -ErrorAction SilentlyContinue)) {
+            choco install innosetup -y --no-progress
+          }
+          $iscc = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+          if (-not $iscc) {
+            $candidate = Get-ChildItem 'C:/Program Files (x86)/Inno Setup 6/ISCC.exe','C:/Program Files/Inno Setup 6/ISCC.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $candidate) { throw "Inno Setup compiler not found" }
+            $isccPath = $candidate.FullName
+          } else {
+            $isccPath = $iscc.Source
+          }
+
+          $versionLine = Get-Content build.properties | Where-Object { $_ -like 'app.version=*' } | Select-Object -First 1
+          if (-not $versionLine) { throw 'app.version not found in build.properties' }
+          $version = $versionLine.Split('=', 2)[1].Trim()
+          $output = Join-Path $PWD 'dist/installers'
+          New-Item -ItemType Directory -Force $output | Out-Null
+          & $isccPath "/DMyAppVersion=$version" "/DMySourceDir=$PWD\\dist\\native\\windows" "/DMyOutputDir=$output" "/DMyIcon=$PWD\\resources\\icons\\warestat.ico" packaging/WareStatNative.iss
+          if ($LASTEXITCODE -ne 0) { throw "Windows installer build failed" }
+
+          $installer = Get-ChildItem $output -Filter 'WareStat-*-windows-x64-setup.exe' | Select-Object -First 1
+          if (-not $installer) { throw "Windows installer was not produced" }
+          $hash = (Get-FileHash -Algorithm SHA256 $installer.FullName).Hash.ToLowerInvariant()
+          "$hash  $($installer.Name)" | Set-Content "$($installer.FullName).sha256" -Encoding ascii
+
+      - name: Smoke-test installed Windows package
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem 'dist/installers' -Filter 'WareStat-*-windows-x64-setup.exe' | Select-Object -First 1
+          $installDir = Join-Path $env:RUNNER_TEMP 'WareStat-installed'
+          Remove-Item $installDir -Recurse -Force -ErrorAction SilentlyContinue
+
+          $install = Start-Process -FilePath $installer.FullName -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$installDir") -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "Silent installer test failed with code $($install.ExitCode)" }
+          if (-not (Test-Path (Join-Path $installDir 'WareStat.exe'))) { throw "Installed WareStat.exe is missing" }
+
+          $stdout = Join-Path $env:RUNNER_TEMP 'warestat-installed.stdout.log'
+          $stderr = Join-Path $env:RUNNER_TEMP 'warestat-installed.stderr.log'
+          Remove-Item $stdout,$stderr -Force -ErrorAction SilentlyContinue
+          $process = Start-Process -FilePath (Join-Path $installDir 'WareStat.exe') -WorkingDirectory $installDir -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+          Start-Sleep -Seconds 12
+          if ($process.HasExited) {
+            Get-Content $stdout -ErrorAction SilentlyContinue
+            Get-Content $stderr -ErrorAction SilentlyContinue
+            throw "Installed WareStat exited during startup with code $($process.ExitCode)"
+          }
+          & taskkill.exe /PID $process.Id /T /F | Out-Null
+          Start-Sleep -Milliseconds 500
+          $logs = ''
+          if (Test-Path $stdout) { $logs += Get-Content $stdout -Raw }
+          if (Test-Path $stderr) { $logs += Get-Content $stderr -Raw }
+          Write-Host $logs
+          $fatal = 'IllegalStateException|UnsatisfiedLinkError|NoClassDefFoundError|MissingRegistrationError|Segfault detected|EXCEPTION_ACCESS_VIOLATION|java\\.lang\\.Error: java\\.home property not set'
+          if ($logs -match $fatal) { throw "Fatal installed Windows runtime problem detected" }
+
+          $uninstaller = Get-ChildItem $installDir -Filter 'unins*.exe' | Select-Object -First 1
+          if ($uninstaller) {
+            & $uninstaller.FullName /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+          }
+
+      - name: Inspect native output
+        shell: pwsh
+        run: |
+          Get-ChildItem native-out -File | Select-Object Name,Length | Sort-Object Name | Format-Table -AutoSize
+          Get-ChildItem dist/installers -File | Select-Object Name,Length | Sort-Object Name | Format-Table -AutoSize
+
+      - name: Upload Windows distributable installer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: WareStat-windows-x64
+          path: |
+            dist/installers/WareStat-*-windows-x64-setup.exe
+            dist/installers/WareStat-*-windows-x64-setup.exe.sha256
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+
+  native-image-linux:
+    name: Linux x64 via Liberica NIK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Set up Liberica NIK Full for Java 21
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: liberica-nik
+          java-version: '21.0.12+1.2'
+          java-package: jdk+fx
+
+      - name: Install Linux build and runtime dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ant xvfb xauth gcc libc6-dev \
+            libgtk-3-0t64 libwebkit2gtk-4.1-0 \
+            libx11-6 libxext6 libxrender1 libxtst6 libxi6 libxrandr2 \
+            libasound2t64 fontconfig fonts-dejavu-core
+
+      - name: Compile release classes and external probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          ant clean compile-release
+          mkdir -p build/graal-probe-classes
+          javac -encoding UTF-8 -cp "build/release/classes:lib/*" -d build/graal-probe-classes packaging/GraalProbe.java
+
+      - name: Seed first-run state
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_data="$HOME/.warestat"
+          rm -rf "$app_data"
+          mkdir -p "$app_data"
+          printf 'language=it\n' > "$app_data/app_settings.properties"
+          printf 'accepted by CI GraalVM probe\n' > "$app_data/eula_accepted.txt"
+
+      - name: Collect reachability metadata from real WareStat startup
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf native-config "$RUNNER_TEMP/graal-trace"
+          mkdir -p native-config "$RUNNER_TEMP/graal-trace"
+          trace_log="$RUNNER_TEMP/graal-linux-trace.log"
+          : > "$trace_log"
+
+          # WebKitGTK can abort while tearing down after the probe already
+          # succeeded. Ask the agent to flush metadata periodically, observe
+          # the real MainWindow/WebView success marker, then stop the trace.
+          xvfb-run -a java \
+            -agentlib:native-image-agent=config-output-dir="$PWD/native-config",config-write-period-secs=2,config-write-initial-delay-secs=1 \
+            -cp "build/graal-probe-classes:build/release/classes:lib/*" \
+            GraalProbe trace "$RUNNER_TEMP/graal-trace" > "$trace_log" 2>&1 &
+          pid=$!
+          passed=false
+          for second in $(seq 1 35); do
+            sleep 1
+            if grep -Fq 'Graal startup probe: MainWindow and embedded WebView passed' "$trace_log"; then
+              passed=true
+              break
+            fi
+            if ! kill -0 "$pid" 2>/dev/null; then
+              break
+            fi
+          done
+          cat "$trace_log"
+          if [ "$passed" != true ]; then
+            set +e
+            wait "$pid"
+            code=$?
+            set -e
+            echo "Linux reachability trace did not reach the startup marker; exit=$code" >&2
+            exit 1
+          fi
+          sleep 3
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+
+          # With periodic writes this NIK build may preserve the latest valid
+          # snapshot in an agent-*.tmp* directory. Promote that cumulative
+          # snapshot to the directory consumed by native-image.
+          snapshot="$(find native-config -mindepth 1 -maxdepth 1 -type d -name 'agent-*.tmp*' -print | sort | tail -n1)"
+          if [ -n "$snapshot" ]; then
+            mkdir -p "$RUNNER_TEMP/linux-native-config-final"
+            cp -a "$snapshot/." "$RUNNER_TEMP/linux-native-config-final/"
+            rm -rf native-config
+            mkdir -p native-config
+            cp -a "$RUNNER_TEMP/linux-native-config-final/." native-config/
+          fi
+
+          if ! find native-config -maxdepth 1 -type f -name '*-config.json' -size +0c -print -quit | grep -q .; then
+            echo "Reachability metadata was not flushed by the Linux trace" >&2
+            find native-config -maxdepth 2 -type f -print -exec wc -c {} \;
+            exit 1
+          fi
+          find native-config -maxdepth 2 -type f -print -exec wc -c {} \;
+
+      - name: Inspect WebView native resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar tf lib/webview-1.0.10.jar | grep -E -i 'native|so|linux|webview|META-INF' | head -200 || true
+
+      - name: Build Linux Native Image
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf native-out
+          mkdir -p native-out
+          config="$(cd native-config && pwd)"
+          out="$(cd native-out && pwd)"
+          cd native-out
+          native-image \
+            --no-fallback \
+            -J-Xmx6g \
+            -Djava.awt.headless=false \
+            "-Dorg.sqlite.lib.exportPath=$out" \
+            "-H:ConfigurationFileDirectories=$config" \
+            -H:+ReportExceptionStackTraces \
+            '-H:IncludeResources=i18n/.*' \
+            '-H:IncludeResources=icons/.*' \
+            '-H:IncludeResources=fonts/.*' \
+            '-H:IncludeResources=META-INF/services/.*' \
+            '-H:IncludeResources=LICENSE-THIRD-PARTY.txt' \
+            '-H:IncludeResources=NOTICE.txt' \
+            -o WareStat-native \
+            -cp '../build/graal-probe-classes:../build/release/classes:../lib/*' \
+            GraalProbe
+          file WareStat-native
+          find . -maxdepth 1 -type f -print
+
+      - name: Run Linux native library probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/graal-native-probe"
+          mkdir -p "$RUNNER_TEMP/graal-native-probe"
+          xvfb-run -a env LD_LIBRARY_PATH="$PWD/native-out:${LD_LIBRARY_PATH:-}" \
+            ./native-out/WareStat-native libraries "$RUNNER_TEMP/graal-native-probe"
+          test -s "$RUNNER_TEMP/graal-native-probe/smoke.pdf"
+
+      - name: Run Linux WebView and MainWindow probes
+        shell: bash
+        run: |
+          set -euo pipefail
+          fatal='IllegalStateException|UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError|could not obtain a native window handle|Segfault detected|EXCEPTION_ACCESS_VIOLATION'
+
+          run_live_probe() {
+            mode="$1"
+            marker="$2"
+            log="$3"
+            : > "$log"
+
+            # WebKitGTK may abort while tearing down even after the embedded
+            # browser has successfully attached and executed JavaScript.
+            # Treat the live success marker as the test result and terminate
+            # the probe before teardown, as we already do on Windows.
+            xvfb-run -a env LD_LIBRARY_PATH="$PWD/native-out:${LD_LIBRARY_PATH:-}" \
+              ./native-out/WareStat-native "$mode" "$RUNNER_TEMP/graal-native-probe" > "$log" 2>&1 &
+            pid=$!
+            passed=false
+            for second in $(seq 1 30); do
+              sleep 1
+              if grep -Fq "$marker" "$log"; then
+                passed=true
+                break
+              fi
+              if ! kill -0 "$pid" 2>/dev/null; then
+                break
+              fi
+            done
+
+            cat "$log"
+            if grep -E "$fatal" "$log"; then
+              echo "Fatal Linux $mode runtime problem detected" >&2
+              kill "$pid" 2>/dev/null || true
+              wait "$pid" 2>/dev/null || true
+              exit 1
+            fi
+            if [ "$passed" != true ]; then
+              set +e
+              wait "$pid"
+              code=$?
+              set -e
+              echo "Linux $mode probe did not reach its success marker; exit=$code" >&2
+              exit 1
+            fi
+
+            kill "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+          }
+
+          # The standalone offscreen WebView probe is not representative
+          # of WareStat on Linux Native Image and can time out under Xvfb.
+          # Validate the real application path instead: MainWindow + embedded
+          # WebView + JavaScript execution.
+          run_live_probe startup 'Graal startup probe: MainWindow and embedded WebView passed' native-out/mainwindow-probe.log
+
+      - name: Run actual Linux WareStat startup smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f "$HOME/.warestat/data.db"
+          smoke="$RUNNER_TEMP/warestat-linux-startup.log"
+          : > "$smoke"
+          xvfb-run -a env LD_LIBRARY_PATH="$PWD/native-out:${LD_LIBRARY_PATH:-}" \
+            ./native-out/WareStat-native > "$smoke" 2>&1 &
+          pid=$!
+          for second in $(seq 1 12); do
+            sleep 1
+            if ! kill -0 "$pid" 2>/dev/null; then
+              set +e
+              wait "$pid"
+              code=$?
+              set -e
+              cat "$smoke"
+              echo "Native Linux WareStat exited during startup with code $code" >&2
+              exit 1
+            fi
+          done
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          cat "$smoke"
+          if grep -E 'IllegalStateException|UnsatisfiedLinkError|NoClassDefFoundError|MissingRegistrationError|Segfault detected|EXCEPTION_ACCESS_VIOLATION' "$smoke"; then
+            echo "Fatal Native Image runtime problem detected" >&2
+            exit 1
+          fi
+
+      - name: Package Linux tarball and DEB
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^app.version=//p' build.properties | head -n1 | tr -d '\r')"
+          stage="dist/native/linux/WareStat"
+          installers="dist/installers"
+          debroot="dist/debroot"
+          rm -rf dist/native/linux "$debroot" "$installers"
+          mkdir -p "$stage" "$installers"
+
+          cp native-out/WareStat-native "$stage/"
+          find native-out -maxdepth 1 -type f -name '*.so' -exec cp {} "$stage/" \;
+          cp LICENSE-THIRD-PARTY.txt NOTICE.txt "$stage/"
+          cp packaging/native_launcher_linux.sh "$stage/warestat"
+          chmod 755 "$stage/warestat" "$stage/WareStat-native"
+
+          tarball="$installers/WareStat-$version-linux-x64.tar.gz"
+          tar -C "dist/native/linux" -czf "$tarball" WareStat
+
+          mkdir -p "$debroot/DEBIAN" "$debroot/opt/warestat" \
+                   "$debroot/usr/bin" "$debroot/usr/share/applications" \
+                   "$debroot/usr/share/icons/hicolor/256x256/apps"
+          cp -a "$stage/." "$debroot/opt/warestat/"
+          ln -s /opt/warestat/warestat "$debroot/usr/bin/warestat"
+          cp resources/icons/logo.png "$debroot/usr/share/icons/hicolor/256x256/apps/warestat.png"
+
+          cat > "$debroot/usr/share/applications/warestat.desktop" <<EOF
+          [Desktop Entry]
+          Type=Application
+          Name=WareStat
+          Comment=Inventory and warehouse management
+          Exec=/usr/bin/warestat
+          Icon=warestat
+          Terminal=false
+          Categories=Office;
+          StartupNotify=true
+          EOF
+
+          cat > "$debroot/DEBIAN/control" <<EOF
+          Package: warestat
+          Version: $version
+          Section: office
+          Priority: optional
+          Architecture: amd64
+          Maintainer: WareStat <info@warestat.com>
+          Depends: libgtk-3-0t64, libwebkit2gtk-4.1-0, fontconfig
+          Homepage: https://www.warestat.com
+          Description: WareStat inventory and warehouse management
+           Native desktop inventory and warehouse management application.
+          EOF
+
+          deb="$installers/WareStat-$version-linux-x64.deb"
+          dpkg-deb --build --root-owner-group "$debroot" "$deb"
+
+          sha256sum "$tarball" > "$tarball.sha256"
+          sha256sum "$deb" > "$deb.sha256"
+          ls -lh "$tarball" "$deb"
+
+      - name: Install and smoke-test Linux DEB
+        shell: bash
+        run: |
+          set -euo pipefail
+          deb="$(find dist/installers -maxdepth 1 -name 'WareStat-*-linux-x64.deb' -print -quit)"
+          test -n "$deb"
+          sudo dpkg -i "$deb"
+          test -x /opt/warestat/WareStat-native
+          test -x /usr/bin/warestat
+
+          smoke="$RUNNER_TEMP/warestat-linux-installed.log"
+          : > "$smoke"
+          xvfb-run -a /usr/bin/warestat > "$smoke" 2>&1 &
+          pid=$!
+          for second in $(seq 1 12); do
+            sleep 1
+            if ! kill -0 "$pid" 2>/dev/null; then
+              set +e
+              wait "$pid"
+              code=$?
+              set -e
+              cat "$smoke"
+              echo "Installed Linux WareStat exited during startup with code $code" >&2
+              exit 1
+            fi
+          done
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          cat "$smoke"
+          if grep -E 'IllegalStateException|UnsatisfiedLinkError|NoClassDefFoundError|MissingRegistrationError|Segfault detected|EXCEPTION_ACCESS_VIOLATION' "$smoke"; then
+            echo "Fatal installed Linux runtime problem detected" >&2
+            exit 1
+          fi
+
+      - name: Upload Linux distributable packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: WareStat-linux-x64
+          path: |
+            dist/installers/WareStat-*-linux-x64.deb
+            dist/installers/WareStat-*-linux-x64.deb.sha256
+            dist/installers/WareStat-*-linux-x64.tar.gz
+            dist/installers/WareStat-*-linux-x64.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
