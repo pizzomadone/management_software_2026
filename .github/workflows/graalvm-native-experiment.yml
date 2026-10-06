@@ -1013,13 +1013,7 @@ jobs:
           cp native-out/WareStat-native "$stage/"
           find native-out -maxdepth 1 -type f -name '*.so' -exec cp {} "$stage/" \;
           cp LICENSE-THIRD-PARTY.txt NOTICE.txt "$stage/"
-          cat > "$stage/warestat" <<'SH'
-          #!/bin/sh
-          set -eu
-          HERE="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-          export LD_LIBRARY_PATH="$HERE${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-          exec "$HERE/WareStat-native" "-Dorg.sqlite.lib.exportPath=$HERE" "$@"
-          SH
+          cp packaging/native_launcher_linux.sh "$stage/warestat"
           chmod 755 "$stage/warestat" "$stage/WareStat-native"
 
           tarball="$installers/WareStat-$version-linux-x64.tar.gz"
