@@ -672,7 +672,9 @@ jobs:
             $isccPath = $iscc.Source
           }
 
-          $version = ((Select-String -Path build.properties -Pattern '^app\\.version=(.+)$').Matches[0].Groups[1].Value).Trim()
+          $versionLine = Get-Content build.properties | Where-Object { $_ -like 'app.version=*' } | Select-Object -First 1
+          if (-not $versionLine) { throw 'app.version not found in build.properties' }
+          $version = $versionLine.Split('=', 2)[1].Trim()
           $output = Join-Path $PWD 'dist/installers'
           New-Item -ItemType Directory -Force $output | Out-Null
           & $isccPath "/DMyAppVersion=$version" "/DMySourceDir=$PWD\\dist\\native\\windows" "/DMyOutputDir=$output" "/DMyIcon=$PWD\\resources\\icons\\warestat.ico" packaging/WareStatNative.iss
