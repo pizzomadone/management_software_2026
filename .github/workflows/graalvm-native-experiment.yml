@@ -672,22 +672,7 @@ jobs:
             $isccPath = $iscc.Source
           }
 
-          $version = ((Select-String -Path build.properties -Pattern '^app\\.version=(.+)
-        shell: pwsh
-        run: |
-          Get-ChildItem native-out -File | Select-Object Name,Length | Sort-Object Name | Format-Table -AutoSize
-
-      - name: Upload Windows distributable installer
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: WareStat-windows-x64
-          path: |
-            dist/installers/WareStat-*-windows-x64-setup.exe
-            dist/installers/WareStat-*-windows-x64-setup.exe.sha256
-          if-no-files-found: error
-          retention-days: 30
-          compression-level: 0
-).Matches[0].Groups[1].Value).Trim()
+          $version = ((Select-String -Path build.properties -Pattern '^app\\.version=(.+)$').Matches[0].Groups[1].Value).Trim()
           $output = Join-Path $PWD 'dist/installers'
           New-Item -ItemType Directory -Force $output | Out-Null
           & $isccPath "/DMyAppVersion=$version" "/DMySourceDir=$PWD\\dist\\native\\windows" "/DMyOutputDir=$output" "/DMyIcon=$PWD\\resources\\icons\\warestat.ico" packaging/WareStatNative.iss
@@ -737,15 +722,15 @@ jobs:
         shell: pwsh
         run: |
           Get-ChildItem native-out -File | Select-Object Name,Length | Sort-Object Name | Format-Table -AutoSize
+          Get-ChildItem dist/installers -File | Select-Object Name,Length | Sort-Object Name | Format-Table -AutoSize
 
-      - name: Upload experimental native artifacts
-        if: always()
+      - name: Upload Windows distributable installer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: WareStat-graalvm-windows-x64-experiment
+          name: WareStat-windows-x64
           path: |
-            native-out/
-            native-config/
+            dist/installers/WareStat-*-windows-x64-setup.exe
+            dist/installers/WareStat-*-windows-x64-setup.exe.sha256
           if-no-files-found: error
-          retention-days: 7
-          compression-level: 9
+          retention-days: 30
+          compression-level: 0
