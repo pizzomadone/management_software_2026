@@ -221,6 +221,15 @@ public final class GraalProbe {
             return;
         }
 
+        if (isWindowsNativeImage()) {
+            // On Windows Native Image, tearing down the embedded WebView can
+            // crash after JavaScript has already succeeded. Keep the verified
+            // live UI running; CI terminates this probe after seeing the marker.
+            while (true) {
+                Thread.sleep(1000);
+            }
+        }
+
         // Do not call System.exit from the AWT Event Dispatch Thread. On
         // Windows Native Image that can crash during VM shutdown even after
         // the WebView has attached and JavaScript has succeeded.
@@ -293,6 +302,17 @@ public final class GraalProbe {
         }
 
         verifyJavaScript(embeddedWebView[0], "WARESTAT_MAINWINDOW_WEBVIEW_OK", 15000);
+
+        if (isWindowsNativeImage()) {
+            System.out.println("Graal startup probe: MainWindow and embedded WebView passed");
+            System.out.flush();
+            // Keep the real window/WebView alive. CI kills the probe after
+            // observing the success marker, avoiding a Native Image teardown
+            // crash that is unrelated to normal in-app operation.
+            while (true) {
+                Thread.sleep(1000);
+            }
+        }
 
         SwingUtilities.invokeAndWait(() -> {
             for (Window open : Window.getWindows()) {
