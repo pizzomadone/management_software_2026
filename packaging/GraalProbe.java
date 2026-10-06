@@ -41,7 +41,16 @@ public final class GraalProbe {
     private GraalProbe() {}
 
     public static void main(String[] args) throws Exception {
-        String mode = args.length > 0 ? args[0] : "libraries";
+        // When this class is used as the Windows Native Image entry point,
+        // no arguments means "run WareStat normally". Keeping this wrapper
+        // outside src/ preserves application behavior while giving Native
+        // Image the same AWT/WebView reachability that the verified probe has.
+        if (args.length == 0) {
+            MainWindow.main(new String[0]);
+            return;
+        }
+
+        String mode = args[0];
         Path workDir = args.length > 1 ? Path.of(args[1]) : Files.createTempDirectory("warestat-graal-probe");
         Files.createDirectories(workDir);
 
