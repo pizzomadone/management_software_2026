@@ -15,6 +15,7 @@ import java.sql.Statement;
 import java.util.Locale;
 import java.util.ResourceBundle;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -148,6 +149,9 @@ public final class GraalProbe {
     private static void runWebViewProbe() throws Exception {
         installFatalUncaughtHandler();
         AtomicBoolean completed = new AtomicBoolean(false);
+        CountDownLatch success = new CountDownLatch(1);
+        final JFrame[] frameRef = new JFrame[1];
+        final WebViewComponent[] webViewRef = new WebViewComponent[1];
 
         Thread watchdog = new Thread(() -> {
             try {
@@ -167,6 +171,8 @@ public final class GraalProbe {
             try {
                 JFrame frame = new JFrame("WareStat Graal WebView probe");
                 WebViewComponent webView = WebViewComponent.create();
+                frameRef[0] = frame;
+                webViewRef[0] = webView;
                 frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
                 frame.setLayout(new BorderLayout());
                 frame.add(webView, BorderLayout.CENTER);
@@ -199,10 +205,8 @@ public final class GraalProbe {
                         if (value != null && value.contains(WEBVIEW_OK)) {
                             completed.set(true);
                             poll.stop();
-                            webView.dispose();
-                            frame.dispose();
                             System.out.println("Graal native WebView probe: JavaScript evaluation passed");
-                            System.exit(0);
+                            success.countDown();
                         }
                     });
                 });
@@ -212,7 +216,23 @@ public final class GraalProbe {
             }
         });
 
-        Thread.sleep(30000);
+        if (!success.await(25, TimeUnit.SECONDS)) {
+            failProbe("WebView probe did not complete successfully", null);
+            return;
+        }
+
+        // Do not call System.exit from the AWT Event Dispatch Thread. On
+        // Windows Native Image that can crash during VM shutdown even after
+        // the WebView has attached and JavaScript has succeeded.
+        SwingUtilities.invokeAndWait(() -> {
+            if (webViewRef[0] != null) {
+                webViewRef[0].dispose();
+            }
+            if (frameRef[0] != null) {
+                frameRef[0].dispose();
+            }
+        });
+        System.exit(0);
     }
 
     private static boolean isNotDisplayedError(Throwable error) {
