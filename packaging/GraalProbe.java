@@ -289,9 +289,10 @@ public final class GraalProbe {
     private static void runActualMainWindowStartup() throws Exception {
         installFatalUncaughtHandler();
 
+        long watchdogTimeoutMillis = isLinux() ? 90000 : 30000;
         Thread watchdog = new Thread(() -> {
             try {
-                Thread.sleep(30000);
+                Thread.sleep(watchdogTimeoutMillis);
                 System.err.println("Graal startup probe timed out");
                 Runtime.getRuntime().halt(2);
             } catch (InterruptedException ignored) {
