@@ -612,7 +612,7 @@ jobs:
 
           rc.exe /nologo /fo native-out\\WareStatLauncher.res packaging\\native_launcher_windows.rc
           if ($LASTEXITCODE -ne 0) { throw "Windows launcher resource compilation failed" }
-          cl.exe /nologo /O2 /MT /DUNICODE /D_UNICODE packaging\\native_launcher_windows.c native-out\\WareStatLauncher.res /Fe:native-out\\WareStat.exe /link /SUBSYSTEM:WINDOWS /INCREMENTAL:NO
+          cl.exe /nologo /O2 /MT packaging\\native_launcher_windows.c native-out\\WareStatLauncher.res user32.lib /Fe:native-out\\WareStat.exe /link /SUBSYSTEM:WINDOWS /INCREMENTAL:NO
           if ($LASTEXITCODE -ne 0) { throw "Windows launcher compilation failed" }
 
       - name: Assemble and smoke-test Windows distribution
