@@ -92,6 +92,8 @@ Linux requires GTK/WebKitGTK system packages for the embedded browser. The CI va
 
 The standalone offscreen WebView diagnostic is deliberately not the Linux release gate because GTK's offscreen widget path can time out even when the real embedded WebView works.
 
+The real Linux MainWindow/WebView probe keeps JavaScript validation mandatory but allows a longer startup window under Xvfb; its watchdog must remain longer than the JavaScript readiness timeout, otherwise CI can kill a healthy WebKitGTK startup prematurely.
+
 The DEB installs application files under `/opt/warestat` and exposes `/usr/bin/warestat`. The launcher must resolve `/opt/warestat` correctly even when invoked through that symlink. The portable tarball falls back to the directory containing the launcher.
 
 ## Native libraries
