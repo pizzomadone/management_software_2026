@@ -45,7 +45,10 @@ public final class GraalProbe {
         Path workDir = args.length > 1 ? Path.of(args[1]) : Files.createTempDirectory("warestat-graal-probe");
         Files.createDirectories(workDir);
 
-        runLibraries(workDir);
+        boolean skipLibraryWarmup = "startup-no-libs".equals(mode);
+        if (!skipLibraryWarmup) {
+            runLibraries(workDir);
+        }
 
         switch (mode) {
             case "libraries":
@@ -57,6 +60,7 @@ public final class GraalProbe {
                 return;
             case "trace":
             case "startup":
+            case "startup-no-libs":
                 runActualMainWindowStartup();
                 return;
             default:
