@@ -361,6 +361,41 @@ jobs:
           if ($logs -match $fatal) { throw "Fatal WebView runtime problem detected" }
           if (-not $passed) { throw "Native WebView success marker missing before process exit/timeout" }
           Write-Host 'Native WebView attached and executed JavaScript'
+
+      - name: Diagnose Windows MainWindow startup without library warmup
+        shell: pwsh
+        run: |
+          $probeDir = Join-Path $env:RUNNER_TEMP 'graal-native-probe'
+          $stdout = Join-Path $PWD 'native-out/mainwindow-no-libs.stdout.log'
+          $stderr = Join-Path $PWD 'native-out/mainwindow-no-libs.stderr.log'
+          Remove-Item $stdout,$stderr -Force -ErrorAction SilentlyContinue
+          $args = @("-Djava.home=$PWD/native-out", 'startup-no-libs', $probeDir)
+          $process = Start-Process -FilePath (Join-Path $PWD 'native-out/WareStat-native-probe.exe') -ArgumentList $args -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+          $passed = $false
+          for ($i = 0; $i -lt 40; $i++) {
+            Start-Sleep -Milliseconds 500
+            $logs = ''
+            if (Test-Path $stdout) { $logs += Get-Content $stdout -Raw }
+            if (Test-Path $stderr) { $logs += Get-Content $stderr -Raw }
+            if ($logs -match 'Graal startup probe: MainWindow and embedded WebView passed') {
+              $passed = $true
+              break
+            }
+            if ($process.HasExited) { break }
+          }
+          $exitCode = if ($process.HasExited) { $process.ExitCode } else { $null }
+          if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+          Start-Sleep -Milliseconds 300
+          $logs = ''
+          if (Test-Path $stdout) { $logs += Get-Content $stdout -Raw }
+          if (Test-Path $stderr) { $logs += Get-Content $stderr -Raw }
+          Write-Host $logs
+          if ($passed) {
+            Write-Host 'DIAGNOSTIC startup-no-libs PASSED'
+          } else {
+            Write-Host "DIAGNOSTIC startup-no-libs FAILED; exit=$exitCode"
+          }
+
       - name: Verify real MainWindow embedded WebView
         shell: pwsh
         run: |
