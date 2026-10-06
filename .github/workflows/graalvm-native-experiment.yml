@@ -291,11 +291,24 @@ jobs:
           rm -f native-out/WareStat-native-probe native-out/*.log native-out/jawt_bridge.o
           df -h .
 
-          mkdir -p dist/dmg-root
-          cp -R "$app" dist/dmg-root/
-          ln -s /Applications dist/dmg-root/Applications
           dmg="$installers/WareStat-$version-$suffix.dmg"
-          hdiutil create -volname "WareStat $version" -srcfolder dist/dmg-root -ov -format UDZO "$dmg"
+          rw_dmg="$RUNNER_TEMP/WareStat-$suffix-rw.dmg"
+          mount_dir="$RUNNER_TEMP/WareStat-$suffix-mount"
+          rm -f "$rw_dmg" "$dmg"
+          rm -rf "$mount_dir"
+          mkdir -p "$mount_dir"
+
+          # Intel runners can mis-estimate -srcfolder image size for the
+          # Native Image executable. Create a fixed-size writable image,
+          # populate it, then convert it to the final compressed DMG.
+          hdiutil create -size 256m -fs HFS+ -volname "WareStat $version" -ov "$rw_dmg"
+          hdiutil attach "$rw_dmg" -nobrowse -noverify -mountpoint "$mount_dir"
+          ditto "$app" "$mount_dir/WareStat.app"
+          ln -s /Applications "$mount_dir/Applications"
+          sync
+          hdiutil detach "$mount_dir"
+          hdiutil convert "$rw_dmg" -format UDZO -imagekey zlib-level=9 -o "$dmg"
+          rm -f "$rw_dmg"
 
           app_zip="$installers/WareStat-$version-$suffix-app.zip"
           ditto -c -k --sequesterRsrc --keepParent "$app" "$app_zip"
