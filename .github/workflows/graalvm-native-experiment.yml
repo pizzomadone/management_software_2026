@@ -297,11 +297,10 @@ jobs:
             # Keep the native AWT and image-specific support libraries aligned:
             # building two separate executables into one output directory can
             # leave the first EXE referencing libraries produced by the second.
-            $probeArgs = @('--no-fallback','-J-Xmx6g','-Djava.awt.headless=false',"-Dorg.sqlite.lib.exportPath=$out","-H:ConfigurationFileDirectories=$config",'-H:ReflectionConfigurationFiles=../packaging/graalvm-windows-reflect-config.json','-H:+ReportExceptionStackTraces','-H:IncludeResources=i18n/.*','-H:IncludeResources=icons/.*','-H:IncludeResources=fonts/.*','-H:IncludeResources=META-INF/services/.*','-H:IncludeResources=LICENSE-THIRD-PARTY.txt','-H:IncludeResources=NOTICE.txt','-o','WareStat-native-probe','-cp','../build/graal-probe-classes;../build/release/classes;../lib/*','GraalProbe')
+            $probeArgs = @('--no-fallback','-J-Xmx6g','-Djava.awt.headless=false',"-Dorg.sqlite.lib.exportPath=$out","-H:ConfigurationFileDirectories=$config",'-H:ReflectionConfigurationFiles=../packaging/graalvm-windows-reflect-config.json','-H:+ReportExceptionStackTraces','-H:IncludeResources=i18n/.*','-H:IncludeResources=icons/.*','-H:IncludeResources=fonts/.*','-H:IncludeResources=META-INF/services/.*','-H:IncludeResources=LICENSE-THIRD-PARTY.txt','-H:IncludeResources=NOTICE.txt','-o','WareStat-native','-cp','../build/graal-probe-classes;../build/release/classes;../lib/*','GraalProbe')
             & native-image @probeArgs
             if ($LASTEXITCODE -ne 0) { throw "Graal native image build failed" }
-            Copy-Item -LiteralPath (Join-Path $out 'WareStat-native-probe.exe') -Destination (Join-Path $out 'WareStat-native.exe') -Force
-            Write-Host "Single-image Windows build: application and probe are byte-identical"
+            Write-Host "Single Native Image compiled with final executable name WareStat-native.exe"
           } finally {
             Pop-Location
           }
@@ -327,7 +326,7 @@ jobs:
           $probeDir = Join-Path $env:RUNNER_TEMP 'graal-native-probe'
           Remove-Item $probeDir -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force $probeDir | Out-Null
-          & ./native-out/WareStat-native-probe.exe "-Djava.home=$PWD/native-out" libraries $probeDir
+          & ./native-out/WareStat-native.exe "-Djava.home=$PWD/native-out" libraries $probeDir
           if ($LASTEXITCODE -ne 0) { throw "Native runtime probe failed" }
           $pdf = Join-Path $probeDir 'smoke.pdf'
           if (-not (Test-Path $pdf) -or (Get-Item $pdf).Length -lt 1000) { throw "Native PDF smoke output is missing or empty" }
@@ -340,7 +339,7 @@ jobs:
           $stderr = Join-Path $PWD 'native-out/webview-probe.stderr.log'
           Remove-Item $stdout,$stderr -Force -ErrorAction SilentlyContinue
           $args = @("-Djava.home=$PWD/native-out", 'webview', $probeDir)
-          $process = Start-Process -FilePath (Join-Path $PWD 'native-out/WareStat-native-probe.exe') -ArgumentList $args -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+          $process = Start-Process -FilePath (Join-Path $PWD 'native-out/WareStat-native.exe') -ArgumentList $args -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
           $passed = $false
           for ($i = 0; $i -lt 60; $i++) {
             Start-Sleep -Milliseconds 500
@@ -372,7 +371,7 @@ jobs:
           $stderr = Join-Path $PWD 'native-out/mainwindow-no-libs.stderr.log'
           Remove-Item $stdout,$stderr -Force -ErrorAction SilentlyContinue
           $args = @("-Djava.home=$PWD/native-out", 'startup-no-libs', $probeDir)
-          $process = Start-Process -FilePath (Join-Path $PWD 'native-out/WareStat-native-probe.exe') -ArgumentList $args -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+          $process = Start-Process -FilePath (Join-Path $PWD 'native-out/WareStat-native.exe') -ArgumentList $args -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
           $passed = $false
           for ($i = 0; $i -lt 40; $i++) {
             Start-Sleep -Milliseconds 500
@@ -406,7 +405,7 @@ jobs:
           $stderr = Join-Path $PWD 'native-out/mainwindow-probe.stderr.log'
           Remove-Item $stdout,$stderr -Force -ErrorAction SilentlyContinue
           $args = @("-Djava.home=$PWD/native-out", 'startup', $probeDir)
-          $process = Start-Process -FilePath (Join-Path $PWD 'native-out/WareStat-native-probe.exe') -ArgumentList $args -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+          $process = Start-Process -FilePath (Join-Path $PWD 'native-out/WareStat-native.exe') -ArgumentList $args -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
           $passed = $false
           for ($i = 0; $i -lt 90; $i++) {
             Start-Sleep -Milliseconds 500
@@ -435,7 +434,7 @@ jobs:
           $probeDir = Join-Path $env:RUNNER_TEMP 'graal-native-probe'
           $appData = Join-Path $HOME 'AppData/Local/WareStat'
           $nativeHome = Join-Path $PWD 'native-out'
-          $binaries = @('WareStat-native.exe', 'WareStat-native-probe.exe')
+          $binaries = @('WareStat-native.exe')
           foreach ($binary in $binaries) {
             $path = Join-Path $nativeHome $binary
             $info = Get-Item $path
