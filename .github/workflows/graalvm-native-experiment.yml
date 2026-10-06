@@ -918,25 +918,53 @@ jobs:
           set -euo pipefail
           fatal='IllegalStateException|UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError|could not obtain a native window handle|Segfault detected|EXCEPTION_ACCESS_VIOLATION'
 
-          : > native-out/webview-probe.log
-          xvfb-run -a env LD_LIBRARY_PATH="$PWD/native-out:${LD_LIBRARY_PATH:-}" \
-            ./native-out/WareStat-native webview "$RUNNER_TEMP/graal-native-probe" > native-out/webview-probe.log 2>&1
-          cat native-out/webview-probe.log
-          if grep -E "$fatal" native-out/webview-probe.log; then
-            echo "Fatal Linux WebView runtime problem detected" >&2
-            exit 1
-          fi
-          grep -F 'Graal native WebView probe: JavaScript evaluation passed' native-out/webview-probe.log
+          run_live_probe() {
+            mode="$1"
+            marker="$2"
+            log="$3"
+            : > "$log"
 
-          : > native-out/mainwindow-probe.log
-          xvfb-run -a env LD_LIBRARY_PATH="$PWD/native-out:${LD_LIBRARY_PATH:-}" \
-            ./native-out/WareStat-native startup "$RUNNER_TEMP/graal-native-probe" > native-out/mainwindow-probe.log 2>&1
-          cat native-out/mainwindow-probe.log
-          if grep -E "$fatal" native-out/mainwindow-probe.log; then
-            echo "Fatal Linux MainWindow/WebView runtime problem detected" >&2
-            exit 1
-          fi
-          grep -F 'Graal startup probe: MainWindow and embedded WebView passed' native-out/mainwindow-probe.log
+            # WebKitGTK may abort while tearing down even after the embedded
+            # browser has successfully attached and executed JavaScript.
+            # Treat the live success marker as the test result and terminate
+            # the probe before teardown, as we already do on Windows.
+            xvfb-run -a env LD_LIBRARY_PATH="$PWD/native-out:${LD_LIBRARY_PATH:-}" \
+              ./native-out/WareStat-native "$mode" "$RUNNER_TEMP/graal-native-probe" > "$log" 2>&1 &
+            pid=$!
+            passed=false
+            for second in $(seq 1 30); do
+              sleep 1
+              if grep -Fq "$marker" "$log"; then
+                passed=true
+                break
+              fi
+              if ! kill -0 "$pid" 2>/dev/null; then
+                break
+              fi
+            done
+
+            cat "$log"
+            if grep -E "$fatal" "$log"; then
+              echo "Fatal Linux $mode runtime problem detected" >&2
+              kill "$pid" 2>/dev/null || true
+              wait "$pid" 2>/dev/null || true
+              exit 1
+            fi
+            if [ "$passed" != true ]; then
+              set +e
+              wait "$pid"
+              code=$?
+              set -e
+              echo "Linux $mode probe did not reach its success marker; exit=$code" >&2
+              exit 1
+            fi
+
+            kill "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+          }
+
+          run_live_probe webview 'Graal native WebView probe: JavaScript evaluation passed' native-out/webview-probe.log
+          run_live_probe startup 'Graal startup probe: MainWindow and embedded WebView passed' native-out/mainwindow-probe.log
 
       - name: Run actual Linux WareStat startup smoke
         shell: bash
