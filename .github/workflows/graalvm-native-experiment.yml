@@ -1,4 +1,4 @@
-name: Native Image experiment
+name: WareStat Native Image packages
 
 on:
   push:
@@ -8,6 +8,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: warestat-native-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   native-image-macos:
@@ -199,6 +203,100 @@ jobs:
             exit 1
           fi
           echo "Actual WareStat native executable remained healthy through startup"
+
+      - name: Build and smoke-test macOS app bundle and DMG
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^app.version=//p' build.properties | head -n1 | tr -d '\r')"
+          suffix="${{ matrix.suffix }}"
+          app="dist/native/WareStat.app"
+          installers="dist/installers"
+          rm -rf dist/native dist/dmg-root "$installers"
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$installers"
+
+          cp native-out/WareStat-native "$app/Contents/MacOS/WareStat-native"
+          cp native-out/libsqlitejdbc.dylib "$app/Contents/MacOS/libsqlitejdbc.dylib"
+          cp resources/icons/warestat.icns "$app/Contents/Resources/warestat.icns"
+          cp LICENSE-THIRD-PARTY.txt NOTICE.txt "$app/Contents/Resources/"
+          app_license="$HOME/Library/Application Support/WareStat/LICENSE.txt"
+          if [ -f "$app_license" ]; then
+            cp "$app_license" "$app/Contents/Resources/LICENSE.txt"
+          fi
+
+          cc -O2 -Wall -Wextra packaging/native_launcher_macos.c -o "$app/Contents/MacOS/WareStat"
+          chmod 755 "$app/Contents/MacOS/WareStat" "$app/Contents/MacOS/WareStat-native"
+
+          cat > "$app/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleDevelopmentRegion</key><string>en</string>
+            <key>CFBundleDisplayName</key><string>WareStat</string>
+            <key>CFBundleExecutable</key><string>WareStat</string>
+            <key>CFBundleIconFile</key><string>warestat.icns</string>
+            <key>CFBundleIdentifier</key><string>com.warestat.app</string>
+            <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+            <key>CFBundleName</key><string>WareStat</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>$version</string>
+            <key>CFBundleVersion</key><string>$version</string>
+            <key>LSApplicationCategoryType</key><string>public.app-category.business</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          PLIST
+
+          # Ad-hoc signing validates the bundle structure in CI. Public
+          # distribution still requires a Developer ID signature/notarization.
+          codesign --force --sign - "$app/Contents/MacOS/libsqlitejdbc.dylib"
+          codesign --force --sign - "$app/Contents/MacOS/WareStat-native"
+          codesign --force --sign - "$app/Contents/MacOS/WareStat"
+          codesign --force --sign - "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+
+          app_data="$HOME/Library/Application Support/WareStat"
+          rm -f "$app_data/data.db"
+          smoke="$RUNNER_TEMP/warestat-packaged-app.log"
+          : > "$smoke"
+          "$app/Contents/MacOS/WareStat" > "$smoke" 2>&1 &
+          pid=$!
+          for second in $(seq 1 12); do
+            sleep 1
+            if ! kill -0 "$pid" 2>/dev/null; then
+              set +e
+              wait "$pid"
+              code=$?
+              set -e
+              cat "$smoke"
+              echo "Packaged WareStat.app exited during startup with code $code" >&2
+              exit 1
+            fi
+          done
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          cat "$smoke"
+          fatal='IllegalStateException|UnsatisfiedLinkError|NoClassDefFoundError|MissingRegistrationError|Segfault detected|EXCEPTION_ACCESS_VIOLATION|could not obtain a native window handle'
+          if grep -E "$fatal" "$smoke"; then
+            echo "Fatal packaged macOS runtime problem detected" >&2
+            exit 1
+          fi
+
+          mkdir -p dist/dmg-root
+          cp -R "$app" dist/dmg-root/
+          ln -s /Applications dist/dmg-root/Applications
+          dmg="$installers/WareStat-$version-$suffix.dmg"
+          hdiutil create -volname "WareStat $version" -srcfolder dist/dmg-root -ov -format UDZO "$dmg"
+
+          app_zip="$installers/WareStat-$version-$suffix-app.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "$app_zip"
+          shasum -a 256 "$dmg" > "$dmg.sha256"
+          shasum -a 256 "$app_zip" > "$app_zip.sha256"
+
+          hdiutil verify "$dmg"
+          ls -lh "$dmg" "$app_zip"
+
       - name: Inspect native output
         shell: bash
         run: |
@@ -208,17 +306,17 @@ jobs:
           otool -L native-out/WareStat-native || true
           find native-out -maxdepth 1 -type f -print
 
-      - name: Upload experimental native artifacts
-        if: always()
+      - name: Upload macOS distributable packages
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: WareStat-liberica-nik-${{ matrix.suffix }}-experiment
+          name: WareStat-${{ matrix.suffix }}
           path: |
-            native-out/
-            native-config/
+            dist/installers/WareStat-*.dmg
+            dist/installers/WareStat-*-app.zip
+            dist/installers/*.sha256
           if-no-files-found: error
-          retention-days: 7
-          compression-level: 9
+          retention-days: 30
+          compression-level: 0
 
   native-image-windows:
     name: Windows x64 via Liberica NIK
@@ -501,6 +599,139 @@ jobs:
           $fatal = 'IllegalStateException|\[webview-embed\] No JAWT_GetAWT|could not obtain a native window handle|Native webview_embed_create returned 0|UnsatisfiedLinkError|NoClassDefFoundError|ExceptionInInitializerError|MissingRegistrationError|UnsupportedFeatureError|Could not instantiate Shell Folder Manager|Uncaught failure on|java\\.lang\\.Error: java\\.home property not set|no ComponentUI class for|Segfault detected|EXCEPTION_ACCESS_VIOLATION'
           if ($logs -match $fatal) { throw "Fatal Native Image runtime problem detected" }
           Write-Host 'Actual WareStat native executable remained healthy through startup'
+
+      - name: Build Windows distribution launcher
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\\Microsoft Visual Studio\\Installer\\vswhere.exe"
+          if (-not (Test-Path $vswhere)) { throw "vswhere.exe not found" }
+          $vsRoot = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vsRoot) { throw "Visual Studio C++ build tools not found" }
+          Import-Module (Join-Path $vsRoot 'Common7\\Tools\\Microsoft.VisualStudio.DevShell.dll')
+          Enter-VsDevShell -VsInstallPath $vsRoot -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+
+          rc.exe /nologo /fo native-out\\WareStatLauncher.res packaging\\native_launcher_windows.rc
+          if ($LASTEXITCODE -ne 0) { throw "Windows launcher resource compilation failed" }
+          cl.exe /nologo /O2 /MT /DUNICODE /D_UNICODE packaging\\native_launcher_windows.c native-out\\WareStatLauncher.res /Fe:native-out\\WareStat.exe /link /SUBSYSTEM:WINDOWS /INCREMENTAL:NO
+          if ($LASTEXITCODE -ne 0) { throw "Windows launcher compilation failed" }
+
+      - name: Assemble and smoke-test Windows distribution
+        shell: pwsh
+        run: |
+          $stage = Join-Path $PWD 'dist/native/windows'
+          Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force $stage | Out-Null
+
+          Copy-Item native-out/WareStat.exe,native-out/WareStat-native.exe -Destination $stage
+          Get-ChildItem native-out -File -Filter '*.dll' | Copy-Item -Destination $stage
+          Copy-Item native-out/lib -Destination (Join-Path $stage 'lib') -Recurse
+          Copy-Item LICENSE-THIRD-PARTY.txt,NOTICE.txt -Destination $stage
+          $license = Join-Path $HOME 'AppData/Local/WareStat/LICENSE.txt'
+          if (Test-Path $license) { Copy-Item $license (Join-Path $stage 'LICENSE.txt') }
+
+          $stdout = Join-Path $env:RUNNER_TEMP 'warestat-packaged.stdout.log'
+          $stderr = Join-Path $env:RUNNER_TEMP 'warestat-packaged.stderr.log'
+          Remove-Item $stdout,$stderr -Force -ErrorAction SilentlyContinue
+          $process = Start-Process -FilePath (Join-Path $stage 'WareStat.exe') -WorkingDirectory $stage -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+          Start-Sleep -Seconds 12
+          if ($process.HasExited) {
+            Get-Content $stdout -ErrorAction SilentlyContinue
+            Get-Content $stderr -ErrorAction SilentlyContinue
+            throw "Packaged WareStat launcher exited during startup with code $($process.ExitCode)"
+          }
+          & taskkill.exe /PID $process.Id /T /F | Out-Null
+          Start-Sleep -Milliseconds 500
+          $logs = ''
+          if (Test-Path $stdout) { $logs += Get-Content $stdout -Raw }
+          if (Test-Path $stderr) { $logs += Get-Content $stderr -Raw }
+          Write-Host $logs
+          $fatal = 'IllegalStateException|UnsatisfiedLinkError|NoClassDefFoundError|MissingRegistrationError|Segfault detected|EXCEPTION_ACCESS_VIOLATION|java\\.lang\\.Error: java\\.home property not set'
+          if ($logs -match $fatal) { throw "Fatal packaged Windows runtime problem detected" }
+
+          # WebView2 creates per-executable user data during the smoke test.
+          # Never ship CI browser state inside the installer.
+          Remove-Item (Join-Path $stage 'WareStat-native.exe.WebView2') -Recurse -Force -ErrorAction SilentlyContinue
+          $leaks = Get-ChildItem $stage -Recurse -File | Where-Object { $_.Name -match '\\.log$|BrowserMetrics|Crashpad' }
+          if ($leaks) {
+            $leaks | Format-Table FullName
+            throw "Runtime/test state leaked into Windows distribution"
+          }
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ISCC.exe -ErrorAction SilentlyContinue)) {
+            choco install innosetup -y --no-progress
+          }
+          $iscc = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+          if (-not $iscc) {
+            $candidate = Get-ChildItem 'C:/Program Files (x86)/Inno Setup 6/ISCC.exe','C:/Program Files/Inno Setup 6/ISCC.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $candidate) { throw "Inno Setup compiler not found" }
+            $isccPath = $candidate.FullName
+          } else {
+            $isccPath = $iscc.Source
+          }
+
+          $version = ((Select-String -Path build.properties -Pattern '^app\\.version=(.+)
+        shell: pwsh
+        run: |
+          Get-ChildItem native-out -File | Select-Object Name,Length | Sort-Object Name | Format-Table -AutoSize
+
+      - name: Upload Windows distributable installer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: WareStat-windows-x64
+          path: |
+            dist/installers/WareStat-*-windows-x64-setup.exe
+            dist/installers/WareStat-*-windows-x64-setup.exe.sha256
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+).Matches[0].Groups[1].Value).Trim()
+          $output = Join-Path $PWD 'dist/installers'
+          New-Item -ItemType Directory -Force $output | Out-Null
+          & $isccPath "/DMyAppVersion=$version" "/DMySourceDir=$PWD\\dist\\native\\windows" "/DMyOutputDir=$output" "/DMyIcon=$PWD\\resources\\icons\\warestat.ico" packaging/WareStatNative.iss
+          if ($LASTEXITCODE -ne 0) { throw "Windows installer build failed" }
+
+          $installer = Get-ChildItem $output -Filter 'WareStat-*-windows-x64-setup.exe' | Select-Object -First 1
+          if (-not $installer) { throw "Windows installer was not produced" }
+          $hash = (Get-FileHash -Algorithm SHA256 $installer.FullName).Hash.ToLowerInvariant()
+          "$hash  $($installer.Name)" | Set-Content "$($installer.FullName).sha256" -Encoding ascii
+
+      - name: Smoke-test installed Windows package
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem 'dist/installers' -Filter 'WareStat-*-windows-x64-setup.exe' | Select-Object -First 1
+          $installDir = Join-Path $env:RUNNER_TEMP 'WareStat-installed'
+          Remove-Item $installDir -Recurse -Force -ErrorAction SilentlyContinue
+
+          & $installer.FullName /VERYSILENT /SUPPRESSMSGBOXES /NORESTART "/DIR=$installDir"
+          if ($LASTEXITCODE -ne 0) { throw "Silent installer test failed with code $LASTEXITCODE" }
+          if (-not (Test-Path (Join-Path $installDir 'WareStat.exe'))) { throw "Installed WareStat.exe is missing" }
+
+          $stdout = Join-Path $env:RUNNER_TEMP 'warestat-installed.stdout.log'
+          $stderr = Join-Path $env:RUNNER_TEMP 'warestat-installed.stderr.log'
+          Remove-Item $stdout,$stderr -Force -ErrorAction SilentlyContinue
+          $process = Start-Process -FilePath (Join-Path $installDir 'WareStat.exe') -WorkingDirectory $installDir -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+          Start-Sleep -Seconds 12
+          if ($process.HasExited) {
+            Get-Content $stdout -ErrorAction SilentlyContinue
+            Get-Content $stderr -ErrorAction SilentlyContinue
+            throw "Installed WareStat exited during startup with code $($process.ExitCode)"
+          }
+          & taskkill.exe /PID $process.Id /T /F | Out-Null
+          Start-Sleep -Milliseconds 500
+          $logs = ''
+          if (Test-Path $stdout) { $logs += Get-Content $stdout -Raw }
+          if (Test-Path $stderr) { $logs += Get-Content $stderr -Raw }
+          Write-Host $logs
+          $fatal = 'IllegalStateException|UnsatisfiedLinkError|NoClassDefFoundError|MissingRegistrationError|Segfault detected|EXCEPTION_ACCESS_VIOLATION|java\\.lang\\.Error: java\\.home property not set'
+          if ($logs -match $fatal) { throw "Fatal installed Windows runtime problem detected" }
+
+          $uninstaller = Get-ChildItem $installDir -Filter 'unins*.exe' | Select-Object -First 1
+          if ($uninstaller) {
+            & $uninstaller.FullName /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+          }
 
       - name: Inspect native output
         shell: pwsh
