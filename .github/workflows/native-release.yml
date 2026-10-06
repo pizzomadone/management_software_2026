@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - fix/native-linux-webview-ci
   workflow_dispatch:
 
 permissions:
