@@ -1,0 +1,10 @@
+[
+  {
+    "name": "sun.awt.shell.ShellFolderManager",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "sun.awt.shell.Win32ShellFolderManager2",
+    "allDeclaredConstructors": true
+  }
+]

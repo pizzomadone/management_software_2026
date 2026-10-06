@@ -19,6 +19,9 @@
     <property name="lib.dir" location="lib"/>
     <property name="build.dir" location="build"/>
     <property name="build.classes.dir" location="${build.dir}/classes"/>
+    <!-- Separate no-debug classes used by GraalVM Native Image release builds. -->
+    <property name="release.build.dir" location="${build.dir}/release"/>
+    <property name="release.classes.dir" location="${release.build.dir}/classes"/>
     <property name="dist.dir" location="dist"/>
     <property name="tools.dir" location="tools"/>
     <property name="resources.dir" location="resources"/>
@@ -101,6 +104,36 @@
             </fileset>
         </copy>
         <echo message="Compilation complete!"/>
+    </target>
+
+    <!-- =================================
+          Target: compile-release
+         ================================= -->
+    <target name="compile-release" depends="init"
+            description="Compile production classes without local debug metadata for Native Image">
+        <echo message="Compiling production classes for Native Image..."/>
+        <mkdir dir="${release.classes.dir}"/>
+        <javac srcdir="${src.dir}"
+               destdir="${release.classes.dir}"
+               includeantruntime="false"
+               debug="false"
+               encoding="UTF-8"
+               source="21"
+               target="21">
+            <classpath refid="compile.classpath"/>
+        </javac>
+        <copy todir="${release.classes.dir}">
+            <fileset dir="${resources.dir}">
+                <include name="i18n/**"/>
+                <include name="icons/**"/>
+                <include name="fonts/**"/>
+            </fileset>
+            <fileset dir=".">
+                <include name="LICENSE-THIRD-PARTY.txt"/>
+                <include name="NOTICE.txt"/>
+            </fileset>
+        </copy>
+        <echo message="Native Image production compilation complete."/>
     </target>
 
     <!-- =================================
