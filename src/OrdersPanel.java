@@ -448,14 +448,18 @@ public class OrdersPanel extends JPanel {
                             String invoiceStatus = rs.getString("status");
                             if (linkedInvoiceBlocksOrderAction(status, invoiceStatus)) {
                                 String instruction = "Draft".equals(invoiceStatus)
-                                    ? "Delete the draft invoice first."
+                                    ? I18n.tr("Delete the draft invoice first.")
                                     : "Canceled".equals(invoiceStatus)
-                                        ? "Only a completed sale can be reversed while linked to a canceled invoice."
-                                        : "Cancel the issued invoice first.";
+                                        ? I18n.tr("Only a completed sale can be reversed while linked to a canceled invoice.")
+                                        : I18n.tr("Cancel the issued invoice first.");
+                                String message = "Completed".equals(status)
+                                    ? I18n.format("Order cannot be reversed because invoice {0} is linked to it. {1}",
+                                        invoiceNumber, instruction)
+                                    : I18n.format("Order cannot be deleted because invoice {0} is linked to it. {1}",
+                                        invoiceNumber, instruction);
                                 Dialogs.showMessageDialog(this,
-                                    "Order cannot be " + ("Completed".equals(status) ? "reversed" : "deleted") +
-                                    " because invoice " + invoiceNumber + " is linked to it. " + instruction,
-                                    "Order Cannot Be Changed", JOptionPane.WARNING_MESSAGE);
+                                    message,
+                                    I18n.tr("Order Cannot Be Changed"), JOptionPane.WARNING_MESSAGE);
                                 return;
                             }
                         }
