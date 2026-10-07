@@ -272,6 +272,7 @@ public class OrdersPanel extends JPanel {
 
     private void showOrderDialog(Order order) {
         Window parentWindow = SwingUtilities.getWindowAncestor(this);
+        Integer editedOrderId = order != null ? order.getId() : null;
 
         OrderDialog dialog;
         if (parentWindow instanceof JFrame) {
@@ -283,10 +284,16 @@ public class OrdersPanel extends JPanel {
         dialog.setVisible(true);
         if (dialog.isOrderSaved()) {
             loadOrders();
+
             // Refresh ProductsPanel to update stock levels
             if (parentWindow instanceof MainWindow mainWindow) {
                 mainWindow.refreshProductsPanel();
                 mainWindow.refreshInvoicesPanel();
+            }
+
+            // Editing an order must not lose the user's place in the table.
+            if (editedOrderId != null) {
+                selectOrderByIdInCurrentTable(editedOrderId);
             }
         }
     }
@@ -897,31 +904,30 @@ public class OrdersPanel extends JPanel {
         return I18n.tr("Not Paid");
     }
 
+    private boolean selectOrderByIdInCurrentTable(int orderId) {
+        for (int modelRow = 0; modelRow < tableModel.getRowCount(); modelRow++) {
+            Object value = tableModel.getValueAt(modelRow, 0);
+            if (value instanceof Integer && ((Integer) value) == orderId) {
+                int viewRow = ordersTable.convertRowIndexToView(modelRow);
+                if (viewRow < 0) return false;
+                ordersTable.setRowSelectionInterval(viewRow, viewRow);
+                ordersTable.scrollRectToVisible(ordersTable.getCellRect(viewRow, 0, true));
+                updateButtonStates();
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * Selects and highlights a specific order in the table by order ID
      * @param orderId The ID of the order to select
      */
     public void selectOrderById(int orderId) {
-        // First ensure the table is loaded
         loadOrders();
 
-        // Search for the order ID in the table model
-        for (int modelRow = 0; modelRow < tableModel.getRowCount(); modelRow++) {
-            Object value = tableModel.getValueAt(modelRow, 0); // ID is in column 0
-            if (value != null && value instanceof Integer && (Integer) value == orderId) {
-                // Found the order, convert model index to view index
-                int viewRow = ordersTable.convertRowIndexToView(modelRow);
-                // Select the row in the view
-                ordersTable.setRowSelectionInterval(viewRow, viewRow);
-                // Scroll to make the row visible
-                ordersTable.scrollRectToVisible(ordersTable.getCellRect(viewRow, 0, true));
-                // Update button states
-                updateButtonStates();
-                return;
-            }
-        }
+        if (selectOrderByIdInCurrentTable(orderId)) return;
 
-        // If we get here, the order was not found
         Dialogs.showMessageDialog(this,
             "Order #" + orderId + " not found in the list.",
             "Order Not Found",
