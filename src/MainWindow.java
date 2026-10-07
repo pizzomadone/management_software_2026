@@ -860,8 +860,13 @@ public class MainWindow extends JFrame {
             String currency = DatabaseCurrency.confirmLegacyCurrency(this, source);
             if (currency == null) return;
             BackupManager.getInstance().importDatabase(source, currency);
+            CostIntegrity.Audit importAudit =
+                DatabaseManager.getInstance().takeStartupCostAudit();
+            String importMessage = importAudit != null
+                ? CostIntegrity.summary(importAudit)
+                : I18n.tr("Database imported successfully.");
             Dialogs.showMessageDialog(this,
-                    I18n.tr("Database imported successfully.") + "\n"
+                    importMessage + "\n\n"
                     + I18n.tr("WareStat will now close. Reopen it to use the imported database."),
                     I18n.tr("Import Database"), JOptionPane.INFORMATION_MESSAGE);
             dispose();
