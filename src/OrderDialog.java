@@ -129,7 +129,7 @@ public class OrderDialog extends JDialog {
         orderPanel.add(new JLabel("Status:"), gbc);
 
         gbc.gridx = 3;
-        statusCombo = new JComboBox<>(new String[]{"New", "Reservation", "In Progress", "Completed", "Cancelled"});
+        statusCombo = new JComboBox<>(new String[]{"Reservation", "New", "In Progress", "Completed", "Cancelled"});
         statusCombo.putClientProperty("i18n.values", true);
         orderPanel.add(statusCombo, gbc);
 
