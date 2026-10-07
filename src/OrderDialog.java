@@ -335,7 +335,7 @@ public class OrderDialog extends JDialog {
                 "Reversed order: it cannot be modified.");
         } else if (linkedInvoiceLocked) {
             message = I18n.tr(
-                "Order locked: linked invoice. Only payment can be changed. To reverse the sale, remove or cancel the invoice first.");
+                "Order locked: linked invoice. Only payment can be changed. To reverse the sale, delete the invoice if it is a draft, or cancel it if it has been issued.");
         } else if (isCompletedPaymentOnly()) {
             message = I18n.tr(
                 "Completed order: only payment can be changed, or the order can be returned to In Progress.");
