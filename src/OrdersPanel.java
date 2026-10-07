@@ -1,5 +1,6 @@
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.DefaultTableCellRenderer;
 import java.awt.*;
 import java.sql.*;
 import java.util.Vector;
@@ -9,6 +10,12 @@ import java.util.Map;
 import java.util.HashMap;
 
 public class OrdersPanel extends JPanel {
+    private static final int INVOICE_COLUMN = 6;
+
+    private record InvoiceLink(String number) {
+        @Override public String toString() { return "🧾"; }
+    }
+
     private JTable ordersTable;
     private DefaultTableModel tableModel;
     private JTextField searchField;
@@ -47,7 +54,7 @@ public class OrdersPanel extends JPanel {
         searchPanel.add(searchButton);
 
         // Orders table
-        String[] columns = {"ID", "Customer", "Date", "Status", "Total incl. VAT", "Payment"};
+        String[] columns = {"ID", "Customer", "Date", "Status", "Total incl. VAT", "Payment", "Invoice"};
         tableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -59,6 +66,27 @@ public class OrdersPanel extends JPanel {
         I18n.localize(ordersTable);
         ordersTable.getSelectionModel().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         ordersTable.getSelectionModel().addListSelectionListener(e -> updateButtonStates());
+
+        DefaultTableCellRenderer invoiceRenderer = new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value,
+                    boolean selected, boolean focus, int row, int column) {
+                JLabel label = (JLabel) super.getTableCellRendererComponent(
+                    table, value, selected, focus, row, column);
+                label.setHorizontalAlignment(SwingConstants.CENTER);
+                if (value instanceof InvoiceLink link) {
+                    label.setText(link.toString());
+                    label.setToolTipText(I18n.tr("Go to Invoice") + ": " + link.number());
+                } else {
+                    label.setText("");
+                    label.setToolTipText(null);
+                }
+                return label;
+            }
+        };
+        ordersTable.getColumnModel().getColumn(INVOICE_COLUMN).setCellRenderer(invoiceRenderer);
+        ordersTable.getColumnModel().getColumn(INVOICE_COLUMN).setPreferredWidth(70);
+        ordersTable.getColumnModel().getColumn(INVOICE_COLUMN).setMaxWidth(95);
 
         // Enable column sorting with date support (column 2 is "Date")
         TableSorterUtil.enableSorting(ordersTable, new int[]{2}, dateFormat);
@@ -85,11 +113,28 @@ public class OrdersPanel extends JPanel {
         ordersTable.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override
             public void mouseClicked(java.awt.event.MouseEvent evt) {
-                if (evt.getClickCount() == 2 && SwingUtilities.isLeftMouseButton(evt)) {
-                    int selectedRow = ordersTable.getSelectedRow();
-                    if (selectedRow != -1) {
-                        editSelectedOrder();
+                if (!SwingUtilities.isLeftMouseButton(evt)) return;
+
+                int viewRow = ordersTable.rowAtPoint(evt.getPoint());
+                int viewColumn = ordersTable.columnAtPoint(evt.getPoint());
+                if (viewRow < 0 || viewColumn < 0) return;
+
+                int modelColumn = ordersTable.convertColumnIndexToModel(viewColumn);
+                if (modelColumn == INVOICE_COLUMN) {
+                    int modelRow = ordersTable.convertRowIndexToModel(viewRow);
+                    Object value = tableModel.getValueAt(modelRow, INVOICE_COLUMN);
+                    if (value instanceof InvoiceLink link) {
+                        ordersTable.setRowSelectionInterval(viewRow, viewRow);
+                        Window window = SwingUtilities.getWindowAncestor(OrdersPanel.this);
+                        if (window instanceof MainWindow mainWindow)
+                            mainWindow.openInvoice(link.number());
                     }
+                    return;
+                }
+
+                if (evt.getClickCount() == 2) {
+                    ordersTable.setRowSelectionInterval(viewRow, viewRow);
+                    editSelectedOrder();
                 }
             }
         });
@@ -168,6 +213,7 @@ public class OrdersPanel extends JPanel {
             String query = """
                 SELECT o.*, c.first_name || ' ' || c.last_name as customer_name,
                        i.currency_code AS payment_currency_code,
+                       i.number AS invoice_number,
                        COALESCE(i.total,o.total_inc_vat) AS total_inc_vat
                 FROM orders o
                 LEFT JOIN customers c ON o.customer_id = c.id
@@ -197,6 +243,10 @@ public class OrdersPanel extends JPanel {
                     double paidAmount = rs.getDouble("paid_amount");
                                         row.add(formatPaymentStatus(paymentStatus, paidAmount,
                         rs.getString("payment_currency_code")));
+
+                    String invoiceNumber = rs.getString("invoice_number");
+                    row.add(invoiceNumber == null || invoiceNumber.isBlank()
+                        ? null : new InvoiceLink(invoiceNumber));
 
                     tableModel.addRow(row);
                 }
@@ -257,6 +307,10 @@ public class OrdersPanel extends JPanel {
                         double paidAmount = rs.getDouble("paid_amount");
                                                 row.add(formatPaymentStatus(paymentStatus, paidAmount,
                         rs.getString("payment_currency_code")));
+
+                        String invoiceNumber = rs.getString("invoice_number");
+                        row.add(invoiceNumber == null || invoiceNumber.isBlank()
+                            ? null : new InvoiceLink(invoiceNumber));
 
                         tableModel.addRow(row);
                     }
