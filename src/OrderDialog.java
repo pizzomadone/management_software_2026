@@ -38,6 +38,7 @@ public class OrderDialog extends JDialog {
     private boolean paymentSelectionChanged;
     private boolean loadingPayment;
     private boolean linkedInvoiceLocked;
+    private JLabel editRestrictionLabel;
     private String previousStatus = null; // Track previous status for state changes
     
     // Constructor for JFrame parent
@@ -93,6 +94,13 @@ public class OrderDialog extends JDialog {
         mainPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         
         // Top panel for order data
+        editRestrictionLabel = new JLabel();
+        editRestrictionLabel.setVisible(false);
+        editRestrictionLabel.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createEtchedBorder(),
+            BorderFactory.createEmptyBorder(7, 9, 7, 9)
+        ));
+
         JPanel orderPanel = new JPanel(new GridBagLayout());
         orderPanel.setBorder(BorderFactory.createTitledBorder("Order Information"));
         GridBagConstraints gbc = new GridBagConstraints();
@@ -243,7 +251,11 @@ public class OrderDialog extends JDialog {
         footer.add(Dialogs.requiredLegendPanel(), BorderLayout.WEST);
         footer.add(buttonPanel, BorderLayout.EAST);
 
-        mainPanel.add(orderPanel, BorderLayout.NORTH);
+        JPanel topPanel = new JPanel(new BorderLayout(0, 8));
+        topPanel.add(editRestrictionLabel, BorderLayout.NORTH);
+        topPanel.add(orderPanel, BorderLayout.CENTER);
+
+        mainPanel.add(topPanel, BorderLayout.NORTH);
         mainPanel.add(centerPanel, BorderLayout.CENTER);
         mainPanel.add(footer, BorderLayout.SOUTH);
         
@@ -288,6 +300,7 @@ public class OrderDialog extends JDialog {
     }
 
     private void configureEditability() {
+        updateEditRestrictionMessage();
         if (!isProtectedHistoricalOrder()) return;
 
         selectCustomerButton.setEnabled(false);
@@ -311,6 +324,25 @@ public class OrderDialog extends JDialog {
         } else {
             paidAmountField.setEnabled(false);
         }
+    }
+
+    private void updateEditRestrictionMessage() {
+        if (editRestrictionLabel == null || order == null) return;
+
+        String message = null;
+        if (isReversedOrder()) {
+            message = I18n.tr(
+                "This sale has been reversed and is kept as historical data; the order cannot be modified.");
+        } else if (linkedInvoiceLocked) {
+            message = I18n.tr(
+                "This order cannot be modified because it has a linked invoice. Payment can still be updated. To reverse the sale, delete a draft invoice or cancel an issued invoice first, then use Reverse Sale.");
+        } else if (isCompletedPaymentOnly()) {
+            message = I18n.tr(
+                "This completed order is locked to protect stock and FIFO history. Payment can be updated, or it can be returned to In Progress if completion was a mistake.");
+        }
+
+        editRestrictionLabel.setVisible(message != null);
+        editRestrictionLabel.setText(message == null ? "" : "<html>" + message + "</html>");
     }
 
     private void showCustomerSelectionDialog() {
