@@ -543,6 +543,9 @@ public class RegressionTest {
             require(blocked,"Legacy completed sale without FIFO history was reversed using an invented cost");
             require(qty()==10 && "0".equals(value("SELECT COUNT(*) FROM inventory_lots")),
                 "Rejected legacy sale reversal changed inventory state");
+            CostIntegrity.Audit audit=CostIntegrity.audit(db);
+            require(audit.completedSalesWithoutReversibleFifoHistory()==1,
+                "Legacy non-reversible sale was not reported by the import audit");
         });
         test("consumed supplier FIFO lot blocks receipt reversal", () -> {
             fresh();
