@@ -444,11 +444,17 @@ public final class DatabaseCurrency {
         try(Connection c=DriverManager.getConnection("jdbc:sqlite:"+file.toAbsolutePath(),settings.toProperties())) {
             String code=read(c);if(code!=null)return code;
         }
-        String chosen=Dialogs.showInputDialog(parent,
-            "This older database does not record its currency. Enter its ORIGINAL ISO currency code (for example EUR or USD). Amounts will not be converted.",
-            SettingsPanel.getCurrencyCode());
+        String currentCode = SettingsPanel.getCurrencyCode();
+        String[] choices = SettingsPanel.getSupportedCurrencyChoices();
+        Object chosen = Dialogs.showInputDialog(parent,
+            "This older database does not record its currency. Select its ORIGINAL currency. Amounts will not be converted.",
+            "Original Currency",
+            JOptionPane.QUESTION_MESSAGE,
+            null,
+            choices,
+            SettingsPanel.getCurrencyChoice(currentCode));
         if(chosen==null) return null;
-        return codeFromSetting(chosen.toUpperCase(java.util.Locale.ROOT));
+        return codeFromSetting(chosen.toString());
     }
 }
 
