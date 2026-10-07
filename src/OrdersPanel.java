@@ -910,6 +910,10 @@ public class OrdersPanel extends JPanel {
                     conn.commit();
                 }
 
+                // Show the invoice indicator immediately without waiting for a manual refresh.
+                loadOrders();
+                selectOrderByIdInCurrentTable(orderId);
+
                 Object[] invoiceOptions = { I18n.tr("Go to Invoice"), I18n.tr("Close") };
                 int invoiceAction = Dialogs.showOptionDialog(this,
                     I18n.format("Invoice {0} generated successfully!", invoiceNumber) + "\n" +
