@@ -128,6 +128,39 @@ public class DatabaseManager {
         try {DateUtils.installSqlFunctions(c);return c;}catch(SQLException e){c.close();throw e;}
     }
 
+    /** Creates a brand-new empty WareStat database at the requested staging path. */
+    public static void createEmptyDatabase(java.nio.file.Path file, String currencyCode)
+            throws SQLException, java.io.IOException {
+        java.nio.file.Path target = file.toAbsolutePath().normalize();
+        java.nio.file.Path parent = target.getParent();
+        if (parent == null) throw new java.io.IOException("Invalid database destination");
+        java.nio.file.Files.createDirectories(parent);
+        java.nio.file.Files.deleteIfExists(target);
+        java.nio.file.Files.deleteIfExists(java.nio.file.Path.of(target + "-wal"));
+        java.nio.file.Files.deleteIfExists(java.nio.file.Path.of(target + "-shm"));
+
+        try (Connection conn = openConnection("jdbc:sqlite:" + target)) {
+            DatabaseManager staging = new DatabaseManager();
+            staging.connection = conn;
+            staging.createTables();
+
+            java.util.Currency.getInstance(currencyCode);
+            DatabaseCurrency.initialize(conn, currencyCode);
+            try (PreparedStatement p = conn.prepareStatement(
+                    "UPDATE application_metadata SET value=? WHERE key='currency_code'")) {
+                p.setString(1, currencyCode);
+                if (p.executeUpdate() != 1)
+                    throw new SQLException("Unable to initialize database currency");
+            }
+
+            DatabaseIntegrity.validate(conn, false);
+            try (Statement s = conn.createStatement()) {
+                s.execute("PRAGMA wal_checkpoint(TRUNCATE)");
+                s.execute("PRAGMA journal_mode=DELETE");
+            }
+        }
+    }
+
     /** Migrate an isolated staging copy before it is allowed to replace live data. */
     public static void prepareDatabase(Connection conn) throws SQLException {
         DatabaseIntegrity.validate(conn, true);
