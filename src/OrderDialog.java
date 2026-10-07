@@ -270,6 +270,10 @@ public class OrderDialog extends JDialog {
         return order != null && "Completed".equals(order.getStatus());
     }
 
+    private boolean canReopenCompletedOrder() {
+        return isCompletedPaymentOnly() && !linkedInvoiceLocked;
+    }
+
     private boolean isPaymentOnlyOrder() {
         return order != null && !isReversedOrder()
             && (isCompletedPaymentOnly() || linkedInvoiceLocked);
@@ -289,9 +293,16 @@ public class OrderDialog extends JDialog {
         selectCustomerButton.setEnabled(false);
         newCustomerButton.setEnabled(false);
         dateField.setEnabled(false);
-        statusCombo.setEnabled(false);
         addItemButton.setEnabled(false);
         removeItemButton.setEnabled(false);
+
+        boolean reopenable = canReopenCompletedOrder();
+        statusCombo.setEnabled(reopenable);
+        if (reopenable) {
+            statusCombo.setModel(new DefaultComboBoxModel<>(
+                new String[]{"Completed", "In Progress"}));
+            statusCombo.setSelectedItem("Completed");
+        }
 
         boolean paymentEditable = isPaymentOnlyOrder();
         paymentStatusCombo.setEnabled(paymentEditable);
@@ -577,6 +588,47 @@ public class OrderDialog extends JDialog {
         updateTotals();
     }
 
+    private void saveReopenedCompletedOrder() {
+        Connection conn = null;
+        try {
+            String selected = String.valueOf(paymentStatusCombo.getSelectedItem());
+            String paymentCode;
+            double paidAmount = 0.0;
+
+            if ("Paid".equals(selected)) {
+                paymentCode = "PAID";
+            } else if ("Partially Paid".equals(selected)) {
+                paymentCode = "PARTIALLY_PAID";
+                paidAmount = Numbers.money(Numbers.decimal(paidAmountField.getText()));
+            } else {
+                paymentCode = "NOT_PAID";
+            }
+
+            conn = DatabaseManager.getInstance().getConnection();
+            DatabaseManager.beginTransaction(conn);
+            try {
+                // Payment is still saved while the order is Completed; then the
+                // completion itself is undone atomically.
+                OrdersPanel.updateOrderPayment(conn, order.getId(), paymentCode, paidAmount);
+                StockManager.reopenCompletedOrder(conn, order.getId());
+                conn.commit();
+            } catch (Exception e) {
+                conn.rollback();
+                throw e;
+            } finally {
+                conn.setAutoCommit(true);
+            }
+
+            orderSaved = true;
+            dispose();
+        } catch (Exception e) {
+            e.printStackTrace();
+            Dialogs.showMessageDialog(this,
+                I18n.tr("Error while reopening the order") + ": " + e.getMessage(),
+                I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
     private void saveCompletedPaymentOnly() {
         Connection conn = null;
         try {
@@ -621,6 +673,11 @@ public class OrderDialog extends JDialog {
                 Dialogs.showMessageDialog(this,
                     I18n.tr("This sale has already been reversed and is kept as historical data."),
                     I18n.tr("Historical Sale"), JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            if (canReopenCompletedOrder()
+                    && "In Progress".equals(statusCombo.getSelectedItem())) {
+                saveReopenedCompletedOrder();
                 return;
             }
             if (isPaymentOnlyOrder()) {
