@@ -215,7 +215,17 @@ public final class Dialogs {
     }
     public static Object showInputDialog(Component parent, Object msg, String title, int messageType,
                                Icon icon, Object[] selectionValues, Object initialSelectionValue) {
+        Object[] translated = choices(selectionValues);
+        Object initial = initialSelectionValue instanceof String s ? I18n.tr(s) : initialSelectionValue;
+        if (translated != null && selectionValues != null && initialSelectionValue != null) {
+            for (int i = 0; i < selectionValues.length; i++) {
+                if (java.util.Objects.equals(selectionValues[i], initialSelectionValue)) {
+                    initial = translated[i];
+                    break;
+                }
+            }
+        }
         return JOptionPane.showInputDialog(parent, message(msg), I18n.tr(title), messageType,
-      icon, choices(selectionValues), initialSelectionValue);
+            icon, translated, initial);
     }
 }
