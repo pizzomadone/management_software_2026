@@ -245,16 +245,30 @@ public final class InventoryLotManager {
                 SELECT d.id
                 FROM order_details d
                 WHERE d.order_id=?
-                  AND NOT EXISTS (
-                      SELECT 1 FROM inventory_lot_consumptions x
-                      WHERE x.order_detail_id=d.id
+                  AND (
+                    NOT EXISTS (
+                        SELECT 1 FROM inventory_lot_consumptions x
+                        WHERE x.order_detail_id=d.id
+                    )
+                    OR COALESCE((
+                        SELECT SUM(x.quantity)
+                        FROM inventory_lot_consumptions x
+                        WHERE x.order_detail_id=d.id
+                    ),0)<>d.quantity
+                    OR EXISTS (
+                        SELECT 1
+                        FROM inventory_lot_consumptions x
+                        LEFT JOIN inventory_lots l ON l.id=x.lot_id
+                        WHERE x.order_detail_id=d.id
+                          AND (l.id IS NULL OR l.product_id<>d.product_id)
+                    )
                   )
                 LIMIT 1
                 """)) {
             check.setInt(1,orderId);
             try(ResultSet r=check.executeQuery()) {
                 if(r.next())
-                    throw new SQLException("This completed sale has no FIFO history and cannot be reversed safely");
+                    throw new SQLException("This completed sale has incomplete FIFO history and cannot be reopened safely");
             }
         }
 
