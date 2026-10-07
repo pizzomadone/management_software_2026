@@ -175,6 +175,10 @@ public class MainWindow extends JFrame {
         fileMenu.add(newInvoiceItem);
         fileMenu.addSeparator();
 
+        JMenuItem newArchiveItem = new JMenuItem("New Archive...");
+        newArchiveItem.addActionListener(e -> createNewArchive());
+        fileMenu.add(newArchiveItem);
+
         JMenuItem importDatabaseItem = new JMenuItem("Import Database...");
         importDatabaseItem.addActionListener(e -> importDatabase());
         fileMenu.add(importDatabaseItem);
@@ -832,6 +836,67 @@ public class MainWindow extends JFrame {
     
     private void openSettings() {
         showPanel("SETTINGS");
+    }
+
+    private void createNewArchive() {
+        Path destination = chooseNewArchiveFile();
+        if (destination == null) return;
+        if (!destination.getFileName().toString().toLowerCase().endsWith(".wsbu")) {
+            destination = destination.resolveSibling(destination.getFileName() + ".wsbu");
+        }
+
+        if (Files.exists(destination)) {
+            int replace = Dialogs.showConfirmDialog(this,
+                I18n.tr("A file with this name already exists. Replace it?"),
+                I18n.tr("Confirm Replacement"), JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE);
+            if (replace != JOptionPane.YES_OPTION) return;
+        }
+
+        String message = I18n.tr(
+            "The current data will be saved in the selected archive. WareStat will then start with a new empty database. Continue?")
+            + "\n\n" + destination.toAbsolutePath();
+        int confirm = Dialogs.showConfirmDialog(this, message,
+            I18n.tr("New Archive"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        if (confirm != JOptionPane.YES_OPTION) return;
+
+        try {
+            Path archive = BackupManager.getInstance().archiveAndStartNew(destination);
+            Dialogs.showMessageDialog(this,
+                I18n.tr("Archive created successfully.") + "\n" + archive
+                    + "\n\n" + I18n.tr("A new empty database has been created.")
+                    + "\n" + I18n.tr("WareStat will now close. Reopen it to continue."),
+                I18n.tr("New Archive"), JOptionPane.INFORMATION_MESSAGE);
+            dispose();
+            System.exit(0);
+        } catch (RuntimeException exception) {
+            showDatabaseError("Unable to create new archive", exception);
+        }
+    }
+
+    private Path chooseNewArchiveFile() {
+        String defaultName = "WareStat-Archive-"
+            + new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date()) + ".wsbu";
+        Path initial = Path.of(BackupManager.getInstance().getArchiveDirectory()).toAbsolutePath();
+
+        if (System.getProperty("os.name", "").toLowerCase().contains("mac")) {
+            FileDialog dialog = new FileDialog(this, I18n.tr("New Archive"), FileDialog.SAVE);
+            if (Files.isDirectory(initial)) dialog.setDirectory(initial.toString());
+            dialog.setFile(defaultName);
+            dialog.setFilenameFilter((directory, name) -> name.toLowerCase().endsWith(".wsbu"));
+            dialog.setVisible(true);
+            return dialog.getFile() == null ? null
+                : new File(dialog.getDirectory(), dialog.getFile()).toPath();
+        }
+
+        JFileChooser chooser = new JFileChooser(Files.isDirectory(initial)
+            ? initial.toFile() : AppConstants.getBackupDirectory().toFile());
+        chooser.setDialogTitle(I18n.tr("New Archive"));
+        chooser.setFileFilter(new FileNameExtensionFilter(
+            I18n.tr("WareStat Archive (*.wsbu)"), "wsbu"));
+        chooser.setSelectedFile(new File(defaultName));
+        return chooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION
+            ? chooser.getSelectedFile().toPath() : null;
     }
 
     private void importDatabase() {
