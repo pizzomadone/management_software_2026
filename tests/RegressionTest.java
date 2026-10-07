@@ -87,7 +87,7 @@ public class RegressionTest {
         put(d,"previousStatus",actualStatus);
         put(d,"selectedCustomer",customer());put(d,"dateField",new DatePickerField(today()));
         put(d,"dateFormat",new SimpleDateFormat("dd/MM/yyyy"));
-        JComboBox<String> orderStatusCombo=new JComboBox<>(new String[]{"New","Reservation","In Progress","Completed","Cancelled"});
+        JComboBox<String> orderStatusCombo=new JComboBox<>(new String[]{"Reservation","New","In Progress","Completed","Cancelled"});
         orderStatusCombo.setSelectedItem(status);put(d,"statusCombo",orderStatusCombo);
         put(d,"paymentStatusCombo",new JComboBox<>(new String[]{"Not Paid"}));
         put(d,"paidAmountField",new JTextField("0"));
@@ -189,7 +189,17 @@ public class RegressionTest {
                     OD changed=order(true,5,to);
                     if (from.equals("Completed")) {
                         call(changed,"saveOrder");
-                        require(qty()==7 && "Completed".equals(value("SELECT status FROM orders WHERE id=1")),"Historical sale changed");
+                        if ("In Progress".equals(to)) {
+                            require(qty()==10 && "In Progress".equals(value("SELECT status FROM orders WHERE id=1")),
+                                "Completed order did not reopen");
+                            require("3".equals(value("SELECT reserved_quantity FROM products WHERE id=1")),
+                                "Reopened order did not restore its original reservation");
+                            require(value("SELECT completed_date FROM orders WHERE id=1")==null,
+                                "Reopened order kept its completion date");
+                        } else {
+                            require(qty()==7 && "Completed".equals(value("SELECT status FROM orders WHERE id=1")),
+                                "Completed sale changed to an unsupported state");
+                        }
                         continue;
                     }
                     call(changed,"saveOrder");
@@ -404,6 +414,78 @@ public class RegressionTest {
             require("0,0".equals(value("SELECT GROUP_CONCAT(remaining_quantity,',') FROM (SELECT remaining_quantity FROM inventory_lots WHERE source_type='SUPPLIER_ORDER' ORDER BY received_date,id)")),
                 "Second FIFO sale left an incorrect lot balance");
         });
+        test("reopening a completed sale restores only its FIFO layers and preserves later sales", () -> {
+            fresh();
+            sql("DELETE FROM inventory_lot_consumptions");
+            sql("DELETE FROM inventory_lots");
+            sql("UPDATE products SET quantity=0,acquisition_cost=0 WHERE id=1");
+
+            sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,status,total) VALUES" +
+                "(10,1,'PO-A',1000,'Completed',100)," +
+                "(11,1,'PO-B',2000,'Completed',120)");
+            sql("INSERT INTO supplier_order_details(id,order_id,product_id,quantity,unit_price,total) VALUES" +
+                "(10,10,1,10,10,100)," +
+                "(11,11,1,10,12,120)");
+            InventoryLotManager.receiveSupplierOrder(db,10,new java.util.Date(1000),"PO-A");
+            InventoryLotManager.receiveSupplierOrder(db,11,new java.util.Date(2000),"PO-B");
+
+            sql("INSERT INTO orders(id,customer_id,order_date,completed_date,status,total_ex_vat,total_inc_vat) VALUES" +
+                "(20,1,3000,3000,'Completed',90,90)," +
+                "(21,1,4000,4000,'Completed',90,90)," +
+                "(22,1,5000,5000,'Completed',45,45)");
+            sql("INSERT INTO order_details(id,order_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate) VALUES" +
+                "(20,20,1,6,15,15,0)," +
+                "(21,21,1,6,15,15,0)," +
+                "(22,22,1,3,15,15,0)");
+
+            StockManager.createOrUpdateReservation(db,1,"ORDER",20,6,"");
+            StockManager.completeReservationAndDecrementStock(db,"ORDER",20,new java.util.Date(3000),"20");
+            StockManager.createOrUpdateReservation(db,1,"ORDER",21,6,"");
+            StockManager.completeReservationAndDecrementStock(db,"ORDER",21,new java.util.Date(4000),"21");
+            StockManager.createOrUpdateReservation(db,1,"ORDER",22,3,"");
+            StockManager.completeReservationAndDecrementStock(db,"ORDER",22,new java.util.Date(5000),"22");
+
+            require("60.0|64.0|36.0".equals(value(
+                "SELECT GROUP_CONCAT(cost_total,'|') FROM order_details WHERE id IN(20,21,22) ORDER BY id")),
+                "Initial FIFO costs are wrong");
+            require(qty()==5,"Initial physical stock is wrong");
+
+            StockManager.reopenCompletedOrder(db,20);
+
+            require("In Progress".equals(value("SELECT status FROM orders WHERE id=20")),
+                "Reopened order did not return to In Progress");
+            require(value("SELECT completed_date FROM orders WHERE id=20")==null,
+                "Reopened order kept completed_date");
+            require(qty()==11,"Reopening did not restore physical stock");
+            require("6".equals(value("SELECT reserved_quantity FROM products WHERE id=1")),
+                "Reopened order did not reserve its quantity");
+            require("6,5".equals(value(
+                "SELECT GROUP_CONCAT(remaining_quantity,',') FROM (SELECT remaining_quantity FROM inventory_lots WHERE source_type='SUPPLIER_ORDER' ORDER BY received_date,id)")),
+                "Reopening did not restore only the original FIFO layer");
+            require(value("SELECT cost_total FROM order_details WHERE id=20")==null,
+                "Reopened order kept a historical sale cost");
+            require("64.0|36.0".equals(value(
+                "SELECT GROUP_CONCAT(cost_total,'|') FROM order_details WHERE id IN(21,22) ORDER BY id")),
+                "Reopening rewrote later sales costs");
+            require("0".equals(value(
+                "SELECT COUNT(*) FROM inventory_lot_consumptions WHERE order_detail_id=20")),
+                "Reopened sale kept its old FIFO consumption");
+            require("2".equals(value(
+                "SELECT COUNT(*) FROM warehouse_movements WHERE document_type='ORDER'")),
+                "Reopening removed movements belonging to later sales");
+        });
+        test("completed order with linked invoice cannot be reopened", () -> {
+            fresh(); completed();
+            sql("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status,order_id,currency_code) " +
+                "VALUES('INV-1',0,1,30,0,30,'Issued',1,'EUR')");
+            boolean blocked=false;
+            try { StockManager.reopenCompletedOrder(db,1); }
+            catch(SQLException expected) { blocked=true; }
+            require(blocked,"Completed order with linked invoice was reopened");
+            require("Completed".equals(value("SELECT status FROM orders WHERE id=1")) && qty()==7,
+                "Blocked reopen changed the sale");
+        });
+
         test("reversing a completed sale restores its exact FIFO layers", () -> {
             fresh();
             sql("UPDATE products SET quantity=0,acquisition_cost=0 WHERE id=1");
