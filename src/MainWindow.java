@@ -861,12 +861,9 @@ public class MainWindow extends JFrame {
             if (currency == null) return;
             BackupManager.getInstance().importDatabase(source, currency);
             CostIntegrity.Audit importAudit =
-                DatabaseManager.getInstance().takeStartupCostAudit();
-            String importMessage = importAudit != null
-                ? CostIntegrity.summary(importAudit)
-                : I18n.tr("Database imported successfully.");
+                CostIntegrity.audit(DatabaseManager.getInstance().getConnection());
             Dialogs.showMessageDialog(this,
-                    importMessage + "\n\n"
+                    CostIntegrity.summary(importAudit) + "\n\n"
                     + I18n.tr("WareStat will now close. Reopen it to use the imported database."),
                     I18n.tr("Import Database"), JOptionPane.INFORMATION_MESSAGE);
             dispose();
