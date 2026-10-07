@@ -895,6 +895,33 @@ UNION ALL SELECT 'Supplier orders: ' || COUNT(*) FROM supplier_orders
 UNION ALL SELECT 'Product/supplier relations: ' || COUNT(*) FROM product_suppliers
 UNION ALL SELECT 'FIFO lots: ' || COUNT(*) FROM inventory_lots
 UNION ALL SELECT 'Sales with historical cost: ' || COUNT(*) FROM order_details WHERE cost_total IS NOT NULL
+UNION ALL SELECT 'Completed sales with incomplete FIFO history: ' || COUNT(DISTINCT o.id)
+    FROM orders o
+    WHERE o.status='Completed'
+      AND EXISTS (
+        SELECT 1
+        FROM order_details d
+        WHERE d.order_id=o.id
+          AND (
+            NOT EXISTS (
+                SELECT 1
+                FROM inventory_lot_consumptions x
+                WHERE x.order_detail_id=d.id
+            )
+            OR COALESCE((
+                SELECT SUM(x.quantity)
+                FROM inventory_lot_consumptions x
+                WHERE x.order_detail_id=d.id
+            ),0)<>d.quantity
+            OR EXISTS (
+                SELECT 1
+                FROM inventory_lot_consumptions x
+                LEFT JOIN inventory_lots l ON l.id=x.lot_id
+                WHERE x.order_detail_id=d.id
+                  AND (l.id IS NULL OR l.product_id<>d.product_id)
+            )
+          )
+      )
 UNION ALL SELECT 'Warehouse movements: ' || COUNT(*) FROM warehouse_movements
 UNION ALL SELECT 'Warehouse notifications: ' || COUNT(*) FROM warehouse_notifications
 UNION ALL SELECT 'Product images: ' || COUNT(*) || ' (add from UI for photo/backup tests)' FROM product_images;
