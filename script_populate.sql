@@ -578,30 +578,44 @@ WHERE o.status='Completed';
 
 -- ---------------------------------------------------------------------------
 -- INVOICES: 180 + 540 lines
--- Includes currency and immutable snapshots introduced by migration 008.
+-- The first 60 invoices are linked only to Completed customer orders and copy
+-- the source order's customer, date and line snapshots. The remaining 120 are
+-- standalone demo invoices. Document status and payment status stay separate.
 -- ---------------------------------------------------------------------------
 WITH RECURSIVE seq(x) AS (
     SELECT 1
     UNION ALL
     SELECT x + 1 FROM seq WHERE x < 180
+),
+invoice_seed AS (
+    SELECT
+        x,
+        CASE WHEN x <= 60 THEN (4 * x) - 2 ELSE NULL END AS source_order_id
+    FROM seq
 )
 INSERT INTO invoices(
-    number, date, customer_id, taxable_amount, vat, total, status, order_id,
+    number, date, customer_id, taxable_amount, vat, total, status,
+    payment_status, paid_amount, order_id,
     currency_code, customer_snapshot, company_snapshot, logo_snapshot,
     snapshot_version
 )
 SELECT
-    strftime('%Y','now') || '/' || printf('%04d', x),
-    datetime('now', '-' || (x % 240) || ' days'),
+    strftime('%Y','now') || '/' || printf('%04d', seed.x),
+    CASE
+        WHEN seed.source_order_id IS NOT NULL
+            THEN COALESCE(o.completed_date, o.order_date)
+        ELSE datetime('now', '-' || (seed.x % 240) || ' days')
+    END,
     c.id,
     0, 0, 0,
-    CASE x % 4
+    CASE seed.x % 3
         WHEN 0 THEN 'Draft'
         WHEN 1 THEN 'Issued'
-        WHEN 2 THEN 'Paid'
         ELSE 'Canceled'
     END,
-    CASE WHEN x <= 90 THEN x ELSE NULL END,
+    'NOT_PAID',
+    0,
+    seed.source_order_id,
     (SELECT value FROM application_metadata WHERE key = 'currency_code'),
     'first_name=' || c.first_name || char(10) ||
     'last_name=' || c.last_name || char(10) ||
@@ -620,42 +634,77 @@ SELECT
     'website=https://www.warestat.com' || char(10),
     NULL,
     1
-FROM seq
-JOIN customers c ON c.id = 1 + ((x * 11) % 120);
+FROM invoice_seed seed
+LEFT JOIN orders o ON o.id = seed.source_order_id
+JOIN customers c ON c.id = CASE
+    WHEN seed.source_order_id IS NOT NULL THEN o.customer_id
+    ELSE 1 + ((seed.x * 11) % 120)
+END;
 
+-- A linked invoice is an immutable document snapshot of its Completed order.
+INSERT INTO invoice_details(
+    invoice_id, product_id, quantity, sale_unit_price_ex_vat,
+    sale_unit_price_inc_vat, vat_rate, total, product_code, product_name
+)
+SELECT
+    i.id,
+    d.product_id,
+    d.quantity,
+    d.sale_unit_price_ex_vat,
+    d.sale_unit_price_inc_vat,
+    d.vat_rate,
+    ROUND(
+        ROUND(d.quantity * d.sale_unit_price_inc_vat, 2) /
+        (1.0 + d.vat_rate / 100.0),
+        2
+    ),
+    p.code,
+    p.name
+FROM invoices i
+JOIN order_details d ON d.order_id = i.order_id
+JOIN products p ON p.id = d.product_id
+WHERE i.order_id IS NOT NULL;
+
+-- Standalone invoices keep independent demo lines.
 WITH RECURSIVE seq(x) AS (
     SELECT 1
     UNION ALL
-    SELECT x + 1 FROM seq WHERE x < 540
+    SELECT x + 1 FROM seq WHERE x < 360
+),
+standalone AS (
+    SELECT id, ROW_NUMBER() OVER (ORDER BY id) AS rn
+    FROM invoices
+    WHERE order_id IS NULL
 )
 INSERT INTO invoice_details(
     invoice_id, product_id, quantity, sale_unit_price_ex_vat,
     sale_unit_price_inc_vat, vat_rate, total, product_code, product_name
 )
 SELECT
-    1 + ((x - 1) / 3),
+    i.id,
     p.id,
-    1 + (x % 4),
+    1 + (seq.x % 4),
     ROUND(
         ROUND(
-            ROUND((1 + (x % 4)) * ROUND(p.sale_price_inc_vat * (0.92 + (x % 3) * 0.04), 2), 2) /
+            ROUND((1 + (seq.x % 4)) * ROUND(p.sale_price_inc_vat * (0.92 + (seq.x % 3) * 0.04), 2), 2) /
             (1.0 + p.vat_rate / 100.0),
             2
-        ) / (1 + (x % 4)),
+        ) / (1 + (seq.x % 4)),
         12
     ),
-    ROUND(p.sale_price_inc_vat * (0.92 + (x % 3) * 0.04), 2),
+    ROUND(p.sale_price_inc_vat * (0.92 + (seq.x % 3) * 0.04), 2),
     p.vat_rate,
     ROUND(
-        ROUND((1 + (x % 4)) *
-            ROUND(p.sale_price_inc_vat * (0.92 + (x % 3) * 0.04), 2), 2) /
+        ROUND((1 + (seq.x % 4)) *
+            ROUND(p.sale_price_inc_vat * (0.92 + (seq.x % 3) * 0.04), 2), 2) /
         (1.0 + p.vat_rate / 100.0),
         2
     ),
     p.code,
     p.name
 FROM seq
-JOIN products p ON p.id = 1 + ((x * 19) % 120);
+JOIN standalone i ON i.rn = 1 + ((seq.x - 1) / 3)
+JOIN products p ON p.id = 1 + ((seq.x * 19) % 120);
 
 -- Final reconciliation from the values actually stored in SQLite.
 -- Reconcile net line totals from the exact VAT-inclusive customer price.
@@ -680,6 +729,22 @@ SET taxable_amount = ROUND(COALESCE((
 
 UPDATE invoices
 SET total = ROUND(taxable_amount + vat, 2);
+
+-- Linked invoices read payment from their source order. Standalone invoices keep
+-- their own payment state, independently from Draft / Issued / Canceled.
+UPDATE invoices
+SET payment_status = CASE
+        WHEN order_id IS NOT NULL THEN 'NOT_PAID'
+        WHEN status = 'Issued' AND id % 2 = 0 THEN 'PAID'
+        WHEN status = 'Issued' THEN 'PARTIALLY_PAID'
+        ELSE 'NOT_PAID'
+    END,
+    paid_amount = CASE
+        WHEN order_id IS NOT NULL THEN 0
+        WHEN status = 'Issued' AND id % 2 = 0 THEN total
+        WHEN status = 'Issued' THEN ROUND(total * 0.40, 2)
+        ELSE 0
+    END;
 
 INSERT INTO invoice_numbering(year, last_number)
 VALUES (CAST(strftime('%Y','now') AS INTEGER), 180);
@@ -771,6 +836,47 @@ UNION ALL SELECT '  Inactive: ' || COUNT(*) FROM products WHERE active = 0
 UNION ALL SELECT 'Customer orders: ' || COUNT(*) FROM orders
 UNION ALL SELECT '  Active reservations: ' || COUNT(*) FROM stock_reservations WHERE status='ACTIVE'
 UNION ALL SELECT 'Invoices: ' || COUNT(*) FROM invoices
+UNION ALL SELECT '  Linked invoices: ' || COUNT(*) FROM invoices WHERE order_id IS NOT NULL
+UNION ALL SELECT '  Linked invoices on non-completed orders: ' || COUNT(*)
+    FROM invoices i
+    JOIN orders o ON o.id=i.order_id
+    WHERE o.status<>'Completed'
+UNION ALL SELECT '  Linked invoice customer mismatches: ' || COUNT(*)
+    FROM invoices i
+    JOIN orders o ON o.id=i.order_id
+    WHERE i.customer_id<>o.customer_id
+UNION ALL SELECT '  Linked invoice total mismatches: ' || COUNT(*)
+    FROM invoices i
+    JOIN orders o ON o.id=i.order_id
+    WHERE ABS(i.taxable_amount-o.total_ex_vat)>0.004
+       OR ABS(i.total-o.total_inc_vat)>0.004
+UNION ALL SELECT '  Linked invoice line mismatches: ' || COUNT(*)
+    FROM invoices i
+    WHERE i.order_id IS NOT NULL
+      AND (
+        EXISTS (
+            SELECT product_id, quantity, sale_unit_price_ex_vat,
+                   sale_unit_price_inc_vat, vat_rate
+            FROM order_details
+            WHERE order_id=i.order_id
+            EXCEPT
+            SELECT product_id, quantity, sale_unit_price_ex_vat,
+                   sale_unit_price_inc_vat, vat_rate
+            FROM invoice_details
+            WHERE invoice_id=i.id
+        )
+        OR EXISTS (
+            SELECT product_id, quantity, sale_unit_price_ex_vat,
+                   sale_unit_price_inc_vat, vat_rate
+            FROM invoice_details
+            WHERE invoice_id=i.id
+            EXCEPT
+            SELECT product_id, quantity, sale_unit_price_ex_vat,
+                   sale_unit_price_inc_vat, vat_rate
+            FROM order_details
+            WHERE order_id=i.order_id
+        )
+      )
 UNION ALL SELECT '  Invoice line mismatches: ' || COUNT(*)
     FROM invoice_details
     WHERE ABS(total - ROUND(ROUND(quantity * sale_unit_price_inc_vat, 2) / (1.0 + vat_rate / 100.0), 2)) > 0.004
