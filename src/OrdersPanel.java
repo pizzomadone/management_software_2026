@@ -272,6 +272,7 @@ public class OrdersPanel extends JPanel {
             String query = """
                 SELECT o.*, c.first_name || ' ' || c.last_name as customer_name,
                        i.currency_code AS payment_currency_code,
+                       i.number AS invoice_number,
                        COALESCE(i.total,o.total_inc_vat) AS total_inc_vat
                 FROM orders o
                 LEFT JOIN customers c ON o.customer_id = c.id
