@@ -408,6 +408,104 @@ public class StockManager {
     }
 
     /**
+     * Reopen a completed customer order that was completed by mistake.
+     * This is not a historical reversal: the completion is undone, its FIFO
+     * consumption and automatic sale movements are removed, and the order
+     * becomes In Progress with its quantities reserved again.
+     *
+     * The operation is allowed only while no invoice is linked to the order.
+     * Later sales keep their own frozen FIFO history unchanged.
+     */
+    public static void reopenCompletedOrder(Connection conn, int orderId) throws SQLException {
+        boolean ownTransaction = conn.getAutoCommit();
+        if (ownTransaction) DatabaseManager.beginTransaction(conn);
+        Savepoint checkpoint = conn.setSavepoint();
+        try {
+            String status;
+            boolean hasInvoice;
+            try (PreparedStatement p = conn.prepareStatement("""
+                    SELECT o.status,
+                           EXISTS(SELECT 1 FROM invoices i WHERE i.order_id=o.id) AS has_invoice
+                    FROM orders o
+                    WHERE o.id=?
+                    """)) {
+                p.setInt(1, orderId);
+                try (ResultSet r = p.executeQuery()) {
+                    if (!r.next()) throw new SQLException("Order no longer exists");
+                    status = r.getString("status");
+                    hasInvoice = r.getInt("has_invoice") == 1;
+                }
+            }
+
+            if (!"Completed".equals(status))
+                throw new SQLException("Only completed customer orders can be reopened");
+            if (hasInvoice)
+                throw new SQLException("A completed order with a linked invoice cannot be reopened");
+
+            List<StockItem> items = new ArrayList<>();
+            try (PreparedStatement p = conn.prepareStatement("""
+                    SELECT d.product_id,p.name,d.quantity
+                    FROM order_details d
+                    JOIN products p ON p.id=d.product_id
+                    WHERE d.order_id=?
+                    ORDER BY d.id
+                    """)) {
+                p.setInt(1, orderId);
+                try (ResultSet r = p.executeQuery()) {
+                    while (r.next()) {
+                        items.add(new StockItem(
+                            r.getInt("product_id"),
+                            r.getString("name"),
+                            r.getInt("quantity")
+                        ));
+                    }
+                }
+            }
+            if (items.isEmpty())
+                throw new SQLException("Completed order has no product lines");
+
+            // Undo only this order's completion. FIFO consumptions belonging to
+            // later orders are deliberately left untouched.
+            InventoryLotManager.restoreOrder(conn, orderId);
+            restoreStockFromDocument(conn, orderId, "ORDER");
+            deleteWarehouseMovements(conn, "ORDER", String.valueOf(orderId));
+
+            // After restoring the physical units there must still be enough
+            // availability to reserve this order again without disturbing other
+            // active orders.
+            Map<String, StockAvailability> insufficient =
+                checkStockAvailability(conn, items, null, "ORDER");
+            if (!insufficient.isEmpty())
+                throw new SQLException("The order cannot be reopened because its stock can no longer be reserved");
+
+            for (StockItem item : items) {
+                createOrUpdateReservation(conn, item.getProductId(),
+                    "ORDER", orderId, item.getQuantity(), "Order #" + orderId);
+            }
+
+            try (PreparedStatement p = conn.prepareStatement("""
+                    UPDATE orders
+                    SET status='In Progress', completed_date=NULL
+                    WHERE id=? AND status='Completed'
+                    """)) {
+                p.setInt(1, orderId);
+                if (p.executeUpdate() != 1)
+                    throw new SQLException("Order changed or no longer exists");
+            }
+
+            conn.releaseSavepoint(checkpoint);
+            if (ownTransaction) conn.commit();
+        } catch (SQLException | RuntimeException e) {
+            conn.rollback(checkpoint);
+            conn.releaseSavepoint(checkpoint);
+            if (ownTransaction) conn.rollback();
+            throw e;
+        } finally {
+            if (ownTransaction) conn.setAutoCommit(true);
+        }
+    }
+
+    /**
      * Reverse a completed customer sale without deleting or rewriting its history.
      * Original FIFO consumptions and cost_total remain frozen; stock is returned
      * to the exact original layers and a compensating inward movement is posted.
