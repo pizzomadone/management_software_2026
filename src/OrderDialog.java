@@ -332,13 +332,13 @@ public class OrderDialog extends JDialog {
         String message = null;
         if (isReversedOrder()) {
             message = I18n.tr(
-                "This sale has been reversed and is kept as historical data; the order cannot be modified.");
+                "Reversed order: it cannot be modified.");
         } else if (linkedInvoiceLocked) {
             message = I18n.tr(
-                "This order cannot be modified because it has a linked invoice. Payment can still be updated. To reverse the sale, delete a draft invoice or cancel an issued invoice first, then use Reverse Sale.");
+                "Order locked: linked invoice. Only payment can be changed. To reverse the sale, remove or cancel the invoice first.");
         } else if (isCompletedPaymentOnly()) {
             message = I18n.tr(
-                "This completed order is locked to protect stock and FIFO history. Payment can be updated, or it can be returned to In Progress if completion was a mistake.");
+                "Completed order: only payment can be changed, or the order can be returned to In Progress.");
         }
 
         editRestrictionLabel.setVisible(message != null);
