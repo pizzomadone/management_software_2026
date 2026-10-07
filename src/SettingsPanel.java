@@ -11,6 +11,33 @@ import java.math.BigDecimal;
 public class SettingsPanel extends JPanel {
     private static Properties settings = new Properties();
 
+    private static final String[] CURRENCY_CHOICES = {
+        "USD - US Dollar ($)", "EUR - Euro (€)", "GBP - British Pound (£)",
+        "JPY - Japanese Yen (¥)", "CHF - Swiss Franc (Fr)",
+        "CAD - Canadian Dollar ($)", "AUD - Australian Dollar ($)",
+        "CNY - Chinese Yuan (¥)", "INR - Indian Rupee (₹)",
+        "BRL - Brazilian Real (R$)", "MXN - Mexican Peso ($)",
+        "ZAR - South African Rand (R)", "SEK - Swedish Krona (kr)",
+        "NOK - Norwegian Krone (kr)", "DKK - Danish Krone (kr)",
+        "PLN - Polish Zloty (zł)", "RUB - Russian Ruble (₽)",
+        "TRY - Turkish Lira (₺)", "KRW - South Korean Won (₩)",
+        "SGD - Singapore Dollar ($)", "HKD - Hong Kong Dollar ($)",
+        "NZD - New Zealand Dollar ($)", "THB - Thai Baht (฿)"
+    };
+
+    public static String[] getSupportedCurrencyChoices() {
+        return CURRENCY_CHOICES.clone();
+    }
+
+    public static String getCurrencyChoice(String code) {
+        if (code != null) {
+            for (String choice : CURRENCY_CHOICES) {
+                if (choice.startsWith(code + " - ")) return choice;
+            }
+        }
+        return CURRENCY_CHOICES[0];
+    }
+
     private JSlider fontSizeSlider;
     private JComboBox<String> themeCombo;
     private JLabel previewLabel;
@@ -150,17 +177,7 @@ public class SettingsPanel extends JPanel {
         panel.add(new JLabel("Currency:"), gbc);
 
         gbc.gridx = 1; gbc.weightx = 1.0;
-        String[] currencies = {"USD - US Dollar ($)", "EUR - Euro (€)", "GBP - British Pound (£)",
-                               "JPY - Japanese Yen (¥)", "CHF - Swiss Franc (Fr)",
-                               "CAD - Canadian Dollar ($)", "AUD - Australian Dollar ($)",
-                               "CNY - Chinese Yuan (¥)", "INR - Indian Rupee (₹)",
-                               "BRL - Brazilian Real (R$)", "MXN - Mexican Peso ($)",
-                               "ZAR - South African Rand (R)", "SEK - Swedish Krona (kr)",
-                               "NOK - Norwegian Krone (kr)", "DKK - Danish Krone (kr)",
-                               "PLN - Polish Zloty (zł)", "RUB - Russian Ruble (₽)",
-                               "TRY - Turkish Lira (₺)", "KRW - South Korean Won (₩)",
-                               "SGD - Singapore Dollar ($)", "HKD - Hong Kong Dollar ($)",
-                               "NZD - New Zealand Dollar ($)", "THB - Thai Baht (฿)"};
+        String[] currencies = getSupportedCurrencyChoices();
         currencyCombo = new JComboBox<>(currencies);
         for(String choice:currencies) {
             if(choice.startsWith(getCurrencyCode()+" - "))currencyCombo.setSelectedItem(choice);
