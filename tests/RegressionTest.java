@@ -681,6 +681,46 @@ public class RegressionTest {
                 require(r2.next() && r2.getInt(1)==0,"Database-only backup retained photo references");
             }
         });
+        test("new archive saves current data and starts with an empty database", () -> {
+            db=DatabaseManager.getInstance().getConnection();
+            sql("INSERT INTO customers(first_name,last_name) VALUES('Archive','Customer')");
+            String imageName=value("SELECT filename FROM product_images ORDER BY id LIMIT 1");
+
+            Path folder=OUT.resolve("named-archives");
+            Files.createDirectories(folder);
+            Path archive=folder.resolve("My Warehouse 2026.wsbu");
+            Files.deleteIfExists(archive);
+
+            BackupManager backup=BackupManager.getInstance();
+            Path created=backup.archiveAndStartNew(archive);
+            db=DatabaseManager.getInstance().getConnection();
+
+            require(Files.isRegularFile(created),"Named archive was not created");
+            require("0".equals(value("SELECT COUNT(*) FROM customers")),
+                "New archive workflow did not clear customers");
+            require("0".equals(value("SELECT COUNT(*) FROM products")),
+                "New archive workflow did not clear products");
+            require("0".equals(value("SELECT COUNT(*) FROM product_images")),
+                "New archive workflow did not clear product image metadata");
+            require(Path.of(backup.getArchiveDirectory()).toAbsolutePath().normalize()
+                    .equals(folder.toAbsolutePath().normalize()),
+                "New archive directory was not remembered");
+
+            try(var stream=Files.list(AppConstants.getProductImagesDirectory())) {
+                require(stream.findAny().isEmpty(),"New archive workflow kept old product image files");
+            }
+
+            backup.restoreBackup(created.toString(),null);
+            db=DatabaseManager.getInstance().getConnection();
+            require("1".equals(value(
+                "SELECT COUNT(*) FROM customers WHERE first_name='Archive' AND last_name='Customer'")),
+                "Named archive did not restore archived customer data");
+            require("Photo Product".equals(value("SELECT name FROM products WHERE code='PHOTO'")),
+                "Named archive did not restore archived product data");
+            if(imageName!=null) require(Files.isRegularFile(
+                ProductImageStore.getInstance().imagePath(imageName)),
+                "Named archive did not restore archived product images");
+        });
     }
     public static void main(String[] args) throws Exception {
         Locale.setDefault(Locale.US);TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
