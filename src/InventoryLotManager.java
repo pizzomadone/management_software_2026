@@ -709,15 +709,18 @@ public final class InventoryLotManager {
             try(ResultSet r=p.executeQuery()){if(r.next())cost=Numbers.nonNegative(r.getObject(1));}
         }
         if(cost==null) {
-            // Migration/opening layers may be the only surviving evidence of the
-            // previous actual cost. A current supplier reference price is not an
-            // actual purchase and must never become acquisition_cost.
+            // Fall back to the newest available FIFO lot, including manual receipts.
+            // Exclude returned or otherwise non-completed supplier receipts.
             try(PreparedStatement p=c.prepareStatement("""
-                    SELECT unit_cost FROM inventory_lots
-                    WHERE product_id=? AND source_type IN ('MIGRATION','DEMO_OPENING')
-                    ORDER BY received_date DESC,id DESC LIMIT 1
+                    SELECT l.unit_cost FROM inventory_lots l
+                    LEFT JOIN supplier_order_details d ON d.id=l.supplier_order_detail_id
+                    LEFT JOIN supplier_orders o ON o.id=d.order_id
+                    WHERE l.product_id=? AND l.remaining_quantity>0
+                      AND (l.supplier_order_detail_id IS NULL
+                           OR (o.status='Completed' AND o.id<>?))
+                    ORDER BY l.received_date DESC,l.id DESC LIMIT 1
                     """)) {
-                p.setInt(1,productId);try(ResultSet r=p.executeQuery()){
+                p.setInt(1,productId);p.setInt(2,excludedOrderId);try(ResultSet r=p.executeQuery()){
                     if(r.next())cost=Numbers.nonNegative(r.getObject(1));
                 }
             }
