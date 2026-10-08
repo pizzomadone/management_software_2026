@@ -307,12 +307,10 @@ public class SupplierOrderDialog extends JDialog {
         }
         if (historicalConsumption) {
             statusCombo.setEnabled(false);
-            notesArea.setEditable(false);
             itemsTable.setEnabled(false);
             addItemButton.setEnabled(false);
             removeItemButton.setEnabled(false);
             reprice.setEnabled(false);
-            saveButton.setEnabled(false);
             lockNotice.setVisible(true);
         }
     }
@@ -551,7 +549,25 @@ public class SupplierOrderDialog extends JDialog {
     }
 
     private void saveOrder() {
-        if (historicalConsumption) return;
+        if (historicalConsumption) {
+            try {
+                Connection conn = DatabaseManager.getInstance().getConnection();
+                try (PreparedStatement statement = conn.prepareStatement(
+                        "UPDATE supplier_orders SET notes=? WHERE id=?")) {
+                    statement.setString(1, notesArea.getText().trim());
+                    statement.setInt(2, order.getId());
+                    if (statement.executeUpdate() != 1)
+                        throw new SQLException("Supplier order no longer exists");
+                }
+                orderSaved = true;
+                dispose();
+            } catch (SQLException ex) {
+                Dialogs.showMessageDialog(this,
+                    I18n.tr("Error saving the order") + ": " + I18n.tr(ex.getMessage()),
+                    I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
+            }
+            return;
+        }
         try {
             Numbers.commitEdits(itemsTable);
             // Validation
