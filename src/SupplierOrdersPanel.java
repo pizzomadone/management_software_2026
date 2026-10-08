@@ -192,6 +192,9 @@ public class SupplierOrdersPanel extends JPanel {
             } else if (normalized.equals("in transit") || normalized.equals("in transito")) {
                 background = new Color(252, 238, 215);
                 foreground = new Color(145, 90, 18);
+            } else if (normalized.equals("returned")) {
+                background = new Color(229, 234, 245);
+                foreground = new Color(58, 72, 125);
             } else if (normalized.equals("cancelled") || normalized.equals("canceled")
                     || normalized.equals("annullato")) {
                 background = new Color(247, 226, 226);
