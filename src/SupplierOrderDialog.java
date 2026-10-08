@@ -315,6 +315,9 @@ public class SupplierOrderDialog extends JDialog {
             addItemButton.setEnabled(false);
             removeItemButton.setEnabled(false);
             reprice.setEnabled(false);
+            lockNotice.setText(I18n.tr("Returned".equals(order.getStatus())
+                ? "Supplier order returned: only notes can be changed."
+                : "Supplier order locked: goods already used, even partially."));
             lockNotice.setVisible(true);
         }
     }
@@ -555,6 +558,10 @@ public class SupplierOrderDialog extends JDialog {
     private void saveOrder() {
         if (order != null && "Returned".equals(statusCombo.getSelectedItem())
                 && "Completed".equals(order.getStatus())) {
+            if (Dialogs.showConfirmDialog(this,
+                    I18n.tr("Return all goods from this supplier order?"),
+                    I18n.tr("Confirm Supplier Return"),
+                    JOptionPane.YES_NO_OPTION,JOptionPane.WARNING_MESSAGE)!=JOptionPane.YES_OPTION) return;
             Connection conn=null;
             try {
                 conn=DatabaseManager.getInstance().getConnection();
