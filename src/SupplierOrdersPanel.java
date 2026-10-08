@@ -300,6 +300,8 @@ public class SupplierOrdersPanel extends JPanel {
         }
         if (Dialogs.showConfirmDialog(this,I18n.format("Delete supplier order {0}?", number),I18n.tr("Confirm Deletion"),JOptionPane.YES_NO_OPTION,JOptionPane.WARNING_MESSAGE)!=JOptionPane.YES_OPTION) return;
         Connection conn=null; try { conn=DatabaseManager.getInstance().getConnection(); DatabaseManager.beginTransaction(conn); SupplierOrder order=loadOrder(id);
+            if (order != null && "Returned".equals(order.getStatus()))
+                throw new SQLException(I18n.tr("Returned supplier orders are historical and cannot be deleted."));
             if (order != null && "Completed".equals(order.getStatus())) {
                 InventoryLotManager.reverseSupplierOrder(conn,id,number);
             }
