@@ -29,6 +29,9 @@ public class SupplierOrderDialog extends JDialog {
     private SimpleDateFormat dateFormat;
     private Map<Integer, Product> productsCache;
     private boolean updatingTotals = false; // Flag to prevent recursion
+    private boolean historicalConsumption;
+    private JButton addItemButton, removeItemButton, reprice, saveButton;
+    private JLabel lockNotice;
 
     public SupplierOrderDialog(Window parent, int supplierId, String supplierName, SupplierOrder order) {
         super(parent,
@@ -136,7 +139,7 @@ public class SupplierOrderDialog extends JDialog {
         itemsTableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
-                return column == 2 || column == 3 || column == 5; // Quantity, agreed price and notes.
+                return !historicalConsumption && (column == 2 || column == 3 || column == 5);
             }
         };
         itemsTable = new JTable(itemsTableModel);
@@ -154,15 +157,15 @@ public class SupplierOrderDialog extends JDialog {
 
         // Table buttons panel
         JPanel tableButtonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        JButton addItemButton = new JButton("Add Product");
-        JButton removeItemButton = new JButton("Remove Product");
+        addItemButton = new JButton("Add Product");
+        removeItemButton = new JButton("Remove Product");
 
         addItemButton.addActionListener(e -> showAddProductDialog());
         removeItemButton.addActionListener(e -> removeSelectedProduct());
 
         tableButtonPanel.add(addItemButton);
         tableButtonPanel.add(removeItemButton);
-        JButton reprice = new JButton("Refresh Supplier Prices");
+        reprice = new JButton("Refresh Supplier Prices");
         reprice.setToolTipText(I18n.tr("Replace order prices with the current prices saved for this supplier."));
         reprice.addActionListener(e -> refreshSupplierPrices());
         tableButtonPanel.add(reprice);
@@ -175,7 +178,7 @@ public class SupplierOrderDialog extends JDialog {
 
         // Main buttons panel
         JPanel buttonPanel = new JPanel();
-        JButton saveButton = new JButton("Save");
+        saveButton = new JButton("Save");
         JButton cancelButton = new JButton("Cancel");
 
         saveButton.addActionListener(e -> saveOrder());
@@ -186,7 +189,14 @@ public class SupplierOrderDialog extends JDialog {
 
         // Assembly
         JPanel centerPanel = new JPanel(new BorderLayout());
-        centerPanel.add(tableButtonPanel, BorderLayout.NORTH);
+        JPanel headerPanel = new JPanel(new BorderLayout());
+        headerPanel.add(tableButtonPanel, BorderLayout.NORTH);
+        lockNotice = new JLabel(I18n.tr("Supplier order locked: goods already used, even partially."));
+        lockNotice.setFont(lockNotice.getFont().deriveFont(Font.PLAIN, 11f));
+        lockNotice.setBorder(BorderFactory.createEmptyBorder(0, 5, 3, 3));
+        lockNotice.setVisible(false);
+        headerPanel.add(lockNotice, BorderLayout.SOUTH);
+        centerPanel.add(headerPanel, BorderLayout.NORTH);
         centerPanel.add(new JScrollPane(itemsTable), BorderLayout.CENTER);
         centerPanel.add(totalPanel, BorderLayout.SOUTH);
 
@@ -285,6 +295,26 @@ public class SupplierOrderDialog extends JDialog {
         }
 
         updateTotals();
+        try {
+            historicalConsumption = InventoryLotManager.hasSupplierOrderConsumption(
+                DatabaseManager.getInstance().getConnection(), order.getId());
+        } catch (SQLException ex) {
+            historicalConsumption = true;
+        }
+        if ("Completed".equals(order.getStatus()) || historicalConsumption) {
+            dateField.setEnabled(false);
+            deliveryDateField.setEnabled(false);
+        }
+        if (historicalConsumption) {
+            statusCombo.setEnabled(false);
+            notesArea.setEditable(false);
+            itemsTable.setEnabled(false);
+            addItemButton.setEnabled(false);
+            removeItemButton.setEnabled(false);
+            reprice.setEnabled(false);
+            saveButton.setEnabled(false);
+            lockNotice.setVisible(true);
+        }
     }
 
     private void showAddProductDialog() {
@@ -521,6 +551,7 @@ public class SupplierOrderDialog extends JDialog {
     }
 
     private void saveOrder() {
+        if (historicalConsumption) return;
         try {
             Numbers.commitEdits(itemsTable);
             // Validation
@@ -652,9 +683,16 @@ public class SupplierOrderDialog extends JDialog {
                             previousReceiptDate = DateUtils.parseDate(r, "received_date");
                         }
                     }
+                    if (InventoryLotManager.hasSupplierOrderConsumption(conn, orderId))
+                        throw new SQLException(I18n.tr("Supplier order locked: goods already used, even partially."));
                     if ("Completed".equals(previousStatus)) {
                         InventoryLotManager.reverseSupplierOrder(conn, orderId, order.getNumber());
                     }
+                    if ("Completed".equals(previousStatus) &&
+                            (!java.util.Objects.equals(DateUtils.formatDate(orderDate, dateFormat), DateUtils.formatDate(order.getOrderDate(), dateFormat)) ||
+                            !java.util.Objects.equals(deliveryDate == null ? "" : DateUtils.formatDate(deliveryDate, dateFormat),
+                                order.getExpectedDeliveryDate() == null ? "" : DateUtils.formatDate(order.getExpectedDeliveryDate(), dateFormat))))
+                        throw new SQLException(I18n.tr("Completed supplier order dates cannot be changed."));
                     Date receiptDate = "Completed".equals(newStatus)
                         ? ("Completed".equals(previousStatus) && previousReceiptDate != null
                             ? previousReceiptDate : new Date())
