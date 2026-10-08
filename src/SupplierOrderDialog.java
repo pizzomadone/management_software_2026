@@ -746,8 +746,8 @@ public class SupplierOrderDialog extends JDialog {
         } catch (Exception e) {
             e.printStackTrace();
             Dialogs.showMessageDialog(this,
-                "Error saving the order: " + e.getMessage(),
-                "Error", JOptionPane.ERROR_MESSAGE);
+                I18n.tr("Error saving the order") + ": " + I18n.tr(e.getMessage()),
+                I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
         }
     }
 
