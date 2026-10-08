@@ -120,7 +120,7 @@ public class SupplierOrderDialog extends JDialog {
         orderPanel.add(new JLabel("Status:"), gbc);
 
         gbc.gridx = 1;
-        statusCombo = new JComboBox<>(new String[]{"Draft", "Confirmed", "In Transit", "Completed", "Cancelled"});
+        statusCombo = new JComboBox<>(new String[]{"Draft", "Confirmed", "In Transit", "Completed", "Cancelled", "Returned"});
         statusCombo.putClientProperty("i18n.values", true);
         orderPanel.add(statusCombo, gbc);
 
@@ -301,12 +301,16 @@ public class SupplierOrderDialog extends JDialog {
         } catch (SQLException ex) {
             historicalConsumption = true;
         }
-        if ("Completed".equals(order.getStatus()) || historicalConsumption) {
+        if ("Completed".equals(order.getStatus()) || "Returned".equals(order.getStatus()) || historicalConsumption) {
             dateField.setEnabled(false);
             deliveryDateField.setEnabled(false);
         }
-        if (historicalConsumption) {
-            statusCombo.setEnabled(false);
+        if (historicalConsumption || "Returned".equals(order.getStatus())) {
+            if ("Completed".equals(order.getStatus())) {
+                statusCombo.setModel(new DefaultComboBoxModel<>(new String[]{"Completed", "Returned"}));
+            } else {
+                statusCombo.setEnabled(false);
+            }
             itemsTable.setEnabled(false);
             addItemButton.setEnabled(false);
             removeItemButton.setEnabled(false);
@@ -549,7 +553,43 @@ public class SupplierOrderDialog extends JDialog {
     }
 
     private void saveOrder() {
-        if (historicalConsumption) {
+        if (order != null && "Returned".equals(statusCombo.getSelectedItem())
+                && "Completed".equals(order.getStatus())) {
+            Connection conn=null;
+            try {
+                conn=DatabaseManager.getInstance().getConnection();
+                DatabaseManager.beginTransaction(conn);
+                try {
+                    String actualStatus;
+                    try(PreparedStatement p=conn.prepareStatement("SELECT status FROM supplier_orders WHERE id=?")) {
+                        p.setInt(1,order.getId());
+                        try(ResultSet r=p.executeQuery()){
+                            if(!r.next())throw new SQLException("Supplier order no longer exists");
+                            actualStatus=r.getString(1);
+                        }
+                    }
+                    if(!"Completed".equals(actualStatus))
+                        throw new SQLException(I18n.tr("Only completed supplier orders can be returned."));
+                    InventoryLotManager.returnSupplierOrder(conn,order.getId(),order.getNumber());
+                    try(PreparedStatement p=conn.prepareStatement(
+                            "UPDATE supplier_orders SET status='Returned',notes=? WHERE id=?")) {
+                        p.setString(1,notesArea.getText().trim());
+                        p.setInt(2,order.getId());
+                        if(p.executeUpdate()!=1)throw new SQLException("Supplier order no longer exists");
+                    }
+                    conn.commit();
+                    orderSaved=true;
+                    dispose();
+                } catch(Exception ex){conn.rollback();throw ex;}
+                finally{conn.setAutoCommit(true);}
+            } catch(Exception ex) {
+                Dialogs.showMessageDialog(this,
+                    I18n.tr("Unable to return supplier order")+": "+I18n.tr(ex.getMessage()),
+                    I18n.tr("Error"),JOptionPane.ERROR_MESSAGE);
+            }
+            return;
+        }
+        if (order != null && "Returned".equals(order.getStatus()) || historicalConsumption) {
             try {
                 Connection conn = DatabaseManager.getInstance().getConnection();
                 try (PreparedStatement statement = conn.prepareStatement(
@@ -618,6 +658,7 @@ public class SupplierOrderDialog extends JDialog {
             }
 
             String newStatus = (String)statusCombo.getSelectedItem();
+            if ("Returned".equals(newStatus)) throw new SQLException(I18n.tr("Only completed supplier orders can be returned."));
 
             // Build list of stock items
             List<StockManager.StockItem> stockItems = new ArrayList<>();
