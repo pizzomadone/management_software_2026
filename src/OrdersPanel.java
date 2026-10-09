@@ -1,5 +1,6 @@
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.DefaultTableCellRenderer;
 import java.awt.*;
 import java.sql.*;
 import java.util.Vector;
@@ -9,6 +10,12 @@ import java.util.Map;
 import java.util.HashMap;
 
 public class OrdersPanel extends JPanel {
+    private static final int INVOICE_COLUMN = 6;
+
+    private record InvoiceLink(String number) {
+        @Override public String toString() { return "🧾"; }
+    }
+
     private JTable ordersTable;
     private DefaultTableModel tableModel;
     private JTextField searchField;
@@ -47,7 +54,7 @@ public class OrdersPanel extends JPanel {
         searchPanel.add(searchButton);
 
         // Orders table
-        String[] columns = {"ID", "Customer", "Date", "Status", "Total incl. VAT", "Payment"};
+        String[] columns = {"ID", "Customer", "Date", "Status", "Total incl. VAT", "Payment", "Invoice"};
         tableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -59,6 +66,27 @@ public class OrdersPanel extends JPanel {
         I18n.localize(ordersTable);
         ordersTable.getSelectionModel().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         ordersTable.getSelectionModel().addListSelectionListener(e -> updateButtonStates());
+
+        DefaultTableCellRenderer invoiceRenderer = new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value,
+                    boolean selected, boolean focus, int row, int column) {
+                JLabel label = (JLabel) super.getTableCellRendererComponent(
+                    table, value, selected, focus, row, column);
+                label.setHorizontalAlignment(SwingConstants.CENTER);
+                if (value instanceof InvoiceLink link) {
+                    label.setText(link.toString());
+                    label.setToolTipText(I18n.tr("Go to Invoice") + ": " + link.number());
+                } else {
+                    label.setText("");
+                    label.setToolTipText(null);
+                }
+                return label;
+            }
+        };
+        ordersTable.getColumnModel().getColumn(INVOICE_COLUMN).setCellRenderer(invoiceRenderer);
+        ordersTable.getColumnModel().getColumn(INVOICE_COLUMN).setPreferredWidth(70);
+        ordersTable.getColumnModel().getColumn(INVOICE_COLUMN).setMaxWidth(95);
 
         // Enable column sorting with date support (column 2 is "Date")
         TableSorterUtil.enableSorting(ordersTable, new int[]{2}, dateFormat);
@@ -85,11 +113,28 @@ public class OrdersPanel extends JPanel {
         ordersTable.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override
             public void mouseClicked(java.awt.event.MouseEvent evt) {
-                if (evt.getClickCount() == 2 && SwingUtilities.isLeftMouseButton(evt)) {
-                    int selectedRow = ordersTable.getSelectedRow();
-                    if (selectedRow != -1) {
-                        editSelectedOrder();
+                if (!SwingUtilities.isLeftMouseButton(evt)) return;
+
+                int viewRow = ordersTable.rowAtPoint(evt.getPoint());
+                int viewColumn = ordersTable.columnAtPoint(evt.getPoint());
+                if (viewRow < 0 || viewColumn < 0) return;
+
+                int modelColumn = ordersTable.convertColumnIndexToModel(viewColumn);
+                if (modelColumn == INVOICE_COLUMN) {
+                    int modelRow = ordersTable.convertRowIndexToModel(viewRow);
+                    Object value = tableModel.getValueAt(modelRow, INVOICE_COLUMN);
+                    if (value instanceof InvoiceLink link) {
+                        ordersTable.setRowSelectionInterval(viewRow, viewRow);
+                        Window window = SwingUtilities.getWindowAncestor(OrdersPanel.this);
+                        if (window instanceof MainWindow mainWindow)
+                            mainWindow.openInvoice(link.number());
                     }
+                    return;
+                }
+
+                if (evt.getClickCount() == 2) {
+                    ordersTable.setRowSelectionInterval(viewRow, viewRow);
+                    editSelectedOrder();
                 }
             }
         });
@@ -168,6 +213,7 @@ public class OrdersPanel extends JPanel {
             String query = """
                 SELECT o.*, c.first_name || ' ' || c.last_name as customer_name,
                        i.currency_code AS payment_currency_code,
+                       i.number AS invoice_number,
                        COALESCE(i.total,o.total_inc_vat) AS total_inc_vat
                 FROM orders o
                 LEFT JOIN customers c ON o.customer_id = c.id
@@ -198,6 +244,10 @@ public class OrdersPanel extends JPanel {
                                         row.add(formatPaymentStatus(paymentStatus, paidAmount,
                         rs.getString("payment_currency_code")));
 
+                    String invoiceNumber = rs.getString("invoice_number");
+                    row.add(invoiceNumber == null || invoiceNumber.isBlank()
+                        ? null : new InvoiceLink(invoiceNumber));
+
                     tableModel.addRow(row);
                 }
             }
@@ -222,6 +272,7 @@ public class OrdersPanel extends JPanel {
             String query = """
                 SELECT o.*, c.first_name || ' ' || c.last_name as customer_name,
                        i.currency_code AS payment_currency_code,
+                       i.number AS invoice_number,
                        COALESCE(i.total,o.total_inc_vat) AS total_inc_vat
                 FROM orders o
                 LEFT JOIN customers c ON o.customer_id = c.id
@@ -258,6 +309,10 @@ public class OrdersPanel extends JPanel {
                                                 row.add(formatPaymentStatus(paymentStatus, paidAmount,
                         rs.getString("payment_currency_code")));
 
+                        String invoiceNumber = rs.getString("invoice_number");
+                        row.add(invoiceNumber == null || invoiceNumber.isBlank()
+                            ? null : new InvoiceLink(invoiceNumber));
+
                         tableModel.addRow(row);
                     }
                 }
@@ -272,6 +327,7 @@ public class OrdersPanel extends JPanel {
 
     private void showOrderDialog(Order order) {
         Window parentWindow = SwingUtilities.getWindowAncestor(this);
+        Integer editedOrderId = order != null ? order.getId() : null;
 
         OrderDialog dialog;
         if (parentWindow instanceof JFrame) {
@@ -283,10 +339,16 @@ public class OrdersPanel extends JPanel {
         dialog.setVisible(true);
         if (dialog.isOrderSaved()) {
             loadOrders();
+
             // Refresh ProductsPanel to update stock levels
             if (parentWindow instanceof MainWindow mainWindow) {
                 mainWindow.refreshProductsPanel();
                 mainWindow.refreshInvoicesPanel();
+            }
+
+            // Editing an order must not lose the user's place in the table.
+            if (editedOrderId != null) {
+                selectOrderByIdInCurrentTable(editedOrderId);
             }
         }
     }
@@ -441,14 +503,18 @@ public class OrdersPanel extends JPanel {
                             String invoiceStatus = rs.getString("status");
                             if (linkedInvoiceBlocksOrderAction(status, invoiceStatus)) {
                                 String instruction = "Draft".equals(invoiceStatus)
-                                    ? "Delete the draft invoice first."
+                                    ? I18n.tr("Delete the draft invoice first.")
                                     : "Canceled".equals(invoiceStatus)
-                                        ? "Only a completed sale can be reversed while linked to a canceled invoice."
-                                        : "Cancel the issued invoice first.";
+                                        ? I18n.tr("Only a completed sale can be reversed while linked to a canceled invoice.")
+                                        : I18n.tr("Cancel the issued invoice first.");
+                                String message = "Completed".equals(status)
+                                    ? I18n.format("Order cannot be reversed because invoice {0} is linked to it. {1}",
+                                        invoiceNumber, instruction)
+                                    : I18n.format("Order cannot be deleted because invoice {0} is linked to it. {1}",
+                                        invoiceNumber, instruction);
                                 Dialogs.showMessageDialog(this,
-                                    "Order cannot be " + ("Completed".equals(status) ? "reversed" : "deleted") +
-                                    " because invoice " + invoiceNumber + " is linked to it. " + instruction,
-                                    "Order Cannot Be Changed", JOptionPane.WARNING_MESSAGE);
+                                    message,
+                                    I18n.tr("Order Cannot Be Changed"), JOptionPane.WARNING_MESSAGE);
                                 return;
                             }
                         }
@@ -844,6 +910,10 @@ public class OrdersPanel extends JPanel {
                     conn.commit();
                 }
 
+                // Show the invoice indicator immediately without waiting for a manual refresh.
+                loadOrders();
+                selectOrderByIdInCurrentTable(orderId);
+
                 Object[] invoiceOptions = { I18n.tr("Go to Invoice"), I18n.tr("Close") };
                 int invoiceAction = Dialogs.showOptionDialog(this,
                     I18n.format("Invoice {0} generated successfully!", invoiceNumber) + "\n" +
@@ -897,31 +967,30 @@ public class OrdersPanel extends JPanel {
         return I18n.tr("Not Paid");
     }
 
+    private boolean selectOrderByIdInCurrentTable(int orderId) {
+        for (int modelRow = 0; modelRow < tableModel.getRowCount(); modelRow++) {
+            Object value = tableModel.getValueAt(modelRow, 0);
+            if (value instanceof Integer && ((Integer) value) == orderId) {
+                int viewRow = ordersTable.convertRowIndexToView(modelRow);
+                if (viewRow < 0) return false;
+                ordersTable.setRowSelectionInterval(viewRow, viewRow);
+                ordersTable.scrollRectToVisible(ordersTable.getCellRect(viewRow, 0, true));
+                updateButtonStates();
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * Selects and highlights a specific order in the table by order ID
      * @param orderId The ID of the order to select
      */
     public void selectOrderById(int orderId) {
-        // First ensure the table is loaded
         loadOrders();
 
-        // Search for the order ID in the table model
-        for (int modelRow = 0; modelRow < tableModel.getRowCount(); modelRow++) {
-            Object value = tableModel.getValueAt(modelRow, 0); // ID is in column 0
-            if (value != null && value instanceof Integer && (Integer) value == orderId) {
-                // Found the order, convert model index to view index
-                int viewRow = ordersTable.convertRowIndexToView(modelRow);
-                // Select the row in the view
-                ordersTable.setRowSelectionInterval(viewRow, viewRow);
-                // Scroll to make the row visible
-                ordersTable.scrollRectToVisible(ordersTable.getCellRect(viewRow, 0, true));
-                // Update button states
-                updateButtonStates();
-                return;
-            }
-        }
+        if (selectOrderByIdInCurrentTable(orderId)) return;
 
-        // If we get here, the order was not found
         Dialogs.showMessageDialog(this,
             "Order #" + orderId + " not found in the list.",
             "Order Not Found",

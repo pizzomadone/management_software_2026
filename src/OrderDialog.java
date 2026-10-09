@@ -38,6 +38,7 @@ public class OrderDialog extends JDialog {
     private boolean paymentSelectionChanged;
     private boolean loadingPayment;
     private boolean linkedInvoiceLocked;
+    private JLabel editRestrictionLabel;
     private String previousStatus = null; // Track previous status for state changes
     
     // Constructor for JFrame parent
@@ -93,6 +94,13 @@ public class OrderDialog extends JDialog {
         mainPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         
         // Top panel for order data
+        editRestrictionLabel = new JLabel();
+        editRestrictionLabel.setVisible(false);
+        editRestrictionLabel.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createEtchedBorder(),
+            BorderFactory.createEmptyBorder(7, 9, 7, 9)
+        ));
+
         JPanel orderPanel = new JPanel(new GridBagLayout());
         orderPanel.setBorder(BorderFactory.createTitledBorder("Order Information"));
         GridBagConstraints gbc = new GridBagConstraints();
@@ -129,7 +137,7 @@ public class OrderDialog extends JDialog {
         orderPanel.add(new JLabel("Status:"), gbc);
 
         gbc.gridx = 3;
-        statusCombo = new JComboBox<>(new String[]{"New", "Reservation", "In Progress", "Completed", "Cancelled"});
+        statusCombo = new JComboBox<>(new String[]{"Reservation", "New", "In Progress", "Completed", "Cancelled"});
         statusCombo.putClientProperty("i18n.values", true);
         orderPanel.add(statusCombo, gbc);
 
@@ -243,7 +251,11 @@ public class OrderDialog extends JDialog {
         footer.add(Dialogs.requiredLegendPanel(), BorderLayout.WEST);
         footer.add(buttonPanel, BorderLayout.EAST);
 
-        mainPanel.add(orderPanel, BorderLayout.NORTH);
+        JPanel topPanel = new JPanel(new BorderLayout(0, 8));
+        topPanel.add(editRestrictionLabel, BorderLayout.NORTH);
+        topPanel.add(orderPanel, BorderLayout.CENTER);
+
+        mainPanel.add(topPanel, BorderLayout.NORTH);
         mainPanel.add(centerPanel, BorderLayout.CENTER);
         mainPanel.add(footer, BorderLayout.SOUTH);
         
@@ -270,6 +282,10 @@ public class OrderDialog extends JDialog {
         return order != null && "Completed".equals(order.getStatus());
     }
 
+    private boolean canReopenCompletedOrder() {
+        return isCompletedPaymentOnly() && !linkedInvoiceLocked;
+    }
+
     private boolean isPaymentOnlyOrder() {
         return order != null && !isReversedOrder()
             && (isCompletedPaymentOnly() || linkedInvoiceLocked);
@@ -284,14 +300,22 @@ public class OrderDialog extends JDialog {
     }
 
     private void configureEditability() {
+        updateEditRestrictionMessage();
         if (!isProtectedHistoricalOrder()) return;
 
         selectCustomerButton.setEnabled(false);
         newCustomerButton.setEnabled(false);
         dateField.setEnabled(false);
-        statusCombo.setEnabled(false);
         addItemButton.setEnabled(false);
         removeItemButton.setEnabled(false);
+
+        boolean reopenable = canReopenCompletedOrder();
+        statusCombo.setEnabled(reopenable);
+        if (reopenable) {
+            statusCombo.setModel(new DefaultComboBoxModel<>(
+                new String[]{"Completed", "In Progress"}));
+            statusCombo.setSelectedItem("Completed");
+        }
 
         boolean paymentEditable = isPaymentOnlyOrder();
         paymentStatusCombo.setEnabled(paymentEditable);
@@ -300,6 +324,25 @@ public class OrderDialog extends JDialog {
         } else {
             paidAmountField.setEnabled(false);
         }
+    }
+
+    private void updateEditRestrictionMessage() {
+        if (editRestrictionLabel == null || order == null) return;
+
+        String message = null;
+        if (isReversedOrder()) {
+            message = I18n.tr(
+                "Reversed order: it cannot be modified.");
+        } else if (linkedInvoiceLocked) {
+            message = I18n.tr(
+                "Order locked: linked invoice. Only payment can be changed. To reverse the sale, delete the invoice if it is a draft, or cancel it if it has been issued.");
+        } else if (isCompletedPaymentOnly()) {
+            message = I18n.tr(
+                "Completed order: only payment can be changed, or the order can be returned to In Progress.");
+        }
+
+        editRestrictionLabel.setVisible(message != null);
+        editRestrictionLabel.setText(message == null ? "" : "<html>" + message + "</html>");
     }
 
     private void showCustomerSelectionDialog() {
@@ -577,6 +620,47 @@ public class OrderDialog extends JDialog {
         updateTotals();
     }
 
+    private void saveReopenedCompletedOrder() {
+        Connection conn = null;
+        try {
+            String selected = String.valueOf(paymentStatusCombo.getSelectedItem());
+            String paymentCode;
+            double paidAmount = 0.0;
+
+            if ("Paid".equals(selected)) {
+                paymentCode = "PAID";
+            } else if ("Partially Paid".equals(selected)) {
+                paymentCode = "PARTIALLY_PAID";
+                paidAmount = Numbers.money(Numbers.decimal(paidAmountField.getText()));
+            } else {
+                paymentCode = "NOT_PAID";
+            }
+
+            conn = DatabaseManager.getInstance().getConnection();
+            DatabaseManager.beginTransaction(conn);
+            try {
+                // Payment is still saved while the order is Completed; then the
+                // completion itself is undone atomically.
+                OrdersPanel.updateOrderPayment(conn, order.getId(), paymentCode, paidAmount);
+                StockManager.reopenCompletedOrder(conn, order.getId());
+                conn.commit();
+            } catch (Exception e) {
+                conn.rollback();
+                throw e;
+            } finally {
+                conn.setAutoCommit(true);
+            }
+
+            orderSaved = true;
+            dispose();
+        } catch (Exception e) {
+            e.printStackTrace();
+            Dialogs.showMessageDialog(this,
+                I18n.tr("Error while reopening the order") + ": " + e.getMessage(),
+                I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
     private void saveCompletedPaymentOnly() {
         Connection conn = null;
         try {
@@ -621,6 +705,11 @@ public class OrderDialog extends JDialog {
                 Dialogs.showMessageDialog(this,
                     I18n.tr("This sale has already been reversed and is kept as historical data."),
                     I18n.tr("Historical Sale"), JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            if (canReopenCompletedOrder()
+                    && "In Progress".equals(statusCombo.getSelectedItem())) {
+                saveReopenedCompletedOrder();
                 return;
             }
             if (isPaymentOnlyOrder()) {

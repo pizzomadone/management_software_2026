@@ -192,6 +192,9 @@ public class SupplierOrdersPanel extends JPanel {
             } else if (normalized.equals("in transit") || normalized.equals("in transito")) {
                 background = new Color(252, 238, 215);
                 foreground = new Color(145, 90, 18);
+            } else if (normalized.equals("returned")) {
+                background = new Color(229, 234, 245);
+                foreground = new Color(58, 72, 125);
             } else if (normalized.equals("cancelled") || normalized.equals("canceled")
                     || normalized.equals("annullato")) {
                 background = new Color(247, 226, 226);
@@ -286,15 +289,29 @@ public class SupplierOrdersPanel extends JPanel {
 
     private void deleteSelected() {
         int row = selectedModelRow(); if (row < 0) return; int id=(int)model.getValueAt(row,0); String number=String.valueOf(model.getValueAt(row,1));
-        if (Dialogs.showConfirmDialog(this,"Are you sure you want to delete order " + number + "?","Confirm Deletion",JOptionPane.YES_NO_OPTION,JOptionPane.WARNING_MESSAGE)!=JOptionPane.YES_OPTION) return;
+        try {
+            if (InventoryLotManager.hasSupplierOrderConsumption(
+                    DatabaseManager.getInstance().getConnection(), id)) {
+                Dialogs.showMessageDialog(this, I18n.tr("Supplier order locked: goods already used, even partially."),
+                    I18n.tr("Cannot Delete Supplier Order"), JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+        } catch (SQLException ex) {
+            Dialogs.showMessageDialog(this, I18n.tr("Unable to check supplier order history"),
+                I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        if (Dialogs.showConfirmDialog(this,I18n.format("Delete supplier order {0}?", number),I18n.tr("Confirm Deletion"),JOptionPane.YES_NO_OPTION,JOptionPane.WARNING_MESSAGE)!=JOptionPane.YES_OPTION) return;
         Connection conn=null; try { conn=DatabaseManager.getInstance().getConnection(); DatabaseManager.beginTransaction(conn); SupplierOrder order=loadOrder(id);
+            if (order != null && "Returned".equals(order.getStatus()))
+                throw new SQLException(I18n.tr("Returned supplier orders are historical and cannot be deleted."));
             if (order != null && "Completed".equals(order.getStatus())) {
                 InventoryLotManager.reverseSupplierOrder(conn,id,number);
             }
             try(PreparedStatement ps=conn.prepareStatement("DELETE FROM supplier_order_details WHERE order_id=?")){ps.setInt(1,id);ps.executeUpdate();}
             try(PreparedStatement ps=conn.prepareStatement("DELETE FROM supplier_orders WHERE id=?")){ps.setInt(1,id);ps.executeUpdate();}
             conn.commit(); loadOrders(); refreshProducts();
-        } catch(SQLException ex){if(conn!=null)try{conn.rollback();}catch(SQLException ignored){} Dialogs.showMessageDialog(this,"Error deleting supplier order: "+ex.getMessage(),"Error",JOptionPane.ERROR_MESSAGE);} finally{if(conn!=null)try{conn.setAutoCommit(true);}catch(SQLException ignored){}}
+        } catch(SQLException ex){if(conn!=null)try{conn.rollback();}catch(SQLException ignored){} Dialogs.showMessageDialog(this,I18n.tr("Error deleting supplier order")+": "+I18n.tr(ex.getMessage()),I18n.tr("Error"),JOptionPane.ERROR_MESSAGE);} finally{if(conn!=null)try{conn.setAutoCommit(true);}catch(SQLException ignored){}}
     }
     private int selectedModelRow(){int row=table.getSelectedRow();return row<0?-1:table.convertRowIndexToModel(row);}
     private void updateButtons(){boolean selected=table.getSelectedRow()>=0;edit.setEnabled(selected);delete.setEnabled(selected);}

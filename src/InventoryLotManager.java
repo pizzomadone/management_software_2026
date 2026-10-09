@@ -98,6 +98,69 @@ public final class InventoryLotManager {
         }
     }
 
+    public static boolean hasSupplierOrderConsumption(Connection c, int orderId) throws SQLException {
+        try (PreparedStatement p = c.prepareStatement(
+                "SELECT 1 FROM inventory_lot_consumptions x "
+                + "JOIN inventory_lots l ON l.id=x.lot_id "
+                + "JOIN supplier_order_details d ON d.id=l.supplier_order_detail_id "
+                + "WHERE d.order_id=? LIMIT 1")) {
+            p.setInt(1, orderId);
+            try (ResultSet r = p.executeQuery()) { return r.next(); }
+        }
+    }
+
+    /** Returns every received unit, retaining the original receipt and FIFO audit trail. */
+    public static void returnSupplierOrder(Connection c, int orderId, String number) throws SQLException {
+        java.util.List<int[]> lots = new java.util.ArrayList<>();
+        try (PreparedStatement p=c.prepareStatement("""
+                SELECT l.id,l.product_id,l.initial_quantity,l.remaining_quantity
+                FROM inventory_lots l
+                JOIN supplier_order_details d ON d.id=l.supplier_order_detail_id
+                WHERE d.order_id=? ORDER BY l.id
+                """)) {
+            p.setInt(1,orderId);
+            try (ResultSet r=p.executeQuery()) {
+                while (r.next()) {
+                    int q=r.getInt("initial_quantity");
+                    if (q<=0 || r.getInt("remaining_quantity")!=q)
+                        throw new SQLException(I18n.tr("Supplier return requires all received goods to be available in their original FIFO lots."));
+                    lots.add(new int[]{r.getInt("id"),r.getInt("product_id"),q});
+                }
+            }
+        }
+        int expected;
+        try (PreparedStatement p=c.prepareStatement(
+                "SELECT COUNT(*) FROM supplier_order_details WHERE order_id=?")) {
+            p.setInt(1,orderId);
+            try (ResultSet r=p.executeQuery()) { r.next();expected=r.getInt(1); }
+        }
+        if (lots.isEmpty() || lots.size()!=expected)
+            throw new SQLException(I18n.tr("Supplier return requires a complete FIFO receipt history."));
+        java.util.Map<Integer,Integer> totals=new java.util.LinkedHashMap<>();
+        for(int[] lot:lots) totals.merge(lot[1],lot[2],Integer::sum);
+        for(var e:totals.entrySet())
+            if(StockManager.getAvailableStock(c,e.getKey())<e.getValue())
+                throw new SQLException(I18n.tr("Supplier return requires all received goods to be available in their original FIFO lots."));
+        Date now=new Date();
+        for(int[] lot:lots) {
+            int id=lot[0],productId=lot[1],quantity=lot[2];
+            int movementId=insertMovement(c,productId,now,"OUTWARD",quantity,
+                "SUPPLIER_RETURN",number,"SUPPLIER_RETURN",I18n.tr("Returned to supplier"));
+            double unitCost;
+            try(PreparedStatement p=c.prepareStatement("SELECT unit_cost FROM inventory_lots WHERE id=?")) {
+                p.setInt(1,id);
+                try(ResultSet r=p.executeQuery()){if(!r.next())throw new SQLException("FIFO lot no longer exists");unitCost=r.getDouble(1);}
+            }
+            insertConsumption(c,id,null,movementId,quantity,unitCost);
+            updateLotRemaining(c,id,-quantity);
+            try(PreparedStatement p=c.prepareStatement("UPDATE products SET quantity=quantity-? WHERE id=?")) {
+                p.setInt(1,quantity);p.setInt(2,productId);
+                if(p.executeUpdate()!=1)throw new SQLException("Product no longer exists");
+            }
+        }
+        for(Integer id:totals.keySet()) refreshLastPurchaseCost(c,id,orderId);
+    }
+
     public static void reverseSupplierOrder(Connection c, int orderId, String number)
             throws SQLException {
         try(PreparedStatement p=c.prepareStatement("""
@@ -245,16 +308,30 @@ public final class InventoryLotManager {
                 SELECT d.id
                 FROM order_details d
                 WHERE d.order_id=?
-                  AND NOT EXISTS (
-                      SELECT 1 FROM inventory_lot_consumptions x
-                      WHERE x.order_detail_id=d.id
+                  AND (
+                    NOT EXISTS (
+                        SELECT 1 FROM inventory_lot_consumptions x
+                        WHERE x.order_detail_id=d.id
+                    )
+                    OR COALESCE((
+                        SELECT SUM(x.quantity)
+                        FROM inventory_lot_consumptions x
+                        WHERE x.order_detail_id=d.id
+                    ),0)<>d.quantity
+                    OR EXISTS (
+                        SELECT 1
+                        FROM inventory_lot_consumptions x
+                        LEFT JOIN inventory_lots l ON l.id=x.lot_id
+                        WHERE x.order_detail_id=d.id
+                          AND (l.id IS NULL OR l.product_id<>d.product_id)
+                    )
                   )
                 LIMIT 1
                 """)) {
             check.setInt(1,orderId);
             try(ResultSet r=check.executeQuery()) {
                 if(r.next())
-                    throw new SQLException("This completed sale has no FIFO history and cannot be reversed safely");
+                    throw new SQLException("This completed sale has incomplete FIFO history and cannot be reopened safely");
             }
         }
 
@@ -632,15 +709,18 @@ public final class InventoryLotManager {
             try(ResultSet r=p.executeQuery()){if(r.next())cost=Numbers.nonNegative(r.getObject(1));}
         }
         if(cost==null) {
-            // Migration/opening layers may be the only surviving evidence of the
-            // previous actual cost. A current supplier reference price is not an
-            // actual purchase and must never become acquisition_cost.
+            // Fall back to the newest available FIFO lot, including manual receipts.
+            // Exclude returned or otherwise non-completed supplier receipts.
             try(PreparedStatement p=c.prepareStatement("""
-                    SELECT unit_cost FROM inventory_lots
-                    WHERE product_id=? AND source_type IN ('MIGRATION','DEMO_OPENING')
-                    ORDER BY received_date DESC,id DESC LIMIT 1
+                    SELECT l.unit_cost FROM inventory_lots l
+                    LEFT JOIN supplier_order_details d ON d.id=l.supplier_order_detail_id
+                    LEFT JOIN supplier_orders o ON o.id=d.order_id
+                    WHERE l.product_id=? AND l.remaining_quantity>0
+                      AND (l.supplier_order_detail_id IS NULL
+                           OR (o.status='Completed' AND o.id<>?))
+                    ORDER BY l.received_date DESC,l.id DESC LIMIT 1
                     """)) {
-                p.setInt(1,productId);try(ResultSet r=p.executeQuery()){
+                p.setInt(1,productId);p.setInt(2,excludedOrderId);try(ResultSet r=p.executeQuery()){
                     if(r.next())cost=Numbers.nonNegative(r.getObject(1));
                 }
             }

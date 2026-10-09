@@ -124,6 +124,89 @@ public class BackupManager {
 
     public synchronized Path performDatabaseOnlyBackup() { return performBackup(false); }
 
+    /**
+     * Saves the current data as a complete, user-named archive and then replaces
+     * the live database with a brand-new empty one. Application settings remain.
+     */
+    public synchronized Path archiveAndStartNew(Path destination) {
+        Path work = null;
+        Path temporaryArchive = null;
+        Path emptyDatabase = null;
+        Path safetyDatabase = null;
+        Path safetyImages = null;
+        Path target = destination == null ? null : destination.toAbsolutePath().normalize();
+        Path current = AppConstants.getDatabasePath().toAbsolutePath().normalize();
+        boolean databaseReplaced = false;
+
+        try {
+            if (target == null || target.getParent() == null)
+                throw new IOException("Invalid archive destination");
+            rejectActive(target);
+            Files.createDirectories(target.getParent());
+
+            work = Files.createTempDirectory(AppConstants.getAppDataDirectory(), "new-archive-");
+            safetyDatabase = snapshot(current, work);
+            safetyImages = work.resolve("current-images");
+            ProductImageStore.getInstance().copyAllFilesTo(safetyImages);
+
+            temporaryArchive = Files.createTempFile(target.getParent(), "warestat-archive-", ".tmp");
+            createArchive(safetyDatabase, temporaryArchive);
+            moveReplace(temporaryArchive, target);
+            temporaryArchive = null;
+
+            // Never erase the live data unless the just-created archive can be read back.
+            validateBackup(target);
+
+            String currency = DatabaseCurrency.boundCode();
+            if (currency == null || currency.isBlank()) currency = SettingsPanel.getCurrencyCode();
+            emptyDatabase = work.resolve("empty-data.db");
+            DatabaseManager.createEmptyDatabase(emptyDatabase, currency);
+
+            DatabaseManager.getInstance().closeConnection();
+            Files.deleteIfExists(Path.of(current + "-wal"));
+            Files.deleteIfExists(Path.of(current + "-shm"));
+            moveReplace(emptyDatabase, current);
+            emptyDatabase = null;
+            databaseReplaced = true;
+
+            Path emptyImages = work.resolve("empty-images");
+            Files.createDirectories(emptyImages);
+            ProductImageStore.getInstance().replaceAllFilesFrom(emptyImages);
+
+            DatabaseManager.getInstance().initDatabase();
+            CompanyData.getInstance().reloadFromDatabase();
+            ProductImageStore.getInstance().removeOrphanFiles();
+            DatabaseIntegrity.validate(DatabaseManager.getInstance().getConnection(), false);
+
+            // A manually created archive must never be removed by automatic retention.
+            registerBackup(target, false);
+            config.setProperty("archive.last_directory", target.getParent().toString());
+            saveConfig();
+            return target;
+        } catch (Exception e) {
+            if (databaseReplaced && safetyDatabase != null && Files.isRegularFile(safetyDatabase)) {
+                try {
+                    DatabaseManager.getInstance().closeConnection();
+                    Path rollback = snapshot(safetyDatabase, current.getParent());
+                    Files.deleteIfExists(Path.of(current + "-wal"));
+                    Files.deleteIfExists(Path.of(current + "-shm"));
+                    moveReplace(rollback, current);
+                    if (safetyImages != null && Files.isDirectory(safetyImages))
+                        ProductImageStore.getInstance().replaceAllFilesFrom(safetyImages);
+                    DatabaseManager.getInstance().initDatabase();
+                    CompanyData.getInstance().reloadFromDatabase();
+                } catch (Exception recovery) {
+                    e.addSuppressed(recovery);
+                }
+            }
+            throw new IllegalStateException("Unable to create new archive: " + e.getMessage(), e);
+        } finally {
+            removeTemporary(emptyDatabase);
+            removeTemporary(temporaryArchive);
+            removeTemporary(work);
+        }
+    }
+
     public synchronized Path performBackup(boolean includePhotos) {
         Path staging = null;
         Path temporaryArchive = null;
@@ -537,6 +620,10 @@ public class BackupManager {
     public void validateDatabase(Path file) { validateBackup(file); }
 
     private synchronized BackupRecord registerBackup(Path file) {
+        return registerBackup(file, true);
+    }
+
+    private synchronized BackupRecord registerBackup(Path file, boolean managed) {
         try {
             rejectActive(file);
             Path normalized = file.toRealPath();
@@ -547,7 +634,7 @@ public class BackupManager {
             config.setProperty(prefix + "name", normalized.getFileName().toString());
             config.setProperty(prefix + "created", Long.toString(created));
             config.setProperty(prefix + "size", Long.toString(size));
-            config.setProperty(prefix + "managed", "true");
+            config.setProperty(prefix + "managed", Boolean.toString(managed));
             saveConfig();
             return new BackupRecord(id, normalized.getFileName().toString(),
                 normalized.toString(), created, size);
@@ -617,6 +704,18 @@ public class BackupManager {
 
     public synchronized String getBackupDirectory() {
         return config.getProperty("backup.directory", AppConstants.getBackupDirectory().toString());
+    }
+
+    public synchronized String getArchiveDirectory() {
+        String fallback = getBackupDirectory();
+        String stored = config.getProperty("archive.last_directory", fallback);
+        if (stored == null || stored.isBlank()) return fallback;
+        try {
+            Path path = Path.of(stored).toAbsolutePath().normalize();
+            return Files.isDirectory(path) ? path.toString() : fallback;
+        } catch (RuntimeException e) {
+            return fallback;
+        }
     }
 
     public synchronized void setBackupDirectory(String directory) {

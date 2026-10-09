@@ -5,9 +5,12 @@ import java.util.Set;
 
 /** Shared checks for purchase-cost completeness and historical FIFO cost coverage. */
 public final class CostIntegrity {
-    public record Audit(int productsWithoutPurchaseCost, int salesWithoutHistoricalCost) {
+    public record Audit(int productsWithoutPurchaseCost, int salesWithoutHistoricalCost,
+                        int completedSalesWithoutReversibleFifoHistory) {
         public boolean hasIssues() {
-            return productsWithoutPurchaseCost > 0 || salesWithoutHistoricalCost > 0;
+            return productsWithoutPurchaseCost > 0
+                || salesWithoutHistoricalCost > 0
+                || completedSalesWithoutReversibleFifoHistory > 0;
         }
     }
 
@@ -37,12 +40,15 @@ public final class CostIntegrity {
 
     public static String summary(Audit audit) {
         String message = I18n.format(
-            "Import completed: {0} product(s) without purchase cost, {1} sale(s) with historical cost that cannot be reconstructed.",
-            audit.productsWithoutPurchaseCost(), audit.salesWithoutHistoricalCost());
+            "Import completed: {0} product(s) without purchase cost, {1} sale(s) with historical cost that cannot be reconstructed, {2} completed sale(s) without reconstructable FIFO history.",
+            audit.productsWithoutPurchaseCost(), audit.salesWithoutHistoricalCost(),
+            audit.completedSalesWithoutReversibleFifoHistory());
         if (audit.productsWithoutPurchaseCost() > 0) message += "\n" + I18n.tr(
             "Products without purchase cost are highlighted in orange and cannot be purchased or sold until the cost is entered in the product sheet.");
         if (audit.salesWithoutHistoricalCost() > 0) message += "\n" + I18n.tr(
             "Sales without reconstructable historical cost remain visible but are excluded from historical cost, gross profit and other calculations that require that cost.");
+        if (audit.completedSalesWithoutReversibleFifoHistory() > 0) message += "\n" + I18n.tr(
+            "Completed sales without reconstructable FIFO history remain visible but cannot be reopened or reversed automatically because the original lots cannot be determined safely.");
         return message;
     }
 
@@ -69,7 +75,41 @@ public final class CostIntegrity {
              ResultSet r = p.executeQuery()) {
             if (r.next()) sales = r.getInt(1);
         }
-        return new Audit(products, sales);
+        int nonReversibleSales = 0;
+        try (PreparedStatement p = c.prepareStatement("""
+                SELECT COUNT(DISTINCT o.id)
+                FROM orders o
+                WHERE o.status='Completed'
+                  AND EXISTS (
+                    SELECT 1
+                    FROM order_details d
+                    WHERE d.order_id=o.id
+                      AND (
+                        NOT EXISTS (
+                            SELECT 1
+                            FROM inventory_lot_consumptions x
+                            WHERE x.order_detail_id=d.id
+                        )
+                        OR COALESCE((
+                            SELECT SUM(x.quantity)
+                            FROM inventory_lot_consumptions x
+                            WHERE x.order_detail_id=d.id
+                        ),0)<>d.quantity
+                        OR EXISTS (
+                            SELECT 1
+                            FROM inventory_lot_consumptions x
+                            LEFT JOIN inventory_lots l ON l.id=x.lot_id
+                            WHERE x.order_detail_id=d.id
+                              AND (l.id IS NULL OR l.product_id<>d.product_id)
+                        )
+                      )
+                  )
+                """);
+             ResultSet r = p.executeQuery()) {
+            if (r.next()) nonReversibleSales = r.getInt(1);
+        }
+
+        return new Audit(products, sales, nonReversibleSales);
     }
 
     public static boolean hasPurchaseCost(Connection c, int productId) throws SQLException {

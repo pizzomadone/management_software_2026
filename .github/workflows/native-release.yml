@@ -305,6 +305,16 @@ jobs:
           hdiutil attach "$rw_dmg" -nobrowse -noverify -mountpoint "$mount_dir"
           ditto "$app" "$mount_dir/WareStat.app"
           ln -s /Applications "$mount_dir/Applications"
+
+          # Give the mounted WareStat installer volume its own Finder icon.
+          # The .VolumeIcon.icns file and the custom-icon flag live inside the
+          # disk image, so they survive upload/download of the DMG itself.
+          cp resources/icons/warestat.icns "$mount_dir/.VolumeIcon.icns"
+          SetFile -a V "$mount_dir/.VolumeIcon.icns"
+          SetFile -a C "$mount_dir"
+          test -s "$mount_dir/.VolumeIcon.icns"
+          GetFileInfo -a "$mount_dir" | grep -q 'C'
+
           sync
           hdiutil detach "$mount_dir"
           hdiutil convert "$rw_dmg" -format UDZO -imagekey zlib-level=9 -o "$dmg"

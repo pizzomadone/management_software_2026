@@ -29,6 +29,9 @@ public class SupplierOrderDialog extends JDialog {
     private SimpleDateFormat dateFormat;
     private Map<Integer, Product> productsCache;
     private boolean updatingTotals = false; // Flag to prevent recursion
+    private boolean historicalConsumption;
+    private JButton addItemButton, removeItemButton, reprice, saveButton;
+    private JLabel lockNotice;
 
     public SupplierOrderDialog(Window parent, int supplierId, String supplierName, SupplierOrder order) {
         super(parent,
@@ -117,7 +120,7 @@ public class SupplierOrderDialog extends JDialog {
         orderPanel.add(new JLabel("Status:"), gbc);
 
         gbc.gridx = 1;
-        statusCombo = new JComboBox<>(new String[]{"Draft", "Confirmed", "In Transit", "Completed", "Cancelled"});
+        statusCombo = new JComboBox<>(new String[]{"Draft", "Confirmed", "In Transit", "Completed", "Cancelled", "Returned"});
         statusCombo.putClientProperty("i18n.values", true);
         orderPanel.add(statusCombo, gbc);
 
@@ -136,7 +139,7 @@ public class SupplierOrderDialog extends JDialog {
         itemsTableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
-                return column == 2 || column == 3 || column == 5; // Quantity, agreed price and notes.
+                return !historicalConsumption && (column == 2 || column == 3 || column == 5);
             }
         };
         itemsTable = new JTable(itemsTableModel);
@@ -154,15 +157,15 @@ public class SupplierOrderDialog extends JDialog {
 
         // Table buttons panel
         JPanel tableButtonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        JButton addItemButton = new JButton("Add Product");
-        JButton removeItemButton = new JButton("Remove Product");
+        addItemButton = new JButton("Add Product");
+        removeItemButton = new JButton("Remove Product");
 
         addItemButton.addActionListener(e -> showAddProductDialog());
         removeItemButton.addActionListener(e -> removeSelectedProduct());
 
         tableButtonPanel.add(addItemButton);
         tableButtonPanel.add(removeItemButton);
-        JButton reprice = new JButton("Refresh Supplier Prices");
+        reprice = new JButton("Refresh Supplier Prices");
         reprice.setToolTipText(I18n.tr("Replace order prices with the current prices saved for this supplier."));
         reprice.addActionListener(e -> refreshSupplierPrices());
         tableButtonPanel.add(reprice);
@@ -175,7 +178,7 @@ public class SupplierOrderDialog extends JDialog {
 
         // Main buttons panel
         JPanel buttonPanel = new JPanel();
-        JButton saveButton = new JButton("Save");
+        saveButton = new JButton("Save");
         JButton cancelButton = new JButton("Cancel");
 
         saveButton.addActionListener(e -> saveOrder());
@@ -186,7 +189,14 @@ public class SupplierOrderDialog extends JDialog {
 
         // Assembly
         JPanel centerPanel = new JPanel(new BorderLayout());
-        centerPanel.add(tableButtonPanel, BorderLayout.NORTH);
+        JPanel headerPanel = new JPanel(new BorderLayout());
+        headerPanel.add(tableButtonPanel, BorderLayout.NORTH);
+        lockNotice = new JLabel(I18n.tr("Supplier order locked: goods already used, even partially."));
+        lockNotice.setFont(lockNotice.getFont().deriveFont(Font.PLAIN, 11f));
+        lockNotice.setBorder(BorderFactory.createEmptyBorder(0, 5, 3, 3));
+        lockNotice.setVisible(false);
+        headerPanel.add(lockNotice, BorderLayout.SOUTH);
+        centerPanel.add(headerPanel, BorderLayout.NORTH);
         centerPanel.add(new JScrollPane(itemsTable), BorderLayout.CENTER);
         centerPanel.add(totalPanel, BorderLayout.SOUTH);
 
@@ -285,6 +295,31 @@ public class SupplierOrderDialog extends JDialog {
         }
 
         updateTotals();
+        try {
+            historicalConsumption = InventoryLotManager.hasSupplierOrderConsumption(
+                DatabaseManager.getInstance().getConnection(), order.getId());
+        } catch (SQLException ex) {
+            historicalConsumption = true;
+        }
+        if ("Completed".equals(order.getStatus()) || "Returned".equals(order.getStatus()) || historicalConsumption) {
+            dateField.setEnabled(false);
+            deliveryDateField.setEnabled(false);
+        }
+        if (historicalConsumption || "Returned".equals(order.getStatus())) {
+            if ("Completed".equals(order.getStatus())) {
+                statusCombo.setModel(new DefaultComboBoxModel<>(new String[]{"Completed", "Returned"}));
+            } else {
+                statusCombo.setEnabled(false);
+            }
+            itemsTable.setEnabled(false);
+            addItemButton.setEnabled(false);
+            removeItemButton.setEnabled(false);
+            reprice.setEnabled(false);
+            lockNotice.setText(I18n.tr("Returned".equals(order.getStatus())
+                ? "Supplier order returned: only notes can be changed."
+                : "Supplier order locked: goods already used, even partially."));
+            lockNotice.setVisible(true);
+        }
     }
 
     private void showAddProductDialog() {
@@ -521,6 +556,65 @@ public class SupplierOrderDialog extends JDialog {
     }
 
     private void saveOrder() {
+        if (order != null && "Returned".equals(statusCombo.getSelectedItem())
+                && "Completed".equals(order.getStatus())) {
+            if (Dialogs.showConfirmDialog(this,
+                    I18n.tr("Return all goods from this supplier order?"),
+                    I18n.tr("Confirm Supplier Return"),
+                    JOptionPane.YES_NO_OPTION,JOptionPane.WARNING_MESSAGE)!=JOptionPane.YES_OPTION) return;
+            Connection conn=null;
+            try {
+                conn=DatabaseManager.getInstance().getConnection();
+                DatabaseManager.beginTransaction(conn);
+                try {
+                    String actualStatus;
+                    try(PreparedStatement p=conn.prepareStatement("SELECT status FROM supplier_orders WHERE id=?")) {
+                        p.setInt(1,order.getId());
+                        try(ResultSet r=p.executeQuery()){
+                            if(!r.next())throw new SQLException("Supplier order no longer exists");
+                            actualStatus=r.getString(1);
+                        }
+                    }
+                    if(!"Completed".equals(actualStatus))
+                        throw new SQLException(I18n.tr("Only completed supplier orders can be returned."));
+                    InventoryLotManager.returnSupplierOrder(conn,order.getId(),order.getNumber());
+                    try(PreparedStatement p=conn.prepareStatement(
+                            "UPDATE supplier_orders SET status='Returned',notes=? WHERE id=?")) {
+                        p.setString(1,notesArea.getText().trim());
+                        p.setInt(2,order.getId());
+                        if(p.executeUpdate()!=1)throw new SQLException("Supplier order no longer exists");
+                    }
+                    conn.commit();
+                    orderSaved=true;
+                    dispose();
+                } catch(Exception ex){conn.rollback();throw ex;}
+                finally{conn.setAutoCommit(true);}
+            } catch(Exception ex) {
+                Dialogs.showMessageDialog(this,
+                    I18n.tr("Unable to return supplier order")+": "+I18n.tr(ex.getMessage()),
+                    I18n.tr("Error"),JOptionPane.ERROR_MESSAGE);
+            }
+            return;
+        }
+        if (order != null && "Returned".equals(order.getStatus()) || historicalConsumption) {
+            try {
+                Connection conn = DatabaseManager.getInstance().getConnection();
+                try (PreparedStatement statement = conn.prepareStatement(
+                        "UPDATE supplier_orders SET notes=? WHERE id=?")) {
+                    statement.setString(1, notesArea.getText().trim());
+                    statement.setInt(2, order.getId());
+                    if (statement.executeUpdate() != 1)
+                        throw new SQLException("Supplier order no longer exists");
+                }
+                orderSaved = true;
+                dispose();
+            } catch (SQLException ex) {
+                Dialogs.showMessageDialog(this,
+                    I18n.tr("Error saving the order") + ": " + I18n.tr(ex.getMessage()),
+                    I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
+            }
+            return;
+        }
         try {
             Numbers.commitEdits(itemsTable);
             // Validation
@@ -571,6 +665,7 @@ public class SupplierOrderDialog extends JDialog {
             }
 
             String newStatus = (String)statusCombo.getSelectedItem();
+            if ("Returned".equals(newStatus)) throw new SQLException(I18n.tr("Only completed supplier orders can be returned."));
 
             // Build list of stock items
             List<StockManager.StockItem> stockItems = new ArrayList<>();
@@ -652,9 +747,16 @@ public class SupplierOrderDialog extends JDialog {
                             previousReceiptDate = DateUtils.parseDate(r, "received_date");
                         }
                     }
+                    if (InventoryLotManager.hasSupplierOrderConsumption(conn, orderId))
+                        throw new SQLException(I18n.tr("Supplier order locked: goods already used, even partially."));
                     if ("Completed".equals(previousStatus)) {
                         InventoryLotManager.reverseSupplierOrder(conn, orderId, order.getNumber());
                     }
+                    if ("Completed".equals(previousStatus) &&
+                            (!java.util.Objects.equals(DateUtils.formatDate(orderDate, dateFormat), DateUtils.formatDate(order.getOrderDate(), dateFormat)) ||
+                            !java.util.Objects.equals(deliveryDate == null ? "" : DateUtils.formatDate(deliveryDate, dateFormat),
+                                order.getExpectedDeliveryDate() == null ? "" : DateUtils.formatDate(order.getExpectedDeliveryDate(), dateFormat))))
+                        throw new SQLException(I18n.tr("Completed supplier order dates cannot be changed."));
                     Date receiptDate = "Completed".equals(newStatus)
                         ? ("Completed".equals(previousStatus) && previousReceiptDate != null
                             ? previousReceiptDate : new Date())
@@ -708,8 +810,8 @@ public class SupplierOrderDialog extends JDialog {
         } catch (Exception e) {
             e.printStackTrace();
             Dialogs.showMessageDialog(this,
-                "Error saving the order: " + e.getMessage(),
-                "Error", JOptionPane.ERROR_MESSAGE);
+                I18n.tr("Error saving the order") + ": " + I18n.tr(e.getMessage()),
+                I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
         }
     }
 
