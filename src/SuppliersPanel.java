@@ -231,6 +231,44 @@ public class SuppliersPanel extends JPanel {
         }
     }
 
+    /** Bounded, word-wrapped explanatory text for destructive supplier actions. */
+    private JComponent supplierDeletionMessage(String text) {
+        Rectangle usable = getGraphicsConfiguration() == null
+            ? GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds()
+            : getGraphicsConfiguration().getBounds();
+        if (getGraphicsConfiguration() != null) {
+            Insets insets = Toolkit.getDefaultToolkit().getScreenInsets(getGraphicsConfiguration());
+            usable = new Rectangle(usable.x + insets.left, usable.y + insets.top,
+                usable.width - insets.left - insets.right,
+                usable.height - insets.top - insets.bottom);
+        }
+
+        int maxWidth = Math.max(240, Math.min(680, usable.width - 180));
+        int maxHeight = Math.max(120, Math.min(340, usable.height - 240));
+        JTextArea area = new JTextArea(text);
+        area.setEditable(false);
+        area.setFocusable(false);
+        area.setLineWrap(true);
+        area.setWrapStyleWord(true);
+        area.setFont(UIManager.getFont("Label.font"));
+        area.setOpaque(false);
+        area.setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));
+        area.setSize(new Dimension(maxWidth, Integer.MAX_VALUE / 4));
+        int preferredHeight = area.getPreferredSize().height;
+        if (preferredHeight <= maxHeight) {
+            area.setPreferredSize(new Dimension(maxWidth, Math.max(preferredHeight, area.getFontMetrics(area.getFont()).getHeight())));
+            return area;
+        }
+        JScrollPane scroll = new JScrollPane(area,
+            JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scroll.setPreferredSize(new Dimension(maxWidth + 16, maxHeight));
+        scroll.setBorder(BorderFactory.createEmptyBorder());
+        scroll.getViewport().setOpaque(false);
+        scroll.setOpaque(false);
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
+        return scroll;
+    }
+
     private void deleteSelectedSupplier() {
         int selectedRow = suppliersTable.getSelectedRow();
         if (selectedRow != -1) {
@@ -270,7 +308,7 @@ public class SuppliersPanel extends JPanel {
 
                     String[] options = {I18n.tr("Keep Supplier and Records"), I18n.tr("Delete Supplier and All Related Data")};
                     int choice = Dialogs.showOptionDialog(this,
-                        message.toString(),
+                        supplierDeletionMessage(message.toString()),
                         I18n.tr("Cannot Delete Supplier"),
                         JOptionPane.YES_NO_OPTION,
                         JOptionPane.WARNING_MESSAGE,
@@ -323,7 +361,7 @@ public class SuppliersPanel extends JPanel {
             + "\n\n" + I18n.tr("This action CANNOT be undone!")
             + "\n\n" + I18n.tr("Are you absolutely sure?");
         int confirmResult = Dialogs.showConfirmDialog(this,
-            finalWarning,
+            supplierDeletionMessage(finalWarning),
             I18n.tr("FORCE DELETE - Final Confirmation"),
             JOptionPane.YES_NO_OPTION,
             JOptionPane.ERROR_MESSAGE);
