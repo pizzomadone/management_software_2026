@@ -47,6 +47,38 @@ public class FifoCompletionTest extends RegressionTest {
             require(qty()==0 && "0".equals(value("SELECT COUNT(*) FROM inventory_lots WHERE supplier_order_detail_id IN (71,72)")),
                 "Safe supplier reversal failed after reservations were canceled");
         });
+        test("supplier deletion across multiple received orders is rolled back if stock is reserved",()->{
+            fresh();
+            sql("UPDATE products SET quantity=0 WHERE id=1");
+            sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,received_date,status,total) "
+                +"VALUES(70,1,'PO-ONE',1000,2000,'Completed',25),"
+                +"(71,1,'PO-TWO',1000,3000,'Completed',25)");
+            sql("INSERT INTO supplier_order_details(id,order_id,product_id,quantity,unit_price,total) "
+                +"VALUES(70,70,1,5,5,25),(71,71,1,5,5,25)");
+            InventoryLotManager.receiveSupplierOrder(db,70,new java.util.Date(2000),"PO-ONE");
+            InventoryLotManager.receiveSupplierOrder(db,71,new java.util.Date(3000),"PO-TWO");
+            StockManager.createOrUpdateReservation(db,1,"ORDER",90,4,"");
+            require(qty()==10 && StockManager.getAvailableStock(db,1)==6,
+                "Incorrect starting availability");
+
+            // This is the same supplier-receipt reversal used by force delete.
+            DatabaseManager.beginTransaction(db);
+            try {
+                mustReject(()->StockManager.reverseCompletedSupplierOrders(db,1));
+                db.rollback();
+            } finally {
+                db.setAutoCommit(true);
+            }
+            require(qty()==10 && StockManager.getAvailableStock(db,1)==6,
+                "Failed supplier deletion partially reduced physical stock");
+            require("2".equals(value("SELECT COUNT(*) FROM inventory_lots WHERE supplier_order_detail_id IN (70,71)"))
+                && "10".equals(value("SELECT SUM(remaining_quantity) FROM inventory_lots WHERE supplier_order_detail_id IN (70,71)")),
+                "Failed supplier deletion damaged FIFO layers");
+            require("2".equals(value("SELECT COUNT(*) FROM warehouse_movements WHERE document_type='SUPPLIER_ORDER'")),
+                "Failed supplier deletion removed original receipt movements");
+            require("4".equals(value("SELECT reserved_quantity FROM products WHERE id=1")),
+                "Failed supplier deletion changed customer reservations");
+        });
         test("storno preserves later sale cost and exact original FIFO layers",()->{
             twoLayers();sale(20,7);sale(21,2);
             require("45.0".equals(value("SELECT cost_total FROM order_details WHERE id=20")),"Wrong first sale cost");
