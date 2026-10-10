@@ -118,7 +118,7 @@ public final class DatabaseIntegrity {
             WHERE m.product_id IS NOT ri.product_id
                OR m.quantity IS NOT ri.quantity
                OR m.type<>'OUTWARD'
-               OR m.document_type<>'SUPPLIER_RETURN'
+               OR m.document_type IS NOT 'SUPPLIER_RETURN'
                OR m.reason<>'SUPPLIER_RETURN'
                OR (SELECT COUNT(*) FROM inventory_lot_consumptions x
                    WHERE x.warehouse_movement_id=ri.warehouse_movement_id)<>1
