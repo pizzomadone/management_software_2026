@@ -327,8 +327,6 @@ public class OrdersPanel extends JPanel {
 
     private void showOrderDialog(Order order) {
         Window parentWindow = SwingUtilities.getWindowAncestor(this);
-        Integer editedOrderId = order != null ? order.getId() : null;
-
         OrderDialog dialog;
         if (parentWindow instanceof JFrame) {
             dialog = new OrderDialog((JFrame) parentWindow, order);
@@ -346,9 +344,11 @@ public class OrdersPanel extends JPanel {
                 mainWindow.refreshInvoicesPanel();
             }
 
-            // Editing an order must not lose the user's place in the table.
-            if (editedOrderId != null) {
-                selectOrderByIdInCurrentTable(editedOrderId);
+            // Select the saved row for both newly created and edited orders.
+            // Use the real generated ID (not table position: the table is sortable).
+            Integer savedId = dialog.getSavedOrderId();
+            if (savedId != null) {
+                selectOrderByIdInCurrentTable(savedId);
             }
         }
     }
