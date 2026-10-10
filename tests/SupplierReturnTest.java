@@ -198,7 +198,7 @@ public final class SupplierReturnTest extends RegressionTest {
         test("deletion preflight blocks consumed original FIFO goods",()->{
             receipt();
             sql("INSERT INTO warehouse_movements(id,product_id,date,type,quantity,reason) "
-                +"VALUES(59,1,3000,'OUTWARD',1,'SALE')");
+                +"VALUES(59,1,3000,'OUTWARD',11,'SALE')");
             InventoryLotManager.applyManualMovement(db,59,1,"OUTWARD",11,new Date(3000));
             require(SuppliersPanel.supplierDeletionBlockReason(db,1)!=null,
                 "Historical supplier lot consumption was not detected");
