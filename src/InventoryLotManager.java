@@ -460,6 +460,10 @@ public final class InventoryLotManager {
     public static void reverseManualMovement(Connection c,int movementId,int productId,
                                              String type,int quantity) throws SQLException {
         if("INWARD".equals(type)) {
+            int available=StockManager.getAvailableStock(c,productId);
+            if(quantity>available)
+                throw new SQLException(I18n.format(
+                    "Insufficient quantity. Current availability: {0}", available));
             try(PreparedStatement p=c.prepareStatement("""
                     SELECT id,initial_quantity,remaining_quantity FROM inventory_lots
                     WHERE warehouse_movement_id=?
