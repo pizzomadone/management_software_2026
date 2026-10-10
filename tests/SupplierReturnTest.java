@@ -103,6 +103,10 @@ public final class SupplierReturnTest extends RegressionTest {
                 +"VALUES(80,1,'PO-OLD',1000,'Completed',96)");
             sql("INSERT INTO supplier_order_details(id,order_id,product_id,quantity,unit_price,total) "
                 +"VALUES(81,80,1,8,12,96)");
+            sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,status,total) "
+                +"VALUES(82,1,'PO-ALREADY-RETURNED',2000,'Returned',24)");
+            sql("INSERT INTO supplier_order_details(id,order_id,product_id,quantity,unit_price,total) "
+                +"VALUES(83,82,1,2,12,24)");
             sql("UPDATE products SET quantity=18 WHERE id=1");
             java.nio.file.Path source=OUT.resolve("supplier-legacy-pre-fifo.db");
             java.nio.file.Files.deleteIfExists(source);
@@ -138,6 +142,17 @@ public final class SupplierReturnTest extends RegressionTest {
                         require(rows.next() && rows.getInt("physical")==18 && rows.getInt("opening")==18
                             && rows.getInt("historical")==0 && rows.getInt("version")==1,
                             "Pre-FIFO migration lost physical stock or invented a purchase balance");
+                    }
+                    try(java.sql.Statement s=upgraded.createStatement();
+                        java.sql.ResultSet history=s.executeQuery("""
+                            SELECT o.status,
+                                   (SELECT COUNT(*) FROM inventory_lots
+                                    WHERE supplier_order_detail_id=83) AS recreated
+                            FROM supplier_orders o WHERE o.id=82
+                            """)) {
+                        require(history.next() && "Returned".equals(history.getString("status"))
+                            && history.getInt("recreated")==0,
+                            "Historical fully returned supplier purchase was altered during migration");
                     }
                     require(SupplierReturnManager.lines(upgraded,80).stream()
                             .allMatch(line->line.returnable()==0),
