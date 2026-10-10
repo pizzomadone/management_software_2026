@@ -1074,16 +1074,14 @@ public class ProductsPanel extends JPanel {
                     
                 if (result == JOptionPane.YES_OPTION) {
                     java.util.List<String> imageFiles = ProductImageStore.getInstance().filenamesForProduct(conn, id);
-                    {
-                        deleteProductIfEmpty(conn, id);
-                        ProductImageStore.getInstance().deleteNamedFiles(imageFiles);
-                        loadProducts();
-                        
-                        Dialogs.showMessageDialog(this,
-                            "Product deleted successfully",
-                            "Success",
-                            JOptionPane.INFORMATION_MESSAGE);
-                    }
+                    deleteProductIfEmpty(conn, id);
+                    ProductImageStore.getInstance().deleteNamedFiles(imageFiles);
+                    loadProducts();
+
+                    Dialogs.showMessageDialog(this,
+                        "Product deleted successfully",
+                        "Success",
+                        JOptionPane.INFORMATION_MESSAGE);
                 }
             } catch (SQLException e) {
                 e.printStackTrace();
