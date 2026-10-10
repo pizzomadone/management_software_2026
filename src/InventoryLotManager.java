@@ -570,6 +570,10 @@ public final class InventoryLotManager {
                 Numbers.nonNegative(cost),"INVENTORY_ADJUSTMENT");
         } else {
             int qty=Math.negateExact(delta);
+            int available=StockManager.getAvailableStock(c,productId);
+            if(qty>available)
+                throw new SQLException(I18n.format(
+                    "Insufficient quantity. Current availability: {0}", available));
             consumeForMovement(c,movementId,productId,qty);
             try(PreparedStatement u=c.prepareStatement("UPDATE products SET quantity=quantity-? WHERE id=?")) {
                 u.setInt(1,qty);u.setInt(2,productId);u.executeUpdate();
