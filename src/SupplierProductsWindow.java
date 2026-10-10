@@ -54,11 +54,14 @@ public class SupplierProductsWindow extends JDialog {
         refresh.addActionListener(e->load());
         buttons.add(add);buttons.add(editButton);buttons.add(deleteButton);buttons.add(refresh);
 
-        JLabel help=new JLabel("?");
-        help.setToolTipText(I18n.tr("Supplier prices are current reference prices. Each supplier order stores the actual price paid separately."));
-        JPanel north=new JPanel(new FlowLayout(FlowLayout.LEFT));
-        north.add(new JLabel(I18n.tr("Products Supplied")));
-        north.add(help);
+        String helpText=I18n.tr("Supplier prices are current reference prices. Each supplier order stores the actual price paid separately.");
+        JLabel help=Dialogs.clickHelpLabel("<html><table width='300'><tr><td>"
+            +helpText.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
+            +"</td></tr></table></html>");
+        JPanel north=new JPanel(new BorderLayout());
+        north.setBorder(BorderFactory.createEmptyBorder(5,8,2,8));
+        north.add(new JLabel(I18n.tr("Products Supplied")),BorderLayout.WEST);
+        north.add(help,BorderLayout.EAST);
 
         add(north,BorderLayout.NORTH);
         add(new JScrollPane(table),BorderLayout.CENTER);
