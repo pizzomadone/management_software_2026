@@ -175,6 +175,7 @@ public final class InventoryLotManager {
             checkpoint=c.setSavepoint();
             reverseSupplierOrderInTransaction(c,orderId,number);
             c.releaseSavepoint(checkpoint);
+            checkpoint=null;
             if (ownTransaction) c.commit();
         } catch (SQLException | RuntimeException error) {
             if (checkpoint!=null) {
