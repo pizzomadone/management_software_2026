@@ -53,6 +53,8 @@ public final class SupplierReturnDialog extends JDialog {
         notes.setLineWrap(true);notes.setWrapStyleWord(true);
         notePanel.add(new JScrollPane(notes),BorderLayout.CENTER);
         lower.add(notePanel,BorderLayout.CENTER);
+        notePanel.add(new JLabel(I18n.tr("Return value is based on purchase prices; no refund is recorded.")),
+            BorderLayout.SOUTH);
         JPanel actions=new JPanel(new FlowLayout(FlowLayout.RIGHT));
         JButton fill=new JButton(I18n.tr("Return Available"));
         fill.addActionListener(e->selectAvailable());
