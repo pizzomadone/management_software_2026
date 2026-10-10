@@ -647,7 +647,11 @@ public class InvoiceDialog extends JDialog {
         updateTotals();
         loadPaymentData();
         if (contentLocked()) {
-            dateField.setEnabled(false);
+            // Linked drafts may choose the document date independently of the order.
+            // Issued/canceled invoices retain their historical date.
+            boolean linkedDraft=linkedOrderLocked && "Draft".equals(invoice.getStatus());
+            dateField.setEnabled(linkedDraft);
+            if(linkedDraft) dateField.setText(dateFormat.format(new Date()));
             selectCustomerButton.setEnabled(false);
             itemsTable.setEnabled(false);
 
@@ -669,7 +673,9 @@ public class InvoiceDialog extends JDialog {
                 notice = I18n.tr("Finalized invoice: only status and payment can be changed.");
             }
             itemsTable.setToolTipText(notice);
-            dateField.setToolTipText(notice);
+            dateField.setToolTipText(linkedOrderLocked && "Draft".equals(invoice.getStatus())
+                ? I18n.tr("Choose the invoice date independently of the order before issuing.")
+                : notice);
             selectCustomerButton.setToolTipText(notice);
         }
     }
@@ -796,6 +802,61 @@ public class InvoiceDialog extends JDialog {
         }
     }
 
+    /**
+     * Update a linked invoice without ever changing an issued/canceled document's date.
+     * Draft dates and numbering reflect the chosen invoice date, not the order date.
+     * Called from the existing transaction.
+     */
+    static String saveLinkedInvoiceStatus(Connection conn,int invoiceId,String currentStatus,
+                                          String newStatus,Date draftDate) throws SQLException {
+        if ("Draft".equals(currentStatus)) {
+            if (draftDate==null)
+                throw new SQLException("Invoice date is required");
+            String previousNumber;
+            try (PreparedStatement read=conn.prepareStatement(
+                    "SELECT number FROM invoices WHERE id=? AND status='Draft' AND order_id IS NOT NULL")) {
+                read.setInt(1,invoiceId);
+                try (ResultSet r=read.executeQuery()) {
+                    if(!r.next()) throw new SQLException("Linked invoice draft changed or no longer exists");
+                    previousNumber=r.getString(1);
+                }
+            }
+            java.util.Calendar calendar=java.util.Calendar.getInstance();
+            calendar.setTime(draftDate);
+            int year=calendar.get(java.util.Calendar.YEAR);
+            String number=previousNumber;
+            if(!previousNumber.startsWith(year+"/"))
+                number=DatabaseManager.getInstance().getNextInvoiceNumber(conn,year);
+
+            try (PreparedStatement write=conn.prepareStatement(
+                    "UPDATE invoices SET status=?,date=?,number=? " +
+                    "WHERE id=? AND status='Draft' AND order_id IS NOT NULL")) {
+                write.setString(1,newStatus);
+                write.setTimestamp(2,DateUtils.toSqlTimestamp(draftDate));
+                write.setString(3,number);
+                write.setInt(4,invoiceId);
+                if(write.executeUpdate()!=1)
+                    throw new SQLException("Linked invoice draft changed or no longer exists");
+            }
+            return number;
+        }
+        try (PreparedStatement write=conn.prepareStatement(
+                "UPDATE invoices SET status=? WHERE id=? AND status=? AND order_id IS NOT NULL")) {
+            write.setString(1,newStatus);
+            write.setInt(2,invoiceId);
+            write.setString(3,currentStatus);
+            if(write.executeUpdate()!=1)
+                throw new SQLException("Linked invoice changed or no longer exists");
+        }
+        try (PreparedStatement read=conn.prepareStatement("SELECT number FROM invoices WHERE id=?")) {
+            read.setInt(1,invoiceId);
+            try (ResultSet r=read.executeQuery()) {
+                if(!r.next()) throw new SQLException("Linked invoice no longer exists");
+                return r.getString(1);
+            }
+        }
+    }
+
     private void saveLockedStatusOnly() {
         String newStatus = (String) statusCombo.getSelectedItem();
 
@@ -862,13 +923,19 @@ public class InvoiceDialog extends JDialog {
                     throw new SQLException("Invoice is no longer linked to an order");
 
                 if (currentOrderId != null) {
-                    try (PreparedStatement p = conn.prepareStatement(
-                            "UPDATE invoices SET status=? WHERE id=?")) {
-                        p.setString(1, newStatus);
-                        p.setInt(2, invoice.getId());
-                        if (p.executeUpdate() != 1)
-                            throw new SQLException("Invoice changed or no longer exists");
+                    Date selectedDate=null;
+                    if ("Draft".equals(currentStatus)) {
+                        try {
+                            selectedDate=DateUtils.parseDate(dateField.getText(),dateFormat);
+                        } catch (java.text.ParseException invalid) {
+                            throw new SQLException("Invalid invoice date",invalid);
+                        }
                     }
+                    String updatedNumber=saveLinkedInvoiceStatus(conn,invoice.getId(),
+                        currentStatus,newStatus,selectedDate);
+                    invoice.setNumber(updatedNumber);
+                    numberField.setText(updatedNumber);
+                    if (selectedDate!=null) invoice.setDate(selectedDate);
                 } else {
                     String paymentStatus = paymentStatusCode();
                     double paidAmount = paymentAmountForSave(currentTotal);
