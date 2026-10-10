@@ -508,7 +508,8 @@ public final class InventoryLotManager {
                     if (!r.next()) throw new SQLException("Movement no longer exists");
                     String document=r.getString("document_type");
                     if (!"OUTWARD".equals(r.getString("type")) || "ORDER".equals(document)
-                            || "SUPPLIER_ORDER".equals(document) || "ORDER_REVERSAL".equals(document)
+                            || "SUPPLIER_ORDER".equals(document) || "SUPPLIER_RETURN".equals(document)
+                            || "SUPPLIER_RETURN_REVERSAL".equals(document) || "ORDER_REVERSAL".equals(document)
                             || "MOVEMENT_REVERSAL".equals(document))
                         throw new SQLException("Only manual outward movements or stock reductions can be reversed here.");
                     if (r.getBoolean("reversed")) throw new SQLException("This movement has already been reversed.");
@@ -695,7 +696,7 @@ public final class InventoryLotManager {
         }
     }
 
-    private static void refreshLastPurchaseCost(Connection c,int productId,int excludedOrderId)
+    static void refreshLastPurchaseCost(Connection c,int productId,int excludedOrderId)
             throws SQLException {
         Double cost=null;
         try(PreparedStatement p=c.prepareStatement("""
@@ -703,6 +704,9 @@ public final class InventoryLotManager {
                 FROM supplier_order_details d
                 JOIN supplier_orders o ON o.id=d.order_id
                 WHERE d.product_id=? AND o.status='Completed' AND o.id<>?
+                  AND COALESCE((SELECT SUM(ri.quantity) FROM supplier_return_items ri
+                      JOIN supplier_returns sr ON sr.id=ri.return_id
+                      WHERE ri.supplier_order_detail_id=d.id AND sr.reversed_at IS NULL),0)<d.quantity
                 ORDER BY o.received_date DESC,o.id DESC,d.id DESC LIMIT 1
                 """)) {
             p.setInt(1,productId);p.setInt(2,excludedOrderId);
