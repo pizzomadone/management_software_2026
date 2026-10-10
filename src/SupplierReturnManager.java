@@ -1,6 +1,6 @@
 import java.sql.*;
 import java.util.*;
-import java.math.BigDecimal;
+import java.util.Date;
 
 /** Supplier returns are immutable purchase-linked documents with compensating FIFO movements. */
 public final class SupplierReturnManager {

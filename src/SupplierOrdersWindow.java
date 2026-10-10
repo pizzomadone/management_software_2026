@@ -127,7 +127,14 @@ public class SupplierOrdersWindow extends JDialog {
                         row.add("");
                     }
 
-                    row.add(rs.getString("status"));
+                    String status=rs.getString("status");
+                    if ("Completed".equals(status)) {
+                        int returned=SupplierReturnManager.returnState(
+                            DatabaseManager.getInstance().getConnection(),rs.getInt("id"));
+                        if(returned==1)status+= " / "+I18n.tr("Partial Return");
+                        if(returned==2)status+= " / "+I18n.tr("Full Return");
+                    }
+                    row.add(status);
                     row.add(Numbers.moneyText(rs.getDouble("total")));
                     row.add(rs.getString("notes"));
                     tableModel.addRow(row);

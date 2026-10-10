@@ -111,7 +111,7 @@ public class SupplierOrdersPanel extends JPanel {
         setPreferredColumnWidth(2, 190);
         setPreferredColumnWidth(3, 105);
         setPreferredColumnWidth(4, 120);
-        setPreferredColumnWidth(5, 115);
+        setPreferredColumnWidth(5, 185);
         setPreferredColumnWidth(6, 105);
         setPreferredColumnWidth(7, 220);
 
@@ -178,8 +178,10 @@ public class SupplierOrdersPanel extends JPanel {
         public Component getTableCellRendererComponent(JTable tbl, Object value,
                 boolean selected, boolean focus, int row, int column) {
             String status = value == null ? "" : String.valueOf(value);
-            String displayStatus = I18n.tr(status);
-            String normalized = status.toLowerCase(Locale.ROOT).trim();
+            String[] parts = status.split("\\|", 2);
+            String displayStatus = I18n.tr(parts[0])
+                + (parts.length > 1 ? " · " + I18n.tr(parts[1]) : "");
+            String normalized = parts[0].toLowerCase(Locale.ROOT).trim();
 
             Color background;
             Color foreground;
@@ -233,7 +235,14 @@ public class SupplierOrdersPanel extends JPanel {
                     Vector<Object> row = new Vector<>(); row.add(rs.getInt("id")); row.add(rs.getString("number")); row.add(rs.getString("company_name"));
                     Date date = DateUtils.parseDate(rs, "order_date"); Date delivery = DateUtils.parseDate(rs, "expected_delivery_date");
                     row.add(date == null ? "" : DateUtils.formatDate(date, dateFormat)); row.add(delivery == null ? "" : DateUtils.formatDate(delivery, dateFormat));
-                    row.add(rs.getString("status")); row.add(SettingsPanel.formatCurrency(rs.getDouble("total"))); row.add(rs.getString("notes")); model.addRow(row);
+                    String status = rs.getString("status");
+                    if ("Completed".equals(status)) {
+                        int returned = SupplierReturnManager.returnState(
+                            DatabaseManager.getInstance().getConnection(),rs.getInt("id"));
+                        if (returned==1) status += "|Partial Return";
+                        if (returned==2) status += "|Full Return";
+                    }
+                    row.add(status); row.add(SettingsPanel.formatCurrency(rs.getDouble("total"))); row.add(rs.getString("notes")); model.addRow(row);
                 }
             }
         } catch (SQLException ex) { Dialogs.showMessageDialog(this, "Error loading supplier orders: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE); }
