@@ -96,11 +96,24 @@ public final class SupplierReturnManager {
                 while (r.next()) {
                     Date date = DateUtils.parseDate(r,"returned_at");
                     result.add(new History(r.getInt("id"),date,r.getInt("units"),
-                        r.getDouble("value"),r.getObject("reversed_at")!=null,r.getString("notes")));
+                        historyValue(c,r.getInt("id")),r.getObject("reversed_at")!=null,r.getString("notes")));
                 }
             }
         }
         return result;
+    }
+
+    private static double historyValue(Connection c,int returnId) throws SQLException {
+        double total=0;
+        try (PreparedStatement p=c.prepareStatement(
+                "SELECT quantity,unit_price FROM supplier_return_items WHERE return_id=? ORDER BY id")) {
+            p.setInt(1,returnId);
+            try (ResultSet r=p.executeQuery()) {
+                while(r.next())
+                    total=Numbers.add(total,Numbers.lineTotal(r.getInt("quantity"),r.getDouble("unit_price")));
+            }
+        }
+        return total;
     }
 
     /** 0 = none, 1 = partial, 2 = all original purchased units returned. */

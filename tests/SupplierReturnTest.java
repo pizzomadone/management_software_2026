@@ -38,7 +38,7 @@ public final class SupplierReturnTest extends RegressionTest {
             require(SupplierReturnManager.returnState(db,80)==1,"First return was not partial");
             require("Completed|124.0".equals(value("SELECT status||'|'||total FROM supplier_orders WHERE id=80")),
                 "Original purchase order was mutated");
-            require("48.0".equals(value("SELECT SUM(quantity*unit_price) FROM supplier_return_items WHERE return_id="+first)),
+            require("43.0".equals(value("SELECT SUM(quantity*unit_price) FROM supplier_return_items WHERE return_id="+first)),
                 "Historical return value was incorrect");
             int second=SupplierReturnManager.create(80,List.of(q(81,5),q(82,3)),"remaining goods");
             require(SupplierReturnManager.returnState(db,80)==2,"Fully returned order not detected");

@@ -171,8 +171,8 @@ public final class SupplierReturnDialog extends JDialog {
             java.math.BigDecimal value=java.math.BigDecimal.ZERO;
             for(int i=0;i<lines.size();i++){
                 int qty=quantityAt(i);
-                value=value.add(java.math.BigDecimal.valueOf(lines.get(i).purchasePrice())
-                    .multiply(java.math.BigDecimal.valueOf(qty)));
+                value=value.add(java.math.BigDecimal.valueOf(
+                    Numbers.lineTotal(qty,lines.get(i).purchasePrice())));
             }
             valueLabel.setText(I18n.tr("Return Value")+": "+SettingsPanel.formatCurrency(value.doubleValue()));
         }catch(IllegalArgumentException e){
