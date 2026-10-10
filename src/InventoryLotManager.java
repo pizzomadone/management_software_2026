@@ -161,7 +161,34 @@ public final class InventoryLotManager {
         for(Integer id:totals.keySet()) refreshLastPurchaseCost(c,id,orderId);
     }
 
+    /**
+     * Reversing a received supplier order is atomic even for direct callers.
+     * Callers deleting/editing an order or deleting a supplier already have
+     * a surrounding transaction; in that case the savepoint preserves it.
+     */
     public static void reverseSupplierOrder(Connection c, int orderId, String number)
+            throws SQLException {
+        boolean ownTransaction=c.getAutoCommit();
+        if (ownTransaction) DatabaseManager.beginTransaction(c);
+        Savepoint checkpoint=null;
+        try {
+            checkpoint=c.setSavepoint();
+            reverseSupplierOrderInTransaction(c,orderId,number);
+            c.releaseSavepoint(checkpoint);
+            if (ownTransaction) c.commit();
+        } catch (SQLException | RuntimeException error) {
+            if (checkpoint!=null) {
+                c.rollback(checkpoint);
+                c.releaseSavepoint(checkpoint);
+            }
+            if (ownTransaction) c.rollback();
+            throw error;
+        } finally {
+            if (ownTransaction) c.setAutoCommit(true);
+        }
+    }
+
+    private static void reverseSupplierOrderInTransaction(Connection c, int orderId, String number)
             throws SQLException {
         try(PreparedStatement p=c.prepareStatement("""
                 SELECT d.id
