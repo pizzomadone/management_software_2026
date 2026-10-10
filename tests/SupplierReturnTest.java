@@ -32,6 +32,71 @@ public final class SupplierReturnTest extends RegressionTest {
     }
 
     public static void supplierReturns() throws Exception {
+        test("import of pre-return v020 database preserves purchases and enables partial returns",()->{
+            receipt();
+            java.nio.file.Path oldFile=OUT.resolve("supplier-before-returns-v020.db");
+            java.nio.file.Files.deleteIfExists(oldFile);
+            try(java.sql.PreparedStatement p=db.prepareStatement("VACUUM INTO ?")) {
+                p.setString(1,oldFile.toString());
+                p.execute();
+            }
+            try(java.sql.Connection old=DatabaseManager.openConnection("jdbc:sqlite:"+oldFile);
+                java.sql.Statement s=old.createStatement()) {
+                s.execute("DROP TABLE supplier_return_items");
+                s.execute("DROP TABLE supplier_returns");
+                s.execute("DELETE FROM schema_migrations WHERE version='021'");
+            }
+            BackupManager backups=BackupManager.getInstance();
+            BackupManager.BackupRecord imported=backups.importBackup(oldFile);
+            java.sql.Connection original=DatabaseManager.getInstance().getConnection();
+            try {
+                try(java.sql.Connection upgraded=DatabaseManager.openConnection(
+                        "jdbc:sqlite:"+imported.absolutePath())) {
+                    DatabaseIntegrity.validate(upgraded,false);
+                    try(java.sql.Statement s=upgraded.createStatement();
+                        java.sql.ResultSet rows=s.executeQuery("""
+                            SELECT (SELECT COUNT(*) FROM supplier_returns) AS returns,
+                                   (SELECT COUNT(*) FROM schema_migrations WHERE version='021') AS version,
+                                   (SELECT quantity FROM products WHERE id=1) AS physical,
+                                   (SELECT remaining_quantity FROM inventory_lots WHERE supplier_order_detail_id=81) AS fifo,
+                                   (SELECT status FROM supplier_orders WHERE id=80) AS status
+                            """)) {
+                        require(rows.next() && rows.getInt("returns")==0 && rows.getInt("version")==1
+                            && rows.getInt("physical")==18 && rows.getInt("fifo")==8
+                            && "Completed".equals(rows.getString("status")),
+                            "Upgrade modified legacy purchase or FIFO stock");
+                    }
+                    require(SupplierReturnManager.lines(upgraded,80).stream()
+                            .anyMatch(line->line.detailId()==81 && line.returnable()==8),
+                        "Upgraded purchase cannot return its unused original FIFO units");
+                    put(DatabaseManager.getInstance(),"connection",upgraded);
+                    try {
+                        int id=SupplierReturnManager.create(80,List.of(q(81,2)),"after import");
+                        require(SupplierReturnManager.returnState(upgraded,80)==1,
+                            "Partial return failed after importing an old database");
+                        DatabaseIntegrity.validate(upgraded,false);
+                        SupplierReturnManager.reverse(id);
+                        DatabaseIntegrity.validate(upgraded,false);
+                        DatabaseManager.prepareDatabase(upgraded);
+                        require(SupplierReturnManager.returnState(upgraded,80)==0,
+                            "Reopening an upgraded database changed return reversal history");
+                        try(java.sql.Statement s=upgraded.createStatement();
+                            java.sql.ResultSet rows=s.executeQuery(
+                                "SELECT COUNT(*) FROM supplier_return_items")) {
+                            require(rows.next() && rows.getInt(1)==1,
+                                "Reopening an upgraded database erased return history");
+                        }
+                    } finally {
+                        put(DatabaseManager.getInstance(),"connection",original);
+                    }
+                }
+            } finally {
+                put(DatabaseManager.getInstance(),"connection",original);
+                backups.deleteBackup(imported.id());
+            }
+            require(java.nio.file.Files.isRegularFile(oldFile),
+                "Import deleted or modified the user's original database");
+        });
         test("supplier return migration creates auditable relational tables",()->{
             fresh();
             require("2".equals(value("SELECT COUNT(*) FROM sqlite_master WHERE type='table' "
