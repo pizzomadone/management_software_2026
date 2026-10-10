@@ -183,6 +183,54 @@ public class OperationalRegressionTest extends RegressionTest {
             call(productEditor(15),"saveProduct");require("1".equals(value("SELECT COUNT(*) FROM warehouse_movements")),"Unchanged save duplicated adjustment");
             call(productEditor(8),"saveProduct");require("7".equals(value("SELECT quantity FROM warehouse_movements ORDER BY id DESC LIMIT 1")),"Updated count used stale product quantity");
         });
+        test("product stock reductions respect reserved units and preserve FIFO",()->{
+            fresh();
+            seedOpeningLots();
+            StockManager.createOrUpdateReservation(db,1,"ORDER",77,8,"");
+            require(qty()==10 && "8".equals(value("SELECT reserved_quantity FROM products WHERE id=1")),
+                "Invalid starting stock or reservation");
+
+            PD rejected=productEditor(2);
+            rejectedSave(rejected,"saveProduct","productSaved");
+            require(qty()==10,"Rejected stock edit changed physical quantity");
+            require("8".equals(value("SELECT reserved_quantity FROM products WHERE id=1")),
+                "Rejected stock edit changed existing reservations");
+            require("0".equals(value("SELECT COUNT(*) FROM warehouse_movements")),
+                "Rejected stock edit created a warehouse movement");
+            require("10".equals(value("SELECT remaining_quantity FROM inventory_lots WHERE product_id=1")),
+                "Rejected stock edit consumed FIFO stock");
+            require("0".equals(value("SELECT COUNT(*) FROM minimum_stock")),
+                "Rejected stock edit saved unrelated product settings");
+
+            PD accepted=productEditor(8);
+            call(accepted,"saveProduct");
+            require(Boolean.TRUE.equals(get(accepted,"productSaved")),
+                "Valid stock adjustment was not saved");
+            require(qty()==8 && StockManager.getAvailableStock(db,1)==0,
+                "Valid adjustment failed to respect reservations");
+            require("8".equals(value("SELECT remaining_quantity FROM inventory_lots WHERE product_id=1")),
+                "Valid adjustment did not consume two FIFO units");
+            require("2".equals(value("SELECT quantity FROM warehouse_movements WHERE product_id=1")),
+                "Valid adjustment recorded an incorrect movement");
+        });
+        test("inventory layer rejects direct reductions of reserved stock",()->{
+            fresh();
+            seedOpeningLots();
+            StockManager.createOrUpdateReservation(db,1,"ORDER",77,8,"");
+            sql("INSERT INTO warehouse_movements(id,product_id,date,type,quantity,reason) " +
+                "VALUES(91,1,CURRENT_TIMESTAMP,'OUTWARD',9,'TEST')");
+            boolean blocked=false;
+            try {
+                InventoryLotManager.adjustProductStock(db,91,1,-9,new java.util.Date(),5);
+            } catch(SQLException expected) {
+                blocked=true;
+            }
+            require(blocked && qty()==10,"Direct stock reduction ignored reservations");
+            require("10".equals(value("SELECT remaining_quantity FROM inventory_lots WHERE product_id=1")),
+                "Rejected direct reduction altered FIFO layers");
+            require("0".equals(value("SELECT COUNT(*) FROM inventory_lot_consumptions WHERE warehouse_movement_id=91")),
+                "Rejected direct reduction inserted FIFO consumption history");
+        });
         test("edited product selection can be restored after table refresh",()->{
             fresh();
             ProductsPanel panel=new ProductsPanel();
