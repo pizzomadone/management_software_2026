@@ -1093,31 +1093,11 @@ public class DashboardPanel extends JPanel {
 
     // Navigation methods
     private void createNewOrder() {
-        if (mainWindow != null) {
-            mainWindow.showPanelByName("ORDERS");
-            SwingUtilities.invokeLater(() -> {
-                Window window = SwingUtilities.getWindowAncestor(this);
-                if (window instanceof JFrame) {
-                    OrderDialog dialog = new OrderDialog((JFrame) window, null);
-                    dialog.setVisible(true);
-                    loadData(); // Refresh after dialog closes
-                }
-            });
-        }
+        if (mainWindow != null) mainWindow.createNewOrder();
     }
 
     private void createNewInvoice() {
-        if (mainWindow != null) {
-            mainWindow.showPanelByName("INVOICES");
-            SwingUtilities.invokeLater(() -> {
-                Window window = SwingUtilities.getWindowAncestor(this);
-                if (window instanceof JFrame) {
-                    InvoiceDialog dialog = new InvoiceDialog((JFrame) window, null);
-                    dialog.setVisible(true);
-                    loadData();
-                }
-            });
-        }
+        if (mainWindow != null) mainWindow.createNewInvoice();
     }
 
     private void createWarehouseMovement() {
