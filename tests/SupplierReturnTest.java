@@ -181,6 +181,45 @@ public final class SupplierReturnTest extends RegressionTest {
             sql("INSERT INTO supplier_returns(order_id,returned_at) VALUES (80,CURRENT_TIMESTAMP)");
             expectIntegrityFailure("has no items");
         });
+        test("deletion preflight allows untouched supplier purchases",()->{
+            receipt();
+            require(SuppliersPanel.supplierDeletionBlockReason(db,1)==null,
+                "An untouched supplier receipt should remain deletable");
+        });
+        test("deletion preflight blocks returns even after reversal",()->{
+            receipt();
+            int id=SupplierReturnManager.create(80,List.of(q(81,1)),"test");
+            require(SuppliersPanel.supplierDeletionBlockReason(db,1)!=null,
+                "Return history was not detected");
+            SupplierReturnManager.reverse(id);
+            require(SuppliersPanel.supplierDeletionBlockReason(db,1)!=null,
+                "Reversed return history was not detected");
+        });
+        test("deletion preflight blocks consumed original FIFO goods",()->{
+            receipt();
+            sql("INSERT INTO warehouse_movements(id,product_id,date,type,quantity,reason) "
+                +"VALUES(59,1,3000,'OUTWARD',1,'SALE')");
+            InventoryLotManager.applyManualMovement(db,59,1,"OUTWARD",11,new Date(3000));
+            require(SuppliersPanel.supplierDeletionBlockReason(db,1)!=null,
+                "Historical supplier lot consumption was not detected");
+        });
+        test("deletion preflight detects missing receipt FIFO lot",()->{
+            fresh();
+            sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,status,total) "
+                +"VALUES(80,1,'PO-80',1000,'Completed',12)");
+            sql("INSERT INTO supplier_order_details(id,order_id,product_id,quantity,unit_price,total) "
+                +"VALUES(81,80,1,1,12,12)");
+            require(SuppliersPanel.supplierDeletionBlockReason(db,1)!=null,
+                "Missing original FIFO lot was not detected");
+        });
+        test("deletion preflight blocks supplier FK on independent FIFO lots",()->{
+            fresh();
+            sql("INSERT INTO inventory_lots(product_id,supplier_id,received_date,"
+                +"initial_quantity,remaining_quantity,unit_cost,source_type) "
+                +"VALUES(1,1,1000,1,1,5,'MANUAL_INWARD')");
+            require(SuppliersPanel.supplierDeletionBlockReason(db,1)!=null,
+                "Supplier reference in a manual FIFO lot was not detected");
+        });
         test("legacy Returned orders cannot be returned a second time",()->{
             receipt();sql("UPDATE supplier_orders SET status='Returned' WHERE id=80");
             reject(()->SupplierReturnManager.create(80,List.of(q(81,1)),"invalid legacy order"));
