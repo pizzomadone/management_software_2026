@@ -231,6 +231,30 @@ public class OperationalRegressionTest extends RegressionTest {
             require("0".equals(value("SELECT COUNT(*) FROM inventory_lot_consumptions WHERE warehouse_movement_id=91")),
                 "Rejected direct reduction inserted FIFO consumption history");
         });
+        test("reserved stock blocks reversal of a manual inward movement",()->{
+            fresh();
+            sql("UPDATE products SET quantity=0 WHERE id=1");
+            sql("INSERT INTO warehouse_movements(id,product_id,date,type,quantity,reason) " +
+                "VALUES(92,1,CURRENT_TIMESTAMP,'INWARD',10,'TEST')");
+            InventoryLotManager.applyManualMovement(db,92,1,"INWARD",10,new java.util.Date(),5);
+            StockManager.createOrUpdateReservation(db,1,"ORDER",77,8,"");
+
+            boolean blocked=false;
+            try {
+                InventoryLotManager.reverseManualMovement(db,92,1,"INWARD",10);
+            } catch(SQLException expected) {
+                blocked=true;
+            }
+            require(blocked && qty()==10 && StockManager.getAvailableStock(db,1)==2,
+                "Reserved goods were removed by reversing an inward movement");
+            require("10".equals(value("SELECT remaining_quantity FROM inventory_lots WHERE warehouse_movement_id=92")),
+                "Rejected reversal deleted its FIFO lot");
+
+            StockManager.cancelReservation(db,"ORDER",77);
+            InventoryLotManager.reverseManualMovement(db,92,1,"INWARD",10);
+            require(qty()==0 && "0".equals(value("SELECT COUNT(*) FROM inventory_lots WHERE warehouse_movement_id=92")),
+                "Valid inward reversal did not restore stock");
+        });
         test("edited product selection can be restored after table refresh",()->{
             fresh();
             ProductsPanel panel=new ProductsPanel();
