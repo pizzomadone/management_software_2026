@@ -726,7 +726,7 @@ public class RegressionTest {
         Locale.setDefault(Locale.US);TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
         Files.createDirectories(OUT);
         Field f=sun.misc.Unsafe.class.getDeclaredField("theUnsafe");f.setAccessible(true);unsafe=(sun.misc.Unsafe)f.get(null);
-        SwingUtilities.invokeAndWait(()->{try{runAll();ExtendedRegressionTest.extended();OperationalRegressionTest.operational();FifoCompletionTest.completion();VatRegressionTest.vat();}catch(Exception e){e.printStackTrace();failures++;}});
+        SwingUtilities.invokeAndWait(()->{try{runAll();ExtendedRegressionTest.extended();OperationalRegressionTest.operational();FifoCompletionTest.completion();SupplierReturnTest.supplierReturns();VatRegressionTest.vat();}catch(Exception e){e.printStackTrace();failures++;}});
         System.out.println("Regression checks: " + checks + " passed, " + failures + " failed");
         System.exit(failures==0?0:1);
     }
