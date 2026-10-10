@@ -137,7 +137,24 @@ public class InvoiceDialog extends JDialog {
     }
 
     private void setupWindow() {
-        setSize(900, 600);
+        // Keep the invoice readable without exceeding the usable display area.
+        GraphicsConfiguration gc = getOwner() == null
+            ? getGraphicsConfiguration() : getOwner().getGraphicsConfiguration();
+        Rectangle usable;
+        if (gc == null) {
+            usable = GraphicsEnvironment.getLocalGraphicsEnvironment()
+                .getMaximumWindowBounds();
+        } else {
+            Rectangle screen = gc.getBounds();
+            Insets insets = Toolkit.getDefaultToolkit().getScreenInsets(gc);
+            usable = new Rectangle(screen.x + insets.left, screen.y + insets.top,
+                screen.width - insets.left - insets.right,
+                screen.height - insets.top - insets.bottom);
+        }
+        int width = Math.min(1100, Math.max(1, usable.width - 64));
+        int height = Math.min(660, Math.max(1, usable.height - 64));
+        setSize(width, height);
+        setMinimumSize(new Dimension(Math.min(width, 850), Math.min(height, 560)));
         setLayout(new BorderLayout(10, 10));
     }
 
@@ -176,7 +193,7 @@ public class InvoiceDialog extends JDialog {
         gbc.gridx = 0; gbc.gridy = 1;
         invoicePanel.add(new JLabel("Customer *:"), gbc);
 
-        gbc.gridx = 1; gbc.gridwidth = 2;
+        gbc.gridx = 1; gbc.gridwidth = invoice == null ? 2 : 3;
         selectCustomerButton = new JButton("Click to select customer...");
         selectCustomerButton.putClientProperty("i18n.literal", true);
         selectCustomerButton.setPreferredSize(new Dimension(300, 35));
@@ -185,9 +202,11 @@ public class InvoiceDialog extends JDialog {
         invoicePanel.add(selectCustomerButton, gbc);
 
         gbc.gridx = 3; gbc.gridwidth = 1;
-        JButton newCustomerButton = new JButton("New Customer");
-        newCustomerButton.addActionListener(e -> createNewCustomer());
-        invoicePanel.add(newCustomerButton, gbc);
+        if (invoice == null) {
+            JButton newCustomerButton = new JButton("New Customer");
+            newCustomerButton.addActionListener(e -> createNewCustomer());
+            invoicePanel.add(newCustomerButton, gbc);
+        }
 
         // Document status
         gbc.gridx = 0; gbc.gridy = 2; gbc.gridwidth = 1;
@@ -259,12 +278,12 @@ public class InvoiceDialog extends JDialog {
         itemsTable.removeColumn(itemsTable.getColumnModel().getColumn(6));
 
         // Configure table
-        itemsTable.getColumnModel().getColumn(0).setPreferredWidth(80);
-        itemsTable.getColumnModel().getColumn(1).setPreferredWidth(250);
-        itemsTable.getColumnModel().getColumn(2).setPreferredWidth(80);
-        itemsTable.getColumnModel().getColumn(3).setPreferredWidth(100);
-        itemsTable.getColumnModel().getColumn(4).setPreferredWidth(80);
-        itemsTable.getColumnModel().getColumn(5).setPreferredWidth(100);
+        itemsTable.getColumnModel().getColumn(0).setPreferredWidth(150);
+        itemsTable.getColumnModel().getColumn(1).setPreferredWidth(280);
+        itemsTable.getColumnModel().getColumn(2).setPreferredWidth(85);
+        itemsTable.getColumnModel().getColumn(3).setPreferredWidth(170);
+        itemsTable.getColumnModel().getColumn(4).setPreferredWidth(110);
+        itemsTable.getColumnModel().getColumn(5).setPreferredWidth(155);
 
         configureTableEditors();
 
@@ -273,15 +292,15 @@ public class InvoiceDialog extends JDialog {
         tableButtonPanel.setBorder(BorderFactory.createTitledBorder("Products"));
 
         JButton addItemButton = new JButton("Add Product");
-        addItemButton.setPreferredSize(new Dimension(120, 30));
+        addItemButton.setMargin(new Insets(6, 14, 6, 14));
         addItemButton.addActionListener(e -> showProductSelectionDialog());
 
         JButton removeItemButton = new JButton("Remove");
-        removeItemButton.setPreferredSize(new Dimension(100, 30));
+        removeItemButton.setMargin(new Insets(6, 14, 6, 14));
         removeItemButton.addActionListener(e -> removeSelectedProduct());
 
         JButton editItemButton = new JButton("Edit Quantity");
-        editItemButton.setPreferredSize(new Dimension(120, 30));
+        editItemButton.setMargin(new Insets(6, 14, 6, 14));
         editItemButton.addActionListener(e -> editSelectedProduct());
 
         tableButtonPanel.add(addItemButton);
@@ -310,8 +329,8 @@ public class InvoiceDialog extends JDialog {
         JButton saveButton = new JButton("Save Invoice");
         JButton cancelButton = new JButton("Cancel");
 
-        saveButton.setPreferredSize(new Dimension(120, 35));
-        cancelButton.setPreferredSize(new Dimension(100, 35));
+        saveButton.setMargin(new Insets(8, 14, 8, 14));
+        cancelButton.setMargin(new Insets(8, 14, 8, 14));
         saveButton.setFont(saveButton.getFont().deriveFont(Font.BOLD));
 
         saveButton.addActionListener(e -> saveInvoice());
@@ -338,6 +357,8 @@ public class InvoiceDialog extends JDialog {
         mainPanel.add(footer, BorderLayout.SOUTH);
 
         add(mainPanel);
+        // Localize the top-level window title as well as its controls.
+        I18n.localize(this);
     }
 
     // Custom table model for type safety
