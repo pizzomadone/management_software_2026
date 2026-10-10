@@ -271,6 +271,10 @@ public class SupplierOrdersWindow extends JDialog {
                                 status = rs.getString("status");
                             }
                         }
+                        if ("Returned".equals(status) ||
+                                InventoryLotManager.hasSupplierOrderConsumption(conn,orderId)) {
+                            throw new SQLException(I18n.tr("Supplier order has historical stock movements and cannot be deleted."));
+                        }
                         if ("Completed".equals(status)) {
                             InventoryLotManager.reverseSupplierOrder(conn, orderId, number);
                         }
