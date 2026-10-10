@@ -751,9 +751,11 @@ public class OrdersPanel extends JPanel {
         if (!canGenerateInvoice(order.getStatus()) || order.getItems().isEmpty())
             throw new SQLException("Only completed nonempty orders can be invoiced");
         int orderId = order.getId();
-        // Generate invoice number
+        // A draft has its own proposed document date, independent of the old order.
+        // The actual date can still be changed when the draft is issued.
+        java.util.Date draftInvoiceDate = new java.util.Date();
         int year = new java.util.Calendar.Builder()
-            .setInstant(order.getOrderDate())
+            .setInstant(draftInvoiceDate)
             .build()
             .get(java.util.Calendar.YEAR);
         String invoiceNumber = DatabaseManager.getInstance().getNextInvoiceNumber(conn, year);
@@ -785,7 +787,7 @@ public class OrdersPanel extends JPanel {
         int invoiceId = 0;
         try (PreparedStatement pstmt = conn.prepareStatement(insertInvoice, Statement.RETURN_GENERATED_KEYS)) {
             pstmt.setString(1, invoiceNumber);
-            pstmt.setTimestamp(2, DateUtils.toSqlTimestamp(order.getOrderDate()));
+            pstmt.setTimestamp(2, DateUtils.toSqlTimestamp(draftInvoiceDate));
             pstmt.setInt(3, order.getCustomerId());
             pstmt.setDouble(4, taxableAmount);
             pstmt.setDouble(5, vatTotal);
