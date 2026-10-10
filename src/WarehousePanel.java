@@ -860,8 +860,10 @@ public class WarehousePanel extends JPanel {
                         }
 
                         conn.commit();
-                        loadMovementsData();
-                        loadStockData();
+                        loadData();
+                        Window parentWindow = SwingUtilities.getWindowAncestor(this);
+                        if (parentWindow instanceof MainWindow mainWindow)
+                            mainWindow.refreshProductsPanel();
 
                         Dialogs.showMessageDialog(this,
                             "Movement deleted successfully!\nStock has been adjusted.",
