@@ -205,6 +205,26 @@ public final class InventoryLotManager {
             }
         }
 
+        // Preflight ALL purchase lines together. A receipt cannot be canceled if
+        // any of its physical units are already reserved by customer orders.
+        try(PreparedStatement p=c.prepareStatement("""
+                SELECT l.product_id, SUM(l.initial_quantity) AS units_to_remove
+                FROM inventory_lots l
+                JOIN supplier_order_details d ON d.id=l.supplier_order_detail_id
+                WHERE d.order_id=? GROUP BY l.product_id
+                """)) {
+            p.setInt(1,orderId);
+            try(ResultSet r=p.executeQuery()) {
+                while(r.next()) {
+                    long amount=r.getLong("units_to_remove");
+                    int available=StockManager.getAvailableStock(c,r.getInt("product_id"));
+                    if(amount>available)
+                        throw new SQLException(I18n.format(
+                            "Insufficient quantity. Current availability: {0}",available));
+                }
+            }
+        }
+
         java.util.LinkedHashSet<Integer> products=new java.util.LinkedHashSet<>();
         try(PreparedStatement p=c.prepareStatement("""
                 SELECT l.id,l.product_id,l.initial_quantity
@@ -217,9 +237,14 @@ public final class InventoryLotManager {
                 while(r.next()) {
                     int productId=r.getInt("product_id");
                     products.add(productId);
-                    try(PreparedStatement u=c.prepareStatement(
-                            "UPDATE products SET quantity=quantity-? WHERE id=?")) {
-                        u.setInt(1,r.getInt("initial_quantity"));u.setInt(2,productId);u.executeUpdate();
+                    try(PreparedStatement u=c.prepareStatement("""
+                            UPDATE products SET quantity=quantity-?
+                            WHERE id=? AND quantity-reserved_quantity>=?
+                            """)) {
+                        int quantity=r.getInt("initial_quantity");
+                        u.setInt(1,quantity);u.setInt(2,productId);u.setInt(3,quantity);
+                        if(u.executeUpdate()!=1)
+                            throw new SQLException("Stock availability changed while reversing supplier receipt.");
                     }
                 }
             }
