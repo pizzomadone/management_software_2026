@@ -559,7 +559,9 @@ public class MainWindow extends JFrame {
                 OrderDialog dialog = new OrderDialog((JFrame) parentWindow, null);
                 dialog.setVisible(true);
                 if (dialog.isOrderSaved()) {
-                    ordersPanel.refreshData();
+                    Integer savedOrderId = dialog.getSavedOrderId();
+                    if (savedOrderId != null) ordersPanel.selectOrderById(savedOrderId);
+                    else ordersPanel.refreshData();
                     refreshProductsPanel();
                 }
             }
