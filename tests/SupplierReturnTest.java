@@ -20,6 +20,17 @@ public final class SupplierReturnTest extends RegressionTest {
         try {action.run();} catch(java.sql.SQLException expected){failed=true;}
         require(failed,"An invalid supplier return was accepted");
     }
+    private static void expectIntegrityFailure(String expectedMessage) throws Exception {
+        try {
+            DatabaseIntegrity.validate(db,false);
+        } catch(java.sql.SQLException e) {
+            require(e.getMessage()!=null && e.getMessage().contains(expectedMessage),
+                "Wrong integrity error: "+e.getMessage());
+            return;
+        }
+        throw new AssertionError("Supplier return corruption escaped integrity validation");
+    }
+
     public static void supplierReturns() throws Exception {
         test("supplier return migration creates auditable relational tables",()->{
             fresh();
@@ -103,6 +114,72 @@ public final class SupplierReturnTest extends RegressionTest {
                 "Reversal was not linked to the original movement");
             reject(()->SupplierReturnManager.reverse(id));
             reject(()->InventoryLotManager.reverseSupplierOrder(db,80,"PO-80"));
+        });
+        test("supplier return integrity accepts valid partial and reversed returns",()->{
+            receipt();
+            int first=SupplierReturnManager.create(80,List.of(q(81,2),q(82,1)),"partial");
+            DatabaseIntegrity.validate(db,false);
+            SupplierReturnManager.create(80,List.of(q(81,1)),"later");
+            DatabaseIntegrity.validate(db,false);
+            SupplierReturnManager.reverse(first);
+            DatabaseIntegrity.validate(db,false);
+            require("2".equals(value("SELECT COUNT(*) FROM supplier_returns")),
+                "Validation changed existing return history");
+        });
+        test("supplier return integrity detects wrong originating order detail",()->{
+            receipt();
+            int id=SupplierReturnManager.create(80,List.of(q(81,2)),"wrong lot");
+            sql("UPDATE supplier_return_items SET supplier_order_detail_id=82 WHERE return_id="+id);
+            expectIntegrityFailure("wrong purchase or FIFO lot");
+        });
+        test("supplier return integrity detects excess returned quantity",()->{
+            receipt();
+            int id=SupplierReturnManager.create(80,List.of(q(81,3)),"too many");
+            sql("UPDATE supplier_return_items SET quantity=9 WHERE return_id="+id);
+            expectIntegrityFailure("exceed purchased quantity");
+        });
+        test("supplier return integrity detects missing warehouse movement quantity",()->{
+            receipt();
+            int id=SupplierReturnManager.create(80,List.of(q(81,3)),"movement");
+            sql("UPDATE warehouse_movements SET quantity=1 WHERE id="
+                +"(SELECT warehouse_movement_id FROM supplier_return_items WHERE return_id="+id+")");
+            expectIntegrityFailure("warehouse movement or FIFO consumption");
+        });
+        test("supplier return integrity detects wrong FIFO consumption quantity",()->{
+            receipt();
+            int id=SupplierReturnManager.create(80,List.of(q(81,3)),"fifo");
+            sql("UPDATE inventory_lot_consumptions SET quantity=1 WHERE warehouse_movement_id="
+                +"(SELECT warehouse_movement_id FROM supplier_return_items WHERE return_id="+id+")");
+            expectIntegrityFailure("warehouse movement or FIFO consumption");
+        });
+        test("supplier return integrity detects original lot not decremented",()->{
+            receipt();
+            SupplierReturnManager.create(80,List.of(q(81,3)),"stock");
+            sql("UPDATE inventory_lots SET remaining_quantity=initial_quantity "
+                +"WHERE supplier_order_detail_id=81");
+            expectIntegrityFailure("not deducted from FIFO lot");
+        });
+        test("supplier return integrity detects missing storno movement",()->{
+            receipt();
+            int id=SupplierReturnManager.create(80,List.of(q(81,3)),"storno");
+            SupplierReturnManager.reverse(id);
+            sql("DELETE FROM warehouse_movements WHERE document_type='SUPPLIER_RETURN_REVERSAL'");
+            expectIntegrityFailure("reversal is missing");
+        });
+        test("supplier return integrity rejects premature compensating movements",()->{
+            receipt();
+            int id=SupplierReturnManager.create(80,List.of(q(81,3)),"premature");
+            sql("INSERT INTO warehouse_movements "
+                +"(product_id,date,type,quantity,reason,document_number,document_type,reversal_of_movement_id)"
+                +" VALUES(1,CURRENT_TIMESTAMP,'INWARD',3,'SUPPLIER_RETURN_REVERSAL','R"+id+"',"
+                +"'SUPPLIER_RETURN_REVERSAL',"
+                +"(SELECT warehouse_movement_id FROM supplier_return_items WHERE return_id="+id+"))");
+            expectIntegrityFailure("reversal is missing");
+        });
+        test("supplier return integrity rejects empty return documents",()->{
+            receipt();
+            sql("INSERT INTO supplier_returns(order_id,returned_at) VALUES (80,CURRENT_TIMESTAMP)");
+            expectIntegrityFailure("has no items");
         });
         test("legacy Returned orders cannot be returned a second time",()->{
             receipt();sql("UPDATE supplier_orders SET status='Returned' WHERE id=80");
