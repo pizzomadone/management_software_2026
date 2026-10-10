@@ -267,6 +267,30 @@ public class OperationalRegressionTest extends RegressionTest {
             require(((Number)model.getValueAt(modelRow,0)).intValue()==1,
                 "Wrong product remained selected after refresh");
         });
+        test("new customer order remains highlighted after returning to Orders panel",()->{
+            fresh();
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat) " +
+                "VALUES(42,1,'2020-01-01','Reservation',0,0)");
+            OD created=order(false,2,"New");
+            call(created,"saveOrder");
+            Integer savedId=created.getSavedOrderId();
+            require(created.isOrderSaved() && savedId!=null && savedId>42,
+                "Created customer order did not expose the saved database ID");
+            require(savedId.toString().equals(value("SELECT id FROM orders WHERE status='New'")),
+                "The saved ID does not identify the newly created order");
+
+            OrdersPanel panel=new OrdersPanel();
+            JTable table=(JTable)get(panel,"ordersTable");
+            table.getRowSorter().toggleSortOrder(0);
+            panel.selectOrderById(savedId);
+            int selected=table.getSelectedRow();
+            require(selected>=0 && table.isRowSelected(selected),
+                "New customer order is not visually selected after refresh");
+            int modelRow=table.convertRowIndexToModel(selected);
+            DefaultTableModel model=(DefaultTableModel)table.getModel();
+            require(savedId.equals(model.getValueAt(modelRow,0)),
+                "Selection points to a different customer order after sorting");
+        });
         test("edited supplier order selection can be restored after refresh",()->{
             fresh();
             sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,status,total,notes) VALUES(41,1,'PO-41','2026-10-03','Draft',10,'')");
