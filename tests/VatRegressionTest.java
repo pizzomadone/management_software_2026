@@ -41,6 +41,58 @@ public class VatRegressionTest extends RegressionTest {
         sql("ALTER TABLE invoice_details DROP COLUMN sale_unit_price_inc_vat");
     }
     static void vat() throws Exception {
+        test("linked invoice date and numbering follow its own document date, not the order",()->{
+            fresh();
+            java.util.Date oldOrderDate=new java.text.SimpleDateFormat("dd/MM/yyyy").parse("15/01/2024");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat) "
+                +"VALUES(1,1,"+oldOrderDate.getTime()+",'Completed',30,30)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate) "
+                +"VALUES(1,1,3,10,10,0)");
+            Order oldOrder=loadOrder(1);
+            DatabaseManager.beginTransaction(db);
+            OrdersPanel.GeneratedInvoice generated;
+            try {
+                generated=OrdersPanel.createInvoiceFromOrder(db,oldOrder);
+                db.commit();
+            } catch(Exception error) {db.rollback();throw error;}
+            finally {db.setAutoCommit(true);}
+
+            int draftYear=java.util.Calendar.getInstance().get(java.util.Calendar.YEAR);
+            String today=java.time.LocalDate.now().toString();
+            require(value("SELECT warestat_date(date) FROM invoices WHERE id="+generated.id()).equals(today),
+                "Generated draft copied the historical order date");
+            require(generated.number().startsWith(draftYear+"/"),
+                "Draft numbering used the order year");
+
+            int issueYear=draftYear+1;
+            java.util.Date chosen=new java.text.SimpleDateFormat("dd/MM/yyyy")
+                .parse("11/02/"+issueYear);
+            DatabaseManager.beginTransaction(db);
+            String actualNumber;
+            try {
+                actualNumber=InvoiceDialog.saveLinkedInvoiceStatus(
+                    db,generated.id(),"Draft","Issued",chosen);
+                db.commit();
+            } catch(Exception error) {db.rollback();throw error;}
+            finally {db.setAutoCommit(true);}
+
+            require(actualNumber.startsWith(issueYear+"/"),
+                "Invoice year did not follow the chosen invoice date");
+            require(actualNumber.equals(value("SELECT number FROM invoices WHERE id="+generated.id())),
+                "New invoice number was not saved");
+            require(("Issued|"+issueYear+"-02-11").equals(
+                    value("SELECT status||'|'||warestat_date(date) FROM invoices WHERE id="+generated.id())),
+                "Chosen invoice date was lost at issuance");
+            require("2024-01-15".equals(value("SELECT warestat_date(order_date) FROM orders WHERE id=1")),
+                "Issuing the invoice changed its original order date");
+
+            String originalNumber=actualNumber;
+            InvoiceDialog.saveLinkedInvoiceStatus(db,generated.id(),"Issued","Canceled",null);
+            require(("Canceled|"+issueYear+"-02-11").equals(
+                    value("SELECT status||'|'||warestat_date(date) FROM invoices WHERE id="+generated.id()))
+                    && originalNumber.equals(value("SELECT number FROM invoices WHERE id="+generated.id())),
+                "Already issued invoice's date or number changed");
+        });
         test("product price preview updates live for gross price VAT and purchase cost",()->{
             fresh();PD dialog=OperationalRegressionTest.productEditor(0);put(dialog,"product",null);
             JPanel preview=(JPanel)call(dialog,"createPricePreview");
