@@ -120,17 +120,37 @@ public final class DatabaseIntegrity {
                OR m.type<>'OUTWARD'
                OR m.document_type IS NOT 'SUPPLIER_RETURN'
                OR m.reason<>'SUPPLIER_RETURN'
+               OR m.document_number IS NULL
+               OR m.document_number<>(SELECT o.number||'/R'||sr.id
+                   FROM supplier_returns sr
+                   JOIN supplier_orders o ON o.id=sr.order_id
+                   WHERE sr.id=ri.return_id)
                OR (SELECT COUNT(*) FROM inventory_lot_consumptions x
                    WHERE x.warehouse_movement_id=ri.warehouse_movement_id)<>1
                OR NOT EXISTS (
                    SELECT 1 FROM inventory_lot_consumptions x
                    WHERE x.warehouse_movement_id=ri.warehouse_movement_id
                      AND x.lot_id=ri.lot_id
+                     AND x.order_detail_id IS NULL
                      AND x.quantity=ri.quantity
                      AND x.unit_cost=ri.unit_cost
                )
             LIMIT 1
             """, "Supplier return warehouse movement or FIFO consumption is inconsistent");
+
+        // Each active supplier return must remain deducted from its original FIFO lot.
+        // Other sales and movements can reduce that lot further, so this is a
+        // conservative bound, not an unsafe attempt to reconstruct old opening stock.
+        rejectInvalidReturn(c, """
+            SELECT l.id FROM inventory_lots l
+            WHERE EXISTS (SELECT 1 FROM supplier_return_items ri WHERE ri.lot_id=l.id)
+              AND l.initial_quantity-l.remaining_quantity <
+                  COALESCE((SELECT SUM(ri.quantity)
+                    FROM supplier_return_items ri
+                    JOIN supplier_returns sr ON sr.id=ri.return_id
+                    WHERE ri.lot_id=l.id AND sr.reversed_at IS NULL),0)
+            LIMIT 1
+            """, "Active supplier return quantity was not deducted from FIFO lot");
 
         // Each reversal must restore the same product/quantity exactly once;
         // an active return must not have a compensating movement.
@@ -148,6 +168,7 @@ public final class DatabaseIntegrity {
                      AND rev.type='INWARD'
                      AND rev.document_type='SUPPLIER_RETURN_REVERSAL'
                      AND rev.reason='SUPPLIER_RETURN_REVERSAL'
+                     AND rev.document_number='R'||sr.id
                ))
             LIMIT 1
             """, "Supplier return reversal is missing, duplicated or inconsistent");
