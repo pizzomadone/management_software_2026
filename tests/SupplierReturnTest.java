@@ -97,6 +97,78 @@ public final class SupplierReturnTest extends RegressionTest {
             require(java.nio.file.Files.isRegularFile(oldFile),
                 "Import deleted or modified the user's original database");
         });
+        test("pre-FIFO legacy purchases migrate without inventing returnable lots",()->{
+            fresh();
+            sql("INSERT INTO supplier_orders(id,supplier_id,number,order_date,status,total) "
+                +"VALUES(80,1,'PO-OLD',1000,'Completed',96)");
+            sql("INSERT INTO supplier_order_details(id,order_id,product_id,quantity,unit_price,total) "
+                +"VALUES(81,80,1,8,12,96)");
+            sql("UPDATE products SET quantity=18 WHERE id=1");
+            java.nio.file.Path source=OUT.resolve("supplier-legacy-pre-fifo.db");
+            java.nio.file.Files.deleteIfExists(source);
+            try(java.sql.PreparedStatement p=db.prepareStatement("VACUUM INTO ?")) {
+                p.setString(1,source.toString());
+                p.execute();
+            }
+            try(java.sql.Connection old=DatabaseManager.openConnection("jdbc:sqlite:"+source);
+                java.sql.Statement s=old.createStatement()) {
+                s.execute("DROP TABLE supplier_return_items");
+                s.execute("DROP TABLE supplier_returns");
+                s.execute("DROP TABLE inventory_lot_consumptions");
+                s.execute("DROP TABLE inventory_lots");
+                s.execute("DROP TABLE product_suppliers");
+                s.execute("DELETE FROM schema_migrations WHERE version>='012'");
+            }
+            BackupManager backups=BackupManager.getInstance();
+            BackupManager.BackupRecord migrated=backups.importBackup(source);
+            try {
+                try(java.sql.Connection upgraded=DatabaseManager.openConnection(
+                        "jdbc:sqlite:"+migrated.absolutePath())) {
+                    DatabaseIntegrity.validate(upgraded,false);
+                    try(java.sql.Statement s=upgraded.createStatement();
+                        java.sql.ResultSet rows=s.executeQuery("""
+                            SELECT (SELECT quantity FROM products WHERE id=1) AS physical,
+                                   (SELECT remaining_quantity FROM inventory_lots
+                                     WHERE product_id=1 AND source_type='MIGRATION') AS opening,
+                                   (SELECT remaining_quantity FROM inventory_lots
+                                     WHERE supplier_order_detail_id=81 AND source_type='LEGACY_SUPPLIER_ORDER')
+                                     AS historical,
+                                   (SELECT COUNT(*) FROM schema_migrations WHERE version='021') AS version
+                            """)) {
+                        require(rows.next() && rows.getInt("physical")==18 && rows.getInt("opening")==18
+                            && rows.getInt("historical")==0 && rows.getInt("version")==1,
+                            "Pre-FIFO migration lost physical stock or invented a purchase balance");
+                    }
+                    require(SupplierReturnManager.lines(upgraded,80).stream()
+                            .allMatch(line->line.returnable()==0),
+                        "Historical purchase was incorrectly marked returnable without original FIFO provenance");
+                    DatabaseManager.prepareDatabase(upgraded);
+                    DatabaseIntegrity.validate(upgraded,false);
+                }
+            } finally {backups.deleteBackup(migrated.id());}
+        });
+        test("tampered supplier returns are rejected during import",()->{
+            receipt();
+            SupplierReturnManager.create(80,List.of(q(81,3)),"test");
+            java.nio.file.Path bad=OUT.resolve("supplier-return-tampered.db");
+            java.nio.file.Files.deleteIfExists(bad);
+            try(java.sql.PreparedStatement p=db.prepareStatement("VACUUM INTO ?")) {
+                p.setString(1,bad.toString());
+                p.execute();
+            }
+            try(java.sql.Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+bad);
+                java.sql.Statement s=c.createStatement()) {
+                s.execute("UPDATE warehouse_movements SET quantity=1 "
+                    +"WHERE document_type='SUPPLIER_RETURN'");
+            }
+            boolean rejected=false;
+            try {BackupManager.getInstance().importBackup(bad);}
+            catch(IllegalArgumentException expected){rejected=true;}
+            require(rejected,"Corrupted supplier return was accepted during import");
+            require("1".equals(value("SELECT COUNT(*) FROM supplier_returns"))
+                && "3".equals(value("SELECT quantity FROM warehouse_movements WHERE document_type='SUPPLIER_RETURN'")),
+                "Failed import altered the live supplier return history");
+        });
         test("supplier return migration creates auditable relational tables",()->{
             fresh();
             require("2".equals(value("SELECT COUNT(*) FROM sqlite_master WHERE type='table' "
