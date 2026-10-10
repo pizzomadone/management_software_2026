@@ -131,6 +131,60 @@ public class RegressionTest {
         require(!Boolean.TRUE.equals(get(dialog,savedField)), "Invalid document was saved");
     }
     static void runAll() throws Exception {
+        test("warehouse movement search keeps hidden IDs and column alignment", () -> {
+            fresh();
+            sql("INSERT INTO warehouse_movements(id,product_id,date,type,quantity,reason,notes) " +
+                "VALUES(74,1,CURRENT_TIMESTAMP,'IN',2,'SEARCH_AUDIT','Manual delivery')");
+            WarehousePanel panel=empty(WarehousePanel.class);
+            DefaultTableModel model=new DefaultTableModel(
+                new String[]{"ID","Date","Product","Type","Quantity","Reason","Document","Notes"},0);
+            put(panel,"movementsModel",model);
+            put(panel,"dateFormat",new SimpleDateFormat("dd/MM/yyyy HH:mm"));
+            call(panel,"searchMovements",new Class<?>[]{String.class},"SEARCH_AUDIT");
+
+            require(model.getRowCount()==1,"Expected exactly one matching warehouse movement");
+            require(model.getColumnCount()==8,"Unexpected warehouse movement table columns");
+            require(model.getValueAt(0,0) instanceof Integer && (int)model.getValueAt(0,0)==74,
+                "Search result lost the hidden movement ID");
+            require("Product A".equals(model.getValueAt(0,2)),"Product column is misaligned");
+            require(((Number)model.getValueAt(0,4)).intValue()==2,"Quantity column is misaligned");
+            require("SEARCH_AUDIT".equals(model.getValueAt(0,5)),"Reason column is misaligned");
+            require("Manual delivery".equals(model.getValueAt(0,7)),"Notes column is misaligned");
+        });
+        test("products with on-hand stock or FIFO history cannot be deleted", () -> {
+            fresh();
+            ProductsPanel panel=empty(ProductsPanel.class);
+            Class<?>[] signature={Connection.class,int.class};
+            require((boolean)call(panel,"hasNonZeroProductStock",signature,db,1),
+                "Nonzero stock was not detected");
+            require(!(boolean)call(panel,"hasProductInInventoryLots",signature,db,1),
+                "Fresh product unexpectedly has FIFO lots");
+            boolean blocked=false;
+            try{call(panel,"deleteProductIfEmpty",signature,db,1);}
+            catch(SQLException e){blocked=true;}
+            require(blocked,"Deletion with on-hand stock was permitted");
+            require("1".equals(value("SELECT COUNT(*) FROM products WHERE id=1")),
+                "Product with stock was deleted");
+
+            sql("UPDATE products SET quantity=0 WHERE id=1");
+            sql("INSERT INTO inventory_lots(product_id,received_date,initial_quantity,remaining_quantity,unit_cost,source_type) " +
+                "VALUES(1,CURRENT_TIMESTAMP,10,0,5,'MIGRATION')");
+            require(!(boolean)call(panel,"hasNonZeroProductStock",signature,db,1),
+                "Empty stock incorrectly marked nonzero");
+            require((boolean)call(panel,"hasProductInInventoryLots",signature,db,1),
+                "Exhausted FIFO history was not detected");
+            blocked=false;
+            try{call(panel,"deleteProductIfEmpty",signature,db,1);}
+            catch(SQLException e){blocked=true;}
+            require(blocked,"Deletion with historical FIFO lot was permitted");
+            require("1".equals(value("SELECT COUNT(*) FROM inventory_lots WHERE product_id=1")),
+                "Historical FIFO lot was removed");
+
+            sql("DELETE FROM inventory_lots WHERE product_id=1");
+            call(panel,"deleteProductIfEmpty",signature,db,1);
+            require("0".equals(value("SELECT COUNT(*) FROM products WHERE id=1")),
+                "Truly empty product was not deleted");
+        });
         test("completed saves are idempotent", () -> {
             fresh(); completed();
             for(int i=0;i<3;i++) { call(order(true,3,"Completed"),"saveOrder"); require(qty()==7,"Repeated stock decrement"); }
