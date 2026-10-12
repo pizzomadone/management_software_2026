@@ -613,7 +613,7 @@ public class InvoiceDialog extends JDialog {
 
     private void setupNewInvoice() {
         Calendar cal = Calendar.getInstance();
-        numberField.setText("Assigned when saved");
+        numberField.setText("Assigned on issue");
         dateField.setText(dateFormat.format(cal.getTime()));
         statusCombo.setSelectedItem("Draft");
     }
@@ -651,7 +651,6 @@ public class InvoiceDialog extends JDialog {
             // Issued/canceled invoices retain their historical date.
             boolean linkedDraft=linkedOrderLocked && "Draft".equals(invoice.getStatus());
             dateField.setEnabled(linkedDraft);
-            if(linkedDraft) dateField.setText(dateFormat.format(new Date()));
             selectCustomerButton.setEnabled(false);
             itemsTable.setEnabled(false);
 
@@ -802,6 +801,35 @@ public class InvoiceDialog extends JDialog {
         }
     }
 
+    /** A draft keeps an internal reference; fiscal numbering starts at issuance. */
+    static String draftPlaceholder() {
+        return "DRAFT-TMP-" + java.util.UUID.randomUUID();
+    }
+
+    static String draftReference(int invoiceId) {
+        return "DRAFT-" + invoiceId;
+    }
+
+    static String setDraftReference(Connection conn,int invoiceId) throws SQLException {
+        String reference=draftReference(invoiceId);
+        try(PreparedStatement p=conn.prepareStatement(
+                "UPDATE invoices SET number=? WHERE id=? AND status='Draft'")) {
+            p.setString(1,reference);
+            p.setInt(2,invoiceId);
+            if(p.executeUpdate()!=1)
+                throw new SQLException("Invoice draft no longer exists");
+        }
+        return reference;
+    }
+
+    static String issueNumber(Connection conn, Date invoiceDate) throws SQLException {
+        if(invoiceDate==null) throw new SQLException("Invoice date is required");
+        Calendar calendar=Calendar.getInstance();
+        calendar.setTime(invoiceDate);
+        return DatabaseManager.getInstance().getNextInvoiceNumber(
+            conn,calendar.get(Calendar.YEAR));
+    }
+
     /**
      * Update a linked invoice without ever changing an issued/canceled document's date.
      * Draft dates and numbering reflect the chosen invoice date, not the order date.
@@ -812,21 +840,17 @@ public class InvoiceDialog extends JDialog {
         if ("Draft".equals(currentStatus)) {
             if (draftDate==null)
                 throw new SQLException("Invoice date is required");
-            String previousNumber;
             try (PreparedStatement read=conn.prepareStatement(
-                    "SELECT number FROM invoices WHERE id=? AND status='Draft' AND order_id IS NOT NULL")) {
+                    "SELECT id FROM invoices WHERE id=? AND status='Draft' AND order_id IS NOT NULL")) {
                 read.setInt(1,invoiceId);
                 try (ResultSet r=read.executeQuery()) {
                     if(!r.next()) throw new SQLException("Linked invoice draft changed or no longer exists");
-                    previousNumber=r.getString(1);
                 }
             }
-            java.util.Calendar calendar=java.util.Calendar.getInstance();
-            calendar.setTime(draftDate);
-            int year=calendar.get(java.util.Calendar.YEAR);
-            String number=previousNumber;
-            if(!previousNumber.startsWith(year+"/"))
-                number=DatabaseManager.getInstance().getNextInvoiceNumber(conn,year);
+            if ("Canceled".equals(newStatus))
+                throw new SQLException("Delete a draft instead of canceling an unissued invoice");
+            String number="Issued".equals(newStatus)
+                ? issueNumber(conn,draftDate) : draftReference(invoiceId);
 
             try (PreparedStatement write=conn.prepareStatement(
                     "UPDATE invoices SET status=?,date=?,number=? " +
