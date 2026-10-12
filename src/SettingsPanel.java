@@ -82,13 +82,8 @@ public class SettingsPanel extends JPanel {
     private void initComponents() {
         JTabbedPane tabbedPane = new JTabbedPane();
 
-        // Appearance Tab
-        JPanel appearancePanel = createAppearancePanel();
-        tabbedPane.addTab("Appearance", appearancePanel);
-
-        // General Tab
-        JPanel generalPanel = createGeneralPanel();
-        tabbedPane.addTab("General", generalPanel);
+        // General settings: appearance and application options on one screen
+        tabbedPane.addTab("Settings", createCombinedSettingsPanel());
 
         // Company Data Tab
         JPanel companyPanel = createCompanyDataPanel();
@@ -104,6 +99,40 @@ public class SettingsPanel extends JPanel {
 
         add(tabbedPane, BorderLayout.CENTER);
         add(buttonPanel, BorderLayout.SOUTH);
+    }
+
+    private JPanel createCombinedSettingsPanel() {
+        JPanel groupsPanel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.weightx = 1.0;
+        gbc.anchor = GridBagConstraints.NORTHWEST;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.insets = new Insets(8, 8, 8, 8);
+
+        JPanel appearancePanel = createAppearancePanel();
+        appearancePanel.setBorder(BorderFactory.createTitledBorder("Appearance"));
+        gbc.gridy = 0;
+        groupsPanel.add(appearancePanel, gbc);
+
+        JPanel generalPanel = createGeneralPanel();
+        generalPanel.setBorder(BorderFactory.createTitledBorder("General"));
+        gbc.gridy = 1;
+        groupsPanel.add(generalPanel, gbc);
+
+        gbc.gridy = 2;
+        gbc.weighty = 1.0;
+        gbc.fill = GridBagConstraints.BOTH;
+        groupsPanel.add(Box.createVerticalGlue(), gbc);
+
+        JScrollPane scrollPane = new JScrollPane(groupsPanel);
+        scrollPane.setBorder(BorderFactory.createEmptyBorder());
+        scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+
+        JPanel container = new JPanel(new BorderLayout());
+        container.add(scrollPane, BorderLayout.CENTER);
+        return container;
     }
 
     private JPanel createAppearancePanel() {
