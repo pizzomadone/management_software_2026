@@ -96,13 +96,10 @@ public class SettingsPanel extends JPanel {
 
         // Buttons
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        JButton applyButton = new JButton("Apply");
         JButton saveButton = new JButton("Save");
 
-        applyButton.addActionListener(e -> applyAllSettings());
         saveButton.addActionListener(e -> saveAllSettings());
 
-        buttonPanel.add(applyButton);
         buttonPanel.add(saveButton);
 
         add(tabbedPane, BorderLayout.CENTER);
@@ -421,26 +418,6 @@ public class SettingsPanel extends JPanel {
         Font newFont = new Font(Font.SANS_SERIF, Font.PLAIN, fontSize);
         previewLabel.setFont(newFont);
         previewLabel.setText(I18n.tr("Sample text - Size") + ": " + fontSize);
-    }
-
-    private void applyAllSettings() {
-        try {
-            updateSettingsFromFields();
-            if (currencyChangeDeferredForBackup) {
-                currencyChangeDeferredForBackup = false;
-                return;
-            }
-            boolean currencyChanged = currencyChangedDuringUpdate;
-            applySettings();
-            if (!currencyChanged) {
-                Dialogs.showMessageDialog(this,
-                    I18n.tr("Settings applied successfully!"),
-                    I18n.tr("Settings"), JOptionPane.INFORMATION_MESSAGE);
-            }
-        } catch (IllegalArgumentException e) {
-            Dialogs.showMessageDialog(this, e.getMessage(),
-                "Error", JOptionPane.ERROR_MESSAGE);
-        }
     }
 
     private void saveAllSettings() {
