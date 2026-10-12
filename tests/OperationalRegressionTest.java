@@ -424,6 +424,34 @@ public class OperationalRegressionTest extends RegressionTest {
             require(pendingLabels.stream().anyMatch(l->l.getText().contains("10 "+I18n.tr("days old"))),
                 "Pending order age is wrong for numeric stored dates");
         });
+        test("dashboard tooltip formulas are localized in every supported language",()->{
+            String previous=I18n.getLanguage();
+            try {
+                for(String language:List.of("en","it","es","fr","de","pl","pt_BR")) {
+                    I18n.setLanguage(language);
+                    for(String key:List.of(
+                            "tooltip.kpi.warehouseValue","tooltip.kpi.warehouseSaleValue",
+                            "tooltip.kpi.lowStock","tooltip.kpi.zeroStock",
+                            "tooltip.kpi.monthRevenue","tooltip.kpi.monthInvoiced",
+                            "tooltip.kpi.pendingOrders","tooltip.kpi.avgMargin",
+                            "tooltip.kpi.missingCost","tooltip.kpi.negativeStock",
+                            "tooltip.dashboard.topProducts","tooltip.dashboard.abcAnalysis")) {
+                        String explanation=I18n.tr(key);
+                        require(explanation.startsWith("<html>") && explanation.endsWith("</html>"),
+                            "Missing translated dashboard tooltip: "+language+" "+key);
+                    }
+                }
+                I18n.setLanguage("it");
+                require(I18n.tr("tooltip.kpi.monthRevenue").contains("data di completamento"),
+                    "Sales KPI tooltip does not explain its completion-date basis");
+                require(I18n.tr("tooltip.kpi.monthInvoiced").contains("valute diverse"),
+                    "Invoiced KPI tooltip does not explain separate currencies");
+                require(I18n.tr("tooltip.kpi.avgMargin").contains("ponderato"),
+                    "Stock margin tooltip does not explain weighted calculation");
+            } finally {
+                I18n.setLanguage(previous);
+            }
+        });
         test("monthly invoiced total includes the exact first millisecond",()->{
             fresh();Calendar month=Calendar.getInstance();month.set(Calendar.DAY_OF_MONTH,1);month.set(Calendar.HOUR_OF_DAY,0);month.set(Calendar.MINUTE,0);month.set(Calendar.SECOND,0);month.set(Calendar.MILLISECOND,0);
             sql("INSERT INTO invoices(number,date,customer_id,taxable_amount,vat,total,status,currency_code) VALUES('START',"+month.getTimeInMillis()+",1,10,0,10,'Issued','EUR'),('CANCELLED',"+month.getTimeInMillis()+",1,900,0,900,'Cancelled','EUR')");
