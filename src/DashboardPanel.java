@@ -397,6 +397,7 @@ public class DashboardPanel extends JPanel {
         topProductsTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         TableSorterUtil.enableSorting(topProductsTable);
         I18n.localize(topProductsTable);
+        I18n.localize(topProductsTable.getTableHeader());
 
         topProductsTable.getColumnModel().getColumn(0).setPreferredWidth(30);
         topProductsTable.getColumnModel().getColumn(1).setPreferredWidth(200);
@@ -428,6 +429,7 @@ public class DashboardPanel extends JPanel {
         abcAnalysisTable.getTableHeader().setToolTipText("tooltip.dashboard.abcAnalysis");
         TableSorterUtil.enableSorting(abcAnalysisTable);
         I18n.localize(abcAnalysisTable);
+        I18n.localize(abcAnalysisTable.getTableHeader());
 
         JScrollPane scrollPane = new JScrollPane(abcAnalysisTable);
         configureDashboardScrollPane(scrollPane);
