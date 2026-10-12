@@ -531,6 +531,7 @@ public class MainWindow extends JFrame {
                 Window parentWindow = SwingUtilities.getWindowAncestor(customersPanel);
                 CustomerDialog dialog = new CustomerDialog((JFrame) parentWindow, null);
                 dialog.setVisible(true);
+                if (dialog.isCustomerSaved()) customersPanel.refreshData();
             }
         });
     }
@@ -542,28 +543,43 @@ public class MainWindow extends JFrame {
                 Window parentWindow = SwingUtilities.getWindowAncestor(productsPanel);
                 ProductDialog dialog = new ProductDialog((JFrame) parentWindow, null);
                 dialog.setVisible(true);
+                if (dialog.isProductSaved()) {
+                    productsPanel.loadProducts();
+                    refreshDashboard();
+                }
             }
         });
     }
     
-    private void createNewOrder() {
+    public void createNewOrder() {
         showPanel("ORDERS");
         SwingUtilities.invokeLater(() -> {
             if (ordersPanel != null) {
                 Window parentWindow = SwingUtilities.getWindowAncestor(ordersPanel);
                 OrderDialog dialog = new OrderDialog((JFrame) parentWindow, null);
                 dialog.setVisible(true);
+                if (dialog.isOrderSaved()) {
+                    Integer savedOrderId = dialog.getSavedOrderId();
+                    if (savedOrderId != null) ordersPanel.selectOrderById(savedOrderId);
+                    else ordersPanel.refreshData();
+                    refreshProductsPanel();
+                }
             }
         });
     }
     
-    private void createNewInvoice() {
+    public void createNewInvoice() {
         showPanel("INVOICES");
         SwingUtilities.invokeLater(() -> {
             if (invoicesPanel != null) {
                 Window parentWindow = SwingUtilities.getWindowAncestor(invoicesPanel);
                 InvoiceDialog dialog = new InvoiceDialog((JFrame) parentWindow, null);
                 dialog.setVisible(true);
+                if (dialog.isInvoiceSaved()) {
+                    invoicesPanel.loadInvoices();
+                    if (ordersPanel != null) ordersPanel.refreshData();
+                    refreshProductsPanel();
+                }
             }
         });
     }

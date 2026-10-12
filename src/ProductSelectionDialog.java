@@ -295,7 +295,7 @@ public class ProductSelectionDialog extends JDialog {
             String query = """
                 SELECT id, code, name, description, sale_price_inc_vat, quantity, reserved_quantity
                 FROM products
-                WHERE """ + (activeOnly ? "active=1 AND " : "") + """
+                WHERE """ + (activeOnly ? " active=1 AND " : " ") + """
                       (LOWER(code) LIKE LOWER(?)
                    OR LOWER(name) LIKE LOWER(?)
                    OR LOWER(description) LIKE LOWER(?))

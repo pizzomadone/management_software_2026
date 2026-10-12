@@ -657,7 +657,8 @@ public class StockManager {
             try (ResultSet r = p.executeQuery()) {
                 if (!r.next()) throw new SQLException("Movement no longer exists");
                 if ("ORDER".equals(r.getString(1)) || "SUPPLIER_ORDER".equals(r.getString(1)) || "INVENTORY_ADJUSTMENT".equals(r.getString(1))
-                        || "ORDER_REVERSAL".equals(r.getString(1)) || "MOVEMENT_REVERSAL".equals(r.getString(1)))
+                        || "ORDER_REVERSAL".equals(r.getString(1)) || "MOVEMENT_REVERSAL".equals(r.getString(1))
+                        || "SUPPLIER_RETURN".equals(r.getString(1)) || "SUPPLIER_RETURN_REVERSAL".equals(r.getString(1)))
                     throw new SQLException("Edit the source document to change this automatic movement");
             }
         }

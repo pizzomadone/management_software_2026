@@ -161,7 +161,35 @@ public final class InventoryLotManager {
         for(Integer id:totals.keySet()) refreshLastPurchaseCost(c,id,orderId);
     }
 
+    /**
+     * Reversing a received supplier order is atomic even for direct callers.
+     * Callers deleting/editing an order or deleting a supplier already have
+     * a surrounding transaction; in that case the savepoint preserves it.
+     */
     public static void reverseSupplierOrder(Connection c, int orderId, String number)
+            throws SQLException {
+        boolean ownTransaction=c.getAutoCommit();
+        if (ownTransaction) DatabaseManager.beginTransaction(c);
+        Savepoint checkpoint=null;
+        try {
+            checkpoint=c.setSavepoint();
+            reverseSupplierOrderInTransaction(c,orderId,number);
+            c.releaseSavepoint(checkpoint);
+            checkpoint=null;
+            if (ownTransaction) c.commit();
+        } catch (SQLException | RuntimeException error) {
+            if (checkpoint!=null) {
+                c.rollback(checkpoint);
+                c.releaseSavepoint(checkpoint);
+            }
+            if (ownTransaction) c.rollback();
+            throw error;
+        } finally {
+            if (ownTransaction) c.setAutoCommit(true);
+        }
+    }
+
+    private static void reverseSupplierOrderInTransaction(Connection c, int orderId, String number)
             throws SQLException {
         try(PreparedStatement p=c.prepareStatement("""
                 SELECT d.id
@@ -205,6 +233,26 @@ public final class InventoryLotManager {
             }
         }
 
+        // Preflight ALL purchase lines together. A receipt cannot be canceled if
+        // any of its physical units are already reserved by customer orders.
+        try(PreparedStatement p=c.prepareStatement("""
+                SELECT l.product_id, SUM(l.initial_quantity) AS units_to_remove
+                FROM inventory_lots l
+                JOIN supplier_order_details d ON d.id=l.supplier_order_detail_id
+                WHERE d.order_id=? GROUP BY l.product_id
+                """)) {
+            p.setInt(1,orderId);
+            try(ResultSet r=p.executeQuery()) {
+                while(r.next()) {
+                    long amount=r.getLong("units_to_remove");
+                    int available=StockManager.getAvailableStock(c,r.getInt("product_id"));
+                    if(amount>available)
+                        throw new SQLException(I18n.format(
+                            "Insufficient quantity. Current availability: {0}",available));
+                }
+            }
+        }
+
         java.util.LinkedHashSet<Integer> products=new java.util.LinkedHashSet<>();
         try(PreparedStatement p=c.prepareStatement("""
                 SELECT l.id,l.product_id,l.initial_quantity
@@ -217,9 +265,14 @@ public final class InventoryLotManager {
                 while(r.next()) {
                     int productId=r.getInt("product_id");
                     products.add(productId);
-                    try(PreparedStatement u=c.prepareStatement(
-                            "UPDATE products SET quantity=quantity-? WHERE id=?")) {
-                        u.setInt(1,r.getInt("initial_quantity"));u.setInt(2,productId);u.executeUpdate();
+                    try(PreparedStatement u=c.prepareStatement("""
+                            UPDATE products SET quantity=quantity-?
+                            WHERE id=? AND quantity-reserved_quantity>=?
+                            """)) {
+                        int quantity=r.getInt("initial_quantity");
+                        u.setInt(1,quantity);u.setInt(2,productId);u.setInt(3,quantity);
+                        if(u.executeUpdate()!=1)
+                            throw new SQLException("Stock availability changed while reversing supplier receipt.");
                     }
                 }
             }
@@ -460,6 +513,10 @@ public final class InventoryLotManager {
     public static void reverseManualMovement(Connection c,int movementId,int productId,
                                              String type,int quantity) throws SQLException {
         if("INWARD".equals(type)) {
+            int available=StockManager.getAvailableStock(c,productId);
+            if(quantity>available)
+                throw new SQLException(I18n.format(
+                    "Insufficient quantity. Current availability: {0}", available));
             try(PreparedStatement p=c.prepareStatement("""
                     SELECT id,initial_quantity,remaining_quantity FROM inventory_lots
                     WHERE warehouse_movement_id=?
@@ -508,7 +565,8 @@ public final class InventoryLotManager {
                     if (!r.next()) throw new SQLException("Movement no longer exists");
                     String document=r.getString("document_type");
                     if (!"OUTWARD".equals(r.getString("type")) || "ORDER".equals(document)
-                            || "SUPPLIER_ORDER".equals(document) || "ORDER_REVERSAL".equals(document)
+                            || "SUPPLIER_ORDER".equals(document) || "SUPPLIER_RETURN".equals(document)
+                            || "SUPPLIER_RETURN_REVERSAL".equals(document) || "ORDER_REVERSAL".equals(document)
                             || "MOVEMENT_REVERSAL".equals(document))
                         throw new SQLException("Only manual outward movements or stock reductions can be reversed here.");
                     if (r.getBoolean("reversed")) throw new SQLException("This movement has already been reversed.");
@@ -569,6 +627,10 @@ public final class InventoryLotManager {
                 Numbers.nonNegative(cost),"INVENTORY_ADJUSTMENT");
         } else {
             int qty=Math.negateExact(delta);
+            int available=StockManager.getAvailableStock(c,productId);
+            if(qty>available)
+                throw new SQLException(I18n.format(
+                    "Insufficient quantity. Current availability: {0}", available));
             consumeForMovement(c,movementId,productId,qty);
             try(PreparedStatement u=c.prepareStatement("UPDATE products SET quantity=quantity-? WHERE id=?")) {
                 u.setInt(1,qty);u.setInt(2,productId);u.executeUpdate();
@@ -695,7 +757,7 @@ public final class InventoryLotManager {
         }
     }
 
-    private static void refreshLastPurchaseCost(Connection c,int productId,int excludedOrderId)
+    static void refreshLastPurchaseCost(Connection c,int productId,int excludedOrderId)
             throws SQLException {
         Double cost=null;
         try(PreparedStatement p=c.prepareStatement("""
@@ -703,6 +765,9 @@ public final class InventoryLotManager {
                 FROM supplier_order_details d
                 JOIN supplier_orders o ON o.id=d.order_id
                 WHERE d.product_id=? AND o.status='Completed' AND o.id<>?
+                  AND COALESCE((SELECT SUM(ri.quantity) FROM supplier_return_items ri
+                      JOIN supplier_returns sr ON sr.id=ri.return_id
+                      WHERE ri.supplier_order_detail_id=d.id AND sr.reversed_at IS NULL),0)<d.quantity
                 ORDER BY o.received_date DESC,o.id DESC,d.id DESC LIMIT 1
                 """)) {
             p.setInt(1,productId);p.setInt(2,excludedOrderId);

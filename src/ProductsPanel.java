@@ -1021,12 +1021,14 @@ public class ProductsPanel extends JPanel {
                 boolean hasSupplierOrders = hasProductInSupplierOrders(conn, id);
                 boolean hasSupplierLinks = hasProductInSupplierLinks(conn, id);
                 boolean hasWarehouseMovements = hasProductInWarehouseMovements(conn, id);
+                boolean hasStock = hasNonZeroProductStock(conn, id);
+                boolean hasFifoLots = hasProductInInventoryLots(conn, id);
                 boolean hasMinStock = hasProductInMinStock(conn, id);
                 boolean hasReservations = hasProductInReservations(conn, id);
                 boolean hasNotifications = hasProductInNotifications(conn, id);
                 
                 boolean hasCriticalData = hasOrders || hasInvoices || hasSupplierOrders ||
-                    hasWarehouseMovements || hasReservations;
+                    hasWarehouseMovements || hasReservations || hasStock || hasFifoLots;
                 if (hasCriticalData) {
                     StringBuilder message = new StringBuilder();
                     message.append("Product '").append(name).append("' cannot be deleted because it is part of critical business history:\n");
@@ -1037,7 +1039,9 @@ public class ProductsPanel extends JPanel {
                     if (hasSupplierLinks) message.append("- Supplier associations\n");
                     if (hasWarehouseMovements) message.append("- Warehouse movements\n");
                     if (hasReservations) message.append("- Active or historical stock reservations\n");
-                    message.append("\nDeleting it would alter orders, invoices or stock history. " +
+                    if (hasStock) message.append("- Non-zero stock or reserved units\n");
+                    if (hasFifoLots) message.append("- FIFO inventory lots, including historical lots\n");
+                    message.append("\nDeleting it would erase stock or business history. " +
                         "Set the product as inactive instead.");
                     Dialogs.showMessageDialog(this,
                         message.toString(),
@@ -1070,18 +1074,14 @@ public class ProductsPanel extends JPanel {
                     
                 if (result == JOptionPane.YES_OPTION) {
                     java.util.List<String> imageFiles = ProductImageStore.getInstance().filenamesForProduct(conn, id);
-                    String query = "DELETE FROM products WHERE id = ?";
-                    try (PreparedStatement pstmt = conn.prepareStatement(query)) {
-                        pstmt.setInt(1, id);
-                        pstmt.executeUpdate();
-                        ProductImageStore.getInstance().deleteNamedFiles(imageFiles);
-                        loadProducts();
-                        
-                        Dialogs.showMessageDialog(this,
-                            "Product deleted successfully",
-                            "Success",
-                            JOptionPane.INFORMATION_MESSAGE);
-                    }
+                    deleteProductIfEmpty(conn, id);
+                    ProductImageStore.getInstance().deleteNamedFiles(imageFiles);
+                    loadProducts();
+
+                    Dialogs.showMessageDialog(this,
+                        "Product deleted successfully",
+                        "Success",
+                        JOptionPane.INFORMATION_MESSAGE);
                 }
             } catch (SQLException e) {
                 e.printStackTrace();
@@ -1099,8 +1099,7 @@ public class ProductsPanel extends JPanel {
             String[] statements = {
                 "DELETE FROM product_suppliers WHERE product_id = ?",
                 "DELETE FROM warehouse_notifications WHERE product_id = ?",
-                "DELETE FROM minimum_stock WHERE product_id = ?",
-                "DELETE FROM products WHERE id = ?"
+                "DELETE FROM minimum_stock WHERE product_id = ?"
             };
             for (String statement : statements) {
                 try (PreparedStatement pstmt = conn.prepareStatement(statement)) {
@@ -1108,6 +1107,7 @@ public class ProductsPanel extends JPanel {
                     pstmt.executeUpdate();
                 }
             }
+            deleteProductIfEmpty(conn, productId);
             conn.commit();
             ProductImageStore.getInstance().deleteNamedFiles(imageFiles);
         } catch (SQLException e) {
@@ -1115,6 +1115,33 @@ public class ProductsPanel extends JPanel {
             throw e;
         } finally {
             conn.setAutoCommit(true);
+        }
+    }
+
+    private boolean hasNonZeroProductStock(Connection conn, int productId) throws SQLException {
+        return hasRows(conn,
+            "SELECT COUNT(*) FROM products WHERE id = ? AND (quantity <> 0 OR reserved_quantity <> 0)",
+            productId);
+    }
+
+    private boolean hasProductInInventoryLots(Connection conn, int productId) throws SQLException {
+        return hasRows(conn, "SELECT COUNT(*) FROM inventory_lots WHERE product_id = ?", productId);
+    }
+
+    // Recheck immediately before deleting, including in the cleanup transaction,
+    // so a stale dialog cannot erase on-hand stock or FIFO history.
+    private void deleteProductIfEmpty(Connection conn, int productId) throws SQLException {
+        String query = """
+            DELETE FROM products
+            WHERE id = ? AND quantity = 0 AND reserved_quantity = 0
+              AND NOT EXISTS (SELECT 1 FROM inventory_lots WHERE product_id = ?)
+            """;
+        try (PreparedStatement stmt = conn.prepareStatement(query)) {
+            stmt.setInt(1, productId);
+            stmt.setInt(2, productId);
+            if (stmt.executeUpdate() != 1) {
+                throw new SQLException("Product has stock or FIFO history; deletion is blocked.");
+            }
         }
     }
 

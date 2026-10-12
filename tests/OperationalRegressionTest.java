@@ -183,6 +183,78 @@ public class OperationalRegressionTest extends RegressionTest {
             call(productEditor(15),"saveProduct");require("1".equals(value("SELECT COUNT(*) FROM warehouse_movements")),"Unchanged save duplicated adjustment");
             call(productEditor(8),"saveProduct");require("7".equals(value("SELECT quantity FROM warehouse_movements ORDER BY id DESC LIMIT 1")),"Updated count used stale product quantity");
         });
+        test("product stock reductions respect reserved units and preserve FIFO",()->{
+            fresh();
+            seedOpeningLots();
+            StockManager.createOrUpdateReservation(db,1,"ORDER",77,8,"");
+            require(qty()==10 && "8".equals(value("SELECT reserved_quantity FROM products WHERE id=1")),
+                "Invalid starting stock or reservation");
+
+            PD rejected=productEditor(2);
+            rejectedSave(rejected,"saveProduct","productSaved");
+            require(qty()==10,"Rejected stock edit changed physical quantity");
+            require("8".equals(value("SELECT reserved_quantity FROM products WHERE id=1")),
+                "Rejected stock edit changed existing reservations");
+            require("0".equals(value("SELECT COUNT(*) FROM warehouse_movements")),
+                "Rejected stock edit created a warehouse movement");
+            require("10".equals(value("SELECT remaining_quantity FROM inventory_lots WHERE product_id=1")),
+                "Rejected stock edit consumed FIFO stock");
+            require("0".equals(value("SELECT COUNT(*) FROM minimum_stock")),
+                "Rejected stock edit saved unrelated product settings");
+
+            PD accepted=productEditor(8);
+            call(accepted,"saveProduct");
+            require(Boolean.TRUE.equals(get(accepted,"productSaved")),
+                "Valid stock adjustment was not saved");
+            require(qty()==8 && StockManager.getAvailableStock(db,1)==0,
+                "Valid adjustment failed to respect reservations");
+            require("8".equals(value("SELECT remaining_quantity FROM inventory_lots WHERE product_id=1")),
+                "Valid adjustment did not consume two FIFO units");
+            require("2".equals(value("SELECT quantity FROM warehouse_movements WHERE product_id=1")),
+                "Valid adjustment recorded an incorrect movement");
+        });
+        test("inventory layer rejects direct reductions of reserved stock",()->{
+            fresh();
+            seedOpeningLots();
+            StockManager.createOrUpdateReservation(db,1,"ORDER",77,8,"");
+            sql("INSERT INTO warehouse_movements(id,product_id,date,type,quantity,reason) " +
+                "VALUES(91,1,CURRENT_TIMESTAMP,'OUTWARD',9,'TEST')");
+            boolean blocked=false;
+            try {
+                InventoryLotManager.adjustProductStock(db,91,1,-9,new java.util.Date(),5);
+            } catch(SQLException expected) {
+                blocked=true;
+            }
+            require(blocked && qty()==10,"Direct stock reduction ignored reservations");
+            require("10".equals(value("SELECT remaining_quantity FROM inventory_lots WHERE product_id=1")),
+                "Rejected direct reduction altered FIFO layers");
+            require("0".equals(value("SELECT COUNT(*) FROM inventory_lot_consumptions WHERE warehouse_movement_id=91")),
+                "Rejected direct reduction inserted FIFO consumption history");
+        });
+        test("reserved stock blocks reversal of a manual inward movement",()->{
+            fresh();
+            sql("UPDATE products SET quantity=0 WHERE id=1");
+            sql("INSERT INTO warehouse_movements(id,product_id,date,type,quantity,reason) " +
+                "VALUES(92,1,CURRENT_TIMESTAMP,'INWARD',10,'TEST')");
+            InventoryLotManager.applyManualMovement(db,92,1,"INWARD",10,new java.util.Date(),5);
+            StockManager.createOrUpdateReservation(db,1,"ORDER",77,8,"");
+
+            boolean blocked=false;
+            try {
+                InventoryLotManager.reverseManualMovement(db,92,1,"INWARD",10);
+            } catch(SQLException expected) {
+                blocked=true;
+            }
+            require(blocked && qty()==10 && StockManager.getAvailableStock(db,1)==2,
+                "Reserved goods were removed by reversing an inward movement");
+            require("10".equals(value("SELECT remaining_quantity FROM inventory_lots WHERE warehouse_movement_id=92")),
+                "Rejected reversal deleted its FIFO lot");
+
+            StockManager.cancelReservation(db,"ORDER",77);
+            InventoryLotManager.reverseManualMovement(db,92,1,"INWARD",10);
+            require(qty()==0 && "0".equals(value("SELECT COUNT(*) FROM inventory_lots WHERE warehouse_movement_id=92")),
+                "Valid inward reversal did not restore stock");
+        });
         test("edited product selection can be restored after table refresh",()->{
             fresh();
             ProductsPanel panel=new ProductsPanel();
@@ -194,6 +266,30 @@ public class OperationalRegressionTest extends RegressionTest {
             DefaultTableModel model=(DefaultTableModel)table.getModel();
             require(((Number)model.getValueAt(modelRow,0)).intValue()==1,
                 "Wrong product remained selected after refresh");
+        });
+        test("new customer order remains highlighted after returning to Orders panel",()->{
+            fresh();
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat) " +
+                "VALUES(42,1,'2020-01-01','Reservation',0,0)");
+            OD created=order(false,2,"New");
+            call(created,"saveOrder");
+            Integer savedId=created.getSavedOrderId();
+            require(created.isOrderSaved() && savedId!=null && savedId>42,
+                "Created customer order did not expose the saved database ID");
+            require(savedId.toString().equals(value("SELECT id FROM orders WHERE status='New'")),
+                "The saved ID does not identify the newly created order");
+
+            OrdersPanel panel=new OrdersPanel();
+            JTable table=(JTable)get(panel,"ordersTable");
+            table.getRowSorter().toggleSortOrder(0);
+            panel.selectOrderById(savedId);
+            int selected=table.getSelectedRow();
+            require(selected>=0 && table.isRowSelected(selected),
+                "New customer order is not visually selected after refresh");
+            int modelRow=table.convertRowIndexToModel(selected);
+            DefaultTableModel model=(DefaultTableModel)table.getModel();
+            require(savedId.equals(model.getValueAt(modelRow,0)),
+                "Selection points to a different customer order after sorting");
         });
         test("edited supplier order selection can be restored after refresh",()->{
             fresh();
@@ -327,6 +423,43 @@ public class OperationalRegressionTest extends RegressionTest {
                 "Pending order shows raw or invalid numeric date");
             require(pendingLabels.stream().anyMatch(l->l.getText().contains("10 "+I18n.tr("days old"))),
                 "Pending order age is wrong for numeric stored dates");
+        });
+        test("dashboard tooltip formulas are localized in every supported language",()->{
+            String previous=I18n.getLanguage();
+            try {
+                for(String language:List.of("en","it","es","fr","de","pl","pt_BR")) {
+                    I18n.setLanguage(language);
+                    for(String key:List.of(
+                            "tooltip.kpi.warehouseValue","tooltip.kpi.warehouseSaleValue",
+                            "tooltip.kpi.lowStock","tooltip.kpi.zeroStock",
+                            "tooltip.kpi.monthRevenue","tooltip.kpi.monthInvoiced",
+                            "tooltip.kpi.pendingOrders","tooltip.kpi.avgMargin",
+                            "tooltip.kpi.missingCost","tooltip.kpi.negativeStock",
+                            "tooltip.dashboard.topProducts","tooltip.dashboard.abcAnalysis")) {
+                        String explanation=I18n.tr(key);
+                        require(explanation.startsWith("<html>") && explanation.endsWith("</html>"),
+                            "Missing translated dashboard tooltip: "+language+" "+key);
+                    }
+                }
+                I18n.setLanguage("it");
+                require(I18n.tr("tooltip.kpi.monthRevenue").contains("data di completamento"),
+                    "Sales KPI tooltip does not explain its completion-date basis");
+                require(I18n.tr("tooltip.kpi.monthInvoiced").contains("valute diverse"),
+                    "Invoiced KPI tooltip does not explain separate currencies");
+                require(I18n.tr("tooltip.kpi.avgMargin").contains("ponderato"),
+                    "Stock margin tooltip does not explain weighted calculation");
+                DashboardPanel dash=new DashboardPanel(null);
+                require(((JLabel)get(dash,"zeroCostCountLabel")).getToolTipText().startsWith("<html>"),
+                    "Missing supplier cost explanation is not visible in the dashboard");
+                require(((JLabel)get(dash,"negativeStockCountLabel")).getToolTipText().startsWith("<html>"),
+                    "Negative-stock explanation is not visible in the dashboard");
+                require(((JTable)get(dash,"topProductsTable")).getTableHeader().getToolTipText().startsWith("<html>"),
+                    "Top-products calculation tooltip was not localized");
+                require(((JTable)get(dash,"abcAnalysisTable")).getTableHeader().getToolTipText().startsWith("<html>"),
+                    "ABC calculation tooltip was not localized");
+            } finally {
+                I18n.setLanguage(previous);
+            }
         });
         test("monthly invoiced total includes the exact first millisecond",()->{
             fresh();Calendar month=Calendar.getInstance();month.set(Calendar.DAY_OF_MONTH,1);month.set(Calendar.HOUR_OF_DAY,0);month.set(Calendar.MINUTE,0);month.set(Calendar.SECOND,0);month.set(Calendar.MILLISECOND,0);

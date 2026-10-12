@@ -50,7 +50,9 @@ public final class DatabaseMigrationManager {
         new Migration("019", "Reclassify legacy new orders and reserve fully available stock",
             DatabaseMigrationManager::migrateCustomerOrderReservationStates),
         new Migration("020", "Store actual customer order completion date",
-            DatabaseMigrationManager::migrateCustomerOrderCompletionDate)
+            DatabaseMigrationManager::migrateCustomerOrderCompletionDate),
+        new Migration("021", "Record partial and complete supplier returns",
+            SupplierReturnManager::installSchema)
     );
 
     private DatabaseMigrationManager() {}

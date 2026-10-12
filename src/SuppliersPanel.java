@@ -231,6 +231,44 @@ public class SuppliersPanel extends JPanel {
         }
     }
 
+    /** Bounded, word-wrapped explanatory text for destructive supplier actions. */
+    private JComponent supplierDeletionMessage(String text) {
+        Rectangle usable = getGraphicsConfiguration() == null
+            ? GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds()
+            : getGraphicsConfiguration().getBounds();
+        if (getGraphicsConfiguration() != null) {
+            Insets insets = Toolkit.getDefaultToolkit().getScreenInsets(getGraphicsConfiguration());
+            usable = new Rectangle(usable.x + insets.left, usable.y + insets.top,
+                usable.width - insets.left - insets.right,
+                usable.height - insets.top - insets.bottom);
+        }
+
+        int maxWidth = Math.max(240, Math.min(680, usable.width - 180));
+        int maxHeight = Math.max(120, Math.min(340, usable.height - 240));
+        JTextArea area = new JTextArea(text);
+        area.setEditable(false);
+        area.setFocusable(false);
+        area.setLineWrap(true);
+        area.setWrapStyleWord(true);
+        area.setFont(UIManager.getFont("Label.font"));
+        area.setOpaque(false);
+        area.setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));
+        area.setSize(new Dimension(maxWidth, Integer.MAX_VALUE / 4));
+        int preferredHeight = area.getPreferredSize().height;
+        if (preferredHeight <= maxHeight) {
+            area.setPreferredSize(new Dimension(maxWidth, Math.max(preferredHeight, area.getFontMetrics(area.getFont()).getHeight())));
+            return area;
+        }
+        JScrollPane scroll = new JScrollPane(area,
+            JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scroll.setPreferredSize(new Dimension(maxWidth + 16, maxHeight));
+        scroll.setBorder(BorderFactory.createEmptyBorder());
+        scroll.getViewport().setOpaque(false);
+        scroll.setOpaque(false);
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
+        return scroll;
+    }
+
     private void deleteSelectedSupplier() {
         int selectedRow = suppliersTable.getSelectedRow();
         if (selectedRow != -1) {
@@ -270,8 +308,8 @@ public class SuppliersPanel extends JPanel {
 
                     String[] options = {I18n.tr("Keep Supplier and Records"), I18n.tr("Delete Supplier and All Related Data")};
                     int choice = Dialogs.showOptionDialog(this,
-                        message.toString(),
-                        I18n.tr("Cannot Delete Supplier"),
+                        supplierDeletionMessage(message.toString()),
+                        I18n.tr("Confirm Deletion"),
                         JOptionPane.YES_NO_OPTION,
                         JOptionPane.WARNING_MESSAGE,
                         null, options, options[0]);
@@ -311,7 +349,89 @@ public class SuppliersPanel extends JPanel {
         }
     }
 
+
+    /**
+     * Read-only preflight for dependencies which make the existing cascade
+     * impossible. The transactional deletion retains its own final safeguards.
+     */
+    static String supplierDeletionBlockReason(Connection conn, int supplierId) throws SQLException {
+        if (hasSupplierDeletionDependency(conn, """
+                SELECT 1 FROM supplier_returns sr
+                JOIN supplier_orders o ON o.id=sr.order_id
+                WHERE o.supplier_id=? LIMIT 1
+                """, supplierId))
+            return I18n.tr("Cannot delete this supplier: recorded returns, including reversed returns, must remain in history.");
+
+        if (hasSupplierDeletionDependency(conn, """
+                SELECT 1 FROM inventory_lot_consumptions x
+                JOIN inventory_lots l ON l.id=x.lot_id
+                JOIN supplier_order_details d ON d.id=l.supplier_order_detail_id
+                JOIN supplier_orders o ON o.id=d.order_id
+                WHERE o.supplier_id=? LIMIT 1
+                """, supplierId))
+            return I18n.tr("Cannot delete this supplier: purchased goods have already been sold or moved and have FIFO history.");
+
+        if (hasSupplierDeletionDependency(conn, """
+                SELECT 1 FROM supplier_order_details d
+                JOIN supplier_orders o ON o.id=d.order_id
+                LEFT JOIN inventory_lots l ON l.supplier_order_detail_id=d.id
+                WHERE o.supplier_id=? AND o.status='Completed'
+                GROUP BY d.id HAVING COUNT(l.id)=0
+                LIMIT 1
+                """, supplierId) || hasSupplierDeletionDependency(conn, """
+                SELECT 1 FROM inventory_lots l
+                JOIN supplier_order_details d ON d.id=l.supplier_order_detail_id
+                JOIN supplier_orders o ON o.id=d.order_id
+                WHERE o.supplier_id=? AND o.status='Completed'
+                  AND l.remaining_quantity<>l.initial_quantity LIMIT 1
+                """, supplierId))
+            return I18n.tr("Cannot delete this supplier: completed purchases have missing or depleted original FIFO lots.");
+
+        // Only lots of completed supplier orders are removed by the current
+        // cascade. Any other lot still referencing this supplier prevents it.
+        if (hasSupplierDeletionDependency(conn, """
+                SELECT 1 FROM inventory_lots l
+                LEFT JOIN supplier_order_details d ON d.id=l.supplier_order_detail_id
+                LEFT JOIN supplier_orders o ON o.id=d.order_id
+                WHERE l.supplier_id=?
+                  AND (o.id IS NULL OR o.supplier_id<>l.supplier_id
+                       OR o.status<>'Completed') LIMIT 1
+                """, supplierId) || hasSupplierDeletionDependency(conn, """
+                SELECT 1 FROM inventory_lots l
+                JOIN supplier_order_details d ON d.id=l.supplier_order_detail_id
+                JOIN supplier_orders o ON o.id=d.order_id
+                WHERE o.supplier_id=? AND o.status<>'Completed' LIMIT 1
+                """, supplierId))
+            return I18n.tr("Cannot delete this supplier: historical FIFO lots still reference this supplier.");
+
+        return null;
+    }
+
+    private static boolean hasSupplierDeletionDependency(Connection conn, String query,
+                                                         int supplierId) throws SQLException {
+        try (PreparedStatement p = conn.prepareStatement(query)) {
+            p.setInt(1, supplierId);
+            try (ResultSet r = p.executeQuery()) {
+                return r.next();
+            }
+        }
+    }
+
     private void performCascadeDelete(Connection conn, int id, String name) {
+        try {
+            String blockReason = supplierDeletionBlockReason(conn, id);
+            if (blockReason != null) {
+                Dialogs.showMessageDialog(this, supplierDeletionMessage(blockReason),
+                    I18n.tr("Cannot Delete Supplier"), JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+        } catch (SQLException e) {
+            Dialogs.showMessageDialog(this,
+                I18n.tr("Unable to check supplier order history") + ": " + e.getMessage(),
+                I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
         String finalWarning = I18n.format(
             "WARNING: This will permanently delete supplier '{0}' and ALL related data:", name)
             + "\n- " + I18n.tr("All orders from this supplier")
@@ -323,7 +443,7 @@ public class SuppliersPanel extends JPanel {
             + "\n\n" + I18n.tr("This action CANNOT be undone!")
             + "\n\n" + I18n.tr("Are you absolutely sure?");
         int confirmResult = Dialogs.showConfirmDialog(this,
-            finalWarning,
+            supplierDeletionMessage(finalWarning),
             I18n.tr("FORCE DELETE - Final Confirmation"),
             JOptionPane.YES_NO_OPTION,
             JOptionPane.ERROR_MESSAGE);

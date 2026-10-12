@@ -158,6 +158,9 @@ public class WarehouseMovementDialog extends JDialog {
             "PURCHASE", "SALE", "CUSTOMER RETURN", "SUPPLIER RETURN",
             "INVENTORY", "GIFT", "THEFT/LOSS", "OTHER"
         });
+        // Supplier returns must remain linked to the original purchase FIFO lot.
+        // Existing historical manual reasons stay readable when editing older movements.
+        if (movement == null) reasonCombo.removeItem("SUPPLIER RETURN");
         reasonCombo.putClientProperty("i18n.values", true);
         reasonCombo.setPreferredSize(new Dimension(300, 28));
         formPanel.add(reasonCombo, gbc);

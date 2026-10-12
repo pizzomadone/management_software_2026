@@ -575,6 +575,9 @@ public class WarehousePanel extends JPanel {
                     while (rs.next()) {
                         Vector<Object> row = new Vector<>();
 
+                        // Keep the hidden ID in column 0, as in loadMovementsData().
+                        row.add(rs.getInt("id"));
+
                         Date movementDate = DateUtils.parseDate(rs, "date");
                         if (movementDate != null) {
                             row.add(DateUtils.formatDate(movementDate, dateFormat));
@@ -860,8 +863,10 @@ public class WarehousePanel extends JPanel {
                         }
 
                         conn.commit();
-                        loadMovementsData();
-                        loadStockData();
+                        loadData();
+                        Window parentWindow = SwingUtilities.getWindowAncestor(this);
+                        if (parentWindow instanceof MainWindow mainWindow)
+                            mainWindow.refreshProductsPanel();
 
                         Dialogs.showMessageDialog(this,
                             "Movement deleted successfully!\nStock has been adjusted.",

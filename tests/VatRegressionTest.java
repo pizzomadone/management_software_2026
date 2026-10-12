@@ -41,6 +41,152 @@ public class VatRegressionTest extends RegressionTest {
         sql("ALTER TABLE invoice_details DROP COLUMN sale_unit_price_inc_vat");
     }
     static void vat() throws Exception {
+        test("linked invoice date and numbering follow its own document date, not the order",()->{
+            fresh();
+            java.util.Date oldOrderDate=new java.text.SimpleDateFormat("dd/MM/yyyy").parse("15/01/2024");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat) "
+                +"VALUES(1,1,"+oldOrderDate.getTime()+",'Completed',30,30)");
+            sql("INSERT INTO order_details(order_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate) "
+                +"VALUES(1,1,3,10,10,0)");
+            Order oldOrder=loadOrder(1);
+            DatabaseManager.beginTransaction(db);
+            OrdersPanel.GeneratedInvoice generated;
+            try {
+                generated=OrdersPanel.createInvoiceFromOrder(db,oldOrder);
+                db.commit();
+            } catch(Exception error) {db.rollback();throw error;}
+            finally {db.setAutoCommit(true);}
+
+            int draftYear=java.util.Calendar.getInstance().get(java.util.Calendar.YEAR);
+            String today=java.time.LocalDate.now().toString();
+            require(value("SELECT warestat_date(date) FROM invoices WHERE id="+generated.id()).equals(today),
+                "Generated draft copied the historical order date");
+            require(generated.number().equals(InvoiceDialog.draftReference(generated.id())),
+                "Order-generated draft received a fiscal invoice number");
+            require("0".equals(value("SELECT COUNT(*) FROM invoice_numbering")),
+                "Creating an invoice draft consumed a fiscal number");
+
+            // Saving the same linked draft with another date must not issue a number.
+            java.util.Date draftEditDate=new java.text.SimpleDateFormat("dd/MM/yyyy")
+                .parse("02/05/"+draftYear);
+            DatabaseManager.beginTransaction(db);
+            try {
+                String draftRef=InvoiceDialog.saveLinkedInvoiceStatus(
+                    db,generated.id(),"Draft","Draft",draftEditDate);
+                require(draftRef.equals(generated.number()),
+                    "Editing a linked draft changed its internal reference");
+                db.commit();
+            } catch(Exception error) {db.rollback();throw error;}
+            finally {db.setAutoCommit(true);}
+            require((draftYear+"-05-02").equals(value(
+                    "SELECT warestat_date(date) FROM invoices WHERE id="+generated.id())),
+                "Linked draft date was not preserved");
+            require("0".equals(value("SELECT COUNT(*) FROM invoice_numbering")),
+                "Editing a linked draft consumed a fiscal number");
+
+            int issueYear=draftYear+1;
+            java.util.Date chosen=new java.text.SimpleDateFormat("dd/MM/yyyy")
+                .parse("11/02/"+issueYear);
+            DatabaseManager.beginTransaction(db);
+            String actualNumber;
+            try {
+                actualNumber=InvoiceDialog.saveLinkedInvoiceStatus(
+                    db,generated.id(),"Draft","Issued",chosen);
+                db.commit();
+            } catch(Exception error) {db.rollback();throw error;}
+            finally {db.setAutoCommit(true);}
+
+            require(actualNumber.startsWith(issueYear+"/"),
+                "Invoice year did not follow the chosen invoice date");
+            require(actualNumber.equals(value("SELECT number FROM invoices WHERE id="+generated.id())),
+                "New invoice number was not saved");
+            require(("Issued|"+issueYear+"-02-11").equals(
+                    value("SELECT status||'|'||warestat_date(date) FROM invoices WHERE id="+generated.id())),
+                "Chosen invoice date was lost at issuance");
+            require("2024-01-15".equals(value("SELECT warestat_date(order_date) FROM orders WHERE id=1")),
+                "Issuing the invoice changed its original order date");
+
+            String originalNumber=actualNumber;
+            InvoiceDialog.saveLinkedInvoiceStatus(db,generated.id(),"Issued","Canceled",null);
+            require(("Canceled|"+issueYear+"-02-11").equals(
+                    value("SELECT status||'|'||warestat_date(date) FROM invoices WHERE id="+generated.id()))
+                    && originalNumber.equals(value("SELECT number FROM invoices WHERE id="+generated.id())),
+                "Already issued invoice's date or number changed");
+        });
+        test("standalone invoice drafts do not consume numbering and use their chosen issue year",()->{
+            fresh();
+            ID draft=invoice();
+            put(draft,"statusCombo",new JComboBox<>(new String[]{"Draft"}));
+            call(draft,"saveInvoice");
+            String draftNumber=value("SELECT number FROM invoices WHERE id=1");
+            require("DRAFT-1".equals(draftNumber) && "Draft".equals(value("SELECT status FROM invoices WHERE id=1")),
+                "A new standalone draft received a fiscal invoice number");
+            require("0".equals(value("SELECT COUNT(*) FROM invoice_numbering")),
+                "Saving a standalone draft consumed a fiscal number");
+
+            ID edit=invoice();
+            put(edit,"invoice",new Invoice(1,draftNumber,new java.util.Date(),1,"",30,6.6,36.6,"Draft"));
+            put(edit,"statusCombo",new JComboBox<>(new String[]{"Draft"}));
+            put(edit,"dateField",new DatePickerField("08/09/2031"));
+            call(edit,"saveInvoice");
+            require("DRAFT-1".equals(value("SELECT number FROM invoices WHERE id=1"))
+                    && "2031-09-08".equals(value("SELECT warestat_date(date) FROM invoices WHERE id=1")),
+                "Editing a draft lost its date or prematurely numbered it");
+            require("0".equals(value("SELECT COUNT(*) FROM invoice_numbering")),
+                "Updating a standalone draft consumed a fiscal number");
+
+            ID issued=invoice();
+            put(issued,"invoice",new Invoice(1,"DRAFT-1",new java.util.Date(),1,"",30,6.6,36.6,"Draft"));
+            put(issued,"statusCombo",new JComboBox<>(new String[]{"Issued"}));
+            put(issued,"dateField",new DatePickerField("12/03/2032"));
+            call(issued,"saveInvoice");
+            require("2032/0001".equals(value("SELECT number FROM invoices WHERE id=1"))
+                    && "Issued".equals(value("SELECT status FROM invoices WHERE id=1"))
+                    && "2032-03-12".equals(value("SELECT warestat_date(date) FROM invoices WHERE id=1")),
+                "Issuing a standalone draft failed to date or number it");
+            require("1".equals(value("SELECT last_number FROM invoice_numbering WHERE year=2032")),
+                "Standalone issuance did not advance the correct yearly sequence");
+
+            require("2032/0001".equals(value("SELECT number FROM invoices WHERE id=1")),
+                "Issued invoice number unexpectedly changed");
+        });
+        test("directly issued invoices are numbered sequentially despite drafts",()->{
+            fresh();
+            ID direct=invoice();
+            put(direct,"dateField",new DatePickerField("15/06/2034"));
+            call(direct,"saveInvoice");
+            String number=value("SELECT number FROM invoices WHERE id=1");
+            require("2034/0001".equals(number)
+                && "Issued".equals(value("SELECT status FROM invoices WHERE id=1"))
+                && "2034-06-15".equals(value("SELECT warestat_date(date) FROM invoices WHERE id=1")),
+                "Direct issuance did not number the invoice in the date's year");
+
+            // Even a stale editor claiming an issued invoice is still a draft
+            // cannot modify its number or historical date in the database.
+            ID stale=invoice();
+            put(stale,"invoice",new Invoice(1,number,new java.util.Date(),1,"",30,6.6,36.6,"Draft"));
+            put(stale,"statusCombo",new JComboBox<>(new String[]{"Draft"}));
+            put(stale,"dateField",new DatePickerField("02/01/1999"));
+            rejectedSave(stale,"saveInvoice","invoiceSaved");
+            require(number.equals(value("SELECT number FROM invoices WHERE id=1"))
+                    && "2034-06-15".equals(value("SELECT warestat_date(date) FROM invoices WHERE id=1")),
+                "A stale draft editor changed an issued invoice");
+
+            // A second draft in the same year does not advance the fiscal sequence.
+            ID draft=invoice();
+            put(draft,"statusCombo",new JComboBox<>(new String[]{"Draft"}));
+            put(draft,"dateField",new DatePickerField("16/06/2034"));
+            call(draft,"saveInvoice");
+            require("DRAFT-2".equals(value("SELECT number FROM invoices WHERE id=2"))
+                    && "1".equals(value("SELECT last_number FROM invoice_numbering WHERE year=2034")),
+                "A later draft consumed the sequence after an issued document");
+
+            ID secondIssued=invoice();
+            put(secondIssued,"dateField",new DatePickerField("17/06/2034"));
+            call(secondIssued,"saveInvoice");
+            require("2034/0002".equals(value("SELECT number FROM invoices WHERE id=3")),
+                "Issued invoice numbering was interrupted by a draft");
+        });
         test("product price preview updates live for gross price VAT and purchase cost",()->{
             fresh();PD dialog=OperationalRegressionTest.productEditor(0);put(dialog,"product",null);
             JPanel preview=(JPanel)call(dialog,"createPricePreview");

@@ -22,6 +22,8 @@ public final class DatabaseIntegrity {
         Map.entry("invoice_details", "id invoice_id product_id quantity sale_unit_price_ex_vat sale_unit_price_inc_vat vat_rate total product_code product_name"),
         Map.entry("supplier_orders", "id supplier_id number order_date expected_delivery_date received_date status total notes"),
         Map.entry("supplier_order_details", "id order_id product_id quantity unit_price total notes"),
+        Map.entry("supplier_returns", "id order_id returned_at reversed_at notes"),
+        Map.entry("supplier_return_items", "id return_id supplier_order_detail_id lot_id product_id quantity unit_cost unit_price warehouse_movement_id"),
         Map.entry("product_suppliers", "id product_id supplier_id supplier_product_code purchase_price is_preferred notes"),
         Map.entry("inventory_lots", "id product_id supplier_id supplier_order_detail_id warehouse_movement_id received_date initial_quantity remaining_quantity unit_cost source_type"),
         Map.entry("inventory_lot_consumptions", "id lot_id order_detail_id warehouse_movement_id quantity unit_cost"),
@@ -49,6 +51,150 @@ public final class DatabaseIntegrity {
                     if(r.next())throw new SQLException("Invalid existing numeric data in "+rule.getKey()+", row "+r.getLong(1)+". Reconcile the source database before import or release.");
                 }
             }
+            validateSupplierReturns(c);
+        }
+    }
+
+    /**
+     * Read-only checks for purchase-linked returns. A compensating return movement
+     * restores its exact FIFO lot rather than deleting the original consumption;
+     * therefore a reversed return must retain both its outward and inward history.
+     */
+    private static void validateSupplierReturns(Connection c) throws SQLException {
+        rejectInvalidReturn(c, """
+            SELECT sr.id FROM supplier_returns sr
+            WHERE NOT EXISTS (
+                SELECT 1 FROM supplier_return_items ri WHERE ri.return_id=sr.id
+            ) LIMIT 1
+            """, "Supplier return has no items");
+
+        rejectInvalidReturn(c, """
+            SELECT ri.id FROM supplier_return_items ri
+            WHERE typeof(ri.quantity)<>'integer'
+               OR ri.quantity NOT BETWEEN 1 AND 2147483647
+               OR typeof(ri.unit_cost) NOT IN ('integer','real')
+               OR ri.unit_cost NOT BETWEEN 0 AND 999999999999.99
+               OR typeof(ri.unit_price) NOT IN ('integer','real')
+               OR ri.unit_price NOT BETWEEN 0 AND 999999999999.99
+            LIMIT 1
+            """, "Supplier return has invalid quantity or cost");
+
+        // Foreign-key existence is covered by PRAGMA foreign_key_check above.
+        // These checks additionally require the referenced entities to match.
+        rejectInvalidReturn(c, """
+            SELECT ri.id FROM supplier_return_items ri
+            JOIN supplier_returns sr ON sr.id=ri.return_id
+            JOIN supplier_orders o ON o.id=sr.order_id
+            JOIN supplier_order_details d ON d.id=ri.supplier_order_detail_id
+            JOIN inventory_lots l ON l.id=ri.lot_id
+            WHERE d.order_id IS NOT sr.order_id
+               OR d.product_id IS NOT ri.product_id
+               OR l.product_id IS NOT ri.product_id
+               OR l.supplier_order_detail_id IS NOT ri.supplier_order_detail_id
+               OR l.supplier_id IS NOT o.supplier_id
+               OR l.source_type<>'SUPPLIER_ORDER'
+               OR l.initial_quantity IS NOT d.quantity
+               OR l.unit_cost IS NOT ri.unit_cost
+               OR d.unit_price IS NOT ri.unit_price
+            LIMIT 1
+            """, "Supplier return references the wrong purchase or FIFO lot");
+
+        // Storned returns no longer count against the purchased quantity.
+        rejectInvalidReturn(c, """
+            SELECT d.id FROM supplier_order_details d
+            JOIN supplier_return_items ri ON ri.supplier_order_detail_id=d.id
+            JOIN supplier_returns sr ON sr.id=ri.return_id
+            WHERE sr.reversed_at IS NULL
+            GROUP BY d.id, d.quantity
+            HAVING SUM(ri.quantity)>d.quantity
+            LIMIT 1
+            """, "Active supplier returns exceed purchased quantity");
+
+        // Every returned line must have exactly one outward movement and
+        // exactly one consumption of the specific original FIFO lot.
+        rejectInvalidReturn(c, """
+            SELECT ri.id FROM supplier_return_items ri
+            JOIN warehouse_movements m ON m.id=ri.warehouse_movement_id
+            WHERE m.product_id IS NOT ri.product_id
+               OR m.quantity IS NOT ri.quantity
+               OR m.type<>'OUTWARD'
+               OR m.document_type IS NOT 'SUPPLIER_RETURN'
+               OR m.reason<>'SUPPLIER_RETURN'
+               OR m.document_number IS NULL
+               OR m.document_number<>(SELECT o.number||'/R'||sr.id
+                   FROM supplier_returns sr
+                   JOIN supplier_orders o ON o.id=sr.order_id
+                   WHERE sr.id=ri.return_id)
+               OR (SELECT COUNT(*) FROM inventory_lot_consumptions x
+                   WHERE x.warehouse_movement_id=ri.warehouse_movement_id)<>1
+               OR NOT EXISTS (
+                   SELECT 1 FROM inventory_lot_consumptions x
+                   WHERE x.warehouse_movement_id=ri.warehouse_movement_id
+                     AND x.lot_id=ri.lot_id
+                     AND x.order_detail_id IS NULL
+                     AND x.quantity=ri.quantity
+                     AND x.unit_cost=ri.unit_cost
+               )
+            LIMIT 1
+            """, "Supplier return warehouse movement or FIFO consumption is inconsistent");
+
+        // Each active supplier return must remain deducted from its original FIFO lot.
+        // Other sales and movements can reduce that lot further, so this is a
+        // conservative bound, not an unsafe attempt to reconstruct old opening stock.
+        rejectInvalidReturn(c, """
+            SELECT l.id FROM inventory_lots l
+            WHERE EXISTS (SELECT 1 FROM supplier_return_items ri WHERE ri.lot_id=l.id)
+              AND l.initial_quantity-l.remaining_quantity <
+                  COALESCE((SELECT SUM(ri.quantity)
+                    FROM supplier_return_items ri
+                    JOIN supplier_returns sr ON sr.id=ri.return_id
+                    WHERE ri.lot_id=l.id AND sr.reversed_at IS NULL),0)
+            LIMIT 1
+            """, "Active supplier return quantity was not deducted from FIFO lot");
+
+        // Each reversal must restore the same product/quantity exactly once;
+        // an active return must not have a compensating movement.
+        rejectInvalidReturn(c, """
+            SELECT ri.id FROM supplier_return_items ri
+            JOIN supplier_returns sr ON sr.id=ri.return_id
+            WHERE (SELECT COUNT(*) FROM warehouse_movements rev
+                   WHERE rev.reversal_of_movement_id=ri.warehouse_movement_id)
+                    <> CASE WHEN sr.reversed_at IS NULL THEN 0 ELSE 1 END
+               OR (sr.reversed_at IS NOT NULL AND NOT EXISTS (
+                   SELECT 1 FROM warehouse_movements rev
+                   WHERE rev.reversal_of_movement_id=ri.warehouse_movement_id
+                     AND rev.product_id=ri.product_id
+                     AND rev.quantity=ri.quantity
+                     AND rev.type='INWARD'
+                     AND rev.document_type='SUPPLIER_RETURN_REVERSAL'
+                     AND rev.reason='SUPPLIER_RETURN_REVERSAL'
+                     AND rev.document_number='R'||sr.id
+               ))
+            LIMIT 1
+            """, "Supplier return reversal is missing, duplicated or inconsistent");
+
+        rejectInvalidReturn(c, """
+            SELECT rev.id FROM warehouse_movements rev
+            WHERE rev.document_type='SUPPLIER_RETURN_REVERSAL'
+              AND NOT EXISTS (
+                  SELECT 1 FROM supplier_return_items ri
+                  JOIN supplier_returns sr ON sr.id=ri.return_id
+                  WHERE ri.warehouse_movement_id=rev.reversal_of_movement_id
+                    AND sr.reversed_at IS NOT NULL
+                    AND rev.product_id=ri.product_id
+                    AND rev.quantity=ri.quantity
+                    AND rev.type='INWARD'
+                    AND rev.reason='SUPPLIER_RETURN_REVERSAL'
+              )
+            LIMIT 1
+            """, "Supplier return reversal has no valid original return");
+    }
+
+    private static void rejectInvalidReturn(Connection c, String query, String message)
+            throws SQLException {
+        try (Statement s=c.createStatement(); ResultSet r=s.executeQuery(query)) {
+            if (r.next())
+                throw new SQLException(message+" (record "+r.getLong(1)+"). Reconcile the database before import or release.");
         }
     }
 

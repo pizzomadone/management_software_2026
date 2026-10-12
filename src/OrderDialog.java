@@ -15,6 +15,7 @@ import javax.swing.event.TableModelEvent;
 public class OrderDialog extends JDialog {
     private Order order;
     private boolean orderSaved = false;
+    private Integer savedOrderId;
     private JButton selectCustomerButton;
     private Customer selectedCustomer;
     private DatePickerField dateField;
@@ -651,6 +652,7 @@ public class OrderDialog extends JDialog {
                 conn.setAutoCommit(true);
             }
 
+            savedOrderId = order.getId();
             orderSaved = true;
             dispose();
         } catch (Exception e) {
@@ -689,6 +691,7 @@ public class OrderDialog extends JDialog {
                 conn.setAutoCommit(true);
             }
 
+            savedOrderId = order.getId();
             orderSaved = true;
             dispose();
         } catch (Exception e) {
@@ -912,6 +915,7 @@ public class OrderDialog extends JDialog {
                 }
 
                 conn.commit();
+                savedOrderId = orderId;
                 orderSaved = true;
                 dispose();
 
@@ -986,6 +990,11 @@ public class OrderDialog extends JDialog {
 
     public boolean isOrderSaved() {
         return orderSaved;
+    }
+
+    /** ID of the successfully saved order, for restoring the panel selection. */
+    public Integer getSavedOrderId() {
+        return orderSaved ? savedOrderId : null;
     }
 }
 

@@ -349,6 +349,20 @@ public final class DatabaseCurrency {
     }
 
     private static void convertSupplierOrders(Connection c,BigDecimal rate) throws SQLException {
+        // Return documents hold their own monetary snapshots; stock and FIFO costs
+        // are converted elsewhere in this transaction, so these must follow.
+        try (PreparedStatement read=c.prepareStatement(
+                "SELECT id,unit_price,unit_cost FROM supplier_return_items ORDER BY id");
+             PreparedStatement write=c.prepareStatement(
+                "UPDATE supplier_return_items SET unit_price=?,unit_cost=? WHERE id=?");
+             ResultSet r=read.executeQuery()) {
+            while(r.next()) {
+                write.setDouble(1,convertUnit(r.getObject("unit_price"),rate));
+                write.setDouble(2,convertUnit(r.getObject("unit_cost"),rate));
+                write.setInt(3,r.getInt("id"));write.addBatch();
+            }
+            write.executeBatch();
+        }
         try(PreparedStatement read=c.prepareStatement(
                 "SELECT id,quantity,unit_price FROM supplier_order_details ORDER BY id");
             PreparedStatement write=c.prepareStatement(

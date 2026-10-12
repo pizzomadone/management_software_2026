@@ -904,6 +904,7 @@ public class ProductDialog extends JDialog {
             try {
                 int productId = product == null ? 0 : product.getId();
                 int oldQuantity = 0;
+                int reservedQuantity = 0;
                 double previousAcquisitionCost = 0.0;
 
                 if (productCodeExists(conn, code, productId))
@@ -912,17 +913,23 @@ public class ProductDialog extends JDialog {
 
                 if (product != null) {
                     try (PreparedStatement previous = conn.prepareStatement(
-                            "SELECT quantity,acquisition_cost FROM products WHERE id=?")) {
+                            "SELECT quantity,reserved_quantity,acquisition_cost FROM products WHERE id=?")) {
                         previous.setInt(1,productId);
                         try (ResultSet r = previous.executeQuery()) {
                             if (!r.next()) throw new IllegalArgumentException(
                                 I18n.tr("The product no longer exists. It may have been deleted."));
                             oldQuantity = r.getInt("quantity");
+                            reservedQuantity = r.getInt("reserved_quantity");
                             previousAcquisitionCost = Numbers.nonNegative(r.getObject("acquisition_cost"));
                             acquisitionCost = previousAcquisitionCost;
                         }
                     }
                 }
+
+                if (product != null && quantity != oldQuantity && quantity < reservedQuantity)
+                    throw new IllegalArgumentException(I18n.format(
+                        "Cannot reduce stock to {0} units because {1} units are reserved.",
+                        quantity, reservedQuantity));
 
                 if (product == null) {
                     String query = """

@@ -29,12 +29,35 @@ public class SupplierProductDialog extends JDialog {
         GridBagConstraints g=new GridBagConstraints();
         g.insets=new Insets(4,4,4,4);g.fill=GridBagConstraints.HORIZONTAL;
 
-        JTextField supplier=new JTextField(supplierName);supplier.setEditable(false);
+        JTextField supplier=new JTextField(supplierName);
+        supplier.setEditable(false);
         productCombo=new JComboBox<>();
-        supplierCodeField=new JTextField(22);
-        priceField=new JTextField(12);
-        preferredCheck=new JCheckBox(I18n.tr("Preferred supplier for this product"));
-        notesArea=new JTextArea(3,22);notesArea.setLineWrap(true);notesArea.setWrapStyleWord(true);
+        // Do not let the longest catalog description determine the width of the dialog.
+        productCombo.setPreferredSize(new Dimension(405,28));
+        productCombo.setMinimumSize(new Dimension(270,28));
+        productCombo.addActionListener(e -> {
+            ProductDisplay selected=(ProductDisplay)productCombo.getSelectedItem();
+            productCombo.setToolTipText(selected==null ? null : helpTooltip(selected.toString()));
+        });
+        supplierCodeField=new JTextField(26);
+        priceField=new JTextField(16);
+        preferredCheck=new JCheckBox(I18n.tr("Preferred Supplier"));
+        notesArea=new JTextArea(3,26);
+        notesArea.setLineWrap(true);
+        notesArea.setWrapStyleWord(true);
+
+        String supplierHelp="Supplier: the supplier associated with this product.";
+        String productHelp="Product: the WareStat product supplied by this supplier.";
+        String codeHelp="Supplier product code (optional): the code this supplier uses for the product in its catalog, quotes, invoices or portal. Leave it blank if the supplier does not provide one.";
+        String priceHelp="Purchase price: the supplier's current reference purchase price. It is proposed in new supplier orders and can be changed in the order.";
+        String preferredHelp="Preferred: makes this the preferred supplier for the product. Its purchase price becomes the default reference price proposed in new supplier orders; historical FIFO costs and the sale price are not changed.";
+        String notesHelp="Notes: optional notes about this product-supplier relationship.";
+
+        supplier.setToolTipText(helpTooltip(supplierHelp));
+        supplierCodeField.setToolTipText(helpTooltip(codeHelp));
+        priceField.setToolTipText(helpTooltip(priceHelp));
+        preferredCheck.setToolTipText(helpTooltip(preferredHelp));
+        notesArea.setToolTipText(helpTooltip(notesHelp));
 
         addRow(form,g,0,"Supplier:",supplier);
         addRow(form,g,1,"Product *:",productCombo);
@@ -43,14 +66,9 @@ public class SupplierProductDialog extends JDialog {
         addRow(form,g,4,"Preferred:",preferredCheck);
         addRow(form,g,5,"Notes:",new JScrollPane(notesArea));
 
-        JLabel help=new JLabel("?");
-        help.setFont(help.getFont().deriveFont(Font.BOLD));
-        help.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        help.setToolTipText(I18n.tr("Explain supplier fields"));
-        help.addMouseListener(new java.awt.event.MouseAdapter(){
-            @Override public void mouseClicked(java.awt.event.MouseEvent e){ showFieldHelp(); }
-        });
-        JPanel helpPanel=new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JLabel help=Dialogs.clickHelpLabel(helpTooltip(
+            supplierHelp,productHelp,codeHelp,priceHelp,preferredHelp,notesHelp));
+        JPanel helpPanel=new JPanel(new FlowLayout(FlowLayout.RIGHT,12,4));
         helpPanel.add(help);
 
         JButton save=new JButton("Save"),cancel=new JButton("Cancel");
@@ -60,8 +78,24 @@ public class SupplierProductDialog extends JDialog {
         footer.add(Dialogs.requiredLegendPanel(),BorderLayout.WEST);
         footer.add(actions,BorderLayout.EAST);
 
-        add(helpPanel,BorderLayout.NORTH);add(form,BorderLayout.CENTER);add(footer,BorderLayout.SOUTH);
-        setSize(520,390);Dialogs.centerWindow(this);I18n.localize(this);
+        add(helpPanel,BorderLayout.NORTH);
+        add(form,BorderLayout.CENTER);
+        add(footer,BorderLayout.SOUTH);
+        I18n.localize(this);
+        Rectangle usable=GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+        if(getGraphicsConfiguration()!=null) {
+            GraphicsConfiguration gc=getGraphicsConfiguration();
+            Rectangle screen=gc.getBounds();
+            Insets insets=Toolkit.getDefaultToolkit().getScreenInsets(gc);
+            usable=new Rectangle(screen.x+insets.left,screen.y+insets.top,
+                screen.width-insets.left-insets.right,
+                screen.height-insets.top-insets.bottom);
+        }
+        int width=Math.min(770,Math.max(1,usable.width-48));
+        int height=Math.min(445,Math.max(1,usable.height-48));
+        setSize(width,height);
+        setMinimumSize(new Dimension(Math.min(650,width),Math.min(380,height)));
+        Dialogs.centerWindow(this);
     }
 
     private void addRow(JPanel p,GridBagConstraints g,int row,String label,Component field){
@@ -72,21 +106,15 @@ public class SupplierProductDialog extends JDialog {
         p.add(field,g);
     }
 
-    private void showFieldHelp(){
-        String message=I18n.tr(
-                "Supplier: the supplier associated with this product.")
-            +"\n\n"+I18n.tr(
-                "Product: the WareStat product supplied by this supplier.")
-            +"\n\n"+I18n.tr(
-                "Supplier product code (optional): the code this supplier uses for the product in its catalog, quotes, invoices or portal. Leave it blank if the supplier does not provide one.")
-            +"\n\n"+I18n.tr(
-                "Purchase price: the supplier's current reference purchase price. It is proposed in new supplier orders and can be changed in the order.")
-            +"\n\n"+I18n.tr(
-                "Preferred: makes this the preferred supplier for the product. Its purchase price becomes the default reference price proposed in new supplier orders; historical FIFO costs and the sale price are not changed.")
-            +"\n\n"+I18n.tr(
-                "Notes: optional notes about this product-supplier relationship.");
-        Dialogs.showMessageDialog(this,message,I18n.tr("Supplier product fields"),
-            JOptionPane.INFORMATION_MESSAGE);
+    /** Limit explanation width so Swing wraps text instead of expanding the popup. */
+    private static String helpTooltip(String... explanations) {
+        StringBuilder html=new StringBuilder("<html><table width='395' cellpadding='4'>");
+        for(String text:explanations) {
+            String escaped=I18n.tr(text).replace("&","&amp;").replace("<","&lt;")
+                .replace(">","&gt;").replace("\"","&quot;");
+            html.append("<tr><td>").append(escaped).append("</td></tr>");
+        }
+        return html.append("</table></html>").toString();
     }
 
     private void loadProducts(){

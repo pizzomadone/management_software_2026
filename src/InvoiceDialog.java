@@ -137,7 +137,24 @@ public class InvoiceDialog extends JDialog {
     }
 
     private void setupWindow() {
-        setSize(900, 600);
+        // Keep the invoice readable without exceeding the usable display area.
+        GraphicsConfiguration gc = getOwner() == null
+            ? getGraphicsConfiguration() : getOwner().getGraphicsConfiguration();
+        Rectangle usable;
+        if (gc == null) {
+            usable = GraphicsEnvironment.getLocalGraphicsEnvironment()
+                .getMaximumWindowBounds();
+        } else {
+            Rectangle screen = gc.getBounds();
+            Insets insets = Toolkit.getDefaultToolkit().getScreenInsets(gc);
+            usable = new Rectangle(screen.x + insets.left, screen.y + insets.top,
+                screen.width - insets.left - insets.right,
+                screen.height - insets.top - insets.bottom);
+        }
+        int width = Math.min(1100, Math.max(1, usable.width - 64));
+        int height = Math.min(660, Math.max(1, usable.height - 64));
+        setSize(width, height);
+        setMinimumSize(new Dimension(Math.min(width, 850), Math.min(height, 560)));
         setLayout(new BorderLayout(10, 10));
     }
 
@@ -176,7 +193,7 @@ public class InvoiceDialog extends JDialog {
         gbc.gridx = 0; gbc.gridy = 1;
         invoicePanel.add(new JLabel("Customer *:"), gbc);
 
-        gbc.gridx = 1; gbc.gridwidth = 2;
+        gbc.gridx = 1; gbc.gridwidth = invoice == null ? 2 : 3;
         selectCustomerButton = new JButton("Click to select customer...");
         selectCustomerButton.putClientProperty("i18n.literal", true);
         selectCustomerButton.setPreferredSize(new Dimension(300, 35));
@@ -185,9 +202,11 @@ public class InvoiceDialog extends JDialog {
         invoicePanel.add(selectCustomerButton, gbc);
 
         gbc.gridx = 3; gbc.gridwidth = 1;
-        JButton newCustomerButton = new JButton("New Customer");
-        newCustomerButton.addActionListener(e -> createNewCustomer());
-        invoicePanel.add(newCustomerButton, gbc);
+        if (invoice == null) {
+            JButton newCustomerButton = new JButton("New Customer");
+            newCustomerButton.addActionListener(e -> createNewCustomer());
+            invoicePanel.add(newCustomerButton, gbc);
+        }
 
         // Document status
         gbc.gridx = 0; gbc.gridy = 2; gbc.gridwidth = 1;
@@ -259,12 +278,12 @@ public class InvoiceDialog extends JDialog {
         itemsTable.removeColumn(itemsTable.getColumnModel().getColumn(6));
 
         // Configure table
-        itemsTable.getColumnModel().getColumn(0).setPreferredWidth(80);
-        itemsTable.getColumnModel().getColumn(1).setPreferredWidth(250);
-        itemsTable.getColumnModel().getColumn(2).setPreferredWidth(80);
-        itemsTable.getColumnModel().getColumn(3).setPreferredWidth(100);
-        itemsTable.getColumnModel().getColumn(4).setPreferredWidth(80);
-        itemsTable.getColumnModel().getColumn(5).setPreferredWidth(100);
+        itemsTable.getColumnModel().getColumn(0).setPreferredWidth(150);
+        itemsTable.getColumnModel().getColumn(1).setPreferredWidth(280);
+        itemsTable.getColumnModel().getColumn(2).setPreferredWidth(85);
+        itemsTable.getColumnModel().getColumn(3).setPreferredWidth(170);
+        itemsTable.getColumnModel().getColumn(4).setPreferredWidth(110);
+        itemsTable.getColumnModel().getColumn(5).setPreferredWidth(155);
 
         configureTableEditors();
 
@@ -273,15 +292,15 @@ public class InvoiceDialog extends JDialog {
         tableButtonPanel.setBorder(BorderFactory.createTitledBorder("Products"));
 
         JButton addItemButton = new JButton("Add Product");
-        addItemButton.setPreferredSize(new Dimension(120, 30));
+        addItemButton.setMargin(new Insets(6, 14, 6, 14));
         addItemButton.addActionListener(e -> showProductSelectionDialog());
 
         JButton removeItemButton = new JButton("Remove");
-        removeItemButton.setPreferredSize(new Dimension(100, 30));
+        removeItemButton.setMargin(new Insets(6, 14, 6, 14));
         removeItemButton.addActionListener(e -> removeSelectedProduct());
 
         JButton editItemButton = new JButton("Edit Quantity");
-        editItemButton.setPreferredSize(new Dimension(120, 30));
+        editItemButton.setMargin(new Insets(6, 14, 6, 14));
         editItemButton.addActionListener(e -> editSelectedProduct());
 
         tableButtonPanel.add(addItemButton);
@@ -310,8 +329,8 @@ public class InvoiceDialog extends JDialog {
         JButton saveButton = new JButton("Save Invoice");
         JButton cancelButton = new JButton("Cancel");
 
-        saveButton.setPreferredSize(new Dimension(120, 35));
-        cancelButton.setPreferredSize(new Dimension(100, 35));
+        saveButton.setMargin(new Insets(8, 14, 8, 14));
+        cancelButton.setMargin(new Insets(8, 14, 8, 14));
         saveButton.setFont(saveButton.getFont().deriveFont(Font.BOLD));
 
         saveButton.addActionListener(e -> saveInvoice());
@@ -338,6 +357,8 @@ public class InvoiceDialog extends JDialog {
         mainPanel.add(footer, BorderLayout.SOUTH);
 
         add(mainPanel);
+        // Localize the top-level window title as well as its controls.
+        I18n.localize(this);
     }
 
     // Custom table model for type safety
@@ -592,7 +613,7 @@ public class InvoiceDialog extends JDialog {
 
     private void setupNewInvoice() {
         Calendar cal = Calendar.getInstance();
-        numberField.setText("Assigned when saved");
+        numberField.setText(I18n.tr("Assigned on issue"));
         dateField.setText(dateFormat.format(cal.getTime()));
         statusCombo.setSelectedItem("Draft");
     }
@@ -626,7 +647,10 @@ public class InvoiceDialog extends JDialog {
         updateTotals();
         loadPaymentData();
         if (contentLocked()) {
-            dateField.setEnabled(false);
+            // Linked drafts may choose the document date independently of the order.
+            // Issued/canceled invoices retain their historical date.
+            boolean linkedDraft=linkedOrderLocked && "Draft".equals(invoice.getStatus());
+            dateField.setEnabled(linkedDraft);
             selectCustomerButton.setEnabled(false);
             itemsTable.setEnabled(false);
 
@@ -648,7 +672,9 @@ public class InvoiceDialog extends JDialog {
                 notice = I18n.tr("Finalized invoice: only status and payment can be changed.");
             }
             itemsTable.setToolTipText(notice);
-            dateField.setToolTipText(notice);
+            dateField.setToolTipText(linkedOrderLocked && "Draft".equals(invoice.getStatus())
+                ? I18n.tr("Choose the invoice date independently of the order before issuing.")
+                : notice);
             selectCustomerButton.setToolTipText(notice);
         }
     }
@@ -775,6 +801,86 @@ public class InvoiceDialog extends JDialog {
         }
     }
 
+    /** A draft keeps an internal reference; fiscal numbering starts at issuance. */
+    static String draftPlaceholder() {
+        return "DRAFT-TMP-" + java.util.UUID.randomUUID();
+    }
+
+    static String draftReference(int invoiceId) {
+        return "DRAFT-" + invoiceId;
+    }
+
+    static String setDraftReference(Connection conn,int invoiceId) throws SQLException {
+        String reference=draftReference(invoiceId);
+        try(PreparedStatement p=conn.prepareStatement(
+                "UPDATE invoices SET number=? WHERE id=? AND status='Draft'")) {
+            p.setString(1,reference);
+            p.setInt(2,invoiceId);
+            if(p.executeUpdate()!=1)
+                throw new SQLException("Invoice draft no longer exists");
+        }
+        return reference;
+    }
+
+    static String issueNumber(Connection conn, Date invoiceDate) throws SQLException {
+        if(invoiceDate==null) throw new SQLException("Invoice date is required");
+        Calendar calendar=Calendar.getInstance();
+        calendar.setTime(invoiceDate);
+        return DatabaseManager.getInstance().getNextInvoiceNumber(
+            conn,calendar.get(Calendar.YEAR));
+    }
+
+    /**
+     * Update a linked invoice without ever changing an issued/canceled document's date.
+     * Draft dates and numbering reflect the chosen invoice date, not the order date.
+     * Called from the existing transaction.
+     */
+    static String saveLinkedInvoiceStatus(Connection conn,int invoiceId,String currentStatus,
+                                          String newStatus,Date draftDate) throws SQLException {
+        if ("Draft".equals(currentStatus)) {
+            if (draftDate==null)
+                throw new SQLException("Invoice date is required");
+            try (PreparedStatement read=conn.prepareStatement(
+                    "SELECT id FROM invoices WHERE id=? AND status='Draft' AND order_id IS NOT NULL")) {
+                read.setInt(1,invoiceId);
+                try (ResultSet r=read.executeQuery()) {
+                    if(!r.next()) throw new SQLException("Linked invoice draft changed or no longer exists");
+                }
+            }
+            if ("Canceled".equals(newStatus))
+                throw new SQLException(I18n.tr("Delete a draft instead of canceling an unissued invoice"));
+            String number="Issued".equals(newStatus)
+                ? issueNumber(conn,draftDate) : draftReference(invoiceId);
+
+            try (PreparedStatement write=conn.prepareStatement(
+                    "UPDATE invoices SET status=?,date=?,number=? " +
+                    "WHERE id=? AND status='Draft' AND order_id IS NOT NULL")) {
+                write.setString(1,newStatus);
+                write.setTimestamp(2,DateUtils.toSqlTimestamp(draftDate));
+                write.setString(3,number);
+                write.setInt(4,invoiceId);
+                if(write.executeUpdate()!=1)
+                    throw new SQLException("Linked invoice draft changed or no longer exists");
+            }
+            return number;
+        }
+        try (PreparedStatement write=conn.prepareStatement(
+                "UPDATE invoices SET status=? WHERE id=? AND status=? AND order_id IS NOT NULL")) {
+            write.setString(1,newStatus);
+            write.setInt(2,invoiceId);
+            write.setString(3,currentStatus);
+            if(write.executeUpdate()!=1)
+                throw new SQLException("Linked invoice changed or no longer exists");
+        }
+        try (PreparedStatement read=conn.prepareStatement("SELECT number FROM invoices WHERE id=?")) {
+            read.setInt(1,invoiceId);
+            try (ResultSet r=read.executeQuery()) {
+                if(!r.next()) throw new SQLException("Linked invoice no longer exists");
+                return r.getString(1);
+            }
+        }
+    }
+
     private void saveLockedStatusOnly() {
         String newStatus = (String) statusCombo.getSelectedItem();
 
@@ -841,13 +947,19 @@ public class InvoiceDialog extends JDialog {
                     throw new SQLException("Invoice is no longer linked to an order");
 
                 if (currentOrderId != null) {
-                    try (PreparedStatement p = conn.prepareStatement(
-                            "UPDATE invoices SET status=? WHERE id=?")) {
-                        p.setString(1, newStatus);
-                        p.setInt(2, invoice.getId());
-                        if (p.executeUpdate() != 1)
-                            throw new SQLException("Invoice changed or no longer exists");
+                    Date selectedDate=null;
+                    if ("Draft".equals(currentStatus)) {
+                        try {
+                            selectedDate=DateUtils.parseDate(dateField.getText(),dateFormat);
+                        } catch (java.text.ParseException invalid) {
+                            throw new SQLException("Invalid invoice date",invalid);
+                        }
                     }
+                    String updatedNumber=saveLinkedInvoiceStatus(conn,invoice.getId(),
+                        currentStatus,newStatus,selectedDate);
+                    invoice.setNumber(updatedNumber);
+                    numberField.setText(updatedNumber);
+                    if (selectedDate!=null) invoice.setDate(selectedDate);
                 } else {
                     String paymentStatus = paymentStatusCode();
                     double paidAmount = paymentAmountForSave(currentTotal);
@@ -1076,6 +1188,10 @@ public class InvoiceDialog extends JDialog {
             }
 
             String newStatus = (String)statusCombo.getSelectedItem();
+            if ("Canceled".equals(newStatus)
+                    && (invoice == null || "Draft".equals(invoice.getStatus()))) {
+                throw new SQLException(I18n.tr("Delete a draft instead of canceling an unissued invoice"));
+            }
             String number = numberField.getText();
 
             boolean createCompletedOrder = invoice == null
@@ -1137,10 +1253,9 @@ public class InvoiceDialog extends JDialog {
                         sourceOrderId = createCompletedOrder(
                             conn, invoiceDate, stockItems, paymentStatus, paidAmount);
                     }
-                    Calendar invoiceCalendar = Calendar.getInstance();
-                    invoiceCalendar.setTime(invoiceDate);
-                    number = DatabaseManager.getInstance().getNextInvoiceNumber(
-                        conn, invoiceCalendar.get(Calendar.YEAR));
+                    // New drafts get only an internal reference, never a fiscal sequence number.
+                    number = "Issued".equals(newStatus)
+                        ? issueNumber(conn,invoiceDate) : draftPlaceholder();
                     // New invoice
                     String invoiceQuery = """
                         INSERT INTO invoices
@@ -1173,7 +1288,8 @@ public class InvoiceDialog extends JDialog {
                     }
 
                     insertInvoiceDetails(conn, invoiceId);
-                    numberField.setText(number);
+                    if ("Draft".equals(newStatus))
+                        number = setDraftReference(conn,invoiceId);
 
                 } else {
                     // Update existing invoice
@@ -1186,23 +1302,29 @@ public class InvoiceDialog extends JDialog {
                         p.setInt(1,invoiceId);p.setInt(2,selectedCustomer.getId());p.executeUpdate();
                     }
 
+                    // No issued/canceled invoice can enter this content-edit path.
+                    // Legacy numbered drafts receive a stable internal reference on save.
+                    number = "Issued".equals(newStatus)
+                        ? issueNumber(conn,invoiceDate) : draftReference(invoiceId);
                     String invoiceQuery = """
                         UPDATE invoices
-                        SET date = ?, customer_id = ?, taxable_amount = ?, vat = ?, total = ?,
+                        SET number = ?, date = ?, customer_id = ?, taxable_amount = ?, vat = ?, total = ?,
                             status = ?, payment_status = ?, paid_amount = ?
-                        WHERE id = ?
+                        WHERE id = ? AND status='Draft'
                     """;
                     try (PreparedStatement pstmt = conn.prepareStatement(invoiceQuery)) {
-                        pstmt.setDate(1, new java.sql.Date(invoiceDate.getTime()));
-                        pstmt.setInt(2, selectedCustomer.getId());
-                        pstmt.setDouble(3, currentTaxableAmount);
-                        pstmt.setDouble(4, currentVat);
-                        pstmt.setDouble(5, currentTotal);
-                        pstmt.setString(6, newStatus);
-                        pstmt.setString(7, paymentStatus);
-                        pstmt.setDouble(8, paidAmount);
-                        pstmt.setInt(9, invoiceId);
-                        pstmt.executeUpdate();
+                        pstmt.setString(1, number);
+                        pstmt.setDate(2, new java.sql.Date(invoiceDate.getTime()));
+                        pstmt.setInt(3, selectedCustomer.getId());
+                        pstmt.setDouble(4, currentTaxableAmount);
+                        pstmt.setDouble(5, currentVat);
+                        pstmt.setDouble(6, currentTotal);
+                        pstmt.setString(7, newStatus);
+                        pstmt.setString(8, paymentStatus);
+                        pstmt.setDouble(9, paidAmount);
+                        pstmt.setInt(10, invoiceId);
+                        if (pstmt.executeUpdate()!=1)
+                            throw new SQLException("Invoice is no longer a draft");
                     }
 
                     // Delete old details
@@ -1217,6 +1339,12 @@ public class InvoiceDialog extends JDialog {
 
                 InvoiceSnapshots.capture(conn,invoiceId,false);
                 conn.commit();
+                numberField.setText(number);
+                if(invoice!=null) {
+                    invoice.setNumber(number);
+                    invoice.setDate(invoiceDate);
+                    invoice.setStatus(newStatus);
+                }
                 invoiceSaved = true;
                 dispose();
 
