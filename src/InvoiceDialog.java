@@ -731,7 +731,13 @@ public class InvoiceDialog extends JDialog {
         if ("NOT_PAID".equals(status)) return 0.0;
         if ("PAID".equals(status)) return Numbers.money(java.math.BigDecimal.valueOf(targetTotal));
 
-        double amount = Numbers.money(Numbers.decimal(paidAmountField.getText()));
+        double amount;
+        try {
+            amount = Numbers.money(Numbers.decimal(paidAmountField.getText()));
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(I18n.tr(
+                "Partial paid amount must be greater than zero and less than the total."), e);
+        }
         if (amount <= 0 || amount >= targetTotal) {
             throw new IllegalArgumentException(I18n.tr(
                 "Partial paid amount must be greater than zero and less than the total."));
@@ -753,6 +759,17 @@ public class InvoiceDialog extends JDialog {
         }
         if ("Partially Paid".equals(selected)) {
             paidAmountField.setEnabled(true);
+            // Do not carry zero or a fully paid total into a partial payment.
+            // The user must supply an amount strictly inside the valid range.
+            if (paymentSelectionChanged) {
+                try {
+                    double amount = Numbers.money(Numbers.decimal(paidAmountField.getText()));
+                    if (amount <= 0 || amount >= paymentTargetTotal())
+                        paidAmountField.setText("");
+                } catch (IllegalArgumentException e) {
+                    paidAmountField.setText("");
+                }
+            }
         } else {
             paidAmountField.setEnabled(false);
             paidAmountField.setText("Paid".equals(selected)
