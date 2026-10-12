@@ -164,8 +164,10 @@ public class DashboardPanel extends JPanel {
         notes.setBorder(BorderFactory.createEmptyBorder(9, 2, 0, 2));
         zeroCostCountLabel = new JLabel("—");
         negativeStockCountLabel = new JLabel("—");
-        notes.add(createKPINote("In-stock products with missing preferred supplier cost", zeroCostCountLabel));
-        notes.add(createKPINote("Negative-stock products (excluded from valuation)", negativeStockCountLabel));
+        notes.add(createKPINote("In-stock products with missing preferred supplier cost",
+            zeroCostCountLabel, "tooltip.kpi.missingCost"));
+        notes.add(createKPINote("Negative-stock products (excluded from valuation)",
+            negativeStockCountLabel, "tooltip.kpi.negativeStock"));
         costCompletenessNoteLabel = new JLabel();
         costCompletenessNoteLabel.setFont(dashboardFont(Font.PLAIN, 11f));
         costCompletenessNoteLabel.setForeground(MUTED_TEXT_COLOR);
@@ -179,7 +181,7 @@ public class DashboardPanel extends JPanel {
         return panel;
     }
 
-    private JPanel createKPINote(String title, JLabel value) {
+    private JPanel createKPINote(String title, JLabel value, String tooltipKey) {
         JPanel note = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         note.setOpaque(false);
         JLabel titleLabel = new JLabel(title);
@@ -187,8 +189,12 @@ public class DashboardPanel extends JPanel {
         titleLabel.setForeground(MUTED_TEXT_COLOR);
         value.setFont(dashboardFont(Font.BOLD, 11.5f));
         value.setForeground(PRIMARY_COLOR);
+        titleLabel.setToolTipText(tooltipKey);
+        value.setToolTipText(tooltipKey);
+        note.setToolTipText(tooltipKey);
         note.add(titleLabel);
         note.add(value);
+        I18n.localize(note);
         return note;
     }
 
@@ -386,8 +392,11 @@ public class DashboardPanel extends JPanel {
 
         topProductsTable = new JTable(model);
         TableStyleUtil.applyCompact(topProductsTable);
+        topProductsTable.setToolTipText("tooltip.dashboard.topProducts");
+        topProductsTable.getTableHeader().setToolTipText("tooltip.dashboard.topProducts");
         topProductsTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         TableSorterUtil.enableSorting(topProductsTable);
+        I18n.localize(topProductsTable);
 
         topProductsTable.getColumnModel().getColumn(0).setPreferredWidth(30);
         topProductsTable.getColumnModel().getColumn(1).setPreferredWidth(200);
@@ -415,7 +424,10 @@ public class DashboardPanel extends JPanel {
 
         abcAnalysisTable = new JTable(model);
         TableStyleUtil.applyCompact(abcAnalysisTable);
+        abcAnalysisTable.setToolTipText("tooltip.dashboard.abcAnalysis");
+        abcAnalysisTable.getTableHeader().setToolTipText("tooltip.dashboard.abcAnalysis");
         TableSorterUtil.enableSorting(abcAnalysisTable);
+        I18n.localize(abcAnalysisTable);
 
         JScrollPane scrollPane = new JScrollPane(abcAnalysisTable);
         configureDashboardScrollPane(scrollPane);
