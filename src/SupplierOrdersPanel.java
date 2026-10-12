@@ -248,6 +248,10 @@ public class SupplierOrdersPanel extends JPanel {
         } catch (SQLException ex) { Dialogs.showMessageDialog(this, "Error loading supplier orders: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE); }
     }
 
+    public void createNewSupplierOrder() {
+        newOrder();
+    }
+
     private void newOrder() {
         MultiSupplierOrderDialog dialog = new MultiSupplierOrderDialog(SwingUtilities.getWindowAncestor(this)); dialog.setVisible(true);
         if (dialog.isSaved()) { loadOrders(); refreshProducts(); }
