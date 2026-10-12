@@ -613,7 +613,7 @@ public class InvoiceDialog extends JDialog {
 
     private void setupNewInvoice() {
         Calendar cal = Calendar.getInstance();
-        numberField.setText("Assigned on issue");
+        numberField.setText(I18n.tr("Assigned on issue"));
         dateField.setText(dateFormat.format(cal.getTime()));
         statusCombo.setSelectedItem("Draft");
     }
@@ -848,7 +848,7 @@ public class InvoiceDialog extends JDialog {
                 }
             }
             if ("Canceled".equals(newStatus))
-                throw new SQLException("Delete a draft instead of canceling an unissued invoice");
+                throw new SQLException(I18n.tr("Delete a draft instead of canceling an unissued invoice"));
             String number="Issued".equals(newStatus)
                 ? issueNumber(conn,draftDate) : draftReference(invoiceId);
 
@@ -1190,7 +1190,7 @@ public class InvoiceDialog extends JDialog {
             String newStatus = (String)statusCombo.getSelectedItem();
             if ("Canceled".equals(newStatus)
                     && (invoice == null || "Draft".equals(invoice.getStatus()))) {
-                throw new SQLException("Delete a draft instead of canceling an unissued invoice");
+                throw new SQLException(I18n.tr("Delete a draft instead of canceling an unissued invoice"));
             }
             String number = numberField.getText();
 
