@@ -13,6 +13,7 @@ import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.KeyEvent;
+import java.awt.event.InputEvent;
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -163,7 +164,12 @@ public class MainWindow extends JFrame {
         newOrderItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_O, 
             Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx() | KeyEvent.SHIFT_DOWN_MASK));
         newOrderItem.addActionListener(e -> createNewOrder());
-        
+
+        JMenuItem newSupplierOrderItem = new JMenuItem("New Supplier Order");
+        newSupplierOrderItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_U,
+            Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx() | KeyEvent.SHIFT_DOWN_MASK));
+        newSupplierOrderItem.addActionListener(e -> createNewSupplierOrder());
+
         JMenuItem newInvoiceItem = new JMenuItem("New Invoice");
         newInvoiceItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_I, 
             Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx() | KeyEvent.SHIFT_DOWN_MASK));
@@ -172,6 +178,7 @@ public class MainWindow extends JFrame {
         fileMenu.add(newCustomerItem);
         fileMenu.add(newProductItem);
         fileMenu.add(newOrderItem);
+        fileMenu.add(newSupplierOrderItem);
         fileMenu.add(newInvoiceItem);
         fileMenu.addSeparator();
 
@@ -189,6 +196,8 @@ public class MainWindow extends JFrame {
         fileMenu.addSeparator();
         
         JMenuItem settingsItem = new JMenuItem("Settings...");
+        settingsItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_COMMA,
+            Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx()));
         settingsItem.addActionListener(e -> openSettings());
         fileMenu.add(settingsItem);
         
@@ -220,6 +229,8 @@ public class MainWindow extends JFrame {
         ordersItem.addActionListener(e -> showPanel("ORDERS"));
 
         JMenuItem supplierOrdersItem = new JMenuItem("Supplier Orders");
+        supplierOrdersItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_7,
+            Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx()));
         supplierOrdersItem.addActionListener(e -> showPanel("SUPPLIER_ORDERS"));
         
         JMenuItem invoicesItem = new JMenuItem("Invoices");
@@ -289,11 +300,16 @@ public class MainWindow extends JFrame {
         viewMenu.setMnemonic(KeyEvent.VK_V);
         
         JMenuItem homeItem = new JMenuItem("Dashboard");
-        homeItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_H, 
-            Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx()));
+        int menuShortcutMask = Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx();
+        // Cmd+H hides applications on macOS; use Cmd+0 for Dashboard there.
+        int homeKey = (menuShortcutMask & KeyEvent.META_DOWN_MASK) != 0
+            ? KeyEvent.VK_0 : KeyEvent.VK_H;
+        homeItem.setAccelerator(KeyStroke.getKeyStroke(homeKey, menuShortcutMask));
         homeItem.addActionListener(e -> showPanel("HOME"));
 
         JMenuItem webItem = new JMenuItem("WareStat Online");
+        webItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_8,
+            Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx()));
         webItem.addActionListener(e -> showPanel("WEB"));
         
         JCheckBoxMenuItem showToolbarItem = new JCheckBoxMenuItem("Show Toolbar", true);
@@ -568,6 +584,13 @@ public class MainWindow extends JFrame {
         });
     }
     
+    private void createNewSupplierOrder() {
+        showPanel("SUPPLIER_ORDERS");
+        SwingUtilities.invokeLater(() -> {
+            if (supplierOrdersPanel != null) supplierOrdersPanel.createNewSupplierOrder();
+        });
+    }
+
     public void createNewInvoice() {
         showPanel("INVOICES");
         SwingUtilities.invokeLater(() -> {
@@ -610,43 +633,48 @@ public class MainWindow extends JFrame {
     }
     
     private void showKeyboardShortcuts() {
-        int shortcutMask = Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx();
-        String modifier = (shortcutMask & KeyEvent.META_DOWN_MASK) != 0 ? "Cmd+" : "Ctrl+";
-        String shortcutsText =
-            I18n.tr("Keyboard Shortcuts") + ":\n\n" +
-            I18n.tr("File") + ":\n" +
-            modifier + "Shift+N    " + I18n.tr("New Customer") + "\n" +
-            modifier + "Shift+P    " + I18n.tr("New Product") + "\n" +
-            modifier + "Shift+O    " + I18n.tr("New Customer Order") + "\n" +
-            modifier + "Shift+I    " + I18n.tr("New Invoice") + "\n" +
-            modifier + "Q          " + I18n.tr("Exit") + "\n\n" +
-            I18n.tr("Navigation") + ":\n" +
-            modifier + "1          " + I18n.tr("Customers") + "\n" +
-            modifier + "2          " + I18n.tr("Products") + "\n" +
-            modifier + "3          " + I18n.tr("Customer Orders") + "\n" +
-            modifier + "4          " + I18n.tr("Invoices") + "\n" +
-            modifier + "5          " + I18n.tr("Suppliers") + "\n" +
-            modifier + "6          " + I18n.tr("Warehouse") + "\n" +
-            modifier + "H          " + I18n.tr("Dashboard") + "\n\n" +
-            I18n.tr("Reports") + ":\n" +
-            modifier + "Shift+R    " + I18n.tr("Sales Report") + "\n" +
-            modifier + "Shift+S    " + I18n.tr("Advanced Statistics") + "\n" +
-            modifier + "Shift+W    " + I18n.tr("Warehouse Report") + "\n\n" +
-            I18n.tr("Tools") + ":\n" +
-            modifier + "B          " + I18n.tr("Backup Management") + "\n" +
-            "F1              " + I18n.tr("This Help") + "\n";
+        // Read directly from the active menu accelerators so Help never
+        // lists shortcuts that are missing or forgets newly added ones.
+        StringBuilder shortcutsText = new StringBuilder();
+        for (int i = 0; i < menuBar.getMenuCount(); i++) {
+            JMenu menu = menuBar.getMenu(i);
+            if (menu == null) continue;
+            StringBuilder section = new StringBuilder();
+            for (int j = 0; j < menu.getItemCount(); j++) {
+                JMenuItem item = menu.getItem(j);
+                if (item == null || item.getAccelerator() == null) continue;
+                section.append(String.format("%-18s %s%n",
+                    describeShortcut(item.getAccelerator()), item.getText()));
+            }
+            if (section.length() == 0) continue;
+            if (shortcutsText.length() > 0) shortcutsText.append("\n");
+            shortcutsText.append(menu.getText()).append(":\n").append(section);
+        }
 
-        JTextArea textArea = new JTextArea(shortcutsText);
+        JTextArea textArea = new JTextArea(shortcutsText.toString());
         textArea.setEditable(false);
         textArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        textArea.setCaretPosition(0);
 
         JScrollPane scrollPane = new JScrollPane(textArea);
-        scrollPane.setPreferredSize(new Dimension(400, 300));
+        scrollPane.setPreferredSize(new Dimension(510, 430));
 
         Dialogs.showMessageDialog(this,
             scrollPane,
             I18n.tr("Keyboard Shortcuts"),
             JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private static String describeShortcut(KeyStroke shortcut) {
+        int modifiers = shortcut.getModifiers();
+        StringBuilder result = new StringBuilder();
+        if ((modifiers & InputEvent.CTRL_DOWN_MASK) != 0) result.append("Ctrl+");
+        if ((modifiers & InputEvent.META_DOWN_MASK) != 0) result.append("Cmd+");
+        if ((modifiers & InputEvent.ALT_DOWN_MASK) != 0) result.append("Alt+");
+        if ((modifiers & InputEvent.SHIFT_DOWN_MASK) != 0) result.append("Shift+");
+        result.append(shortcut.getKeyCode() == KeyEvent.VK_COMMA
+            ? "," : KeyEvent.getKeyText(shortcut.getKeyCode()));
+        return result.toString();
     }
 
     private void showPanel(String panelName) {
