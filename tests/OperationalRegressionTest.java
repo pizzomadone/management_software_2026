@@ -448,6 +448,15 @@ public class OperationalRegressionTest extends RegressionTest {
                     "Invoiced KPI tooltip does not explain separate currencies");
                 require(I18n.tr("tooltip.kpi.avgMargin").contains("ponderato"),
                     "Stock margin tooltip does not explain weighted calculation");
+                DashboardPanel dash=new DashboardPanel(null);
+                require(((JLabel)get(dash,"zeroCostCountLabel")).getToolTipText().startsWith("<html>"),
+                    "Missing supplier cost explanation is not visible in the dashboard");
+                require(((JLabel)get(dash,"negativeStockCountLabel")).getToolTipText().startsWith("<html>"),
+                    "Negative-stock explanation is not visible in the dashboard");
+                require(((JTable)get(dash,"topProductsTable")).getTableHeader().getToolTipText().startsWith("<html>"),
+                    "Top-products calculation tooltip was not localized");
+                require(((JTable)get(dash,"abcAnalysisTable")).getTableHeader().getToolTipText().startsWith("<html>"),
+                    "ABC calculation tooltip was not localized");
             } finally {
                 I18n.setLanguage(previous);
             }
