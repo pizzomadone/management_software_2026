@@ -150,7 +150,7 @@ public class VatRegressionTest extends RegressionTest {
             require("2032/0001".equals(value("SELECT number FROM invoices WHERE id=1")),
                 "Issued invoice number unexpectedly changed");
         });
-        test("directly issued invoice is numbered in its own year and canceled invoices keep history",()->{
+        test("directly issued invoices are numbered sequentially despite drafts",()->{
             fresh();
             ID direct=invoice();
             put(direct,"dateField",new DatePickerField("15/06/2034"));
@@ -160,6 +160,17 @@ public class VatRegressionTest extends RegressionTest {
                 && "Issued".equals(value("SELECT status FROM invoices WHERE id=1"))
                 && "2034-06-15".equals(value("SELECT warestat_date(date) FROM invoices WHERE id=1")),
                 "Direct issuance did not number the invoice in the date's year");
+
+            // Even a stale editor claiming an issued invoice is still a draft
+            // cannot modify its number or historical date in the database.
+            ID stale=invoice();
+            put(stale,"invoice",new Invoice(1,number,new java.util.Date(),1,"",30,6.6,36.6,"Draft"));
+            put(stale,"statusCombo",new JComboBox<>(new String[]{"Draft"}));
+            put(stale,"dateField",new DatePickerField("02/01/1999"));
+            rejectedSave(stale,"saveInvoice","invoiceSaved");
+            require(number.equals(value("SELECT number FROM invoices WHERE id=1"))
+                    && "2034-06-15".equals(value("SELECT warestat_date(date) FROM invoices WHERE id=1")),
+                "A stale draft editor changed an issued invoice");
 
             // A second draft in the same year does not advance the fiscal sequence.
             ID draft=invoice();
