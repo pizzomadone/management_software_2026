@@ -717,7 +717,9 @@ public class InvoiceDialog extends JDialog {
         // Payment refers to the customer's actual amount due. For an invoice this is
         // the gross document total, including VAT, even when a linked order stores a
         // net commercial total.
-        return currentTotal;
+        // A finalized invoice has an immutable stored total. Recalculated UI
+        // rows (including older documents) must not change the payment limit.
+        return invoice != null && contentLocked() ? invoice.getTotal() : currentTotal;
     }
 
     private double paymentAmountForSave(double targetTotal) {
@@ -892,9 +894,10 @@ public class InvoiceDialog extends JDialog {
                 Integer currentOrderId;
                 String currentOrderStatus = null;
                 String storedCurrency;
+                double storedTotal;
 
                 try (PreparedStatement read = conn.prepareStatement(
-                        "SELECT status,order_id,currency_code FROM invoices WHERE id=?")) {
+                        "SELECT status,order_id,currency_code,total FROM invoices WHERE id=?")) {
                     read.setInt(1, invoice.getId());
                     try (ResultSet r = read.executeQuery()) {
                         if (!r.next())
@@ -903,6 +906,7 @@ public class InvoiceDialog extends JDialog {
                         Object orderValue = r.getObject("order_id");
                         currentOrderId = orderValue == null ? null : ((Number) orderValue).intValue();
                         storedCurrency = r.getString("currency_code");
+                        storedTotal = r.getDouble("total");
                     }
                 }
 
@@ -962,8 +966,8 @@ public class InvoiceDialog extends JDialog {
                     if (selectedDate!=null) invoice.setDate(selectedDate);
                 } else {
                     String paymentStatus = paymentStatusCode();
-                    double paidAmount = paymentAmountForSave(currentTotal);
-                    paymentStatus = PaymentAmounts.status(paidAmount, currentTotal);
+                    double paidAmount = paymentAmountForSave(storedTotal);
+                    paymentStatus = PaymentAmounts.status(paidAmount, storedTotal);
                     try (PreparedStatement p = conn.prepareStatement(
                             "UPDATE invoices SET status=?,payment_status=?,paid_amount=? WHERE id=?")) {
                         p.setString(1, newStatus);
@@ -991,6 +995,12 @@ public class InvoiceDialog extends JDialog {
             } finally {
                 conn.setAutoCommit(true);
             }
+        } catch (IllegalArgumentException e) {
+            // Invalid input is a normal validation error, not a program crash.
+            Dialogs.showMessageDialog(this, e.getMessage(),
+                I18n.tr("Invalid Payment"), JOptionPane.WARNING_MESSAGE);
+            paidAmountField.requestFocusInWindow();
+            paidAmountField.selectAll();
         } catch (Exception e) {
             e.printStackTrace();
             Dialogs.showMessageDialog(
