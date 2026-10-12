@@ -307,7 +307,7 @@ public class MainWindow extends JFrame {
         homeItem.setAccelerator(KeyStroke.getKeyStroke(homeKey, menuShortcutMask));
         homeItem.addActionListener(e -> showPanel("HOME"));
 
-        JMenuItem webItem = new JMenuItem("WareStat Online");
+        JMenuItem webItem = new JMenuItem("Discover");
         webItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_8,
             Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx()));
         webItem.addActionListener(e -> showPanel("WEB"));
