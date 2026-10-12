@@ -150,6 +150,32 @@ public class VatRegressionTest extends RegressionTest {
             require("2032/0001".equals(value("SELECT number FROM invoices WHERE id=1")),
                 "Issued invoice number unexpectedly changed");
         });
+        test("directly issued invoice is numbered in its own year and canceled invoices keep history",()->{
+            fresh();
+            ID direct=invoice();
+            put(direct,"dateField",new DatePickerField("15/06/2034"));
+            call(direct,"saveInvoice");
+            String number=value("SELECT number FROM invoices WHERE id=1");
+            require("2034/0001".equals(number)
+                && "Issued".equals(value("SELECT status FROM invoices WHERE id=1"))
+                && "2034-06-15".equals(value("SELECT warestat_date(date) FROM invoices WHERE id=1")),
+                "Direct issuance did not number the invoice in the date's year");
+
+            // A second draft in the same year does not advance the fiscal sequence.
+            ID draft=invoice();
+            put(draft,"statusCombo",new JComboBox<>(new String[]{"Draft"}));
+            put(draft,"dateField",new DatePickerField("16/06/2034"));
+            call(draft,"saveInvoice");
+            require("DRAFT-2".equals(value("SELECT number FROM invoices WHERE id=2"))
+                    && "1".equals(value("SELECT last_number FROM invoice_numbering WHERE year=2034")),
+                "A later draft consumed the sequence after an issued document");
+
+            ID secondIssued=invoice();
+            put(secondIssued,"dateField",new DatePickerField("17/06/2034"));
+            call(secondIssued,"saveInvoice");
+            require("2034/0002".equals(value("SELECT number FROM invoices WHERE id=3")),
+                "Issued invoice numbering was interrupted by a draft");
+        });
         test("product price preview updates live for gross price VAT and purchase cost",()->{
             fresh();PD dialog=OperationalRegressionTest.productEditor(0);put(dialog,"product",null);
             JPanel preview=(JPanel)call(dialog,"createPricePreview");
