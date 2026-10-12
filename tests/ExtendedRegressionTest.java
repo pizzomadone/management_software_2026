@@ -861,20 +861,22 @@ public class ExtendedRegressionTest extends RegressionTest {
                 "SELECT status||'|'||payment_status||'|'||paid_amount||'|'||total FROM invoices WHERE id=70")),
                 "Historical partial payment or total was saved incorrectly");
 
-            ID invalid = empty(ID.class);
-            put(invalid,"invoice",model);
-            put(invalid,"documentCurrency","EUR");
-            put(invalid,"historicalForeignCurrencyLocked",true);
-            put(invalid,"linkedOrderLocked",false);
-            put(invalid,"statusCombo",new JComboBox<>(new String[]{"Canceled"}));
-            put(invalid,"paymentStatusCombo",new JComboBox<>(new String[]{"Partially Paid"}));
-            put(invalid,"paidAmountField",new JTextField("100.00"));
-            put(invalid,"numberField",new JTextField("HIST-PARTIAL"));
-            put(invalid,"currentTotal",0.0);
-            rejectedSave(invalid,"saveInvoice","invoiceSaved");
-            require("Issued|PARTIALLY_PAID|25.0|100.0".equals(value(
-                "SELECT status||'|'||payment_status||'|'||paid_amount||'|'||total FROM invoices WHERE id=70")),
-                "Invalid partial payment changed the invoice status or persisted data");
+            for (String invalidAmount : java.util.List.of("0.00", "100.00", "")) {
+                ID invalid = empty(ID.class);
+                put(invalid,"invoice",model);
+                put(invalid,"documentCurrency","EUR");
+                put(invalid,"historicalForeignCurrencyLocked",true);
+                put(invalid,"linkedOrderLocked",false);
+                put(invalid,"statusCombo",new JComboBox<>(new String[]{"Canceled"}));
+                put(invalid,"paymentStatusCombo",new JComboBox<>(new String[]{"Partially Paid"}));
+                put(invalid,"paidAmountField",new JTextField(invalidAmount));
+                put(invalid,"numberField",new JTextField("HIST-PARTIAL"));
+                put(invalid,"currentTotal",0.0);
+                rejectedSave(invalid,"saveInvoice","invoiceSaved");
+                require("Issued|PARTIALLY_PAID|25.0|100.0".equals(value(
+                    "SELECT status||'|'||payment_status||'|'||paid_amount||'|'||total FROM invoices WHERE id=70")),
+                    "Invalid partial payment (" + invalidAmount + ") changed the invoice");
+            }
         });
         test("invoice snapshots survive later party and catalog changes",()->{
             fresh();sql("UPDATE customers SET first_name='Łódź',last_name='Original' WHERE id=1");
