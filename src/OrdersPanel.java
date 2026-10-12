@@ -754,11 +754,7 @@ public class OrdersPanel extends JPanel {
         // A draft has its own proposed document date, independent of the old order.
         // The actual date can still be changed when the draft is issued.
         java.util.Date draftInvoiceDate = new java.util.Date();
-        int year = new java.util.Calendar.Builder()
-            .setInstant(draftInvoiceDate)
-            .build()
-            .get(java.util.Calendar.YEAR);
-        String invoiceNumber = DatabaseManager.getInstance().getNextInvoiceNumber(conn, year);
+        String invoiceNumber = InvoiceDialog.draftPlaceholder();
 
         // Customer orders snapshot both VAT rate and gross/net sale prices,
         // so invoicing never depends on later product changes.
@@ -800,6 +796,9 @@ public class OrdersPanel extends JPanel {
                 invoiceId = rs.getInt(1);
             }
         }
+
+        // The internal draft reference remains stable until issuance.
+        invoiceNumber = InvoiceDialog.setDraftReference(conn,invoiceId);
 
         // Insert invoice details
         String insertDetails = """
@@ -918,7 +917,7 @@ public class OrdersPanel extends JPanel {
 
                 Object[] invoiceOptions = { I18n.tr("Go to Invoice"), I18n.tr("Close") };
                 int invoiceAction = Dialogs.showOptionDialog(this,
-                    I18n.format("Invoice {0} generated successfully!", invoiceNumber) + "\n" +
+                    I18n.format("Invoice draft {0} created successfully!", invoiceNumber) + "\n" +
                     I18n.tr("You can find it in the Invoices panel."),
                     I18n.tr("Invoice Generated"), JOptionPane.DEFAULT_OPTION,
                     JOptionPane.INFORMATION_MESSAGE, null, invoiceOptions, invoiceOptions[0]);
