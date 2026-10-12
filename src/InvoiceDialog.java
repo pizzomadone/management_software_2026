@@ -1188,6 +1188,10 @@ public class InvoiceDialog extends JDialog {
             }
 
             String newStatus = (String)statusCombo.getSelectedItem();
+            if ("Canceled".equals(newStatus)
+                    && (invoice == null || "Draft".equals(invoice.getStatus()))) {
+                throw new SQLException("Delete a draft instead of canceling an unissued invoice");
+            }
             String number = numberField.getText();
 
             boolean createCompletedOrder = invoice == null
@@ -1249,10 +1253,9 @@ public class InvoiceDialog extends JDialog {
                         sourceOrderId = createCompletedOrder(
                             conn, invoiceDate, stockItems, paymentStatus, paidAmount);
                     }
-                    Calendar invoiceCalendar = Calendar.getInstance();
-                    invoiceCalendar.setTime(invoiceDate);
-                    number = DatabaseManager.getInstance().getNextInvoiceNumber(
-                        conn, invoiceCalendar.get(Calendar.YEAR));
+                    // New drafts get only an internal reference, never a fiscal sequence number.
+                    number = "Issued".equals(newStatus)
+                        ? issueNumber(conn,invoiceDate) : draftPlaceholder();
                     // New invoice
                     String invoiceQuery = """
                         INSERT INTO invoices
@@ -1285,7 +1288,8 @@ public class InvoiceDialog extends JDialog {
                     }
 
                     insertInvoiceDetails(conn, invoiceId);
-                    numberField.setText(number);
+                    if ("Draft".equals(newStatus))
+                        number = setDraftReference(conn,invoiceId);
 
                 } else {
                     // Update existing invoice
@@ -1298,23 +1302,29 @@ public class InvoiceDialog extends JDialog {
                         p.setInt(1,invoiceId);p.setInt(2,selectedCustomer.getId());p.executeUpdate();
                     }
 
+                    // No issued/canceled invoice can enter this content-edit path.
+                    // Legacy numbered drafts receive a stable internal reference on save.
+                    number = "Issued".equals(newStatus)
+                        ? issueNumber(conn,invoiceDate) : draftReference(invoiceId);
                     String invoiceQuery = """
                         UPDATE invoices
-                        SET date = ?, customer_id = ?, taxable_amount = ?, vat = ?, total = ?,
+                        SET number = ?, date = ?, customer_id = ?, taxable_amount = ?, vat = ?, total = ?,
                             status = ?, payment_status = ?, paid_amount = ?
-                        WHERE id = ?
+                        WHERE id = ? AND status='Draft'
                     """;
                     try (PreparedStatement pstmt = conn.prepareStatement(invoiceQuery)) {
-                        pstmt.setDate(1, new java.sql.Date(invoiceDate.getTime()));
-                        pstmt.setInt(2, selectedCustomer.getId());
-                        pstmt.setDouble(3, currentTaxableAmount);
-                        pstmt.setDouble(4, currentVat);
-                        pstmt.setDouble(5, currentTotal);
-                        pstmt.setString(6, newStatus);
-                        pstmt.setString(7, paymentStatus);
-                        pstmt.setDouble(8, paidAmount);
-                        pstmt.setInt(9, invoiceId);
-                        pstmt.executeUpdate();
+                        pstmt.setString(1, number);
+                        pstmt.setDate(2, new java.sql.Date(invoiceDate.getTime()));
+                        pstmt.setInt(3, selectedCustomer.getId());
+                        pstmt.setDouble(4, currentTaxableAmount);
+                        pstmt.setDouble(5, currentVat);
+                        pstmt.setDouble(6, currentTotal);
+                        pstmt.setString(7, newStatus);
+                        pstmt.setString(8, paymentStatus);
+                        pstmt.setDouble(9, paidAmount);
+                        pstmt.setInt(10, invoiceId);
+                        if (pstmt.executeUpdate()!=1)
+                            throw new SQLException("Invoice is no longer a draft");
                     }
 
                     // Delete old details
@@ -1329,6 +1339,12 @@ public class InvoiceDialog extends JDialog {
 
                 InvoiceSnapshots.capture(conn,invoiceId,false);
                 conn.commit();
+                numberField.setText(number);
+                if(invoice!=null) {
+                    invoice.setNumber(number);
+                    invoice.setDate(invoiceDate);
+                    invoice.setStatus(newStatus);
+                }
                 invoiceSaved = true;
                 dispose();
 
