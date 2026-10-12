@@ -198,13 +198,17 @@ public class SettingsPanel extends JPanel {
         pdfDirPanel.add(browsePdfButton, BorderLayout.EAST);
         panel.add(pdfDirPanel, gbc);
 
+        // Keep short options at their natural width; only the PDF path expands.
+        gbc.fill = GridBagConstraints.NONE;
+
         // Currency
         gbc.gridx = 0; gbc.gridy = 1; gbc.weightx = 0.0;
         panel.add(new JLabel("Currency:"), gbc);
 
-        gbc.gridx = 1; gbc.weightx = 1.0;
+        gbc.gridx = 1;
         String[] currencies = getSupportedCurrencyChoices();
         currencyCombo = new JComboBox<>(currencies);
+        currencyCombo.setPrototypeDisplayValue("ZAR - South African Rand (R)");
         for(String choice:currencies) {
             if(choice.startsWith(getCurrencyCode()+" - "))currencyCombo.setSelectedItem(choice);
         }
@@ -215,8 +219,7 @@ public class SettingsPanel extends JPanel {
         panel.add(new JLabel("Default VAT Rate (%) *:"), gbc);
 
         gbc.gridx = 1;
-        defaultVatField = new JTextField(getSetting("default_vat", "22.0"));
-        defaultVatField.setPreferredSize(new Dimension(200, 25));
+        defaultVatField = new JTextField(getSetting("default_vat", "22.0"), 8);
         panel.add(defaultVatField, gbc);
 
         // Language
@@ -225,6 +228,7 @@ public class SettingsPanel extends JPanel {
 
         gbc.gridx = 1;
         languageCombo = new JComboBox<>(I18n.languageNames());
+        languageCombo.setPrototypeDisplayValue("Português (Brasil)");
         languageCombo.setSelectedItem(I18n.nameForCode(getSetting("language", "it")));
         panel.add(languageCombo, gbc);
 
