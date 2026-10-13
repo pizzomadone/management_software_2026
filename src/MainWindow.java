@@ -885,8 +885,8 @@ public class MainWindow extends JFrame {
     private void createNewArchive() {
         Path destination = chooseNewArchiveFile();
         if (destination == null) return;
-        if (!destination.getFileName().toString().toLowerCase().endsWith(".wsbu")) {
-            destination = destination.resolveSibling(destination.getFileName() + ".wsbu");
+        if (!destination.getFileName().toString().toLowerCase().endsWith(".wsbq")) {
+            destination = destination.resolveSibling(destination.getFileName() + ".wsbq");
         }
 
         if (Files.exists(destination)) {
@@ -920,14 +920,14 @@ public class MainWindow extends JFrame {
 
     private Path chooseNewArchiveFile() {
         String defaultName = "WareStat-Archive-"
-            + new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date()) + ".wsbu";
+            + new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date()) + ".wsbq";
         Path initial = Path.of(BackupManager.getInstance().getArchiveDirectory()).toAbsolutePath();
 
         if (System.getProperty("os.name", "").toLowerCase().contains("mac")) {
             FileDialog dialog = new FileDialog(this, I18n.tr("New Archive"), FileDialog.SAVE);
             if (Files.isDirectory(initial)) dialog.setDirectory(initial.toString());
             dialog.setFile(defaultName);
-            dialog.setFilenameFilter((directory, name) -> name.toLowerCase().endsWith(".wsbu"));
+            dialog.setFilenameFilter((directory, name) -> name.toLowerCase().endsWith(".wsbq"));
             dialog.setVisible(true);
             return dialog.getFile() == null ? null
                 : new File(dialog.getDirectory(), dialog.getFile()).toPath();
@@ -937,7 +937,7 @@ public class MainWindow extends JFrame {
             ? initial.toFile() : AppConstants.getBackupDirectory().toFile());
         chooser.setDialogTitle(I18n.tr("New Archive"));
         chooser.setFileFilter(new FileNameExtensionFilter(
-            I18n.tr("WareStat Archive (*.wsbu)"), "wsbu"));
+            I18n.tr("WareStat Archive (*.wsbq)"), "wsbq"));
         chooser.setSelectedFile(new File(defaultName));
         return chooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION
             ? chooser.getSelectedFile().toPath() : null;
@@ -966,9 +966,13 @@ public class MainWindow extends JFrame {
         if (choice != 0 && choice != 1) return;
 
         try {
-            String currency = DatabaseCurrency.confirmLegacyCurrency(this, source);
-            if (currency == null) return;
-            BackupManager.getInstance().importDatabase(source, currency);
+            if (BackupManager.isArchive(source)) {
+                BackupManager.getInstance().restoreBackup(source.toString(), null);
+            } else {
+                String currency = DatabaseCurrency.confirmLegacyCurrency(this, source);
+                if (currency == null) return;
+                BackupManager.getInstance().importDatabase(source, currency);
+            }
             CostIntegrity.Audit importAudit =
                 CostIntegrity.audit(DatabaseManager.getInstance().getConnection());
             Dialogs.showMessageDialog(this,
@@ -985,8 +989,8 @@ public class MainWindow extends JFrame {
     private boolean exportDatabase() {
         Path destination = chooseDatabaseFile(true);
         if (destination == null) return false;
-        if (!destination.getFileName().toString().toLowerCase().endsWith(".db")) {
-            destination = destination.resolveSibling(destination.getFileName() + ".db");
+        if (!destination.getFileName().toString().toLowerCase().endsWith(".wsbq")) {
+            destination = destination.resolveSibling(destination.getFileName() + ".wsbq");
         }
         if (Files.exists(destination)) {
             int answer = Dialogs.showConfirmDialog(this,
@@ -995,8 +999,16 @@ public class MainWindow extends JFrame {
                     JOptionPane.WARNING_MESSAGE);
             if (answer != JOptionPane.YES_OPTION) return false;
         }
+        Object[] backupOptions = {
+            I18n.tr("Complete backup"), I18n.tr("Database only"), I18n.tr("Cancel")
+        };
+        int selection = Dialogs.showOptionDialog(this,
+            I18n.tr("Choose what to include in this backup."),
+            I18n.tr("Backup type"), JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE,
+            null, backupOptions, backupOptions[0]);
+        if (selection != 0 && selection != 1) return false;
         try {
-            Path exported = BackupManager.getInstance().exportDatabase(destination);
+            Path exported = BackupManager.getInstance().exportDatabase(destination, selection == 0);
             Dialogs.showMessageDialog(this,
                     I18n.tr("Database exported successfully.") + "\n" + exported,
                     I18n.tr("Export Database"), JOptionPane.INFORMATION_MESSAGE);
@@ -1008,19 +1020,26 @@ public class MainWindow extends JFrame {
     }
 
     private Path chooseDatabaseFile(boolean save) {
-        String defaultName = "WareStat_" + new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date()) + ".db";
+        String defaultName = "WareStat_" + new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date()) + ".wsbq";
         if (System.getProperty("os.name", "").toLowerCase().contains("mac")) {
             FileDialog dialog = new FileDialog(this,
                     I18n.tr(save ? "Save WareStat Database" : "Select a WareStat Database"),
                     save ? FileDialog.SAVE : FileDialog.LOAD);
             if (save) dialog.setFile(defaultName);
-            dialog.setFilenameFilter((directory, name) -> name.toLowerCase().endsWith(".db"));
+            dialog.setFilenameFilter((directory, name) -> {
+                String lower = name.toLowerCase(java.util.Locale.ROOT);
+                return save ? lower.endsWith(".wsbq")
+                    : lower.endsWith(".wsbq") || lower.endsWith(".wsbu") || lower.endsWith(".db");
+            });
             dialog.setVisible(true);
             return dialog.getFile() == null ? null : new File(dialog.getDirectory(), dialog.getFile()).toPath();
         }
         JFileChooser chooser = new JFileChooser();
         chooser.setDialogTitle(I18n.tr(save ? "Save WareStat Database" : "Select a WareStat Database"));
-        chooser.setFileFilter(new FileNameExtensionFilter(I18n.tr("WareStat Database (*.db)"), "db"));
+        chooser.setFileFilter(save
+            ? new FileNameExtensionFilter(I18n.tr("WareStat Archive (*.wsbq)"), "wsbq")
+            : new FileNameExtensionFilter(I18n.tr("WareStat files (*.wsbq, *.wsbu, *.db)"),
+                "wsbq", "wsbu", "db"));
         if (save) chooser.setSelectedFile(new File(defaultName));
         int result = save ? chooser.showSaveDialog(this) : chooser.showOpenDialog(this);
         return result == JFileChooser.APPROVE_OPTION ? chooser.getSelectedFile().toPath() : null;
