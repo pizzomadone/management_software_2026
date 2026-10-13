@@ -291,8 +291,7 @@ public class BackupManager {
             if (isArchive(file)) {
                 work = Files.createTempDirectory(AppConstants.getAppDataDirectory(), "backup-import-");
                 validateArchive(file, work);
-                Path target = folder.resolve("imported_" + UUID.randomUUID()
-                    + (isNewArchive(file) ? ".wsbq" : ".wsbu"));
+                Path target = folder.resolve("imported_" + UUID.randomUUID() + ".wsbq");
                 Files.copy(file, target, StandardCopyOption.REPLACE_EXISTING);
                 return registerBackup(target);
             }
@@ -615,8 +614,7 @@ public class BackupManager {
     }
 
     public static boolean isArchive(Path file) {
-        return isNewArchive(file) ||
-            (file != null && file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".wsbu"));
+        return isNewArchive(file);
     }
 
     private void validateBackup(Path file) {
