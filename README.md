@@ -182,9 +182,9 @@ reversibly masked so standard ZIP and SQLite tools cannot open `.wsbq` directly.
 **This is format encapsulation, not encryption or a confidentiality guarantee.**
 The active database remains SQLite.
 
-Legacy `.db` SQLite databases remain importable/restorable. The former
-`.wsbu` archive format is no longer accepted. New backups and exports are always
-`.wsbq`. Backup files are stored in the configured backup directory, which
+Legacy `.db` SQLite databases remain importable/restorable. New backups and
+exports are always `.wsbq`. Backup files are stored in the configured backup
+directory, which
 defaults to the `backups` subdirectory of the WareStat data directory.
 
 ## Barcode support
