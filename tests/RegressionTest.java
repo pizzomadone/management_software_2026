@@ -732,7 +732,7 @@ public class RegressionTest {
                 require(zip.getEntry("images/thumb_"+first.filename())==null,"Derived thumbnail was stored in backup");
                 String manifest=new String(zip.getInputStream(zip.getEntry("manifest.json")).readAllBytes(),
                     java.nio.charset.StandardCharsets.UTF_8);
-                require(manifest.contains("\\"images_included\\":true"),"Complete backup manifest has no photo flag");
+                require(manifest.contains("\"images_included\":true"),"Complete backup manifest has no photo flag");
             }
             Path legacy=OUT.resolve("legacy-photo-backup.wsbu");
             Files.copy(unpacked,legacy,StandardCopyOption.REPLACE_EXISTING);
@@ -764,7 +764,7 @@ public class RegressionTest {
             try(java.util.zip.ZipFile zip=new java.util.zip.ZipFile(onlyZip.toFile())) {
                 String manifest=new String(zip.getInputStream(zip.getEntry("manifest.json")).readAllBytes(),
                     java.nio.charset.StandardCharsets.UTF_8);
-                require(manifest.contains("\\"images_included\\":false"),"Database-only manifest reports photos");
+                require(manifest.contains("\"images_included\":false"),"Database-only manifest reports photos");
                 require(zip.stream().noneMatch(e -> e.getName().startsWith("images/")),
                     "Database-only backup contains images");
                 Path extracted=OUT.resolve("database-only-extracted.db");
