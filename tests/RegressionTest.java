@@ -131,6 +131,27 @@ public class RegressionTest {
         require(!Boolean.TRUE.equals(get(dialog,savedField)), "Invalid document was saved");
     }
     static void runAll() throws Exception {
+        test("backup and export photo choices are available in every language", () -> {
+            String original=I18n.getLanguage();
+            try {
+                for(String language:List.of("en","it","es","pt_BR","fr","de","pl")) {
+                    I18n.setLanguage(language);
+                    String with=I18n.tr("With photos");
+                    String without=I18n.tr("Without photos (smaller file)");
+                    require(!with.isBlank() && !without.isBlank() && !with.equals(without),
+                        "Unusable backup selection for "+language);
+                    require(language.equals("en") || !without.equals("Without photos (smaller file)"),
+                        "Untranslated backup selection for "+language);
+                    if(language.equals("it")) {
+                        require(with.equals("Con foto"),"Italian with-photos label differs");
+                        require(without.equals("Senza foto (più leggero)"),
+                            "Italian without-photos label differs");
+                    }
+                }
+            } finally {
+                I18n.setLanguage(original);
+            }
+        });
         test("warehouse movement search keeps hidden IDs and column alignment", () -> {
             fresh();
             sql("INSERT INTO warehouse_movements(id,product_id,date,type,quantity,reason,notes) " +

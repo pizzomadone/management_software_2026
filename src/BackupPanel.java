@@ -223,17 +223,17 @@ public class BackupPanel extends JPanel {
     }
 
     private void performBackup() {
+        // Closing the dialog cancels; only the two backup choices are buttons.
         Object[] options = {
-            I18n.tr("Complete backup"),
-            I18n.tr("Database only"),
-            I18n.tr("Cancel")
+            I18n.tr("With photos"),
+            I18n.tr("Without photos (smaller file)")
         };
         int choice = Dialogs.showOptionDialog(
             this,
             "Choose what to include in this backup.",
             "Backup type",
             JOptionPane.DEFAULT_OPTION,
-            JOptionPane.QUESTION_MESSAGE,
+            JOptionPane.PLAIN_MESSAGE,
             null,
             options,
             options[0]

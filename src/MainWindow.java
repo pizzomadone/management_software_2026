@@ -999,12 +999,13 @@ public class MainWindow extends JFrame {
                     JOptionPane.WARNING_MESSAGE);
             if (answer != JOptionPane.YES_OPTION) return false;
         }
+        // Closing the dialog cancels; use the same two choices as Backup Management.
         Object[] backupOptions = {
-            I18n.tr("Complete backup"), I18n.tr("Database only"), I18n.tr("Cancel")
+            I18n.tr("With photos"), I18n.tr("Without photos (smaller file)")
         };
         int selection = Dialogs.showOptionDialog(this,
             I18n.tr("Choose what to include in this backup."),
-            I18n.tr("Backup type"), JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE,
+            I18n.tr("Backup type"), JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE,
             null, backupOptions, backupOptions[0]);
         if (selection != 0 && selection != 1) return false;
         try {
