@@ -736,9 +736,12 @@ public class RegressionTest {
             }
             Path legacy=OUT.resolve("legacy-photo-backup.wsbu");
             Files.copy(unpacked,legacy,StandardCopyOption.REPLACE_EXISTING);
-            backup.validateDatabase(legacy);
-            var legacyImported=backup.importBackup(legacy);
-            require(legacyImported.name().endsWith(".wsbu"),"Legacy archive was renamed incorrectly");
+            boolean obsoleteRejected=false;
+            try { backup.validateDatabase(legacy); }catch(RuntimeException expected){obsoleteRejected=true;}
+            require(obsoleteRejected,"Obsolete .wsbu archive was accepted");
+            obsoleteRejected=false;
+            try { backup.importBackup(legacy); }catch(RuntimeException expected){obsoleteRejected=true;}
+            require(obsoleteRejected,"Obsolete .wsbu archive was imported");
 
             Path tampered=OUT.resolve("damaged-backup.wsbq");
             byte[] damaged=Files.readAllBytes(complete);
@@ -782,10 +785,10 @@ public class RegressionTest {
             db=DatabaseManager.getInstance().getConnection();
             require("0".equals(value("SELECT COUNT(*) FROM product_images")),
                 "Database-only restore did not remove image references");
-            backup.restoreBackup(legacy.toString(),null);
+            backup.restoreBackup(complete.toString(),null);
             db=DatabaseManager.getInstance().getConnection();
             require("3".equals(value("SELECT COUNT(*) FROM product_images")),
-                "Legacy WSBU restore did not restore image references");
+                "Complete WSBQ restore did not restore image references");
 
             Path exported=OUT.resolve("manual-export.wsbq");
             backup.exportDatabase(exported,false);
