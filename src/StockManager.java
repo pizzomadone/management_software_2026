@@ -8,6 +8,17 @@ import java.util.Date;
  */
 public class StockManager {
 
+    /** Localize predefined movement reasons, preserving unknown legacy/custom codes. */
+    public static String displayWarehouseReason(String value) {
+        if (value == null || value.isBlank()) return "";
+        return switch (value) {
+            case "PURCHASE", "SALE", "CUSTOMER RETURN", "SUPPLIER RETURN",
+                 "INVENTORY", "GIFT", "THEFT/LOSS", "OTHER",
+                 "RETURN", "REVERSAL", "ORDER", "INVOICE" -> displayWarehouseText(value);
+            default -> value;
+        };
+    }
+
     public static String displayWarehouseText(String value) {
         if (value == null || value.isBlank()) return "";
         String translated = I18n.tr(value);
