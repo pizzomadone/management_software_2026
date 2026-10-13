@@ -1027,10 +1027,10 @@ public class MainWindow extends JFrame {
                     save ? FileDialog.SAVE : FileDialog.LOAD);
             if (save) dialog.setFile(defaultName);
             dialog.setFilenameFilter((directory, name) -> {
-            String lower = name.toLowerCase(java.util.Locale.ROOT);
-            return save ? lower.endsWith(".wsbq")
-                : lower.endsWith(".wsbq") || lower.endsWith(".wsbu") || lower.endsWith(".db");
-        });
+                String lower = name.toLowerCase(java.util.Locale.ROOT);
+                return save ? lower.endsWith(".wsbq")
+                    : lower.endsWith(".wsbq") || lower.endsWith(".wsbu") || lower.endsWith(".db");
+            });
             dialog.setVisible(true);
             return dialog.getFile() == null ? null : new File(dialog.getDirectory(), dialog.getFile()).toPath();
         }
