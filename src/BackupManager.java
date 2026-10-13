@@ -219,7 +219,7 @@ public class BackupManager {
                 UUID.randomUUID() + ".wsbq");
             temporaryArchive = Files.createTempFile(folder, "warestat-backup-", ".wsbq");
             createArchive(staging, temporaryArchive, includePhotos);
-            validateBackup(temporaryArchive, true);
+            validateBackup(temporaryArchive);
             moveReplace(temporaryArchive, target);
             temporaryArchive = null;
 
@@ -325,7 +325,7 @@ public class BackupManager {
             staging = snapshot(AppConstants.getDatabasePath(), target.getParent(), null, !includePhotos);
             temporaryArchive = Files.createTempFile(target.getParent(), "warestat-export-", ".wsbq");
             createArchive(staging, temporaryArchive, includePhotos);
-            validateBackup(temporaryArchive, true);
+            validateBackup(temporaryArchive);
             moveReplace(temporaryArchive, target);
             temporaryArchive = null;
             return target;
@@ -620,11 +620,7 @@ public class BackupManager {
     }
 
     private void validateBackup(Path file) {
-        validateBackup(file, isNewArchive(file));
-    }
-
-    private void validateBackup(Path file, boolean stagedNewArchive) {
-        if (isArchive(file) || stagedNewArchive) {
+        if (isArchive(file)) {
             Path work = null;
             try {
                 work = Files.createTempDirectory(AppConstants.getAppDataDirectory(), "backup-validate-");
