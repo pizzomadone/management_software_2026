@@ -217,7 +217,7 @@ public class BackupManager {
 
             Path target = folder.resolve("WareStat-Backup-" + System.currentTimeMillis() + "-" +
                 UUID.randomUUID() + ".wsbq");
-            temporaryArchive = Files.createTempFile(folder, "warestat-backup-", ".tmp");
+            temporaryArchive = Files.createTempFile(folder, "warestat-backup-", ".wsbq");
             createArchive(staging, temporaryArchive, includePhotos);
             validateBackup(temporaryArchive, true);
             moveReplace(temporaryArchive, target);
@@ -323,7 +323,7 @@ public class BackupManager {
             if (!isNewArchive(target))
                 throw new IOException("The export filename must end in .wsbq");
             staging = snapshot(AppConstants.getDatabasePath(), target.getParent(), null, !includePhotos);
-            temporaryArchive = Files.createTempFile(target.getParent(), "warestat-export-", ".tmp");
+            temporaryArchive = Files.createTempFile(target.getParent(), "warestat-export-", ".wsbq");
             createArchive(staging, temporaryArchive, includePhotos);
             validateBackup(temporaryArchive, true);
             moveReplace(temporaryArchive, target);
