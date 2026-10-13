@@ -169,9 +169,23 @@ WareStat stores its database and configuration files in a per-user directory:
 - **Windows:** `%USERPROFILE%\AppData\Local\WareStat\`
 - **macOS:** `~/Library/Application Support/WareStat/`
 
-The primary database file is `data.db`. Backups are stored in the configured
-backup directory, which defaults to the `backups` subdirectory of the WareStat
-data directory.
+The primary working database is the local SQLite `data.db`. Backup and export
+files use the versioned proprietary `.wsbq` format. Every `.wsbq` contains
+a compressed archive with `manifest.json` and `database/data.db`; when selected,
+the archive also contains original JPEG product photos under `images/`.
+Both export and manual backup offer complete (database plus photos) or
+database-only output. Automatic backups and New Archive include photos.
+
+WareStat verifies the WSBQ signature, format version, payload size, and SHA-256
+checksum before reading its internal compressed archive. The ZIP payload is
+reversibly masked so standard ZIP and SQLite tools cannot open `.wsbq` directly.
+**This is format encapsulation, not encryption or a confidentiality guarantee.**
+The active database remains SQLite.
+
+Existing `.wsbu` (legacy ZIP with manifest/database/photos) and `.db` (legacy
+SQLite) files remain importable/restorable. New backups and exports are always
+`.wsbq`. Backup files are stored in the configured backup directory, which
+defaults to the `backups` subdirectory of the WareStat data directory.
 
 ## Barcode support
 
