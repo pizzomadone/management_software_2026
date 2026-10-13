@@ -892,7 +892,11 @@ public class ExtendedRegressionTest extends RegressionTest {
             try {
                 for(String status:List.of("Draft","Issued","Canceled")) {
                     fresh();
-                    ID d=invoice();put(d,"statusCombo",new JComboBox<>(new String[]{status}));call(d,"saveInvoice");
+                    // Canceled invoices must have been issued first; a draft cannot be canceled.
+                    ID d=invoice();put(d,"statusCombo",new JComboBox<>(
+                        new String[]{"Canceled".equals(status) ? "Issued" : status}));call(d,"saveInvoice");
+                    if("Canceled".equals(status))
+                        sql("UPDATE invoices SET status='Canceled' WHERE id=1");
                     Invoice i=new Invoice(1,"PDF",new java.util.Date(),1,"",30,6.6,36.6,status);
                     Path file=OUT.resolve("invoice-status-"+status+".pdf");
                     call(new InvoicePDFGenerator(i,customer()),"generatePDF",new Class<?>[]{java.io.File.class},file.toFile());
