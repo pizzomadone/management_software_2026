@@ -1029,7 +1029,7 @@ public class MainWindow extends JFrame {
             dialog.setFilenameFilter((directory, name) -> {
                 String lower = name.toLowerCase(java.util.Locale.ROOT);
                 return save ? lower.endsWith(".wsbq")
-                    : lower.endsWith(".wsbq") || lower.endsWith(".wsbu") || lower.endsWith(".db");
+                    : lower.endsWith(".wsbq") || lower.endsWith(".db");
             });
             dialog.setVisible(true);
             return dialog.getFile() == null ? null : new File(dialog.getDirectory(), dialog.getFile()).toPath();
@@ -1038,8 +1038,8 @@ public class MainWindow extends JFrame {
         chooser.setDialogTitle(I18n.tr(save ? "Save WareStat Database" : "Select a WareStat Database"));
         chooser.setFileFilter(save
             ? new FileNameExtensionFilter(I18n.tr("WareStat Archive (*.wsbq)"), "wsbq")
-            : new FileNameExtensionFilter(I18n.tr("WareStat files (*.wsbq, *.wsbu, *.db)"),
-                "wsbq", "wsbu", "db"));
+            : new FileNameExtensionFilter(I18n.tr("WareStat files (*.wsbq, *.db)"),
+                "wsbq", "db"));
         if (save) chooser.setSelectedFile(new File(defaultName));
         int result = save ? chooser.showSaveDialog(this) : chooser.showOpenDialog(this);
         return result == JFileChooser.APPROVE_OPTION ? chooser.getSelectedFile().toPath() : null;
