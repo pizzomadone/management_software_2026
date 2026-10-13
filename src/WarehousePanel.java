@@ -417,7 +417,7 @@ public class WarehousePanel extends JPanel {
                     row.add(rs.getString("product_name"));
                     row.add(StockManager.displayWarehouseText(rs.getString("type")));
                     row.add(rs.getInt("quantity"));
-                    row.add(StockManager.displayWarehouseText(rs.getString("reason")));
+                    row.add(StockManager.displayWarehouseReason(rs.getString("reason")));
 
                     String document = rs.getString("document_type");
                     if (document != null && !document.isEmpty()) {
@@ -588,7 +588,7 @@ public class WarehousePanel extends JPanel {
                         row.add(rs.getString("product_name"));
                         row.add(StockManager.displayWarehouseText(rs.getString("type")));
                         row.add(rs.getInt("quantity"));
-                        row.add(StockManager.displayWarehouseText(rs.getString("reason")));
+                        row.add(StockManager.displayWarehouseReason(rs.getString("reason")));
 
                         String document = rs.getString("document_type");
                         if (document != null && !document.isEmpty()) {
