@@ -139,8 +139,8 @@ public class BackupManager {
         boolean databaseReplaced = false;
 
         try {
-            if (target == null || target.getParent() == null)
-                throw new IOException("Invalid archive destination");
+            if (target == null || target.getParent() == null || !isNewArchive(target))
+                throw new IOException("The new archive filename must end in .wsbq");
             rejectActive(target);
             Files.createDirectories(target.getParent());
 
