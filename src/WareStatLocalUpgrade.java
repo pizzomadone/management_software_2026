@@ -8,7 +8,10 @@ public final class WareStatLocalUpgrade {
 
     public static void migrateIfNeeded() throws IOException, SQLException {
         Path target = AppConstants.getDatabasePath().toAbsolutePath().normalize();
-        if (Files.exists(target)) return;
+        // Only the original default location participates in the one-time 1.2
+        // upgrade. A user-selected 1.3 database must be opened in place.
+        if (!target.equals(AppConstants.getDefaultDatabasePath()) || Files.exists(target))
+            return;
         Path legacy = AppConstants.getAppDataDirectory().resolve("data.db");
         if (!Files.isRegularFile(legacy)) return;
 
