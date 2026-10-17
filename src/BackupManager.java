@@ -102,13 +102,11 @@ public class BackupManager {
                 synchronized(owner){ vacuumInto(owner,staging,legacyCurrency); }
             }else{
                 Path readable=source;
-                if(WareStatFileHeader.isSealed(source)){
+                if(!WareStatFileHeader.isSQLite(source)){
+                    // Never modify an imported file, even when recovering a
+                    // partially written WareStat signature.
                     readableCopy=WareStatFileHeader.copyReadable(source,directory);
                     readable=readableCopy;
-                }else{
-                    // Reject unidentified data instead of letting JDBC create or
-                    // treat an arbitrary file as a SQLite database.
-                    WareStatFileHeader.restoreForSQLite(readable);
                 }
                 org.sqlite.SQLiteConfig settings=new org.sqlite.SQLiteConfig();
                 settings.setReadOnly(true);
