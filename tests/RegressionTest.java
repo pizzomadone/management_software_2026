@@ -192,6 +192,75 @@ public class RegressionTest {
             require(model.getRowCount()<=100,
                 "Off-page navigation materialized more than a single chunk");
         });
+        test("customer orders open quickly in 100-row chunks and search numeric IDs", () -> {
+            fresh();
+            try(PreparedStatement ps=db.prepareStatement(
+                    "INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat) " +
+                    "VALUES(?,1,?,'New',10,10)")){
+                for(int i=1;i<=255;i++){
+                    ps.setInt(1,i);
+                    ps.setLong(2,1700000000000L + (long)i*1000);
+                    ps.addBatch();
+                }
+                ps.executeBatch();
+            }
+            OrdersPanel panel=new OrdersPanel();
+            DefaultTableModel model=(DefaultTableModel)get(panel,"tableModel");
+            require(model.getRowCount()==100,
+                "Opening customer orders loaded all 255 historical documents");
+            call(panel,"loadMoreOrders");
+            require(model.getRowCount()==200,
+                "Scrolling customer orders failed to load the second chunk");
+            call(panel,"loadMoreOrders");
+            require(model.getRowCount()==255,
+                "Last scroll chunk skipped historical customer orders");
+            JTextField search=(JTextField)get(panel,"searchField");
+            search.setText("215");
+            call(panel,"searchOrders");
+            require(model.getRowCount()==1 &&
+                    ((Number)model.getValueAt(0,0)).intValue()==215,
+                "Customer order search did not find an exact numeric ID");
+            search.setText("Test");
+            call(panel,"searchOrders");
+            require(model.getRowCount()==100,
+                "Searching by customer name no longer loads a bounded first chunk");
+        });
+        test("Statistics and Sales Report display substantial historic data in a custom year", () -> {
+            fresh();
+            try(PreparedStatement orders=db.prepareStatement(
+                    "INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat) " +
+                    "VALUES(?,1,?,'Completed',10,10)");
+                PreparedStatement details=db.prepareStatement(
+                    "INSERT INTO order_details(order_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate,cost_total) " +
+                    "VALUES(?,1,1,10,10,0,5)")){
+                for(int i=1;i<=800;i++){
+                    orders.setInt(1,i);
+                    orders.setString(2,"2023-05-10 12:00:00");
+                    orders.addBatch();
+                    details.setInt(1,i);
+                    details.addBatch();
+                }
+                orders.executeBatch();
+                details.executeBatch();
+            }
+            AdvancedStatsPanel stats=new AdvancedStatsPanel();
+            ((JComboBox<?>)get(stats,"periodCombo")).setSelectedIndex(3);
+            ((DatePickerField)get(stats,"fromDateField")).setText("01/01/2023");
+            ((DatePickerField)get(stats,"toDateField")).setText("31/12/2023");
+            call(stats,"loadData");
+            @SuppressWarnings("unchecked")
+            Map<String,double[]> monthly=(Map<String,double[]>)get(stats,"monthlySales");
+            require(monthly.containsKey("2023-05") && monthly.get("2023-05")[0]==8000.0,
+                "Statistics failed to aggregate historical sales from the selected year");
+            JTable top=(JTable)get(stats,"topProductsTable");
+            require(top.getRowCount()>0,"Statistics left the top-products chart empty");
+            SalesReportPanel report=new SalesReportPanel();
+            ((DatePickerField)get(report,"startDateField")).setText("01/01/2023");
+            ((DatePickerField)get(report,"endDateField")).setText("31/12/2023");
+            call(report,"loadReportData");
+            DefaultTableModel sales=(DefaultTableModel)get(report,"tableModel");
+            require(sales.getRowCount()==800,"Sales Report lost historical orders when filtering by year");
+        });
         test("backup and export photo choices are available in every language", () -> {
             String original=I18n.getLanguage();
             try {
