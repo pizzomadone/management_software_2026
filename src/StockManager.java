@@ -684,9 +684,16 @@ public class StockManager {
                 """)) {
             if (r.next()) throw new SQLException("Active reservations exceed the supported quantity for product " + r.getInt("product_id"));
         }
+        // Verify the cache on every startup, but write ONLY mismatches.
+        // The previous full-table UPDATE rewrote every product even if stock
+        // was already correct, causing substantial WAL I/O on large files.
         try (Statement s=conn.createStatement()) {
             s.executeUpdate("""
                 UPDATE products SET reserved_quantity=COALESCE((
+                    SELECT SUM(r.reserved_quantity) FROM stock_reservations r
+                    WHERE r.product_id=products.id AND r.status='ACTIVE'
+                ),0)
+                WHERE reserved_quantity <> COALESCE((
                     SELECT SUM(r.reserved_quantity) FROM stock_reservations r
                     WHERE r.product_id=products.id AND r.status='ACTIVE'
                 ),0)
