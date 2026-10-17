@@ -56,6 +56,29 @@ public class RegressionTest {
     }
     static int qty()throws Exception{try(Statement s=db.createStatement();ResultSet r=s.executeQuery("SELECT quantity FROM products WHERE id=1")){r.next();return r.getInt(1);}}
     static void require(boolean ok,String message){if(!ok)throw new AssertionError(message);}
+    /** Convert an old SQLite test fixture into the officially supported
+     * version-1.2 WareStat masked backup envelope. Never import a bare .db. */
+    static Path legacy12BackupFixture(Path sqlite) throws Exception {
+        Path zip=OUT.resolve(sqlite.getFileName()+"-v12-payload.zip");
+        Path archive=OUT.resolve(sqlite.getFileName()+"-v12.wsbq");
+        Files.deleteIfExists(archive);
+        try(java.util.zip.ZipOutputStream out=new java.util.zip.ZipOutputStream(
+                Files.newOutputStream(zip))) {
+            String manifest="{\"signature\":\"WARESTAT_BACKUP_V1\","
+                + "\"format\":\"WareStat-Backup\",\"format_version\":1,"
+                + "\"database\":\"data.db\",\"image_format\":\"jpeg\","
+                + "\"images_included\":false}";
+            out.putNextEntry(new java.util.zip.ZipEntry("manifest.json"));
+            out.write(manifest.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            out.closeEntry();
+            out.putNextEntry(new java.util.zip.ZipEntry("database/data.db"));
+            Files.copy(sqlite,out);
+            out.closeEntry();
+        }
+        WareStatArchiveFormat.wrap(zip,archive);
+        Files.deleteIfExists(zip);
+        return archive;
+    }
     static void fresh()throws Exception{
         if(db!=null)db.close();
         db=DatabaseManager.openConnection("jdbc:sqlite::memory:");
