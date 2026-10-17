@@ -1,7 +1,12 @@
 name: WareStat 20k load benchmark
 
-# Explicitly manual: a 20k JPEG run can consume multiple GB of disk and CPU.
+# PR: tiny smoke test; manual dispatch: potentially multi-GB 20k benchmark.
 on:
+  pull_request:
+    paths:
+      - 'tests/WareStatLoadBenchmark.java'
+      - 'tests/run-load-benchmark.sh'
+      - '.github/workflows/wsbq-load-benchmark.yml'
   workflow_dispatch:
     inputs:
       products:
@@ -33,10 +38,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
-      PRODUCTS: ${{ inputs.products }}
-      PHOTOS: ${{ inputs.photos }}
-      BACKUPS: ${{ inputs.backups }}
-      RESTORE: ${{ inputs.restore }}
+      PRODUCTS: ${{ github.event_name == 'pull_request' && '200' || inputs.products }}
+      PHOTOS: ${{ github.event_name == 'pull_request' && '200' || inputs.photos }}
+      BACKUPS: ${{ github.event_name == 'pull_request' && 'false' || inputs.backups }}
+      RESTORE: ${{ github.event_name == 'pull_request' && 'false' || inputs.restore }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
