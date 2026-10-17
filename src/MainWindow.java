@@ -976,10 +976,9 @@ public class MainWindow extends JFrame {
         String message = I18n.tr("The following file was created with WareStat 1.2:")
             + "\n" + source.toAbsolutePath() + "\n\n"
             + I18n.tr("Migrate this database to WareStat 1.3?") + "\n\n"
-            + I18n.tr("Migration changes the original file and may fail.")
+            + I18n.tr("A new .wsbq file will be created. The original .db will remain unchanged.")
             + "\n" + I18n.tr(
-                "WareStat will not create a backup. Make a manual copy before proceeding.")
-            + "\n" + I18n.tr("On success, the .db file will become a .wsbq file.")
+                "Migration may fail. It is advisable to keep a copy of the original file.")
             + "\n\n" + I18n.tr("Continue?");
         return Dialogs.showConfirmDialog(null,message,I18n.tr("WareStat 1.2 Migration"),
             JOptionPane.YES_NO_OPTION,JOptionPane.WARNING_MESSAGE) == JOptionPane.YES_OPTION;
