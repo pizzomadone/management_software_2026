@@ -674,20 +674,13 @@ public class RegressionTest {
             require(!Files.isSameFile(Path.of(imported.absolutePath()),OUT.resolve("open-wal.db")),"Imported backup is only a reference");
             b.deleteBackup(imported.id());require(Files.exists(OUT.resolve("open-wal.db")),"Deleted external original");
         });
-        test("product photos are optimized ordered and included only in complete backups", () -> {
+        test("product photos are SQLite BLOBs with consistent backup choices", () -> {
             if(db!=null)db.close();
             DatabaseManager.getInstance().closeConnection();
             Path live=AppConstants.getDatabasePath();
             Files.deleteIfExists(live);
             Files.deleteIfExists(Path.of(live+"-wal"));
             Files.deleteIfExists(Path.of(live+"-shm"));
-            Path imageDir=AppConstants.getProductImagesDirectory();
-            if(Files.exists(imageDir)) {
-                try(var walk=Files.walk(imageDir)) {
-                    for(Path p:walk.sorted(Comparator.reverseOrder()).toList()) if(!p.equals(imageDir))Files.deleteIfExists(p);
-                }
-            }
-
             DatabaseManager.getInstance().initDatabase();
             db=DatabaseManager.getInstance().getConnection();
             sql("INSERT INTO suppliers(id,company_name,vat_number) VALUES(1,'Photo Supplier','PHOTO1')");
@@ -695,8 +688,8 @@ public class RegressionTest {
 
             Path source=OUT.resolve("photo-source.png");
             java.awt.image.BufferedImage original=new java.awt.image.BufferedImage(1600,1000,java.awt.image.BufferedImage.TYPE_INT_RGB);
-            for(int y=0;y<original.getHeight();y++) for(int x=0;x<original.getWidth();x++) {
-                int red=(x*255)/original.getWidth(), green=(y*255)/original.getHeight();
+            for(int y=0;y<original.getHeight();y++)for(int x=0;x<original.getWidth();x++){
+                int red=(x*255)/original.getWidth(),green=(y*255)/original.getHeight();
                 int blue=((x/20+y/20)%2==0)?70:190;
                 original.setRGB(x,y,(red<<16)|(green<<8)|blue);
             }
@@ -708,154 +701,176 @@ public class RegressionTest {
             var third=store.addImage(1,source.toFile(),false);
             store.setPrimary(1,second.id());
             store.move(1,third.id(),-1);
-
             var photos=store.list(1);
             require(photos.size()==3,"Product photo count differs");
             require(photos.stream().filter(ProductImageStore.ProductImage::primary).count()==1 &&
-                    photos.stream().anyMatch(p->p.id()==second.id()&&p.primary()),"Primary photo differs");
+                photos.stream().anyMatch(p->p.id()==second.id()&&p.primary()),"Primary photo differs");
             require(photos.stream().map(ProductImageStore.ProductImage::sortOrder).distinct().count()==3,
-                "Photo sort order is not unique");
-
+                "Photo sort order differs");
             boolean fourthBlocked=false;
             try{store.addImage(1,source.toFile(),false);}catch(Exception expected){fourthBlocked=true;}
-            require(fourthBlocked && "3".equals(value("SELECT COUNT(*) FROM product_images WHERE product_id=1")),
-                "Fourth product photo was accepted");
+            require(fourthBlocked,"Fourth product photo was accepted");
 
-            Path optimized=store.imagePath(first.filename());
-            require(Files.size(optimized)<=ProductImageStore.MAX_IMAGE_BYTES,"Optimized JPEG exceeds size limit");
-            java.awt.image.BufferedImage saved=javax.imageio.ImageIO.read(optimized.toFile());
+            byte[] jpg=store.imageBytes(first.filename());
+            require(jpg.length<=ProductImageStore.MAX_IMAGE_BYTES,"JPEG BLOB exceeds 150KB");
+            var saved=javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(jpg));
             require(Math.max(saved.getWidth(),saved.getHeight())<=ProductImageStore.MAX_LONG_SIDE,
-                "Optimized JPEG exceeds pixel limit");
-            Path thumb=store.thumbnailPath(first.filename());
-            require(Files.isRegularFile(thumb),"Thumbnail was not created");
-            java.awt.image.BufferedImage thumbnail=javax.imageio.ImageIO.read(thumb.toFile());
-            require(Math.max(thumbnail.getWidth(),thumbnail.getHeight())<=ProductImageStore.THUMB_LONG_SIDE,
-                "Thumbnail exceeds pixel limit");
+                "JPEG BLOB exceeds 800 pixels");
+            require(store.icon(first.filename(),120)!=null&&store.iconCover(first.filename(),48,30)!=null,
+                "Image preview could not be generated from BLOB");
+            require("3".equals(value("SELECT COUNT(*) FROM product_images WHERE length(image_data)>0")),
+                "Product images are not embedded in SQLite");
 
             BackupManager backup=BackupManager.getInstance();
-            Path folder=OUT.resolve("photo-backups");Files.createDirectories(folder);backup.setBackupDirectory(folder.toString());
+            Path folder=OUT.resolve("photo-backups");Files.createDirectories(folder);
+            backup.setBackupDirectory(folder.toString());
             Path complete=backup.performBackup(true);
-            require(complete.getFileName().toString().endsWith(".wsbq"),"Complete backup extension differs");
-            require(Files.readAllBytes(complete)[0]=='W',"Proprietary backup signature missing");
-            boolean genericZipRejected=false;
-            try(java.util.zip.ZipFile ignored=new java.util.zip.ZipFile(complete.toFile())) {
-                genericZipRejected = false;
-            }catch(java.util.zip.ZipException expected){genericZipRejected=true;}
-            require(genericZipRejected,"WSBQ opened directly as ZIP");
-
-            Path unpacked=OUT.resolve("decoded-for-regression.zip");
-            Files.deleteIfExists(unpacked);
-            WareStatArchiveFormat.unwrap(complete,unpacked);
-            try(java.util.zip.ZipFile zip=new java.util.zip.ZipFile(unpacked.toFile())) {
-                require(zip.getEntry("manifest.json")!=null,"Complete backup has no manifest");
-                require(zip.getEntry("database/"+AppConstants.DATABASE_FILE_NAME)!=null,"Complete backup has no database");
-                require(zip.getEntry("images/"+first.filename())!=null,"Complete backup has no product image");
-                require(zip.getEntry("images/thumb_"+first.filename())==null,"Derived thumbnail was stored in backup");
-                String manifest=new String(zip.getInputStream(zip.getEntry("manifest.json")).readAllBytes(),
-                    java.nio.charset.StandardCharsets.UTF_8);
-                require(manifest.contains("\"images_included\":true"),"Complete backup manifest has no photo flag");
+            require(complete.getFileName().toString().endsWith(".wsbq"),"Backup extension differs");
+            require(Files.readString(complete,java.nio.charset.StandardCharsets.ISO_8859_1).startsWith("SQLite format 3"),
+                "New .wsbq is not a standard SQLite database");
+            try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+complete);
+                Statement s=c.createStatement();
+                ResultSet r=s.executeQuery("SELECT COUNT(*) FROM product_images WHERE length(image_data)>0")){
+                require(r.next()&&r.getInt(1)==3,"Backup lost embedded photographs");
             }
-            Path legacy=OUT.resolve("legacy-photo-backup.wsbu");
-            Files.copy(unpacked,legacy,StandardCopyOption.REPLACE_EXISTING);
-            boolean obsoleteRejected=false;
-            try { backup.validateDatabase(legacy); }catch(RuntimeException expected){obsoleteRejected=true;}
-            require(obsoleteRejected,"Obsolete .wsbu archive was accepted");
-            obsoleteRejected=false;
-            try { backup.importBackup(legacy); }catch(RuntimeException expected){obsoleteRejected=true;}
-            require(obsoleteRejected,"Obsolete .wsbu archive was imported");
+            Path databaseOnly=backup.performBackup(false);
+            try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+databaseOnly);
+                Statement s=c.createStatement();
+                ResultSet r=s.executeQuery("SELECT COUNT(*) FROM product_images")){
+                require(r.next()&&r.getInt(1)==0,"Photo-free backup retained images");
+            }
+            require(Files.size(databaseOnly)<Files.size(complete),
+                "Photo-free backup is not smaller than complete backup");
 
             Path tampered=OUT.resolve("damaged-backup.wsbq");
-            byte[] damaged=Files.readAllBytes(complete);
-            damaged[damaged.length-1] ^= 1;
+            byte[] damaged=Files.readAllBytes(complete);damaged[0]=0;
             Files.write(tampered,damaged);
             boolean corruptionRejected=false;
-            try { backup.validateDatabase(tampered); }catch(RuntimeException expected){corruptionRejected=true;}
-            require(corruptionRejected,"Damaged WSBQ was accepted");
+            try{backup.validateDatabase(tampered);}catch(RuntimeException expected){corruptionRejected=true;}
+            require(corruptionRejected,"Invalid SQLite file was accepted");
 
             sql("UPDATE products SET name='Changed after backup' WHERE id=1");
-            store.deleteFiles(first.filename());
             backup.restoreBackup(complete.toString(),null);
             db=DatabaseManager.getInstance().getConnection();
-            require("Photo Product".equals(value("SELECT name FROM products WHERE id=1")),"Complete restore did not restore database");
-            require(Files.isRegularFile(store.imagePath(first.filename())),"Complete restore did not restore product image");
-            require(Files.isRegularFile(store.thumbnailPath(first.filename())),"Complete restore did not rebuild thumbnail");
-
-            Path databaseOnly=backup.performBackup(false);
-            require(databaseOnly.getFileName().toString().endsWith(".wsbq"),"Database-only backup extension differs");
-            Path onlyZip=OUT.resolve("database-only-decoded.zip");
-            Files.deleteIfExists(onlyZip);
-            WareStatArchiveFormat.unwrap(databaseOnly,onlyZip);
-            try(java.util.zip.ZipFile zip=new java.util.zip.ZipFile(onlyZip.toFile())) {
-                String manifest=new String(zip.getInputStream(zip.getEntry("manifest.json")).readAllBytes(),
-                    java.nio.charset.StandardCharsets.UTF_8);
-                require(manifest.contains("\"images_included\":false"),"Database-only manifest reports photos");
-                require(zip.stream().noneMatch(e -> e.getName().startsWith("images/")),
-                    "Database-only backup contains images");
-                Path extracted=OUT.resolve("database-only-extracted.db");
-                try(var sourceDb=zip.getInputStream(zip.getEntry("database/"+AppConstants.DATABASE_FILE_NAME))) {
-                    Files.copy(sourceDb,extracted,StandardCopyOption.REPLACE_EXISTING);
-                }
-                try(Connection c2=DatabaseManager.openConnection("jdbc:sqlite:"+extracted);
-                    Statement s2=c2.createStatement();
-                    ResultSet r2=s2.executeQuery("SELECT COUNT(*) FROM product_images")) {
-                    require(r2.next() && r2.getInt(1)==0,"Database-only backup retained photo references");
-                }
-            }
+            require("Photo Product".equals(value("SELECT name FROM products WHERE id=1")),
+                "Complete restore did not restore database");
+            require("3".equals(value("SELECT COUNT(*) FROM product_images WHERE length(image_data)>0")),
+                "Complete restore did not restore image BLOBs");
+            require(store.imageBytes(first.filename()).length==jpg.length,
+                "Restored JPEG data differs");
 
             backup.restoreBackup(databaseOnly.toString(),null);
             db=DatabaseManager.getInstance().getConnection();
             require("0".equals(value("SELECT COUNT(*) FROM product_images")),
-                "Database-only restore did not remove image references");
+                "Restore of photo-free backup retained images");
             backup.restoreBackup(complete.toString(),null);
             db=DatabaseManager.getInstance().getConnection();
-            require("3".equals(value("SELECT COUNT(*) FROM product_images")),
-                "Complete WSBQ restore did not restore image references");
 
             Path exported=OUT.resolve("manual-export.wsbq");
             backup.exportDatabase(exported,false);
-            require(Files.isRegularFile(exported),"Manual export did not produce WSBQ");
             backup.validateDatabase(exported);
+            require(Files.isRegularFile(exported),"Manual export did not produce .wsbq");
         });
-        test("new archive saves current data and starts with an empty database", () -> {
+        test("previous masked ZIP .wsbq backups are still importable", () -> {
+            Path folder=OUT.resolve("legacy-archive");Files.createDirectories(folder);
+            Path dbFile=folder.resolve("old-data.db");
+            try(PreparedStatement p=db.prepareStatement("VACUUM INTO ?")){
+                p.setString(1,dbFile.toString());p.execute();
+            }
+            try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+dbFile);
+                Statement s=c.createStatement()){
+                s.executeUpdate("UPDATE product_images SET image_data=NULL");
+            }
+            Path zipFile=folder.resolve("old-payload.zip");
+            ProductImageStore store=ProductImageStore.getInstance();
+            var photos=store.list(1);
+            String manifest="{\"signature\":\"WARESTAT_BACKUP_V1\",\"format\":\"WareStat-Backup\","+
+                "\"format_version\":1,\"created_at\":0,\"database\":\"data.db\","+
+                "\"image_format\":\"jpeg\",\"images_included\":true,\"images\":[]}";
+            try(var zip=new java.util.zip.ZipOutputStream(Files.newOutputStream(zipFile))){
+                zip.putNextEntry(new java.util.zip.ZipEntry("manifest.json"));
+                zip.write(manifest.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                zip.closeEntry();
+                zip.putNextEntry(new java.util.zip.ZipEntry("database/data.db"));
+                Files.copy(dbFile,zip);zip.closeEntry();
+                for(var p:photos){
+                    zip.putNextEntry(new java.util.zip.ZipEntry("images/"+p.filename()));
+                    zip.write(store.imageBytes(p.filename()));zip.closeEntry();
+                }
+            }
+            Path oldArchive=folder.resolve("old-export.wsbq");
+            WareStatArchiveFormat.wrap(zipFile,oldArchive);
+            BackupManager backup=BackupManager.getInstance();
+            backup.validateDatabase(oldArchive);
+            var imported=backup.importBackup(oldArchive);
+            require(imported.absolutePath().endsWith(".wsbq"),"Imported backup extension is not .wsbq");
+            try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+imported.absolutePath());
+                Statement s=c.createStatement();
+                ResultSet r=s.executeQuery("SELECT COUNT(*) FROM product_images WHERE image_data IS NOT NULL")){
+                require(r.next()&&r.getInt(1)==3,"Legacy backup conversion lost photos");
+            }
+            backup.restoreBackup(oldArchive.toString(),null);
+            db=DatabaseManager.getInstance().getConnection();
+            require("3".equals(value("SELECT COUNT(*) FROM product_images WHERE length(image_data)>0")),
+                "Legacy masked archive could not restore photos");
+        });
+        test("new archive saves BLOBs and starts a clean SQLite company", () -> {
             db=DatabaseManager.getInstance().getConnection();
             sql("INSERT INTO customers(first_name,last_name) VALUES('Archive','Customer')");
-            String imageName=value("SELECT filename FROM product_images ORDER BY id LIMIT 1");
-
-            Path folder=OUT.resolve("named-archives");
-            Files.createDirectories(folder);
+            String filename=value("SELECT filename FROM product_images ORDER BY id LIMIT 1");
+            Path folder=OUT.resolve("named-archives");Files.createDirectories(folder);
             Path archive=folder.resolve("My Warehouse 2026.wsbq");
-            Files.deleteIfExists(archive);
-
             BackupManager backup=BackupManager.getInstance();
             Path created=backup.archiveAndStartNew(archive);
             db=DatabaseManager.getInstance().getConnection();
-
             require(Files.isRegularFile(created),"Named archive was not created");
             require("0".equals(value("SELECT COUNT(*) FROM customers")),
                 "New archive workflow did not clear customers");
             require("0".equals(value("SELECT COUNT(*) FROM products")),
                 "New archive workflow did not clear products");
             require("0".equals(value("SELECT COUNT(*) FROM product_images")),
-                "New archive workflow did not clear product image metadata");
+                "New archive workflow retained photos");
             require(Path.of(backup.getArchiveDirectory()).toAbsolutePath().normalize()
-                    .equals(folder.toAbsolutePath().normalize()),
-                "New archive directory was not remembered");
-
-            try(var stream=Files.list(AppConstants.getProductImagesDirectory())) {
-                require(stream.findAny().isEmpty(),"New archive workflow kept old product image files");
-            }
-
+                .equals(folder.toAbsolutePath().normalize()),"Archive directory was not remembered");
             backup.restoreBackup(created.toString(),null);
             db=DatabaseManager.getInstance().getConnection();
-            require("1".equals(value(
-                "SELECT COUNT(*) FROM customers WHERE first_name='Archive' AND last_name='Customer'")),
-                "Named archive did not restore archived customer data");
+            require("1".equals(value("SELECT COUNT(*) FROM customers WHERE first_name='Archive'")),
+                "Archive did not restore customers");
             require("Photo Product".equals(value("SELECT name FROM products WHERE code='PHOTO'")),
-                "Named archive did not restore archived product data");
-            if(imageName!=null) require(Files.isRegularFile(
-                ProductImageStore.getInstance().imagePath(imageName)),
-                "Named archive did not restore archived product images");
+                "Archive did not restore products");
+            require(filename==null||ProductImageStore.getInstance().imageBytes(filename)!=null,
+                "Archive did not restore image BLOBs");
         });
+        test("existing data.db with external photos upgrades without changing originals", () -> {
+            Path legacy=AppConstants.getAppDataDirectory().resolve("data.db");
+            Files.deleteIfExists(legacy);
+            String filename=value("SELECT filename FROM product_images ORDER BY id LIMIT 1");
+            require(filename!=null,"Missing fixture photo for legacy migration");
+            byte[] jpeg=ProductImageStore.getInstance().imageBytes(filename);
+            Path originalFolder=AppConstants.getProductImagesDirectory();
+            Files.write(originalFolder.resolve(filename),jpeg);
+            try(PreparedStatement p=db.prepareStatement("VACUUM INTO ?")){
+                p.setString(1,legacy.toString());p.execute();
+            }
+            try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+legacy);
+                Statement s=c.createStatement()){
+                s.executeUpdate("UPDATE product_images SET image_data=NULL");
+            }
+            DatabaseManager.getInstance().closeConnection();db=null;
+            Path live=AppConstants.getDatabasePath();
+            Files.deleteIfExists(live);
+            Files.deleteIfExists(Path.of(live+"-wal"));
+            Files.deleteIfExists(Path.of(live+"-shm"));
+            DatabaseManager.getInstance().initDatabase();
+            db=DatabaseManager.getInstance().getConnection();
+            require(Files.exists(legacy),"Migration deleted the original data.db");
+            require(Files.exists(originalFolder.resolve(filename)),"Migration deleted original JPEGs");
+            require("3".equals(value("SELECT COUNT(*) FROM product_images WHERE length(image_data)>0")),
+                "Local upgrade did not copy every photo into SQLite");
+            require(Arrays.equals(jpeg,ProductImageStore.getInstance().imageBytes(filename)),
+                "Legacy conversion altered JPEG bytes");
+        });
+
     }
     public static void main(String[] args) throws Exception {
         Locale.setDefault(Locale.US);TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
