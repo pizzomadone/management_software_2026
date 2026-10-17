@@ -89,12 +89,18 @@ public class ProductsPanel extends JPanel {
             "ORDER BY pi.is_primary DESC,pi.sort_order,pi.id LIMIT 1) COLLATE NOCASE"
     };
     private String activeSearch = "";
-    private JButton previousPageButton;
-    private JButton nextPageButton;
-    private JSpinner pageSpinner;
     private JLabel pageCountLabel;
-    private boolean updatingPageSpinner;
-    private final Map<String, ImageIcon> pageThumbnails = new HashMap<>();
+    private int nextProductOffset;
+    private boolean moreProducts = true;
+    private boolean loadingProductChunk;
+    // Keep recently drawn thumbnails without retaining every image while
+    // scrolling through a very large inventory.
+    private final Map<String, ImageIcon> pageThumbnails =
+        new LinkedHashMap<>(256,0.75f,true) {
+            @Override protected boolean removeEldestEntry(Map.Entry<String,ImageIcon> oldest) {
+                return size()>256;
+            }
+        };
     private final Set<String> pendingThumbnails = new LinkedHashSet<>();
     // Decode one visible thumbnail per tick instead of blocking the entire list load.
     private final Timer thumbnailTimer = new Timer(35, e -> loadNextThumbnail());
@@ -285,34 +291,24 @@ public class ProductsPanel extends JPanel {
         buttonPanel.add(deleteButton);
         buttonPanel.add(refreshButton);
 
-        // SQL-backed pages: navigation never materializes the complete catalog.
-        previousPageButton = new JButton("◀");
-        nextPageButton = new JButton("▶");
-        pageSpinner = new JSpinner(new SpinnerNumberModel(1, 1, 1, 1));
-        ((JSpinner.DefaultEditor) pageSpinner.getEditor()).getTextField().setColumns(4);
-        pageCountLabel = new JLabel("/ 1 (0)");
-        previousPageButton.setToolTipText(I18n.tr("Previous page"));
-        nextPageButton.setToolTipText(I18n.tr("Next page"));
-        previousPageButton.addActionListener(e -> { if (currentPage > 0) { currentPage--; loadProducts(); } });
-        nextPageButton.addActionListener(e -> {
-            if (currentPage < (productCount - 1) / PAGE_SIZE) { currentPage++; loadProducts(); }
-        });
-        pageSpinner.addChangeListener(e -> {
-            if (!updatingPageSpinner) {
-                currentPage = ((Number) pageSpinner.getValue()).intValue() - 1;
-                loadProducts();
-            }
-        });
-        buttonPanel.add(previousPageButton);
-        buttonPanel.add(pageSpinner);
+        // Infinite scroll instead of page numbers. SQL retrieves 100 rows
+        // at a time; the counter shows how many have actually been loaded.
+        pageCountLabel = new JLabel("0 / 0");
         buttonPanel.add(pageCountLabel);
-        buttonPanel.add(nextPageButton);
-        
+
         // Main layout
         add(searchPanel, BorderLayout.NORTH);
         productsScrollPane = new JScrollPane(productsTable);
         productsScrollPane.setHorizontalScrollBarPolicy(
             JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        productsScrollPane.getVerticalScrollBar().addAdjustmentListener(event -> {
+            JScrollBar bar = productsScrollPane.getVerticalScrollBar();
+            if (!event.getValueIsAdjusting() && moreProducts && !loadingProductChunk
+                    && bar.getMaximum() > bar.getVisibleAmount()
+                    && bar.getValue() + bar.getVisibleAmount() >= bar.getMaximum() - 120) {
+                SwingUtilities.invokeLater(this::loadMoreProducts);
+            }
+        });
         productsScrollPane.getViewport().addComponentListener(new ComponentAdapter() {
             @Override
             public void componentResized(ComponentEvent e) {
@@ -777,6 +773,7 @@ public class ProductsPanel extends JPanel {
     }
     
     public void loadProducts() {
+        currentPage=0;
         loadProductPage();
     }
 
@@ -794,29 +791,53 @@ public class ProductsPanel extends JPanel {
         // but decode only one thumbnail per timer event and only after painting.
         pageThumbnails.put(filename, ProductImageStore.getInstance().iconCover(filename, 48, 30));
         if (productsTable != null) productsTable.repaint();
-        if (pendingThumbnails.isEmpty()) thumbnailTimer.stop();
-    }
-
-    private void loadProductPage() {
-        // This path intentionally never loads photo image_data in the catalog query.
-        String filter = activeSearch == null ? "" : activeSearch.trim();
-        boolean filtered = !filter.isEmpty();
-        String where = filtered
-            ? " WHERE p.code LIKE ? OR p.name LIKE ? OR p.description LIKE ? "
-            : "";
+        if (pendingThumbnails.isEmpty()) thumbna    private void loadProductPage() {
+        // Reset and perform the count only when the search/sort changes,
+        // not on every automatic 100-row scroll fetch.
         try {
-            Connection conn = DatabaseManager.getInstance().getConnection();
-            int total;
-            try (PreparedStatement count = conn.prepareStatement(
+            String filter = activeSearch == null ? "" : activeSearch.trim();
+            String where = filter.isEmpty() ? "" :
+                " WHERE p.code LIKE ? OR p.name LIKE ? OR p.description LIKE ? ";
+            Connection conn=DatabaseManager.getInstance().getConnection();
+            try (PreparedStatement count=conn.prepareStatement(
                     "SELECT COUNT(*) FROM products p" + where)) {
-                if (filtered) bindSearch(count, filter);
-                try (ResultSet rs = count.executeQuery()) {
-                    if (!rs.next()) throw new SQLException("Unable to count products");
-                    total = rs.getInt(1);
+                if(!filter.isEmpty())bindSearch(count,filter);
+                try(ResultSet r=count.executeQuery()){
+                    if(!r.next())throw new SQLException("Unable to count products");
+                    productCount=r.getInt(1);
                 }
             }
-            int pages = Math.max(1, (total + PAGE_SIZE - 1) / PAGE_SIZE);
-            currentPage = Math.max(0, Math.min(currentPage, pages - 1));
+            nextProductOffset=currentPage*PAGE_SIZE;
+            moreProducts=nextProductOffset<productCount;
+            cancelPhotoPreviewTimer();
+            closePhotoPreviewWindow();
+            thumbnailTimer.stop();
+            pendingThumbnails.clear();
+            pageThumbnails.clear();
+            missingPurchaseCostProductIds.clear();
+            tableModel.setRowCount(0);
+            if(moreProducts)loadMoreProducts();
+            else pageCountLabel.setText("0 / "+productCount);
+            if(productsScrollPane!=null)
+                productsScrollPane.getVerticalScrollBar().setValue(0);
+            scheduleProductColumnFit();
+        }catch(SQLException e){
+            e.printStackTrace();
+            Dialogs.showMessageDialog(this,
+                "Error loading products: "+e.getMessage(),"Error",JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    /** Append only the next SQL chunk when the user approaches the bottom. */
+    private void loadMoreProducts() {
+        if(loadingProductChunk || !moreProducts)return;
+        loadingProductChunk=true;
+        String filter=activeSearch==null?"":activeSearch.trim();
+        boolean filtered=!filter.isEmpty();
+        String where=filtered ?
+            " WHERE p.code LIKE ? OR p.name LIKE ? OR p.description LIKE ? " : "";
+        try {
+            Connection conn=DatabaseManager.getInstance().getConnection();
             String orderBy = PAGE_SORT_COLUMNS[sortColumn] +
                 (sortAscending ? " ASC" : " DESC") + ", p.id ASC";
             String query = """
@@ -845,7 +866,7 @@ public class ProductsPanel extends JPanel {
             try (PreparedStatement stmt = conn.prepareStatement(query)) {
                 int index = filtered ? bindSearch(stmt, filter) : 1;
                 stmt.setInt(index++, PAGE_SIZE);
-                stmt.setInt(index, currentPage * PAGE_SIZE);
+                stmt.setInt(index, nextProductOffset);
                 try (ResultSet rs = stmt.executeQuery()) {
                     while (rs.next()) {
                         Vector<Object> row = new Vector<>();
@@ -878,34 +899,23 @@ public class ProductsPanel extends JPanel {
                     }
                 }
             }
-            cancelPhotoPreviewTimer();
-            closePhotoPreviewWindow();
-            thumbnailTimer.stop();
-            pendingThumbnails.clear();
-            pageThumbnails.clear();
-            tableModel.setRowCount(0);
-            for (Vector<Object> row : rows) tableModel.addRow(row);
-            missingPurchaseCostProductIds.clear();
+            TableStyleUtil.appendRows(tableModel,rows);
             missingPurchaseCostProductIds.addAll(missingCosts);
-            productCount = total;
-            updatingPageSpinner = true;
-            try {
-                pageSpinner.setModel(new SpinnerNumberModel(currentPage + 1, 1, pages, 1));
-            } finally {
-                updatingPageSpinner = false;
-            }
-            pageCountLabel.setText("/ " + pages + " (" + total + ")");
-            previousPageButton.setEnabled(currentPage > 0);
-            nextPageButton.setEnabled(currentPage + 1 < pages);
-            if (productsScrollPane != null)
-                productsScrollPane.getVerticalScrollBar().setValue(0);
+            nextProductOffset+=rows.size();
+            moreProducts=nextProductOffset<productCount && !rows.isEmpty();
+            pageCountLabel.setText(nextProductOffset+" / "+productCount);
             scheduleProductColumnFit();
-        } catch (SQLException e) {
-            // Preserve the underlying SQL error in headless regression logs.
+        }catch(SQLException e){
+            moreProducts=false;
             e.printStackTrace();
             Dialogs.showMessageDialog(this,
-                "Error loading products: " + e.getMessage(),
-                "Error", JOptionPane.ERROR_MESSAGE);
+                "Error loading products: "+e.getMessage(),"Error",JOptionPane.ERROR_MESSAGE);
+        }finally{
+            loadingProductChunk=false;
+        }
+    }
+
+AGE);
         }
     }
 
