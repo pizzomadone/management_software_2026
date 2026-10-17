@@ -16,6 +16,9 @@ public final class WareStatLegacy12Fixture {
             for(String ddl:schema.split(";")){
                 if(!ddl.isBlank())s.execute(ddl.trim());
             }
+            // These columns were added by DatabaseManager 1.2 at first start.
+            s.execute("ALTER TABLE orders ADD COLUMN payment_status TEXT DEFAULT 'NOT_PAID'");
+            s.execute("ALTER TABLE orders ADD COLUMN paid_amount REAL DEFAULT 0.0");
             s.executeUpdate("INSERT INTO suppliers(id,company_name,vat_number) VALUES(1,'WareStat 1.2 Supplier','TEST12-VAT')");
             s.executeUpdate("INSERT INTO customers(id,first_name,last_name,email) VALUES(1,'Historic','Customer','historic@example.invalid')");
             s.executeUpdate("INSERT INTO products(id,code,name,price,quantity,reserved_quantity,category,acquisition_cost,supplier_id,vat_rate) VALUES(1,'OLD12','Product from actual 1.2 schema',100,9,0,'Legacy',60,1,22)");
