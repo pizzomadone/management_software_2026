@@ -14,6 +14,7 @@ import javax.swing.JOptionPane;
 public class DatabaseManager {
     private static DatabaseManager instance;
     private Connection connection;
+    private volatile boolean shuttingDown;
     private static final String DB_URL;
 
     // Static initializer to set up the database URL
@@ -42,6 +43,7 @@ public class DatabaseManager {
     }
 
     public synchronized void initDatabase() {
+        shuttingDown = false;
         try {
             // Load the SQLite JDBC driver
             Class.forName("org.sqlite.JDBC");
@@ -586,7 +588,8 @@ public class DatabaseManager {
     public static void reclaimUnusedPages() {
         try {
             // EXCLUSIVE forbids a second connection; reuse the live owner.
-            Connection c = getInstance().getConnection();
+            Connection c = getInstance().liveConnectionIfOpen();
+            if (c == null) return; // Never reopen a sealed database during shutdown.
             try (Statement s = c.createStatement()) {
             int autoVacuum;
             try (ResultSet r = s.executeQuery("PRAGMA auto_vacuum")) {
@@ -618,6 +621,7 @@ public class DatabaseManager {
     /** Called on normal application exit; an interrupted or unclean shutdown
      * leaves a standard SQLite header to let SQLite recover its journal/WAL. */
     public synchronized void shutdownAndSeal() {
+        shuttingDown = true;
         if (connection == null) return;
         closeConnection();
         try {
@@ -629,6 +633,7 @@ public class DatabaseManager {
     }
 
     public Connection getConnection() throws SQLException {
+        if (shuttingDown) throw new SQLException("WareStat is shutting down");
         // Check if connection is valid, if not recreate it
         if (connection == null || connection.isClosed() || !connection.isValid(5)) {
             initDatabase();
