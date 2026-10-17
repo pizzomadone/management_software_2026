@@ -57,10 +57,10 @@ public class RegressionTest {
     static int qty()throws Exception{try(Statement s=db.createStatement();ResultSet r=s.executeQuery("SELECT quantity FROM products WHERE id=1")){r.next();return r.getInt(1);}}
     static void require(boolean ok,String message){if(!ok)throw new AssertionError(message);}
     /** Convert an old SQLite test fixture into the officially supported
-     * version-1.2 WareStat masked backup envelope. Never import a bare .db. */
+     * version-1.2 WareStat ZIP .wsbu envelope. Never import a bare .db. */
     static Path legacy12BackupFixture(Path sqlite) throws Exception {
         Path zip=OUT.resolve(sqlite.getFileName()+"-v12-payload.zip");
-        Path archive=OUT.resolve(sqlite.getFileName()+"-v12.wsbq");
+        Path archive=OUT.resolve(sqlite.getFileName()+"-v12.wsbu");
         Files.deleteIfExists(archive);
         try(java.util.zip.ZipOutputStream out=new java.util.zip.ZipOutputStream(
                 Files.newOutputStream(zip))) {
@@ -93,8 +93,7 @@ public class RegressionTest {
                 // Older 1.2 fixtures may predate product image metadata.
             }
         }
-        WareStatArchiveFormat.wrap(zip,archive);
-        Files.deleteIfExists(zip);
+        Files.move(zip,archive);
         return archive;
     }
     static void fresh()throws Exception{
@@ -860,8 +859,14 @@ public class RegressionTest {
             try{backup.importBackup(obsolete);}catch(RuntimeException e){rejected=true;}
             require(rejected,"Sealed obsolete database accepted as current WareStat");
             require(WareStatFileHeader.isSealed(obsolete),"Rejected obsolete backup modified");
+
+            Path unsupported=OUT.resolve("old-experimental.wsbq");
+            Files.copy(plainDb,unsupported,StandardCopyOption.REPLACE_EXISTING);
+            rejected=false;
+            try{backup.importBackup(unsupported);}catch(RuntimeException expected){rejected=true;}
+            require(rejected,"An experimental or unsigned .wsbq was accepted");
         });
-        test("previous masked ZIP .wsbq backups are still importable", () -> {
+        test("official WareStat 1.2 ZIP .wsbu backups remain importable", () -> {
             Path folder=OUT.resolve("legacy-archive");Files.createDirectories(folder);
             Path dbFile=folder.resolve("old-data.db");
             try(PreparedStatement p=db.prepareStatement("VACUUM INTO ?")){
@@ -888,8 +893,8 @@ public class RegressionTest {
                     zip.write(store.imageBytes(p.filename()));zip.closeEntry();
                 }
             }
-            Path oldArchive=folder.resolve("old-export.wsbq");
-            WareStatArchiveFormat.wrap(zipFile,oldArchive);
+            Path oldArchive=folder.resolve("old-export.wsbu");
+            Files.move(zipFile,oldArchive);
             BackupManager backup=BackupManager.getInstance();
             backup.validateDatabase(oldArchive);
             var imported=backup.importBackup(oldArchive);
@@ -903,7 +908,7 @@ public class RegressionTest {
             backup.restoreBackup(oldArchive.toString(),null);
             db=DatabaseManager.getInstance().getConnection();
             require("3".equals(value("SELECT COUNT(*) FROM product_images WHERE length(image_data)>0")),
-                "Legacy masked archive could not restore photos");
+                "WareStat 1.2 .wsbu backup could not restore photos");
         });
         test("new archive saves BLOBs and starts a clean SQLite company", () -> {
             db=DatabaseManager.getInstance().getConnection();
