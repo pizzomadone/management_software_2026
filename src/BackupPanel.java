@@ -174,7 +174,7 @@ public class BackupPanel extends JPanel {
             FileDialog dialog = new FileDialog(ownerFrame(), I18n.tr("Import Backup"), FileDialog.LOAD);
             dialog.setFilenameFilter((directory, name) -> {
                 String lower = name.toLowerCase(java.util.Locale.ROOT);
-                return lower.endsWith(".wsbq");
+                return lower.endsWith(".wsbq") || lower.endsWith(".wsbu");
             });
             dialog.setVisible(true);
             try {
@@ -185,7 +185,7 @@ public class BackupPanel extends JPanel {
         chooser.setDialogTitle(I18n.tr("Import Backup"));
         chooser.setAcceptAllFileFilterUsed(false);
         chooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
-            I18n.tr("WareStat backups (*.wsbq)"), "wsbq"));
+            I18n.tr("WareStat backups (*.wsbq, *.wsbu)"), "wsbq", "wsbu"));
         return chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION ? chooser.getSelectedFile() : null;
     }
 

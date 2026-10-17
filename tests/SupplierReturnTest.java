@@ -31,12 +31,11 @@ public final class SupplierReturnTest extends RegressionTest {
         throw new AssertionError("Supplier return corruption escaped integrity validation");
     }
 
-    /** A v1.2 WareStat backup: masked ZIP with a manifest and the original
-     * SQLite database. The new app may migrate only this legacy archive. */
+    /** The authentic v1.2 ZIP .wsbu backup contains a manifest and database. */
     private static java.nio.file.Path legacy12Backup(java.nio.file.Path sqlite)
             throws Exception {
         java.nio.file.Path payload=OUT.resolve(sqlite.getFileName()+"-old-payload.zip");
-        java.nio.file.Path archive=OUT.resolve(sqlite.getFileName()+"-v12.wsbq");
+        java.nio.file.Path archive=OUT.resolve(sqlite.getFileName()+"-v12.wsbu");
         java.nio.file.Files.deleteIfExists(archive);
         try(java.util.zip.ZipOutputStream zip=new java.util.zip.ZipOutputStream(
                 java.nio.file.Files.newOutputStream(payload))) {
@@ -51,8 +50,7 @@ public final class SupplierReturnTest extends RegressionTest {
             java.nio.file.Files.copy(sqlite,zip);
             zip.closeEntry();
         }
-        WareStatArchiveFormat.wrap(payload,archive);
-        java.nio.file.Files.deleteIfExists(payload);
+        java.nio.file.Files.move(payload,archive);
         return archive;
     }
 

@@ -185,8 +185,8 @@ does not prevent someone from reversing the 16-byte modification**.
 
 Backup, export, and New Archive output are single-file **`.wsbq`
 SQLite snapshots**, sealed with the WareStat signature. **Only a signed,
-current-schema WareStat `.wsbq` or the original version-1.2 masked-ZIP
-WareStat `.wsbq` archive may be imported**. Bare `.db` files, renamed
+current-schema WareStat `.wsbq` or the official version-1.2 ZIP
+WareStat `.wsbu` backup may be imported**. Bare `.db` files, renamed
 generic SQLite files, unsealed `.wsbq` files and sealed obsolete schemas
 are rejected by the import API. An extracted legacy SQLite file is converted
 *internally* as part of verified version-1.2 backup import.
@@ -198,7 +198,7 @@ Automatic backups include photos.
 On first startup without `data.wsbq`, WareStat initializes a **new
 empty database**. It does not open, import or migrate any old `data.db` and
 does not delete that file or its external images. To transfer version-1.2
-data, explicitly select the official **version-1.2 WareStat `.wsbq` backup**
+data, explicitly select the official **version-1.2 WareStat `.wsbu` backup**
 under Import Backup; validation and migration then embed its JPEGs as BLOBs.
 A standard SQLite header is tolerated only for the *active internal*
 `data.wsbq` during recovery from an interrupted shutdown, not for user imports.

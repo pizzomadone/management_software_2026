@@ -8,8 +8,8 @@ import java.util.zip.*;
 import javax.swing.*;
 
 /**
- * Native SQLite .wsbq for both live data and backups. The previous masked
- * ZIP-based .wsbq format is accepted for one-way import and restoration only.
+ * Native SQLite .wsbq for both live data and backups. Only authentic
+ * version-1.2 ZIP .wsbu backups are converted on explicit import.
  */
 public class BackupManager {
     public record BackupRecord(String id, String name, String absolutePath, long createdAt, long size) {
@@ -19,7 +19,7 @@ public class BackupManager {
 
     public static final String BACKUP_SIGNATURE = "WARESTAT_BACKUP_V1";
     public static final int BACKUP_FORMAT_VERSION = 1;
-    private static final byte[] LEGACY_MAGIC = {'W','S','B','Q','\r','\n',0x1a,'\n'};
+    private static final byte[] LEGACY_ZIP_MAGIC = {'P','K',3,4};
 
     private static BackupManager instance;
     private final Properties config = new Properties();
@@ -171,13 +171,18 @@ public class BackupManager {
     private Path prepareInput(Path source,Path folder,String legacyCurrency)
             throws IOException,SQLException {
         if(source==null||!Files.isRegularFile(source))throw new IOException("Backup file not found");
-        // User imports only the current WareStat .wsbq or the official
-        // version-1.2 masked .wsbq backup. Raw SQLite .db is never importable.
-        if(!isArchive(source))
-            throw new IOException("Only WareStat .wsbq backup files are supported");
-        boolean legacy=isLegacyArchive(source);
-        if(!legacy&&!WareStatFileHeader.isSealed(source))
-            throw new IOException("Unsupported WareStat backup signature (expected current .wsbq or version-1.2 archive)");
+        // Version 1.2 distributed a manifest-bearing ZIP backup named .wsbu.
+        // The current version uses signed SQLite .wsbq. Neither .db nor
+        // old experimental masked .wsbq containers may be imported.
+        boolean legacy=isLegacy12Backup(source);
+        if(!legacy&&!isArchive(source))
+            throw new IOException("Only current .wsbq or WareStat 1.2 .wsbu backups are supported");
+        if(legacy){
+            if(!hasVersion12ZipSignature(source))
+                throw new IOException("Invalid WareStat 1.2 .wsbu backup signature");
+        }else if(!WareStatFileHeader.isSealed(source)){
+            throw new IOException("Invalid current WareStat .wsbq signature");
+        }
         Path work=Files.createTempDirectory(folder,"wsbq-import-");
         Path result=null;
         try{
@@ -214,11 +219,13 @@ public class BackupManager {
             throw e;
         }finally{removeTemporary(work);}
     }
-    private static boolean isLegacyArchive(Path file) {
-        if(file==null||!Files.isRegularFile(file))return false;
+    private static boolean isLegacy12Backup(Path file) {
+        return file!=null&&file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".wsbu");
+    }
+
+    private static boolean hasVersion12ZipSignature(Path file) {
         try(InputStream in=Files.newInputStream(file)){
-            byte[] magic=in.readNBytes(LEGACY_MAGIC.length);
-            return Arrays.equals(magic,LEGACY_MAGIC);
+            return Arrays.equals(in.readNBytes(LEGACY_ZIP_MAGIC.length),LEGACY_ZIP_MAGIC);
         }catch(IOException e){return false;}
     }
 
@@ -413,12 +420,8 @@ public class BackupManager {
             throw new IOException("Backup file not found or not readable");
         Path extracted = work.resolve("extracted");
         Files.createDirectories(extracted);
-        Path payload = archive;
-        if (isLegacyArchive(archive)) {
-            payload = work.resolve("verified-payload.zip");
-            WareStatArchiveFormat.unwrap(archive, payload);
-        }
-        extractSafely(payload, extracted);
+        // The version-1.2 archive is the original ZIP container.
+        extractSafely(archive, extracted);
 
         Path manifestPath = extracted.resolve("manifest.json");
         if (!Files.isRegularFile(manifestPath)) throw new IOException("Backup manifest is missing");
