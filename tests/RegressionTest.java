@@ -883,6 +883,22 @@ public class RegressionTest {
             require(Arrays.equals(jpeg,ProductImageStore.getInstance().imageBytes(filename)),
                 "Legacy conversion altered JPEG bytes");
         });
+        test("sealed .wsbq opens after being copied from another WareStat installation", () -> {
+            BackupManager backups=BackupManager.getInstance();
+            Path copy=backups.performBackup(true);
+            require(WareStatFileHeader.isSealed(copy),"Cross-install source is not sealed");
+            DatabaseManager.getInstance().closeConnection();
+            db=null;
+            Path live=AppConstants.getDatabasePath();
+            Files.deleteIfExists(live);
+            Files.copy(copy,live);
+            require(WareStatFileHeader.isSealed(live),"Copied company file lost its signature");
+            DatabaseManager.getInstance().initDatabase();
+            db=DatabaseManager.getInstance().getConnection();
+            require(!WareStatFileHeader.isSealed(live),"Copied company was not opened as SQLite");
+            require("3".equals(value("SELECT COUNT(*) FROM product_images WHERE length(image_data)>0")),
+                "Cross-install copy lost product photos");
+        });
         test("exclusive live SQLite and crash-tolerant reversible signature", () -> {
             Path live=AppConstants.getDatabasePath();
             db=DatabaseManager.getInstance().getConnection();
