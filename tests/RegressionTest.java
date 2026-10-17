@@ -788,6 +788,18 @@ public class RegressionTest {
             Path complete=backup.performBackup(true);
             require(complete.getFileName().toString().endsWith(".wsbq"),"Backup extension differs");
             require(WareStatFileHeader.isSealed(complete),"Backup does not have the WareStat signature");
+
+            // Import of an already-current WSBQ should be a checked byte-for-byte
+            // copy, not a second VACUUM/reindex of its potentially multi-GB BLOBs.
+            byte[] originalBytes=Files.readAllBytes(complete);
+            BackupManager.BackupRecord copied=backup.importBackup(complete);
+            Path copiedFile=Path.of(copied.absolutePath());
+            require(WareStatFileHeader.isSealed(copiedFile),
+                "Import of a current WSBQ did not preserve its sealed header");
+            require(Arrays.equals(originalBytes,Files.readAllBytes(copiedFile)),
+                "Import unnecessarily rewrote a current WSBQ rather than copying it exactly");
+            require(Arrays.equals(originalBytes,Files.readAllBytes(complete)),
+                "Import modified the original current WSBQ backup");
             boolean genericSqliteRejected=false;
             try(Connection other=DatabaseManager.openConnection("jdbc:sqlite:"+complete);
                 Statement st=other.createStatement()){
