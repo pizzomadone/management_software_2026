@@ -1030,6 +1030,58 @@ public class RegressionTest {
             require("3".equals(value("SELECT COUNT(*) FROM product_images WHERE length(image_data)>0")),
                 "Cross-install copy lost product photos");
         });
+        test("Open uses a selected WSBQ in place and persists it without import or copies", () -> {
+            Path original = AppConstants.getDatabasePath().toAbsolutePath().normalize();
+            Path selected = OUT.resolve("selected-working-company.wsbq").toAbsolutePath().normalize();
+            Path invalid = OUT.resolve("not-a-company.wsbq").toAbsolutePath().normalize();
+            Files.writeString(invalid,"This is not a WareStat database");
+            BackupManager.getInstance().exportDatabase(selected,true);
+            require(WareStatFileHeader.isSealed(selected),"Save As did not produce signed WSBQ");
+            long expectedSize=Files.size(selected);
+            int originalPhotoCount=Integer.parseInt(value("SELECT COUNT(*) FROM product_images"));
+            DatabaseManager manager=DatabaseManager.getInstance();
+            try {
+                manager.openDatabase(selected);
+                db=manager.getConnection();
+                require(selected.equals(AppConstants.getDatabasePath()),
+                    "Open did not select the external WSBQ path");
+                require(WareStatFileHeader.isSealed(original),
+                    "Opening another WSBQ did not close and seal previous company");
+                require(!WareStatFileHeader.isSealed(selected),
+                    "Opened company was not made readable for live SQLite");
+                require(Files.size(selected)==expectedSize,
+                    "Opening the selected WSBQ unexpectedly copied or rebuilt it");
+                require(originalPhotoCount==Integer.parseInt(value("SELECT COUNT(*) FROM product_images")),
+                    "Directly opened company lost its photo BLOBs");
+                require(selected.toString().equals(SettingsPanel.getGlobalSetting(
+                    "database.active_path","")),
+                    "Open did not remember the selected company");
+                boolean rejected=false;
+                try { manager.openDatabase(invalid); }
+                catch(Exception expected) {rejected=true;}
+                require(rejected,"An invalid WSBQ was accepted by Open");
+                require(selected.equals(AppConstants.getDatabasePath()),
+                    "Invalid selection changed the active company");
+                // Simulate closing and reopening WareStat. It must re-open the
+                // selected file, never migrate data.db or copy the WSBQ.
+                manager.shutdownAndSeal();db=null;
+                require(WareStatFileHeader.isSealed(selected),"Selected company not sealed on exit");
+                manager.initDatabase();db=manager.getConnection();
+                require(selected.equals(AppConstants.getDatabasePath()),
+                    "Restart did not return directly to the selected WSBQ");
+                require(originalPhotoCount==Integer.parseInt(value("SELECT COUNT(*) FROM product_images")),
+                    "Reopening directly changed product photos");
+            } finally {
+                if (!original.equals(AppConstants.getDatabasePath())) {
+                    manager.openDatabase(original);
+                    db=manager.getConnection();
+                }
+            }
+            require(original.equals(AppConstants.getDatabasePath()),
+                "The original default company was not restored after the regression");
+            require(SettingsPanel.getGlobalSetting("database.active_path","").isBlank(),
+                "Default database path preference was not reset after selecting it");
+        });
         test("exclusive live SQLite and crash-tolerant reversible signature", () -> {
             Path live=AppConstants.getDatabasePath();
             db=DatabaseManager.getInstance().getConnection();
