@@ -240,7 +240,9 @@ public final class DatabaseIntegrity {
             orderLine += " OR " + amount("sale_unit_price_inc_vat");
         if (hasColumn(c,"order_details","vat_rate"))
             orderLine += " OR " + amount("vat_rate") + " OR NEW.vat_rate>100";
-        rules.put("order_details",orderLine+" OR ("+nullableAmount("cost_total")+")");
+        if (hasColumn(c,"order_details","cost_total"))
+            orderLine += " OR ("+nullableAmount("cost_total")+")";
+        rules.put("order_details",orderLine);
 
         String invoiceUnitPrice = hasColumn(c,"invoice_details","sale_unit_price_ex_vat")
             ? "sale_unit_price_ex_vat" : "unit_price";
