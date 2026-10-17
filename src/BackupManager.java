@@ -502,7 +502,9 @@ public class BackupManager {
              ZipInputStream zip = new ZipInputStream(new BufferedInputStream(raw))) {
             for (ZipEntry entry; (entry = zip.getNextEntry()) != null; ) {
                 entries++;
-                if (entries > 5000) throw new IOException("Backup contains too many entries");
+                // A legitimate WareStat 1.2 archive can carry tens of thousands
+                // of JPEGs. Keep generous but finite decompression limits.
+                if (entries > 200000) throw new IOException("Backup contains too many entries");
                 Path output = destination.resolve(entry.getName()).normalize();
                 if (!output.startsWith(root)) throw new IOException("Unsafe backup entry");
                 if (entry.isDirectory()) {
@@ -514,7 +516,7 @@ public class BackupManager {
                         byte[] buffer = new byte[64 * 1024];
                         for (int read; (read = zip.read(buffer)) > 0; ) {
                             total += read;
-                            if (total > 512L * 1024L * 1024L)
+                            if (total > 8L * 1024L * 1024L * 1024L)
                                 throw new IOException("Backup is too large");
                             out.write(buffer, 0, read);
                         }
