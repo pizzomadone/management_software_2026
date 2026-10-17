@@ -94,9 +94,10 @@ public class BackupManager {
         Files.delete(staging);
         Path readableCopy=null;
         try{
-            Connection owner=null;
-            if(sameFile(source,AppConstants.getDatabasePath()))
-                owner=DatabaseManager.getInstance().liveConnectionIfOpen();
+            boolean live=sameFile(source,AppConstants.getDatabasePath());
+            Connection owner=live?DatabaseManager.getInstance().liveConnectionIfOpen():null;
+            if(live&&owner==null)
+                throw new IOException("The live database is closing; backup postponed");
             if(owner!=null){
                 // Keep the existing EXCLUSIVE owner alive; never close it.
                 synchronized(owner){ vacuumInto(owner,staging,legacyCurrency); }
