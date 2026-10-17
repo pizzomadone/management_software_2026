@@ -129,6 +129,7 @@ public class InvoicesPanel extends JPanel {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
                 SELECT i.id, i.number, i.date, i.customer_id, i.status, i.currency_code,
+                       i.taxable_amount, i.vat, i.total, i.customer_snapshot,
                        i.order_id, i.payment_status AS invoice_payment_status,
                        i.paid_amount AS invoice_paid_amount,
                        o.payment_status AS order_payment_status,
@@ -145,11 +146,11 @@ public class InvoicesPanel extends JPanel {
                 while (rs.next()) {
                     String number = rs.getString("number");
 
-                    // Recalculate totals from details
-                    double[] totals = recalculateInvoiceTotals(number);
-                    double taxableAmount = totals[0];
-                    double vat = totals[1];
-                    double total = totals[2];
+                    // Totals and customer snapshot are already available on
+                    // this result row; no per-invoice database round trips.
+                    double taxableAmount = rs.getDouble("taxable_amount");
+                    double vat = rs.getDouble("vat");
+                    double total = rs.getDouble("total");
 
                     Vector<Object> row = new Vector<>();
                     row.add(number);
@@ -208,6 +209,7 @@ public class InvoicesPanel extends JPanel {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
                 SELECT i.id, i.number, i.date, i.customer_id, i.status, i.currency_code,
+                       i.taxable_amount, i.vat, i.total, i.customer_snapshot,
                        i.order_id, i.payment_status AS invoice_payment_status,
                        i.paid_amount AS invoice_paid_amount,
                        o.payment_status AS order_payment_status,
@@ -229,8 +231,11 @@ public class InvoicesPanel extends JPanel {
                         String term = searchTerm.toLowerCase(java.util.Locale.ROOT);
                         if(!number.toLowerCase(java.util.Locale.ROOT).contains(term) && !customerName.toLowerCase(java.util.Locale.ROOT).contains(term))continue;
 
-                        // Recalculate totals
-                        double[] totals = recalculateInvoiceTotals(number);
+                        double[] totals = {
+                            rs.getDouble("taxable_amount"),
+                            rs.getDouble("vat"),
+                            rs.getDouble("total")
+                        };
 
                         Vector<Object> row = new Vector<>();
                         row.add(number);
@@ -560,17 +565,22 @@ public class InvoicesPanel extends JPanel {
         }
     }
 
+    /**
+     * Prefer the immutable invoice customer snapshot. On incomplete legacy
+     * invoices, display the joined customer's name without extra SQL queries.
+     */
+    static String snapshotCustomerName(String snapshot,String currentName) throws SQLException {
+        if(snapshot==null)return currentName==null?"":currentName;
+        java.util.Properties v=InvoiceSnapshots.decode(snapshot);
+        return (v.getProperty("first_name","")+" "+v.getProperty("last_name","")).trim();
+    }
+
     private String snapshotCustomerName(Connection c,int invoiceId,String currentName)
             throws SQLException {
         try(PreparedStatement p=c.prepareStatement("SELECT customer_snapshot FROM invoices WHERE id=?")) {
             p.setInt(1,invoiceId);try(ResultSet r=p.executeQuery()) {
                 if(!r.next())throw new SQLException("Invoice no longer exists");
-                String original=r.getString(1);
-                // Legacy records can lack a snapshot. Use the linked customer
-                // name for display only, without rewriting historical invoices.
-                if(original==null)return currentName==null?"":currentName;
-                java.util.Properties v=InvoiceSnapshots.decode(original);
-                return (v.getProperty("first_name","")+" "+v.getProperty("last_name","")).trim();
+                return snapshotCustomerName(r.getString(1),currentName);
             }
         }
     }
