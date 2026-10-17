@@ -1,25 +1,18 @@
 import java.io.*;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.sql.*;
 import java.util.*;
-import java.util.regex.*;
-import java.util.zip.*;
 import javax.swing.*;
 
 /**
- * Native SQLite .wsbq for both live data and backups. Only authentic
- * version-1.2 ZIP .wsbu backups are converted on explicit import.
+ * Current data and backups use signed .wsbq; SQLite .db backups from the
+ * actual WareStat 1.2 release are converted to .wsbq, never opened as live data.
  */
 public class BackupManager {
     public record BackupRecord(String id, String name, String absolutePath, long createdAt, long size) {
         public boolean exists() { return Files.isRegularFile(Path.of(absolutePath)); }
     }
-    private record ArchiveContent(Path root, Path database, Path images) {}
 
-    public static final String BACKUP_SIGNATURE = "WARESTAT_BACKUP_V1";
-    public static final int BACKUP_FORMAT_VERSION = 1;
-    private static final byte[] LEGACY_ZIP_MAGIC = {'P','K',3,4};
 
     private static BackupManager instance;
     private final Properties config = new Properties();
@@ -167,69 +160,38 @@ public class BackupManager {
         return snapshot(source,directory,null,false);
     }
 
-    /** A legacy archive contains a masked ZIP plus a manifest and external JPEGs. */
-    private Path prepareInput(Path source,Path folder,String legacyCurrency)
-            throws IOException,SQLException {
-        if(source==null||!Files.isRegularFile(source))throw new IOException("Backup file not found");
-        // Version 1.2 distributed a manifest-bearing ZIP backup named .wsbu.
-        // The current version uses signed SQLite .wsbq. Neither .db nor
-        // old experimental masked .wsbq containers may be imported.
-        boolean legacy=isLegacy12Backup(source);
+    /** A WareStat 1.2 backup is a SQLite .db file; only the 1.2
+     * schema is accepted. Current WareStat backups must carry the signed
+     * WSBQ header. The original source is never changed. */
+    private Path prepareInput(Path source, Path folder, String legacyCurrency)
+            throws IOException, SQLException {
+        if(source==null||!Files.isRegularFile(source))
+            throw new IOException("Backup file not found");
+        boolean legacy=source.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".db");
         if(!legacy&&!isArchive(source))
-            throw new IOException("Only current .wsbq or WareStat 1.2 .wsbu backups are supported");
-        if(legacy){
-            if(!hasVersion12ZipSignature(source))
-                throw new IOException("Invalid WareStat 1.2 .wsbu backup signature");
-        }else if(!WareStatFileHeader.isSealed(source)){
-            throw new IOException("Invalid current WareStat .wsbq signature");
-        }
-        Path work=Files.createTempDirectory(folder,"wsbq-import-");
+            throw new IOException("Only WareStat 1.2 .db and current .wsbq backups are accepted");
+        if(legacy) WareStatLegacy12.validate(source);
+        else if(!WareStatFileHeader.isSealed(source))
+            throw new IOException("Invalid WareStat .wsbq signature");
         Path result=null;
-        try{
-            if(legacy){
-                ArchiveContent old=extractArchive(source,work);
-                result=snapshot(old.database(),folder,legacyCurrency,false);
-                validateImageCoherence(result,old.images());
-                try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+result)){
-                    DatabaseManager.beginTransaction(c);
-                    try{
-                        ProductImageStore.embedLegacyImages(c,old.images());
-                        ProductImageStore.validateEmbeddedImages(c);
-                        c.commit();
-                    }catch(SQLException|IOException e){c.rollback();throw e;}
-                    finally{c.setAutoCommit(true);}
-                }
-            }else{
-                // This route is reserved for a current, signed WareStat .wsbq.
-                result=snapshot(source,folder,null,false);
-                try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+result)){
-                    ProductImageStore.validateEmbeddedImages(c);
-                }
-            }
-            try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+result)){
+        try {
+            result=snapshot(source,folder,legacy?legacyCurrency:null,false);
+            try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+result)) {
+                ProductImageStore.validateEmbeddedImages(c);
                 DatabaseIntegrity.validate(c,false);
-                try(Statement s=c.createStatement();ResultSet r=s.executeQuery("PRAGMA integrity_check")){
+                try(Statement st=c.createStatement();ResultSet r=st.executeQuery("PRAGMA integrity_check")) {
                     if(!r.next()||!"ok".equalsIgnoreCase(r.getString(1)))
-                        throw new SQLException("SQLite integrity check failed");
+                        throw new SQLException("Imported database failed integrity_check");
                 }
             }
             return result;
-        }catch(IOException|SQLException|RuntimeException e){
+        } catch (IOException|SQLException|RuntimeException e) {
             removeTemporary(result);
             throw e;
-        }finally{removeTemporary(work);}
-    }
-    private static boolean isLegacy12Backup(Path file) {
-        return file!=null&&file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".wsbu");
+        }
     }
 
-    private static boolean hasVersion12ZipSignature(Path file) {
-        try(InputStream in=Files.newInputStream(file)){
-            return Arrays.equals(in.readNBytes(LEGACY_ZIP_MAGIC.length),LEGACY_ZIP_MAGIC);
-        }catch(IOException e){return false;}
-    }
-
-    /** Whether the UI may treat the file as a WareStat .wsbq (new or legacy). */
+    /** Only current-format database exports and archives use .wsbq. */
     public static boolean isArchive(Path file) {
         return file!=null&&file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".wsbq");
     }
@@ -414,129 +376,6 @@ public class BackupManager {
         finally{removeTemporary(prepared);}
     }
     public void validateDatabase(Path path){validateBackup(path);}
-
-    private ArchiveContent extractArchive(Path archive, Path work) throws IOException {
-        if (!Files.isRegularFile(archive) || !Files.isReadable(archive))
-            throw new IOException("Backup file not found or not readable");
-        Path extracted = work.resolve("extracted");
-        Files.createDirectories(extracted);
-        // The version-1.2 archive is the original ZIP container.
-        extractSafely(archive, extracted);
-
-        Path manifestPath = extracted.resolve("manifest.json");
-        if (!Files.isRegularFile(manifestPath)) throw new IOException("Backup manifest is missing");
-        String manifest = Files.readString(manifestPath, StandardCharsets.UTF_8);
-        requireManifest(manifest);
-
-        String databaseName = manifestString(manifest, "database");
-        if (databaseName == null || !databaseName.equals(Path.of(databaseName).getFileName().toString()) ||
-                databaseName.contains(".."))
-            throw new IOException("Invalid database entry in backup");
-
-        Path database = extracted.resolve("database").resolve(databaseName).normalize();
-        Path images = extracted.resolve("images").normalize();
-        if (!Files.isRegularFile(database)) throw new IOException("Backup database is missing");
-        if (!Files.exists(images)) Files.createDirectories(images);
-        return new ArchiveContent(extracted, database, images);
-    }
-
-    private static void requireManifest(String manifest) throws IOException {
-        String signature = manifestString(manifest, "signature");
-        String format = manifestString(manifest, "format");
-        Integer version = manifestInteger(manifest, "format_version");
-        String imageFormat = manifestString(manifest, "image_format");
-        if (!BACKUP_SIGNATURE.equals(signature) || !"WareStat-Backup".equals(format) ||
-                version == null || version != BACKUP_FORMAT_VERSION)
-            throw new IOException("Unsupported WareStat backup format");
-        if (imageFormat != null && !"jpeg".equalsIgnoreCase(imageFormat))
-            throw new IOException("Unsupported product image format in backup");
-    }
-
-    private void validateImageCoherence(Path dbFile, Path imagesDir) throws SQLException, IOException {
-        org.sqlite.SQLiteConfig settings = new org.sqlite.SQLiteConfig();
-        settings.setReadOnly(true);
-        try (Connection c = DriverManager.getConnection(
-                "jdbc:sqlite:" + dbFile.toAbsolutePath(), settings.toProperties())) {
-            try (Statement s = c.createStatement();
-                 ResultSet r = s.executeQuery("SELECT filename FROM product_images")) {
-                while (r.next()) {
-                    String name = r.getString(1);
-                    validateJpegFilename(name);
-                    if (!Files.isRegularFile(imagesDir.resolve(name)))
-                        throw new IOException("Backup is missing product image " + name);
-                }
-            }
-            try (Statement s = c.createStatement();
-                 ResultSet r = s.executeQuery("""
-                    SELECT product_id,COUNT(*) AS total,
-                           SUM(CASE WHEN is_primary=1 THEN 1 ELSE 0 END) AS primary_count,
-                           COUNT(DISTINCT sort_order) AS order_count
-                    FROM product_images GROUP BY product_id
-                 """)) {
-                while (r.next()) {
-                    int total = r.getInt("total");
-                    int primary = r.getInt("primary_count");
-                    if (total > ProductImageStore.MAX_IMAGES_PER_PRODUCT)
-                        throw new IOException("A product has more than three images");
-                    if (total > 0 && primary != 1)
-                        throw new IOException("A product must have exactly one primary image");
-                    if (r.getInt("order_count") != total)
-                        throw new IOException("A product has duplicate image sort order values");
-                }
-            }
-        }
-    }
-
-    private static void validateJpegFilename(String filename) throws IOException {
-        if (filename == null || filename.isBlank() ||
-                !filename.equals(Path.of(filename).getFileName().toString()) ||
-                filename.contains("..") || !filename.toLowerCase(Locale.ROOT).endsWith(".jpg"))
-            throw new IOException("Invalid product image filename in backup");
-    }
-
-    private static void extractSafely(Path archive, Path destination) throws IOException {
-        long total = 0;
-        int entries = 0;
-        Path root = destination.toRealPath();
-        try (InputStream raw = Files.newInputStream(archive);
-             ZipInputStream zip = new ZipInputStream(new BufferedInputStream(raw))) {
-            for (ZipEntry entry; (entry = zip.getNextEntry()) != null; ) {
-                entries++;
-                // A legitimate WareStat 1.2 archive can carry tens of thousands
-                // of JPEGs. Keep generous but finite decompression limits.
-                if (entries > 200000) throw new IOException("Backup contains too many entries");
-                Path output = destination.resolve(entry.getName()).normalize();
-                if (!output.startsWith(root)) throw new IOException("Unsafe backup entry");
-                if (entry.isDirectory()) {
-                    Files.createDirectories(output);
-                } else {
-                    Files.createDirectories(output.getParent());
-                    try (OutputStream out = Files.newOutputStream(output,
-                            StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
-                        byte[] buffer = new byte[64 * 1024];
-                        for (int read; (read = zip.read(buffer)) > 0; ) {
-                            total += read;
-                            if (total > 8L * 1024L * 1024L * 1024L)
-                                throw new IOException("Backup is too large");
-                            out.write(buffer, 0, read);
-                        }
-                    }
-                }
-                zip.closeEntry();
-            }
-        }
-    }
-
-    private static String manifestString(String json, String key) {
-        Matcher m = Pattern.compile("\"" + Pattern.quote(key) + "\"\\s*:\\s*\"([^\"]*)\"")
-            .matcher(json);
-        return m.find() ? m.group(1).replace("\\\"", "\"").replace("\\\\", "\\") : null;
-    }
-
-    private static Integer manifestInteger(String json, String key) {
-        Matcher m = Pattern.compile("\"" + Pattern.quote(key) + "\"\\s*:\\s*(\\d+)").matcher(json);
-        return m.find() ? Integer.valueOf(m.group(1)) : null;
-    }
 
     private synchronized BackupRecord registerBackup(Path file) {
         return registerBackup(file, true);
