@@ -244,6 +244,11 @@ public class OrdersPanel extends JPanel {
             String term = searchField.getText().trim();
             String pattern = "%" + term + "%";
             Connection conn = DatabaseManager.getInstance().getConnection();
+            // Keep the common, unfiltered view free of a broad OR predicate
+            // so SQLite can walk the date index and stop after 101 rows.
+            String where = term.isEmpty() ? "" :
+                " WHERE CAST(o.id AS TEXT) LIKE ? OR c.first_name LIKE ? OR " +
+                "c.last_name LIKE ? OR o.status LIKE ? OR i.number LIKE ? ";
             String query = """
                 SELECT o.id,o.order_date,o.status,o.payment_status,o.paid_amount,
                        c.first_name || ' ' || c.last_name AS customer_name,
@@ -253,18 +258,19 @@ public class OrdersPanel extends JPanel {
                 FROM orders o
                 LEFT JOIN customers c ON o.customer_id=c.id
                 LEFT JOIN invoices i ON i.order_id=o.id
-                WHERE ?='' OR CAST(o.id AS TEXT) LIKE ? OR c.first_name LIKE ?
-                      OR c.last_name LIKE ? OR o.status LIKE ? OR i.number LIKE ?
+                """ + where + """
                 ORDER BY o.order_date DESC,o.id DESC
                 LIMIT ? OFFSET ?
                 """;
             java.util.List<Vector<Object>> fetched = new java.util.ArrayList<>();
             boolean extraRow = false;
             try (PreparedStatement stmt=conn.prepareStatement(query)) {
-                stmt.setString(1,term);
-                for(int index=2;index<=6;index++)stmt.setString(index,pattern);
-                stmt.setInt(7,ORDER_BATCH_SIZE+1);
-                stmt.setInt(8,tableModel.getRowCount());
+                int index=1;
+                if(!term.isEmpty()){
+                    for(int i=0;i<5;i++)stmt.setString(index++,pattern);
+                }
+                stmt.setInt(index++,ORDER_BATCH_SIZE+1);
+                stmt.setInt(index,tableModel.getRowCount());
                 try(ResultSet rs=stmt.executeQuery()){
                     while(rs.next()){
                         if(fetched.size()==ORDER_BATCH_SIZE){
