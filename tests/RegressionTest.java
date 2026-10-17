@@ -168,8 +168,8 @@ public class RegressionTest {
                 "Catalog eagerly decoded images instead of retaining filenames");
             catalog.getRowSorter().setSortKeys(java.util.List.of(
                 new RowSorter.SortKey(4, SortOrder.DESCENDING)));
-            require("P0249".equals(model.getValueAt(0,1)),
-                "Sorting by price did not select the highest-priced product from the entire catalog");
+            require("P0249".equals(catalog.getValueAt(0,1)),
+                "Sorting by price did not display the highest-priced product from the entire catalog");
             catalog.getRowSorter().setSortKeys(java.util.List.of());
             pages.setValue(3);
             require(model.getRowCount()==52,"Last page did not contain remaining products");
