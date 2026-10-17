@@ -185,23 +185,30 @@ does not prevent someone from reversing the 16-byte modification**.
 
 Backup, export, and New Archive output are single-file **`.wsbq`
 SQLite snapshots**, sealed with the WareStat signature. **Only a signed,
-current-schema WareStat `.wsbq` or the official version-1.2 ZIP
-WareStat `.wsbu` backup may be imported**. Bare `.db` files, renamed
-generic SQLite files, unsealed `.wsbq` files and sealed obsolete schemas
-are rejected by the import API. An extracted legacy SQLite file is converted
-*internally* as part of verified version-1.2 backup import.
+current-schema WareStat `.wsbq` or a recognized **WareStat 1.2
+SQLite `.db` backup** may be imported**. Version 1.2 (release branch
+`claude/add-ant-release-license-87WXC`) stored live data in `data.db`
+and exported backups as `.db`. It never used `.wsbu`. Importing a verified
+1.2 database makes a fresh current-schema `.wsbq` copy; it never operates
+on the source as the live database. Generic SQLite with other schema, `.wsbu`
+and unsealed external `.wsbq` are rejected.
 Photos (optimized JPEG, max. 800px and 150KB) are embedded as BLOBs;
 thumbnail previews are derived and cached in RAM. A manual backup/export
 can exclude photo rows in the *copy*, never in the live database.
 Automatic backups include photos.
 
-On first startup without `data.wsbq`, WareStat initializes a **new
-empty database**. It does not open, import or migrate any old `data.db` and
-does not delete that file or its external images. To transfer version-1.2
-data, explicitly select the official **version-1.2 WareStat `.wsbu` backup**
-under Import Backup; validation and migration then embed its JPEGs as BLOBs.
-A standard SQLite header is tolerated only for the *active internal*
-`data.wsbq` during recovery from an interrupted shutdown, not for user imports.
+When no `data.wsbq` exists and the existing installation has `data.db`,
+`WareStatLocalUpgrade` validates the exact WareStat 1.2 schema, reads the
+original currency from the 1.2 settings, and creates an isolated migrated
+copy. Only when structural and SQLite integrity checks pass does it install
+the new signed `data.wsbq`; it **never changes or deletes** the original
+`data.db`. If both files exist, WareStat opens only `data.wsbq`.
+Original WareStat 1.2 `.db` backup files can also be imported manually via
+Import Backup (the original currency is requested because the old SQLite
+database did not record it). Old `.wsbu` files do **not** belong to the
+official 1.2 release and are not supported. An SQLite header is tolerated
+only for the *active internal* `data.wsbq` after a crash, not for external
+current-format backup imports.
 WareStat can create consistent backups from the exclusive owner connection
 using SQLite `VACUUM INTO`, rather than trying to open a second
 connection to the locked live file. Incremental page reclamation is run
