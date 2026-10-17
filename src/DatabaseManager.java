@@ -69,12 +69,13 @@ public class DatabaseManager {
                     stmt.execute("PRAGMA auto_vacuum=INCREMENTAL");
                 }
             }
-            if (existing) {
+            // Only a pending schema migration needs expensive preflight checks.
+            // A normal SQLite/WAL open already performs crash recovery.
+            boolean needsMigration = existing &&
+                DatabaseMigrationManager.hasPendingMigrations(connection);
+            if (needsMigration) {
                 repairOrphanedProductImageReferences(connection);
-                // Preserve structural and foreign-key checks BEFORE migrations,
-                // but avoid the duplicate full integrity_check on each startup.
-                // One complete integrity_check still runs AFTER schema updates.
-                DatabaseIntegrity.validateStructureAndRelations(connection, true);
+                DatabaseIntegrity.validateStructureAndRelations(connection,true);
             }
 
             // Enable foreign keys and set SQLite optimizations
@@ -97,20 +98,14 @@ public class DatabaseManager {
             // Create tables if they do not exist
             createTables();
 
-            // Repair only missing snapshots of pre-1.3 historical invoices.
-            // Never modify immutable snapshots captured by WareStat 1.3.
-            // If legacy party records have been deleted, keep the database
-            // available; the invoices list has a non-destructive fallback.
-            try {
-                int recovered = InvoiceSnapshots.repairIncompleteLegacy(connection);
-                if (recovered > 0)
-                    System.out.println("Recovered " + recovered + " legacy invoice snapshots");
-            } catch (SQLException oldDataIncomplete) {
-                System.err.println("Legacy invoice snapshot repair skipped: "
-                    + oldDataIncomplete.getMessage());
+            // Full integrity and photo BLOB scans are reserved for newly
+            // created / migrated companies. Repeating them for a multi-GB
+            // database on every startup delays the first usable window.
+            // Historic invoice snapshots are repaired only on invoice access.
+            if (!existing || needsMigration) {
+                DatabaseIntegrity.validate(connection,false);
+                ProductImageStore.validateEmbeddedImages(connection);
             }
-            DatabaseIntegrity.validate(connection, false);
-            ProductImageStore.validateEmbeddedImages(connection);
             DatabaseCurrency.bind(connection);
             startupCostAudit=upgraded ? CostIntegrity.audit(connection) : null;
 
@@ -537,7 +532,9 @@ public class DatabaseManager {
             stmt.execute(createCompanyDataTable);
         }
 
-        // Apply ordered, versioned schema migrations for existing databases.
+        // Do not rebuild stock triggers or reconcile every product on routine
+        // startups; the existing triggers maintain reserved quantities.
+        boolean schemaWork=DatabaseMigrationManager.hasPendingMigrations(connection);
         DatabaseMigrationManager.migrate(connection);
 
         // These indexes are needed for large page-based catalogs. In particular,
@@ -560,9 +557,18 @@ public class DatabaseManager {
             stmt.execute("CREATE INDEX IF NOT EXISTS idx_order_details_product ON order_details(product_id,order_id)");
         }
 
-        // Create triggers for stock reservation synchronization
-        createStockReservationTriggers();
-        StockManager.reconcileReservedStock(connection);
+        // Rebuild triggers only on a schema change or if one is missing.
+        boolean missingStockTriggers=false;
+        try(Statement stmt=connection.createStatement();
+            ResultSet rs=stmt.executeQuery(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN " +
+                "('update_reserved_stock_insert','update_reserved_stock_update','update_reserved_stock_delete')")) {
+            missingStockTriggers=!rs.next() || rs.getInt(1)!=3;
+        }
+        if(schemaWork || missingStockTriggers) {
+            createStockReservationTriggers();
+            StockManager.reconcileReservedStock(connection);
+        }
     }
 
     private void createStockReservationTriggers() throws SQLException {
