@@ -567,8 +567,9 @@ public class DatabaseManager {
         }
         if(schemaWork || missingStockTriggers) {
             createStockReservationTriggers();
-            StockManager.reconcileReservedStock(connection);
         }
+        // Always repair stale quantities, but only write changed rows.
+        StockManager.reconcileReservedStock(connection);
     }
 
     private void createStockReservationTriggers() throws SQLException {
