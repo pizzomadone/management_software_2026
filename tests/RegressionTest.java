@@ -696,6 +696,39 @@ public class RegressionTest {
             require(qty()==4 && "4".equals(value("SELECT remaining_quantity FROM inventory_lots WHERE supplier_order_detail_id=10")),
                 "Rejected supplier receipt reversal changed stock or FIFO state");
         });
+        test("missing legacy invoice snapshots recover without changing saved 1.3 invoices", () -> {
+            fresh();
+            sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status,snapshot_version) "
+                + "VALUES(901,'OLD-GAP',1,1,10,0,10,'Issued',0)");
+            sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status,snapshot_version,customer_snapshot,company_snapshot) "
+                + "VALUES(902,'NEW-IMMUTABLE',1,1,10,0,10,'Issued',1,'first_name=Archived\\nlast_name=Client\\n','company_name=Archived\\n')");
+            sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status,snapshot_version,company_snapshot) "
+                + "VALUES(903,'NEW-INCOMPLETE',1,1,10,0,10,'Issued',1,'company_name=Archived\\n')");
+            require(InvoiceSnapshots.repairIncompleteLegacy(db)==1,
+                "Only the incomplete legacy snapshot must be repaired");
+            java.util.Properties recovered=InvoiceSnapshots.decode(
+                value("SELECT customer_snapshot FROM invoices WHERE id=901"));
+            require("Test".equals(recovered.getProperty("first_name"))
+                && "Customer".equals(recovered.getProperty("last_name"))
+                && "0".equals(value("SELECT snapshot_version FROM invoices WHERE id=901")),
+                "Incomplete legacy invoice was not restored with recorded customer data");
+            require("first_name=Archived\\nlast_name=Client\\n".equals(
+                value("SELECT customer_snapshot FROM invoices WHERE id=902")),
+                "Saved historical 1.3 customer snapshot was modified");
+            require(value("SELECT customer_snapshot FROM invoices WHERE id=903")==null,
+                "Missing non-legacy customer snapshot was silently reconstructed");
+            InvoicesPanel list=empty(InvoicesPanel.class);
+            String fallback=(String)call(list,"snapshotCustomerName",
+                new Class<?>[]{Connection.class,int.class,String.class},db,903,"Test Customer");
+            require("Test Customer".equals(fallback),
+                "Invoice table crashed instead of displaying fallback customer name");
+            String original=(String)call(list,"snapshotCustomerName",
+                new Class<?>[]{Connection.class,int.class,String.class},db,902,"Test Customer");
+            require("Archived Client".equals(original),
+                "Invoice table replaced existing historical snapshot with live customer");
+            require(InvoiceSnapshots.repairIncompleteLegacy(db)==0,
+                "Legacy snapshot recovery is not idempotent");
+        });
         test("raw SQLite .db with committed WAL is never importable", () -> {
             if(db!=null)db.close();Path current=AppConstants.getDatabasePath();Files.deleteIfExists(current);
             DatabaseManager.getInstance().initDatabase();db=DatabaseManager.getInstance().getConnection();
