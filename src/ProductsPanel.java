@@ -791,7 +791,10 @@ public class ProductsPanel extends JPanel {
         // but decode only one thumbnail per timer event and only after painting.
         pageThumbnails.put(filename, ProductImageStore.getInstance().iconCover(filename, 48, 30));
         if (productsTable != null) productsTable.repaint();
-        if (pendingThumbnails.isEmpty()) thumbna    private void loadProductPage() {
+        if (pendingThumbnails.isEmpty()) thumbnailTimer.stop();
+    }
+
+    private void loadProductPage() {
         // Reset and perform the count only when the search/sort changes,
         // not on every automatic 100-row scroll fetch.
         try {
@@ -912,10 +915,6 @@ public class ProductsPanel extends JPanel {
                 "Error loading products: "+e.getMessage(),"Error",JOptionPane.ERROR_MESSAGE);
         }finally{
             loadingProductChunk=false;
-        }
-    }
-
-AGE);
         }
     }
 
