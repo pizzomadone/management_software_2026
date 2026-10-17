@@ -46,7 +46,10 @@ public class DatabaseManager {
             // Load the SQLite JDBC driver
             Class.forName("org.sqlite.JDBC");
 
-            // Validate an existing archive before creating any missing application tables.
+            // A one-time, validated migration preserves the original data.db and photos.
+            WareStatLocalUpgrade.migrateIfNeeded();
+
+            // Validate an existing database before creating any missing application tables.
             boolean existing = java.nio.file.Files.exists(AppConstants.getDatabasePath());
             closeConnection();
             connection = openConnection(DB_URL);
@@ -75,6 +78,7 @@ public class DatabaseManager {
             // Create tables if they do not exist
             createTables();
             DatabaseIntegrity.validate(connection, false);
+            ProductImageStore.validateEmbeddedImages(connection);
             DatabaseCurrency.bind(connection);
             startupCostAudit=upgraded ? CostIntegrity.audit(connection) : null;
 
@@ -140,6 +144,7 @@ public class DatabaseManager {
         java.nio.file.Files.deleteIfExists(java.nio.file.Path.of(target + "-shm"));
 
         try (Connection conn = openConnection("jdbc:sqlite:" + target)) {
+            try (Statement s = conn.createStatement()) { s.execute("PRAGMA auto_vacuum=INCREMENTAL"); }
             DatabaseManager staging = new DatabaseManager();
             staging.connection = conn;
             staging.createTables();
@@ -218,6 +223,7 @@ public class DatabaseManager {
                 filename TEXT NOT NULL,
                 is_primary INTEGER NOT NULL DEFAULT 0 CHECK(is_primary IN (0,1)),
                 sort_order INTEGER NOT NULL DEFAULT 0 CHECK(sort_order >= 0),
+                image_data BLOB,
                 FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE CASCADE
             )
         """;
