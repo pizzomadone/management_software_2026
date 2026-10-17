@@ -176,14 +176,26 @@ public class BackupManager {
             throw new IOException("Invalid WareStat .wsbq signature");
         Path result=null;
         try {
-            result=snapshot(source,folder,legacy?legacyCurrency:null,false);
-            try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+result)) {
-                ProductImageStore.validateEmbeddedImages(c);
-                DatabaseIntegrity.validate(c,false);
-                try(Statement st=c.createStatement();ResultSet r=st.executeQuery("PRAGMA integrity_check")) {
-                    if(!r.next()||!"ok".equalsIgnoreCase(r.getString(1)))
-                        throw new SQLException("Imported database failed integrity_check");
-                }
+            if (legacy) {
+                // 1.2 genuinely needs a schema conversion. snapshot() validates
+                // both the migrated structure and SQLite pages before returning.
+                return snapshot(source,folder,legacyCurrency,false);
+            }
+
+            // Current signed WSBQ already has the right schema, indexes and JPEG
+            // BLOBs. Never VACUUM/rebuild it or make a second 2 GB readable copy.
+            // Copy once, change only the private copy's reversible 16-byte header,
+            // then validate BEFORE it can replace any active company data.
+            Files.createDirectories(folder);
+            result=Files.createTempFile(folder,"wsbq-import-", ".wsbq");
+            Files.copy(source,result,StandardCopyOption.REPLACE_EXISTING);
+            WareStatFileHeader.restoreForSQLite(result);
+            org.sqlite.SQLiteConfig readOnly=new org.sqlite.SQLiteConfig();
+            readOnly.setReadOnly(true);
+            readOnly.setBusyTimeout(10000);
+            try(Connection c=DriverManager.getConnection(
+                    "jdbc:sqlite:"+result.toAbsolutePath(),readOnly.toProperties())) {
+                validateCurrentBackupVersion(c);
             }
             return result;
         } catch (IOException|SQLException|RuntimeException e) {
