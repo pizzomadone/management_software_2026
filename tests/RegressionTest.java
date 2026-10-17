@@ -850,7 +850,10 @@ public class RegressionTest {
             require(filename!=null,"Missing fixture photo for legacy migration");
             byte[] jpeg=ProductImageStore.getInstance().imageBytes(filename);
             Path originalFolder=AppConstants.getProductImagesDirectory();
-            Files.write(originalFolder.resolve(filename),jpeg);
+            for (var photo : ProductImageStore.getInstance().list(1)) {
+                Files.write(originalFolder.resolve(photo.filename()),
+                    ProductImageStore.getInstance().imageBytes(photo.filename()));
+            }
             try(PreparedStatement p=db.prepareStatement("VACUUM INTO ?")){
                 p.setString(1,legacy.toString());p.execute();
             }
