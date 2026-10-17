@@ -208,6 +208,7 @@ public class OrdersPanel extends JPanel {
 
     private void loadOrders() {
         tableModel.setRowCount(0);
+        java.util.List<java.util.Vector<Object>> fetchedRows=new java.util.ArrayList<>();
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
@@ -248,9 +249,10 @@ public class OrdersPanel extends JPanel {
                     row.add(invoiceNumber == null || invoiceNumber.isBlank()
                         ? null : new InvoiceLink(invoiceNumber));
 
-                    tableModel.addRow(row);
+                    fetchedRows.add(row);
                 }
             }
+            TableStyleUtil.appendRows(tableModel,fetchedRows);
         } catch (SQLException e) {
             e.printStackTrace();
             Dialogs.showMessageDialog(this,
@@ -267,6 +269,7 @@ public class OrdersPanel extends JPanel {
         }
 
         tableModel.setRowCount(0);
+        java.util.List<java.util.Vector<Object>> fetchedRows=new java.util.ArrayList<>();
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
@@ -313,10 +316,11 @@ public class OrdersPanel extends JPanel {
                         row.add(invoiceNumber == null || invoiceNumber.isBlank()
                             ? null : new InvoiceLink(invoiceNumber));
 
-                        tableModel.addRow(row);
+                        fetchedRows.add(row);
                     }
                 }
             }
+            TableStyleUtil.appendRows(tableModel,fetchedRows);
         } catch (SQLException e) {
             e.printStackTrace();
             Dialogs.showMessageDialog(this,
