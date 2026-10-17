@@ -1035,6 +1035,13 @@ public class RegressionTest {
             Path selected = OUT.resolve("selected-working-company.wsbq").toAbsolutePath().normalize();
             Path invalid = OUT.resolve("not-a-company.wsbq").toAbsolutePath().normalize();
             Files.writeString(invalid,"This is not a WareStat database");
+            Path malformed=OUT.resolve("signed-nonwarestat.wsbq").toAbsolutePath().normalize();
+            Files.deleteIfExists(malformed);
+            try (Connection bogus=DatabaseManager.openConnection("jdbc:sqlite:"+malformed);
+                 Statement st=bogus.createStatement()) {
+                st.execute("CREATE TABLE unrelated(id INTEGER PRIMARY KEY)");
+            }
+            WareStatFileHeader.seal(malformed);
             BackupManager.getInstance().exportDatabase(selected,true);
             require(WareStatFileHeader.isSealed(selected),"Save As did not produce signed WSBQ");
             long expectedSize=Files.size(selected);
@@ -1062,6 +1069,15 @@ public class RegressionTest {
                 require(rejected,"An invalid WSBQ was accepted by Open");
                 require(selected.equals(AppConstants.getDatabasePath()),
                     "Invalid selection changed the active company");
+                rejected=false;
+                try { manager.openDatabase(malformed); }
+                catch(Exception expected) {rejected=true;}
+                require(rejected,"A signed file with unrelated schema was accepted by Open");
+                db=manager.getConnection();
+                require(selected.equals(AppConstants.getDatabasePath()),
+                    "Failed Open did not restore the previously selected company");
+                require(originalPhotoCount==Integer.parseInt(value("SELECT COUNT(*) FROM product_images")),
+                    "Failed Open did not recover the previous company's photos");
                 // Simulate closing and reopening WareStat. It must re-open the
                 // selected file, never migrate data.db or copy the WSBQ.
                 manager.shutdownAndSeal();db=null;
