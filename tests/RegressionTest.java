@@ -169,7 +169,11 @@ public class RegressionTest {
             catalog.getRowSorter().setSortKeys(java.util.List.of(
                 new RowSorter.SortKey(4, SortOrder.DESCENDING)));
             require("P0249".equals(catalog.getValueAt(0,1)),
-                "Sorting by price did not display the highest-priced product from the entire catalog");
+                "Global sort differs; first=" + catalog.getValueAt(0,1) +
+                "; selected SQL column=" + get(panel,"sortColumn") +
+                "; highest-priced product on this page=" +
+                java.util.stream.IntStream.range(0,model.getRowCount()).anyMatch(
+                    i -> "P0249".equals(model.getValueAt(i,1))));
             catalog.getRowSorter().setSortKeys(java.util.List.of());
             pages.setValue(3);
             require(model.getRowCount()==52,"Last page did not contain remaining products");
