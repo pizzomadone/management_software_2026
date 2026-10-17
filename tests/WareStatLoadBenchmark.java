@@ -333,7 +333,7 @@ public final class WareStatLoadBenchmark {
         try (PreparedStatement q = c.prepareStatement(
                 "SELECT id FROM products WHERE name LIKE ? ORDER BY name LIMIT 100")) {
             for(int i=0;i<samples;i++){
-                q.setString(1,"%stock item "+(i%10)+"%");
+                q.setString(1,"%stock item "+((i % 10) + 1)+"%");
                 try(ResultSet r=q.executeQuery()){check(r.next(),"Search returned no products");}
             }
         }
