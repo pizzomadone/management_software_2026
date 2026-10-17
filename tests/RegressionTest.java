@@ -641,18 +641,23 @@ public class RegressionTest {
             require(qty()==4 && "4".equals(value("SELECT remaining_quantity FROM inventory_lots WHERE supplier_order_detail_id=10")),
                 "Rejected supplier receipt reversal changed stock or FIFO state");
         });
-        test("WAL import includes committed data and retains a prior copy", () -> {
+        test("raw SQLite .db with committed WAL is never importable", () -> {
             if(db!=null)db.close();Path current=AppConstants.getDatabasePath();Files.deleteIfExists(current);
             DatabaseManager.getInstance().initDatabase();db=DatabaseManager.getInstance().getConnection();
-            BackupManager b=BackupManager.getInstance();Path source=OUT.resolve("open-wal.db");
+            sql("INSERT INTO customers(first_name,last_name) VALUES('Live','Retained')");
+            Path source=OUT.resolve("open-wal.db");
+            Files.deleteIfExists(source);
             try(PreparedStatement p=db.prepareStatement("VACUUM INTO ?")) {
                 p.setString(1,source.toString());p.execute();
             }
             try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+source);Statement st=c.createStatement()) {
                 st.execute("PRAGMA journal_mode=WAL");st.execute("PRAGMA wal_autocheckpoint=0");
-                st.execute("INSERT INTO customers(first_name,last_name) VALUES('WAL','Committed')");
-                b.importDatabase(source);db=DatabaseManager.getInstance().getConnection();
-                require("1".equals(value("SELECT COUNT(*) FROM customers")),"Committed WAL data lost");
+                st.execute("INSERT INTO customers(first_name,last_name) VALUES('WAL','External')");
+                boolean rejected=false;
+                try {BackupManager.getInstance().importDatabase(source);}
+                catch(RuntimeException expected){rejected=true;}
+                require(rejected,"Raw .db imported despite strict WareStat format");
+                require("1".equals(value("SELECT COUNT(*) FROM customers")),"Rejected import changed live data");
             }
         });
         test("incompatible imports leave live data intact", () -> {
@@ -666,13 +671,14 @@ public class RegressionTest {
         test("retention only removes managed backup files", () -> {
             BackupManager b=BackupManager.getInstance();Path folder=OUT.resolve("backups");Files.createDirectories(folder);
             Path unrelated=folder.resolve("unrelated.db");Files.writeString(unrelated,"unrelated data");
-            Files.setLastModifiedTime(unrelated,FileTime.fromMillis(1));b.setBackupDirectory(folder.toString());b.performBackup();
+            Files.setLastModifiedTime(unrelated,FileTime.fromMillis(1));b.setBackupDirectory(folder.toString());
+            Path saved=b.performBackup();
             require(Files.exists(unrelated),"Unrelated database deleted");
             boolean blocked=false;try{b.importBackup(AppConstants.getDatabasePath());}catch(RuntimeException e){blocked=true;}
             require(blocked,"Live database registered as backup");
-            var imported=b.importBackup(OUT.resolve("open-wal.db"));
-            require(!Files.isSameFile(Path.of(imported.absolutePath()),OUT.resolve("open-wal.db")),"Imported backup is only a reference");
-            b.deleteBackup(imported.id());require(Files.exists(OUT.resolve("open-wal.db")),"Deleted external original");
+            var imported=b.importBackup(saved);
+            require(!Files.isSameFile(Path.of(imported.absolutePath()),saved),"Imported backup is only a reference");
+            b.deleteBackup(imported.id());require(Files.exists(saved),"Deleted external original");
         });
         test("product photos are SQLite BLOBs with consistent backup choices", () -> {
             if(db!=null)db.close();
@@ -779,6 +785,40 @@ public class RegressionTest {
             backup.exportDatabase(exported,false);
             backup.validateDatabase(exported);
             require(Files.isRegularFile(exported),"Manual export did not produce .wsbq");
+        });
+        test("only sealed WareStat .wsbq or version-1.2 archives may be imported", () -> {
+            Path plainDb=OUT.resolve("normal-sqlite.wsbq");
+            Files.deleteIfExists(plainDb);
+            try(PreparedStatement p=db.prepareStatement("VACUUM INTO ?")){
+                p.setString(1,plainDb.toString());p.execute();
+            }
+            require(WareStatFileHeader.isSQLite(plainDb),"Expected raw SQLite test input");
+            BackupManager backup=BackupManager.getInstance();
+            boolean rejected=false;
+            try{backup.importDatabase(plainDb);}catch(RuntimeException e){rejected=true;}
+            require(rejected,"Renamed raw SQLite .wsbq imported");
+            rejected=false;
+            try{backup.importBackup(plainDb);}catch(RuntimeException e){rejected=true;}
+            require(rejected,"Renamed raw SQLite .wsbq registered as backup");
+            rejected=false;
+            try{backup.validateDatabase(plainDb);}catch(RuntimeException e){rejected=true;}
+            require(rejected,"Renamed raw SQLite .wsbq passed validation");
+            require(WareStatFileHeader.isSQLite(plainDb),"Rejected external file was altered");
+
+            Path obsolete=OUT.resolve("obsolete-schema.wsbq");
+            Files.deleteIfExists(obsolete);
+            try(PreparedStatement p=db.prepareStatement("VACUUM INTO ?")){
+                p.setString(1,obsolete.toString());p.execute();
+            }
+            try(Connection external=DatabaseManager.openConnection("jdbc:sqlite:"+obsolete);
+                Statement st=external.createStatement()){
+                st.executeUpdate("DELETE FROM schema_migrations WHERE version='022'");
+            }
+            WareStatFileHeader.seal(obsolete);
+            rejected=false;
+            try{backup.importBackup(obsolete);}catch(RuntimeException e){rejected=true;}
+            require(rejected,"Sealed obsolete database accepted as current WareStat");
+            require(WareStatFileHeader.isSealed(obsolete),"Rejected obsolete backup modified");
         });
         test("previous masked ZIP .wsbq backups are still importable", () -> {
             Path folder=OUT.resolve("legacy-archive");Files.createDirectories(folder);
