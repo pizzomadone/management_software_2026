@@ -169,32 +169,43 @@ WareStat stores its database and configuration files in a per-user directory:
 - **Windows:** `%USERPROFILE%\AppData\Local\WareStat\`
 - **macOS:** `~/Library/Application Support/WareStat/`
 
-The live company data is stored in `data.wsbq`: **standard SQLite**, opened
-through the regular Xerial JDBC driver. All optimized JPEG product photos
-(maximum 800 px long side and 150 KB per JPEG) are stored in a dedicated BLOB
-column within SQLite. Thumbnail previews are derived as needed and temporarily
-cached in memory, not copied into the database.
+The live company data is stored in `data.wsbq`: **standard SQLite**
+with Xerial JDBC and an **exclusive SQLite connection** ( `PRAGMA locking_mode=EXCLUSIVE` ).
+When WareStat runs, SQLite sees its original header and updates pages normally,
+including JPEG BLOBs in `product_images.image_data`. When WareStat shuts
+down cleanly, it closes SQLite and changes **only the first 16 bytes** to the
+WareStat signature. At the next startup, WareStat accepts either signature
+and restores the original SQLite bytes *before opening the connection*.
 
-Backups, manual exports and new archives are also **ordinary SQLite `.wsbq`
-files**, written as consistent SQLite snapshots. The user may choose to
-exclude product photos from a backup; that option removes only the images
-from the backup copy, never from the running database. Automatic backups
-include photos. Copies can be inspected using standard SQLite tools.
+An unclean stop may leave the normal SQLite header on disk, allowing SQLite
+to recover any WAL/journal transaction data. The header is sealed only after
+SQLite has closed and no nonempty WAL or journal remains. This mechanism merely
+discourages casual opening in generic SQLite tools: **it is not encryption and
+does not prevent someone from reversing the 16-byte modification**.
 
-On the first launch after upgrading, WareStat migrates the earlier `data.db`
-and external `product_images/` JPEGs into `data.wsbq`. It verifies all
-referenced photographs before activating the new database. The original files
-are **retained for recovery**, and existing masked-ZIP `.wsbq` backups
-remain importable/restorable through one-way conversion to the new format.
-Legacy standalone `.db` imports remain supported; because they did not embed
-photographs, unavailable external-photo references are omitted.
+Backup, export, and New Archive output are also single-file **`.wsbq`
+SQLite snapshots**, sealed with the same 16-byte signature. WareStat accepts
+either a sealed or standard-header SQLite backup from any installation and
+recognizes prior masked-ZIP `.wsbq` archives for legacy import.
+Photos (optimized JPEG, max. 800px and 150KB) are embedded as BLOBs;
+thumbnail previews are derived and cached in RAM. A manual backup/export
+can exclude photo rows in the *copy*, never in the live database.
+Automatic backups include photos.
 
-SQLite's WAL mode may temporarily create `data.wsbq-wal` and
-`data.wsbq-shm` alongside the live database; they are SQLite transaction
-support files, not separate photo stores. Unused image pages are reused
-automatically, and incremental maintenance can reclaim free pages after
-backups. Backup files are stored in the configured backup folder (by default,
-`backups/` inside the per-user WareStat data directory).
+The first launch after upgrading migrates any earlier `data.db` and its
+external `product_images/` folder, without deleting the originals.
+WareStat can create consistent backups from the exclusive owner connection
+using SQLite `VACUUM INTO`, rather than trying to open a second
+connection to the locked live file. Incremental page reclamation is run
+opportunistically after backups.
+
+The SQLite WAL transaction journal may temporarily exist as
+`data.wsbq-wal` while WareStat is running; this is normal and must
+not be deleted if it contains data. In EXCLUSIVE WAL mode SQLite can avoid
+creating the shared-memory `-shm` file. Future multi-workstation WareStat
+Pro access should use a server as the exclusive database owner rather than
+allowing several PCs to edit the `.wsbq` directly over a network.
+Backup files are kept in the configured backup directory.
 
 ## Barcode support
 
