@@ -125,6 +125,7 @@ public class InvoicesPanel extends JPanel {
 
     public void loadInvoices() {
         tableModel.setRowCount(0);
+        java.util.List<java.util.Vector<Object>> fetchedRows=new java.util.ArrayList<>();
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
@@ -176,9 +177,10 @@ public class InvoicesPanel extends JPanel {
                         ? rs.getDouble("order_paid_amount")
                         : rs.getDouble("invoice_paid_amount");
                     row.add(formatPaymentStatus(paymentStatus, paidAmount, currency));
-                    tableModel.addRow(row);
+                    fetchedRows.add(row);
                 }
             }
+            TableStyleUtil.appendRows(tableModel,fetchedRows);
         } catch (Exception e) {
             e.printStackTrace();
             Dialogs.showMessageDialog(this,
@@ -205,6 +207,7 @@ public class InvoicesPanel extends JPanel {
         }
 
         tableModel.setRowCount(0);
+        java.util.List<java.util.Vector<Object>> fetchedRows=new java.util.ArrayList<>();
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
@@ -261,10 +264,11 @@ public class InvoicesPanel extends JPanel {
                             ? rs.getDouble("order_paid_amount")
                             : rs.getDouble("invoice_paid_amount");
                         row.add(formatPaymentStatus(paymentStatus, paidAmount, currency));
-                        tableModel.addRow(row);
+                        fetchedRows.add(row);
                     }
                 }
             }
+            TableStyleUtil.appendRows(tableModel,fetchedRows);
         } catch (Exception e) {
             e.printStackTrace();
             Dialogs.showMessageDialog(this,
