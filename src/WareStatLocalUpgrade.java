@@ -5,10 +5,10 @@ import java.util.Currency;
 import java.util.Locale;
 
 /**
- * Explicit, in-place upgrade of genuine WareStat 1.2 SQLite .db companies.
- *
- * A user must confirm the risk and make any desired backup themselves.
- * No VACUUM INTO, staging company, or other full-size database copy is made.
+ * Explicit, lossless WareStat 1.2 -> 1.3 upgrade.
+ * Read the original data.db without writing to it, create a new .wsbq,
+ * and publish that file only after migration and integrity checks succeed.
+ * No additional "safety copy" of either company database is generated.
  */
 public final class WareStatLocalUpgrade {
     private WareStatLocalUpgrade() {}
@@ -24,16 +24,13 @@ public final class WareStatLocalUpgrade {
             && Files.isRegularFile(installedLegacyFile());
     }
 
-    /**
-     * Kept for compatibility with older callers, but NEVER automatically
-     * migrate a user's files. The consent dialog is owned by MainWindow.
-     */
+    /** Migration is never implicit: the confirmation belongs to MainWindow. */
     public static void migrateIfNeeded() throws IOException {
         if (needsStartupConfirmation())
             throw new IOException("WareStat 1.2 database requires explicit migration confirmation");
     }
 
-    /** File destination is next to the original so final rename is atomic. */
+    /** A new WSBQ is created next to the existing .db, which is retained. */
     public static Path upgradedPath(Path legacy) throws IOException {
         Path source = legacy.toAbsolutePath().normalize();
         String name = source.getFileName().toString();
@@ -43,10 +40,11 @@ public final class WareStatLocalUpgrade {
     }
 
     /**
-     * Only call after an explicit YES. The original .db is changed IN PLACE.
-     * SQLite transactions protect individual schema migrations; without a
-     * user-provided backup, a process/disk failure cannot be guaranteed safe.
-     * The .wsbq filename is used only after the final validation succeeds.
+     * Only call after explicit YES. The .db remains byte-for-byte unchanged:
+     * SQLite reads the legacy company through a read-only connection and
+     * VACUUM INTO constructs the new database in a temporary destination.
+     * We migrate and validate only this new database, then atomically move
+     * it into the final .wsbq name. Temporary files are removed on failure.
      */
     public static Path migrateConfirmed(Path legacy, String currency)
             throws IOException, SQLException {
@@ -60,36 +58,68 @@ public final class WareStatLocalUpgrade {
             throw new IOException("The original database currency is invalid",error);
         }
 
-        // Recognition is read-only; no edits happen if this is not the actual
-        // WareStat 1.2 layout or if SQLite reports corruption.
+        // Check the real 1.2 schema and source integrity before allocating a
+        // second full-size file. The input remains read-only throughout.
         WareStatLegacy12.validate(source);
-        try (Connection conn=DatabaseManager.openConnection("jdbc:sqlite:"+source)) {
-            DatabaseCurrency.initialize(conn,currency);
-            DatabaseManager.prepareDatabase(conn);
-            // The distributed 1.2 schema contains no product JPEG images.
-            // Still validate embedded images after schema migration.
-            ProductImageStore.validateEmbeddedImages(conn);
-            DatabaseIntegrity.validate(conn,false);
-            try (Statement s=conn.createStatement();
-                 ResultSet r=s.executeQuery("PRAGMA integrity_check")) {
-                if (!r.next() || !"ok".equalsIgnoreCase(r.getString(1)))
-                    throw new SQLException("The migrated database failed SQLite integrity_check");
-            }
-            try (Statement s=conn.createStatement()) {
-                s.execute("PRAGMA wal_checkpoint(TRUNCATE)");
-                s.execute("PRAGMA journal_mode=DELETE");
-            }
-        }
 
-        // No second database file is ever created. Move only after SQLite
-        // closed successfully and the structure and data passed validation.
+        Path staged=Files.createTempFile(target.getParent(),"warestat-upgrade-", ".wsbq");
+        Files.delete(staged); // VACUUM INTO requires a nonexistent target.
         try {
-            Files.move(source,target,StandardCopyOption.ATOMIC_MOVE);
-        } catch (AtomicMoveNotSupportedException unsupported) {
-            Files.move(source,target);
+            org.sqlite.SQLiteConfig readOnly=new org.sqlite.SQLiteConfig();
+            readOnly.setReadOnly(true);
+            readOnly.setBusyTimeout(10000);
+            try (Connection old=DriverManager.getConnection(
+                    "jdbc:sqlite:"+source,readOnly.toProperties());
+                 PreparedStatement vacuum=old.prepareStatement("VACUUM INTO ?")) {
+                vacuum.setString(1,staged.toString());
+                vacuum.execute();
+            }
+
+            try (Connection conn=DatabaseManager.openConnection("jdbc:sqlite:"+staged)) {
+                DatabaseCurrency.initialize(conn,currency);
+                DatabaseManager.prepareDatabase(conn);
+
+                // Prior versions may have referenced JPEG files outside SQLite.
+                // Embed them in the new WSBQ; never modify the original photos.
+                Path localImages=source.getParent().resolve("product_images");
+                Path images=Files.isDirectory(localImages) ? localImages
+                    : AppConstants.getProductImagesDirectory();
+                DatabaseManager.beginTransaction(conn);
+                try {
+                    ProductImageStore.embedLegacyImages(conn,images);
+                    ProductImageStore.validateEmbeddedImages(conn);
+                    conn.commit();
+                } catch (SQLException | IOException problem) {
+                    conn.rollback();
+                    throw problem;
+                } finally {
+                    conn.setAutoCommit(true);
+                }
+
+                DatabaseIntegrity.validate(conn,false);
+                try (Statement s=conn.createStatement();
+                     ResultSet r=s.executeQuery("PRAGMA integrity_check")) {
+                    if (!r.next() || !"ok".equalsIgnoreCase(r.getString(1)))
+                        throw new SQLException("The migrated database failed SQLite integrity_check");
+                }
+                try (Statement s=conn.createStatement()) {
+                    s.execute("PRAGMA wal_checkpoint(TRUNCATE)");
+                    s.execute("PRAGMA journal_mode=DELETE");
+                }
+            }
+
+            WareStatFileHeader.seal(staged);
+            try {
+                Files.move(staged,target,StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException unsupported) {
+                Files.move(staged,target);
+            }
+            return target;
+        } finally {
+            Files.deleteIfExists(staged);
+            // Only temporary output files are removed; input .db is NEVER touched.
+            Files.deleteIfExists(Path.of(staged + "-wal"));
+            Files.deleteIfExists(Path.of(staged + "-shm"));
         }
-        // The signature change happens only on a closed, journal-free file.
-        WareStatFileHeader.seal(target);
-        return target;
     }
 }
