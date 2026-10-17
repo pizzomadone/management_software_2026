@@ -17,6 +17,10 @@ public class OrdersPanel extends JPanel {
     }
 
     private JTable ordersTable;
+    private JScrollPane ordersScrollPane;
+    private static final int ORDER_BATCH_SIZE = 100;
+    private boolean ordersHaveMore = true;
+    private boolean loadingOrderChunk;
     private DefaultTableModel tableModel;
     private JTextField searchField;
     private JButton addButton;
@@ -169,7 +173,16 @@ public class OrdersPanel extends JPanel {
 
         // Main layout
         add(searchPanel, BorderLayout.NORTH);
-        add(new JScrollPane(ordersTable), BorderLayout.CENTER);
+        ordersScrollPane = new JScrollPane(ordersTable);
+        ordersScrollPane.getVerticalScrollBar().addAdjustmentListener(e -> {
+            JScrollBar bar = ordersScrollPane.getVerticalScrollBar();
+            if (!e.getValueIsAdjusting() && ordersHaveMore && !loadingOrderChunk
+                    && bar.getValue() + bar.getVisibleAmount() >= bar.getMaximum() - 100
+                    && bar.getMaximum() > bar.getVisibleAmount()) {
+                SwingUtilities.invokeLater(this::loadMoreOrders);
+            }
+        });
+        add(ordersScrollPane, BorderLayout.CENTER);
         add(buttonPanel, BorderLayout.SOUTH);
 
         updateButtonStates();
@@ -208,124 +221,82 @@ public class OrdersPanel extends JPanel {
 
     private void loadOrders() {
         tableModel.setRowCount(0);
-        java.util.List<java.util.Vector<Object>> fetchedRows=new java.util.ArrayList<>();
-        try {
-            Connection conn = DatabaseManager.getInstance().getConnection();
-            String query = """
-                SELECT o.*, c.first_name || ' ' || c.last_name as customer_name,
-                       i.currency_code AS payment_currency_code,
-                       i.number AS invoice_number,
-                       COALESCE(i.total,o.total_inc_vat) AS total_inc_vat
-                FROM orders o
-                LEFT JOIN customers c ON o.customer_id = c.id
-                LEFT JOIN invoices i ON i.order_id = o.id
-                ORDER BY o.order_date DESC
-            """;
-
-            try (Statement stmt = conn.createStatement();
-                 ResultSet rs = stmt.executeQuery(query)) {
-                while (rs.next()) {
-                    Vector<Object> row = new Vector<>();
-                    row.add(rs.getInt("id"));
-                    row.add(rs.getString("customer_name"));
-
-                    Date date = DateUtils.parseDate(rs, "order_date");
-                    if (date != null) {
-                        row.add(DateUtils.formatDate(date, dateFormat));
-                    } else {
-                        row.add("");
-                    }
-
-                    row.add(rs.getString("status"));
-                    row.add(Numbers.moneyText(rs.getDouble("total_inc_vat")));
-
-                    // Add payment status
-                    String paymentStatus = rs.getString("payment_status");
-                    double paidAmount = rs.getDouble("paid_amount");
-                                        row.add(formatPaymentStatus(paymentStatus, paidAmount,
-                        rs.getString("payment_currency_code")));
-
-                    String invoiceNumber = rs.getString("invoice_number");
-                    row.add(invoiceNumber == null || invoiceNumber.isBlank()
-                        ? null : new InvoiceLink(invoiceNumber));
-
-                    fetchedRows.add(row);
-                }
-            }
-            TableStyleUtil.appendRows(tableModel,fetchedRows);
-        } catch (SQLException e) {
-            e.printStackTrace();
-            Dialogs.showMessageDialog(this,
-                "Error while loading orders: " + e.getMessage(),
-                "Error", JOptionPane.ERROR_MESSAGE);
-        }
+        ordersHaveMore = true;
+        loadMoreOrders();
+        if (ordersScrollPane != null)
+            ordersScrollPane.getVerticalScrollBar().setValue(0);
     }
 
     private void searchOrders() {
-        String searchTerm = searchField.getText().trim();
-        if (searchTerm.isEmpty()) {
-            loadOrders();
-            return;
-        }
+        loadOrders();
+    }
 
-        tableModel.setRowCount(0);
-        java.util.List<java.util.Vector<Object>> fetchedRows=new java.util.ArrayList<>();
+    /**
+     * The first 100 most recent customer orders appear immediately. Older
+     * orders are fetched only as the user scrolls, without loading them into
+     * the Swing table or formatting every historic monetary value up front.
+     * Search includes the order ID and linked invoice reference.
+     */
+    private void loadMoreOrders() {
+        if (loadingOrderChunk || !ordersHaveMore) return;
+        loadingOrderChunk = true;
         try {
+            String term = searchField.getText().trim();
+            String pattern = "%" + term + "%";
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
-                SELECT o.*, c.first_name || ' ' || c.last_name as customer_name,
+                SELECT o.id,o.order_date,o.status,o.payment_status,o.paid_amount,
+                       c.first_name || ' ' || c.last_name AS customer_name,
                        i.currency_code AS payment_currency_code,
                        i.number AS invoice_number,
                        COALESCE(i.total,o.total_inc_vat) AS total_inc_vat
                 FROM orders o
-                LEFT JOIN customers c ON o.customer_id = c.id
-                LEFT JOIN invoices i ON i.order_id = o.id
-                WHERE c.first_name LIKE ? OR c.last_name LIKE ? OR o.status LIKE ?
-                ORDER BY o.order_date DESC
-            """;
-
-            String searchPattern = "%" + searchTerm + "%";
-            try (PreparedStatement pstmt = conn.prepareStatement(query)) {
-                pstmt.setString(1, searchPattern);
-                pstmt.setString(2, searchPattern);
-                pstmt.setString(3, searchPattern);
-
-                try (ResultSet rs = pstmt.executeQuery()) {
-                    while (rs.next()) {
+                LEFT JOIN customers c ON o.customer_id=c.id
+                LEFT JOIN invoices i ON i.order_id=o.id
+                WHERE ?='' OR CAST(o.id AS TEXT) LIKE ? OR c.first_name LIKE ?
+                      OR c.last_name LIKE ? OR o.status LIKE ? OR i.number LIKE ?
+                ORDER BY o.order_date DESC,o.id DESC
+                LIMIT ? OFFSET ?
+                """;
+            java.util.List<Vector<Object>> fetched = new java.util.ArrayList<>();
+            boolean extraRow = false;
+            try (PreparedStatement stmt=conn.prepareStatement(query)) {
+                stmt.setString(1,term);
+                for(int index=2;index<=6;index++)stmt.setString(index,pattern);
+                stmt.setInt(7,ORDER_BATCH_SIZE+1);
+                stmt.setInt(8,tableModel.getRowCount());
+                try(ResultSet rs=stmt.executeQuery()){
+                    while(rs.next()){
+                        if(fetched.size()==ORDER_BATCH_SIZE){
+                            extraRow=true;
+                            break;
+                        }
                         Vector<Object> row = new Vector<>();
                         row.add(rs.getInt("id"));
                         row.add(rs.getString("customer_name"));
-
-                        Date date = DateUtils.parseDate(rs, "order_date");
-                        if (date != null) {
-                            row.add(DateUtils.formatDate(date, dateFormat));
-                        } else {
-                            row.add("");
-                        }
-
+                        Date date = DateUtils.parseDate(rs,"order_date");
+                        row.add(date==null?"":DateUtils.formatDate(date,dateFormat));
                         row.add(rs.getString("status"));
                         row.add(Numbers.moneyText(rs.getDouble("total_inc_vat")));
-
-                        // Add payment status
-                        String paymentStatus = rs.getString("payment_status");
-                        double paidAmount = rs.getDouble("paid_amount");
-                                                row.add(formatPaymentStatus(paymentStatus, paidAmount,
-                        rs.getString("payment_currency_code")));
-
-                        String invoiceNumber = rs.getString("invoice_number");
-                        row.add(invoiceNumber == null || invoiceNumber.isBlank()
+                        row.add(formatPaymentStatus(rs.getString("payment_status"),
+                            rs.getDouble("paid_amount"),rs.getString("payment_currency_code")));
+                        String invoiceNumber=rs.getString("invoice_number");
+                        row.add(invoiceNumber==null || invoiceNumber.isBlank()
                             ? null : new InvoiceLink(invoiceNumber));
-
-                        fetchedRows.add(row);
+                        fetched.add(row);
                     }
+                    ordersHaveMore=extraRow;
                 }
             }
-            TableStyleUtil.appendRows(tableModel,fetchedRows);
-        } catch (SQLException e) {
-            e.printStackTrace();
+            TableStyleUtil.appendRows(tableModel,fetched);
+        }catch(SQLException ex){
+            ordersHaveMore=false;
+            ex.printStackTrace();
             Dialogs.showMessageDialog(this,
-                "Error while searching orders: " + e.getMessage(),
-                "Error", JOptionPane.ERROR_MESSAGE);
+                "Error while loading orders: " + ex.getMessage(),
+                "Error",JOptionPane.ERROR_MESSAGE);
+        }finally{
+            loadingOrderChunk=false;
         }
     }
 
