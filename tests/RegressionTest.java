@@ -211,6 +211,8 @@ public class RegressionTest {
             require(model.getRowCount()==200,"Second invoice scroll chunk was missing");
             call(panel,"loadMoreInvoices");
             require(model.getRowCount()==260,"Invoice scroll skipped the last batch");
+            panel.loadInvoices(); // Simulate leaving and reopening the panel
+            require(model.getRowCount()==100,"Invoice refresh did not reset lazy loading");
             panel.selectInvoiceByNumber("INV-0001");
             require("INV-0001".equals(model.getValueAt(0,0)),
                 "Linked invoice outside loaded rows was not found by SQL search");
