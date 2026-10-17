@@ -49,9 +49,11 @@ public final class SupplierReturnTest extends RegressionTest {
             BackupManager backups=BackupManager.getInstance();
             BackupManager.BackupRecord imported=backups.importBackup(oldFile);
             java.sql.Connection original=DatabaseManager.getInstance().getConnection();
+            java.nio.file.Path readable=WareStatFileHeader.copyReadable(
+                java.nio.file.Path.of(imported.absolutePath()),OUT);
             try {
                 try(java.sql.Connection upgraded=DatabaseManager.openConnection(
-                        "jdbc:sqlite:"+imported.absolutePath())) {
+                        "jdbc:sqlite:"+readable)) {
                     DatabaseIntegrity.validate(upgraded,false);
                     try(java.sql.Statement s=upgraded.createStatement();
                         java.sql.ResultSet rows=s.executeQuery("""
@@ -92,6 +94,7 @@ public final class SupplierReturnTest extends RegressionTest {
                 }
             } finally {
                 put(DatabaseManager.getInstance(),"connection",original);
+                java.nio.file.Files.deleteIfExists(readable);
                 backups.deleteBackup(imported.id());
             }
             require(java.nio.file.Files.isRegularFile(oldFile),
@@ -125,9 +128,11 @@ public final class SupplierReturnTest extends RegressionTest {
             }
             BackupManager backups=BackupManager.getInstance();
             BackupManager.BackupRecord migrated=backups.importBackup(source);
+            java.nio.file.Path readable=WareStatFileHeader.copyReadable(
+                java.nio.file.Path.of(migrated.absolutePath()),OUT);
             try {
                 try(java.sql.Connection upgraded=DatabaseManager.openConnection(
-                        "jdbc:sqlite:"+migrated.absolutePath())) {
+                        "jdbc:sqlite:"+readable)) {
                     DatabaseIntegrity.validate(upgraded,false);
                     try(java.sql.Statement s=upgraded.createStatement();
                         java.sql.ResultSet rows=s.executeQuery("""
@@ -160,7 +165,10 @@ public final class SupplierReturnTest extends RegressionTest {
                     DatabaseManager.prepareDatabase(upgraded);
                     DatabaseIntegrity.validate(upgraded,false);
                 }
-            } finally {backups.deleteBackup(migrated.id());}
+            } finally {
+                java.nio.file.Files.deleteIfExists(readable);
+                backups.deleteBackup(migrated.id());
+            }
         });
         test("tampered supplier returns are rejected during import",()->{
             receipt();
