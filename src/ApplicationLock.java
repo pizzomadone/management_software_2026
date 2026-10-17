@@ -16,8 +16,15 @@ public final class ApplicationLock {
             lock = channel.tryLock();
             if (lock == null) { channel.close(); throw new IOException("WareStat is already running with this database"); }
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                try { lock.release(); channel.close(); } catch (IOException ignored) { }
-            }));
+                try {
+                    // Normal exit: close and checkpoint SQLite, then seal its header.
+                    DatabaseManager.getInstance().shutdownAndSeal();
+                } catch (RuntimeException e) {
+                    System.err.println("Unable to close WareStat database safely: " + e.getMessage());
+                } finally {
+                    try { lock.release(); channel.close(); } catch (IOException ignored) { }
+                }
+            }, "WareStat-database-shutdown"));
         } catch (IOException | java.nio.channels.OverlappingFileLockException e) {
             throw new IllegalStateException("Unable to open database: WareStat may already be running", e);
         }
