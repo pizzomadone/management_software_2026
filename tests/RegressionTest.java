@@ -1113,6 +1113,38 @@ public class RegressionTest {
             require(SettingsPanel.getGlobalSetting("database.active_path","").isBlank(),
                 "Default database path preference was not reset after selecting it");
         });
+        test("File Open recognizes external 1.2 DB and migrates it in place without copies", () -> {
+            Path previous=AppConstants.getDatabasePath().toAbsolutePath().normalize();
+            Path source=OUT.resolve("opened-legacy-1.2.db").toAbsolutePath().normalize();
+            Path target=WareStatLocalUpgrade.upgradedPath(source);
+            Files.deleteIfExists(target);
+            WareStatLegacy12Fixture.create(source);
+            byte[] original12=Files.readAllBytes(source);
+            require(WareStatLegacy12.isVersion12(source),
+                "Open did not identify an external WareStat 1.2 database");
+            require(Files.exists(source) && Arrays.equals(original12,Files.readAllBytes(source)),
+                "Only recognizing a 1.2 file modified it before confirmation");
+            require(!WareStatLegacy12.isVersion12(OUT.resolve("nonexistent.db")),
+                "Open accepted a nonexistent legacy database");
+            Path migrated=WareStatLocalUpgrade.migrateConfirmed(source,"EUR");
+            require(migrated.equals(target) && !Files.exists(source) && WareStatFileHeader.isSealed(target),
+                "Confirmed external 1.2 migration did not rename the same original file");
+            try {
+                DatabaseManager.getInstance().openDatabase(target);
+                db=DatabaseManager.getInstance().getConnection();
+                require(target.equals(AppConstants.getDatabasePath()),
+                    "Opening the migrated 1.2 file did not use the selected path");
+                require("1".equals(value("SELECT COUNT(*) FROM products WHERE code='OLD12' AND quantity=9")),
+                    "Directly opened migrated 1.2 file lost product stock");
+                require("1".equals(value("SELECT COUNT(*) FROM invoices WHERE number='OLD12-INVOICE'")),
+                    "Directly opened migrated 1.2 file lost invoice history");
+            } finally {
+                if (!previous.equals(AppConstants.getDatabasePath())) {
+                    DatabaseManager.getInstance().openDatabase(previous);
+                    db=DatabaseManager.getInstance().getConnection();
+                }
+            }
+        });
         test("exclusive live SQLite and crash-tolerant reversible signature", () -> {
             Path live=AppConstants.getDatabasePath();
             db=DatabaseManager.getInstance().getConnection();
