@@ -107,6 +107,19 @@ public final class InvoiceSnapshots {
         catch(IOException | IllegalArgumentException e) {throw new SQLException("Invalid invoice snapshot",e);}
     }
     public static Customer customer(Connection c,Invoice invoice) throws SQLException {
+        // Old imports may have thousands of missing legacy snapshots. Rebuild
+        // only the selected invoice at actual print/view time, never all
+        // historical invoices during startup. Immutable v1.3 is untouched.
+        try(PreparedStatement p=c.prepareStatement("""
+                SELECT 1 FROM invoices WHERE id=? AND
+                    (snapshot_version IS NULL OR snapshot_version=0) AND
+                    (customer_snapshot IS NULL OR company_snapshot IS NULL)
+                """)) {
+            p.setInt(1,invoice.getId());
+            try(ResultSet rows=p.executeQuery()){
+                if(rows.next())capture(c,invoice.getId(),true);
+            }
+        }
         try(PreparedStatement p=c.prepareStatement("SELECT customer_snapshot FROM invoices WHERE id=?")) {
             p.setInt(1,invoice.getId());try(ResultSet r=p.executeQuery()) {
                 if(!r.next())throw new SQLException("Invoice no longer exists");
