@@ -185,23 +185,30 @@ does not prevent someone from reversing the 16-byte modification**.
 
 Backup, export, and New Archive output are single-file **`.wsbq`
 SQLite snapshots**, sealed with the WareStat signature. **Only a signed,
-current-schema WareStat `.wsbq` or the official version-1.2 ZIP
-WareStat `.wsbu` backup may be imported**. Bare `.db` files, renamed
-generic SQLite files, unsealed `.wsbq` files and sealed obsolete schemas
-are rejected by the import API. An extracted legacy SQLite file is converted
-*internally* as part of verified version-1.2 backup import.
+current-schema WareStat `.wsbq` or a recognized **WareStat 1.2
+SQLite `.db` backup** may be imported**. Version 1.2 (release branch
+`claude/add-ant-release-license-87WXC`) stored live data in `data.db`
+and exported backups as `.db`. It never used `.wsbu`. Importing a verified
+1.2 database makes a fresh current-schema `.wsbq` copy; it never operates
+on the source as the live database. Generic SQLite with other schema, `.wsbu`
+and unsealed external `.wsbq` are rejected.
 Photos (optimized JPEG, max. 800px and 150KB) are embedded as BLOBs;
 thumbnail previews are derived and cached in RAM. A manual backup/export
 can exclude photo rows in the *copy*, never in the live database.
 Automatic backups include photos.
 
-On first startup without `data.wsbq`, WareStat initializes a **new
-empty database**. It does not open, import or migrate any old `data.db` and
-does not delete that file or its external images. To transfer version-1.2
-data, explicitly select the official **version-1.2 WareStat `.wsbu` backup**
-under Import Backup; validation and migration then embed its JPEGs as BLOBs.
-A standard SQLite header is tolerated only for the *active internal*
-`data.wsbq` during recovery from an interrupted shutdown, not for user imports.
+When no `data.wsbq` exists and the existing installation has `data.db`,
+`WareStatLocalUpgrade` validates the exact WareStat 1.2 schema, reads the
+original currency from the 1.2 settings, and creates an isolated migrated
+copy. Only when structural and SQLite integrity checks pass does it install
+the new signed `data.wsbq`; it **never changes or deletes** the original
+`data.db`. If both files exist, WareStat opens only `data.wsbq`.
+Original WareStat 1.2 `.db` backup files can also be imported manually via
+Import Backup (the original currency is requested because the old SQLite
+database did not record it). Old `.wsbu` files do **not** belong to the
+official 1.2 release and are not supported. An SQLite header is tolerated
+only for the *active internal* `data.wsbq` after a crash, not for external
+current-format backup imports.
 WareStat can create consistent backups from the exclusive owner connection
 using SQLite `VACUUM INTO`, rather than trying to open a second
 connection to the locked live file. Incremental page reclamation is run
@@ -232,3 +239,87 @@ in its per-user data directory; see that file for the complete terms and
 
 For support, product news, and release communications, visit
 <https://www.warestat.com/discover/> or contact your software provider.
+
+
+## Optional large-data benchmark (manual only)
+
+The benchmark is on branch `test/wsbq-20k-load-benchmark`,
+based on `feature/sqlite-wsbq-image-blobs`. It is not a production
+migration. It always runs with a **temporary isolated user.home** protected by a
+marker file and refuses to overwrite an existing database. A private repository
+does **not** need to be made public to run the workflow; usage/billing limits
+may nevertheless prevent hosted Actions from starting.
+
+To run on macOS/Linux with JDK 21:
+
+```bash
+bash tests/run-load-benchmark.sh 20000 20000 true false
+```
+
+Arguments: `<products> <photos> <run_backups> <run_restore>`.
+For a quick smoke test without heavyweight file copies:
+
+```bash
+bash tests/run-load-benchmark.sh 200 200 false false
+```
+
+A full 20k run creates 1,000 suppliers, 5,000 customers, 30,000 customer
+orders, 15,000 supplier orders, 20,000 draft invoices, 100,000 movements,
+40,000 FIFO lots and 60,000 movement-to-lot consumption references. It
+generates 20,000 separate valid JPEG **BLOB rows** (16 reproducible visual
+variants reused with unique photo filenames to keep generation fast).
+It measures SQL search/pagination/update/aggregate performance, actual
+thumbnail decoding, backup with and without photos, validation, header
+seal/reopen, database size and SQLite integrity. The document examples are
+synthetic rather than a complete business-transaction simulation; tests
+of pricing and sales correctness remain in the standard regression suite.
+
+CSV/diagnostics are written to `build/load-benchmark-output/`.
+By default, the multi-GB sandbox is removed after execution. To retain the
+database for **manual UI scrolling** on the same machine, run:
+
+```bash
+WARESTAT_KEEP_DATA=1 bash tests/run-load-benchmark.sh 20000 20000 true false
+```
+
+The command prints the sandbox path (including the isolated `home`).
+Only launch an application build against this home explicitly if you wish to
+browse the synthetic company. Do not copy the fixture over real WareStat data.
+
+A pull request touching the benchmark runs a **small 200-product, 200-photo smoke test**.
+To use **Actions → WareStat 20k load benchmark → Run workflow** for the
+full dataset, GitHub requires this workflow file to exist on the repository's
+**default branch first**; keeping it on this experimental branch alone is
+not sufficient for the manual-run button. Once available, it uploads `results.csv`, `dataset.txt`
+and `run.log` for 7 days. The 20k configuration is deliberately **not** tied to pushes
+or pull requests, since large data generation consumes significant runner
+disk, CPU and time. Start with 200/200 or 1000/1000 if hosted Actions has not
+been tested on this repository. Setting `restore=true` adds an expensive full
+restore with an additional safety copy; allow extra disk space.
+
+**This benchmark is not a GUI frame-rate test**. Real user-interface lag,
+table scrolling, and paint events should be measured with the retained
+dataset on macOS/Windows. Results are hardware and storage dependent.
+
+### Verified on public GitHub Actions — 20,000 product run (2026-10-17)
+
+The full test completed successfully on Ubuntu 24.04, Java 21:
+[GitHub Actions full-run log](https://github.com/pizzomadone/management_software_2026/actions/runs/39011550526).
+
+- **20,000** product rows, **20,000** valid JPEG BLOB rows (~100 KiB each; 16 varied JPEG templates), **100,000** movements, **40,000** FIFO lots and **60,000** consumption links.
+- SQLite database: **2,105,462,784 bytes**.
+- Exact-code lookup (mean per lookup): **0.0086 ms**; 100-row catalog page: **52.7 ms**; name search: **3.20 ms**; individual product update: **0.187 ms**.
+- 200 JPEG thumbnail decodes: **1.82 s**; SQL dashboard query: **7.09 ms** mean.
+- A second full-scale run also succeeded, with corrected thumbnail cache measurement: 100 hot thumbnail lookups averaged **0.556 ms** each ([second full run](https://github.com/pizzomadone/management_software_2026/actions/runs/39011756168)).
+- Full backup: **9.70 s**, no-photo backup: **9.77 s**; full backup validation **17.06 s**, restore **28.62 s**.
+- Startup reopening the sealed ~2.1 GB database: **1.97 s**; SQLite integrity checks passed both before and after restore.
+- Regression suite on the same branch passed **181 tests, 0 failures**: [Actions regression run](https://github.com/pizzomadone/management_software_2026/actions/runs/39011460851).
+
+**Note:** The temporary auto-triggered one-shot 20k workflow used for the
+successful run was deleted afterward to prevent accidental repeated high-cost
+jobs. The normal lightweight PR smoke workflow remains. Java benchmark startup,
+query and image metrics above measure GitHub's Linux runner only, *not* GUI
+scrolling/frame times on a user's Mac. A post-run cleanup commit also fixed the
+"cached thumbnails" benchmark to warm the correct thumbnails before sampling;
+the full-run cache metric from this first run should not be treated as a
+true cache-hit measurement.

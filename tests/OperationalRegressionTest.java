@@ -674,11 +674,10 @@ public class OperationalRegressionTest extends RegressionTest {
             }
         });
         test("legacy import requires and preserves the declared original currency",()->{
-            fresh();Path file=OUT.resolve("legacy-currency.db");try(PreparedStatement p=db.prepareStatement("VACUUM INTO ?")){p.setString(1,file.toString());p.execute();}
-            try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+file);Statement s=c.createStatement()){s.execute("DROP TABLE application_metadata");}
-            boolean blocked=false;try{BackupManager.getInstance().importDatabase(legacy12BackupFixture(file));}catch(RuntimeException e){blocked=true;}require(blocked,"Legacy currency guessed");
-            BackupManager.getInstance().importDatabase(legacy12BackupFixture(file),"USD");db=DatabaseManager.getInstance().getConnection();require("USD".equals(DatabaseCurrency.read(db)) && "USD".equals(SettingsPanel.getCurrencyCode()),"Original currency lost at import");
-            require("10.0".equals(value("SELECT sale_price_inc_vat FROM products WHERE id=1")),"Currency label changed numeric price");
+            fresh();Path file=WareStatLegacy12Fixture.create(OUT.resolve("legacy-currency.db"));
+            boolean blocked=false;try{BackupManager.getInstance().importDatabase(file);}catch(RuntimeException e){blocked=true;}require(blocked,"Legacy currency guessed");
+            BackupManager.getInstance().importDatabase(file,"USD");db=DatabaseManager.getInstance().getConnection();require("USD".equals(DatabaseCurrency.read(db)) && "USD".equals(SettingsPanel.getCurrencyCode()),"Original currency lost at import");
+            require("122.0".equals(value("SELECT sale_price_inc_vat FROM products WHERE code='OLD12'")),"Currency label changed numeric price");
         });
         test("SQL and UI use the same calendar day across time zones",()->{
             fresh();TimeZone previous=TimeZone.getDefault();

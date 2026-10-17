@@ -31,31 +31,8 @@ public final class SupplierReturnTest extends RegressionTest {
         throw new AssertionError("Supplier return corruption escaped integrity validation");
     }
 
-    /** The authentic v1.2 ZIP .wsbu backup contains a manifest and database. */
-    private static java.nio.file.Path legacy12Backup(java.nio.file.Path sqlite)
-            throws Exception {
-        java.nio.file.Path payload=OUT.resolve(sqlite.getFileName()+"-old-payload.zip");
-        java.nio.file.Path archive=OUT.resolve(sqlite.getFileName()+"-v12.wsbu");
-        java.nio.file.Files.deleteIfExists(archive);
-        try(java.util.zip.ZipOutputStream zip=new java.util.zip.ZipOutputStream(
-                java.nio.file.Files.newOutputStream(payload))) {
-            String manifest="{\"signature\":\"WARESTAT_BACKUP_V1\","
-                + "\"format\":\"WareStat-Backup\",\"format_version\":1,"
-                + "\"database\":\"data.db\",\"image_format\":\"jpeg\","
-                + "\"images_included\":false}";
-            zip.putNextEntry(new java.util.zip.ZipEntry("manifest.json"));
-            zip.write(manifest.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            zip.closeEntry();
-            zip.putNextEntry(new java.util.zip.ZipEntry("database/data.db"));
-            java.nio.file.Files.copy(sqlite,zip);
-            zip.closeEntry();
-        }
-        java.nio.file.Files.move(payload,archive);
-        return archive;
-    }
-
     public static void supplierReturns() throws Exception {
-        test("import of pre-return v020 database preserves purchases and enables partial returns",()->{
+        test("internal pre-return schema migration preserves purchases and enables partial returns",()->{
             receipt();
             java.nio.file.Path oldFile=OUT.resolve("supplier-before-returns-v020.db");
             java.nio.file.Files.deleteIfExists(oldFile);
@@ -69,14 +46,11 @@ public final class SupplierReturnTest extends RegressionTest {
                 s.execute("DROP TABLE supplier_returns");
                 s.execute("DELETE FROM schema_migrations WHERE version='021'");
             }
-            BackupManager backups=BackupManager.getInstance();
-            BackupManager.BackupRecord imported=backups.importBackup(legacy12Backup(oldFile));
             java.sql.Connection original=DatabaseManager.getInstance().getConnection();
-            java.nio.file.Path readable=WareStatFileHeader.copyReadable(
-                java.nio.file.Path.of(imported.absolutePath()),OUT);
             try {
                 try(java.sql.Connection upgraded=DatabaseManager.openConnection(
-                        "jdbc:sqlite:"+readable)) {
+                        "jdbc:sqlite:"+oldFile)) {
+                    DatabaseManager.prepareDatabase(upgraded);
                     DatabaseIntegrity.validate(upgraded,false);
                     try(java.sql.Statement s=upgraded.createStatement();
                         java.sql.ResultSet rows=s.executeQuery("""
@@ -117,8 +91,7 @@ public final class SupplierReturnTest extends RegressionTest {
                 }
             } finally {
                 put(DatabaseManager.getInstance(),"connection",original);
-                java.nio.file.Files.deleteIfExists(readable);
-                backups.deleteBackup(imported.id());
+                // Source fixture was intentionally upgraded in place, not imported.
             }
             require(java.nio.file.Files.isRegularFile(oldFile),
                 "Import deleted or modified the user's original database");
@@ -149,13 +122,10 @@ public final class SupplierReturnTest extends RegressionTest {
                 s.execute("DROP TABLE product_suppliers");
                 s.execute("DELETE FROM schema_migrations WHERE version>='012'");
             }
-            BackupManager backups=BackupManager.getInstance();
-            BackupManager.BackupRecord migrated=backups.importBackup(legacy12Backup(source));
-            java.nio.file.Path readable=WareStatFileHeader.copyReadable(
-                java.nio.file.Path.of(migrated.absolutePath()),OUT);
             try {
                 try(java.sql.Connection upgraded=DatabaseManager.openConnection(
-                        "jdbc:sqlite:"+readable)) {
+                        "jdbc:sqlite:"+source)) {
+                    DatabaseManager.prepareDatabase(upgraded);
                     DatabaseIntegrity.validate(upgraded,false);
                     try(java.sql.Statement s=upgraded.createStatement();
                         java.sql.ResultSet rows=s.executeQuery("""
@@ -189,11 +159,10 @@ public final class SupplierReturnTest extends RegressionTest {
                     DatabaseIntegrity.validate(upgraded,false);
                 }
             } finally {
-                java.nio.file.Files.deleteIfExists(readable);
-                backups.deleteBackup(migrated.id());
+                // The internal migration fixture remains available for inspection.
             }
         });
-        test("tampered supplier returns are rejected during import",()->{
+        test("tampered non-1.2 SQLite imports are rejected",()->{
             receipt();
             SupplierReturnManager.create(80,List.of(q(81,3)),"test");
             java.nio.file.Path bad=OUT.resolve("supplier-return-tampered.db");
@@ -208,7 +177,7 @@ public final class SupplierReturnTest extends RegressionTest {
                     +"WHERE document_type='SUPPLIER_RETURN'");
             }
             boolean rejected=false;
-            try {BackupManager.getInstance().importBackup(legacy12Backup(bad));}
+            try {BackupManager.getInstance().importBackup(bad);}
             catch(IllegalArgumentException expected){rejected=true;}
             require(rejected,"Corrupted supplier return was accepted during import");
             require("1".equals(value("SELECT COUNT(*) FROM supplier_returns"))

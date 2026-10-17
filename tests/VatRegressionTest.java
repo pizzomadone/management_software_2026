@@ -289,13 +289,13 @@ public class VatRegressionTest extends RegressionTest {
             require("2.675|3.0".equals(value("SELECT sale_unit_price_ex_vat||'|'||cost_total FROM order_details")),"Historical net or FIFO cost changed");
             exportInvoice(id,"vat-legacy-rounding.pdf");
         });
-        test("importing a pre-017 database preserves money and migrates once",()->{
+        test("pre-017 schema migration preserves money and migrates once",()->{
             fresh();oldSchema();
             sql("UPDATE products SET price=100,vat_rate=22 WHERE id=1");
             sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) VALUES(1,1,0,'Completed',100,'PAID',100)");
             sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price,cost_total) VALUES(1,1,1,100,60)");
-            Path source=OUT.resolve("pre-017.db");sql("VACUUM INTO '"+source+"'");
-            BackupManager.getInstance().importDatabase(legacy12BackupFixture(source));db=DatabaseManager.getInstance().getConnection();
+            // Internal schema migration scenario, not a user-imported 1.2 backup.
+            DatabaseMigrationManager.migrate(db);
             require("100.0|122.0".equals(value("SELECT sale_price_ex_vat||'|'||sale_price_inc_vat FROM products WHERE id=1")),"Backup product repriced");
             require("100.0|PARTIALLY_PAID".equals(value("SELECT paid_amount||'|'||payment_status FROM orders")),"Backup import invented money");
             DatabaseMigrationManager.migrate(db);
