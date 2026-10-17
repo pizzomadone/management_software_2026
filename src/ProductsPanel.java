@@ -183,11 +183,9 @@ public class ProductsPanel extends JPanel {
                 JLabel label = (JLabel) super.getTableCellRendererComponent(
                     table, "", selected, focus, row, column);
                 String filename = value instanceof String ? (String)value : null;
-                if (filename != null && !filename.isBlank() &&
-                        !pageThumbnails.containsKey(filename)) {
-                    pendingThumbnails.add(filename);
-                    if (!thumbnailTimer.isRunning()) thumbnailTimer.start();
-                }
+                // Rendering a cell must NEVER schedule disk/SQLite reads.
+                // JTable can ask renderers for non-visible cells when resizing,
+                // sorting or measuring column widths.
                 label.setIcon(filename == null ? null : pageThumbnails.get(filename));
                 label.setHorizontalAlignment(SwingConstants.CENTER);
                 label.setVerticalAlignment(SwingConstants.CENTER);
@@ -317,10 +315,14 @@ public class ProductsPanel extends JPanel {
                 });
             }
         });
+        // Thumbnail work is driven by the viewport, never by rendering every
+        // loaded row. Fast scrolling discards old queued filenames immediately.
+        productsScrollPane.getViewport().addChangeListener(e -> scheduleVisibleThumbnails());
         productsScrollPane.getViewport().addComponentListener(new ComponentAdapter() {
             @Override
             public void componentResized(ComponentEvent e) {
                 scheduleProductColumnFit();
+                scheduleVisibleThumbnails();
             }
         });
         add(productsScrollPane, BorderLayout.CENTER);
@@ -791,15 +793,61 @@ public class ProductsPanel extends JPanel {
         loadProductPage();
     }
 
+    /**
+     * Define the active thumbnail queue by view rows, not by loaded products.
+     * Package-private logic is intentionally factored for headless regression.
+     */
+    private void setThumbnailWindow(int firstViewRow, int lastViewRow) {
+        pendingThumbnails.clear(); // Cancel jobs for rows that left the screen.
+        if (productsTable == null || tableModel == null) return;
+        int count=productsTable.getRowCount();
+        if (count==0 || firstViewRow>lastViewRow) return;
+        int first=Math.max(0,firstViewRow);
+        int last=Math.min(count-1,lastViewRow);
+        for (int view=first;view<=last;view++) {
+            int modelRow=productsTable.convertRowIndexToModel(view);
+            Object value=tableModel.getValueAt(modelRow,16);
+            if(value instanceof String filename && !filename.isBlank() &&
+                    !pageThumbnails.containsKey(filename))
+                pendingThumbnails.add(filename);
+        }
+    }
+
+    /** Only thumbnails on screen (+4 rows either side) may enter the queue. */
+    private void scheduleVisibleThumbnails() {
+        if(productsTable==null || productsScrollPane==null ||
+                !productsTable.isShowing()){
+            pendingThumbnails.clear();
+            thumbnailTimer.stop();
+            return;
+        }
+        Rectangle visible=productsScrollPane.getViewport().getViewRect();
+        int rowHeight=productsTable.getRowHeight();
+        if(visible.height<=0 || rowHeight<=0){
+            pendingThumbnails.clear();
+            thumbnailTimer.stop();
+            return;
+        }
+        int first=Math.max(0,visible.y/rowHeight-4);
+        int last=(visible.y+visible.height-1)/rowHeight+4;
+        setThumbnailWindow(first,last);
+        if(pendingThumbnails.isEmpty())thumbnailTimer.stop();
+        else if(!thumbnailTimer.isRunning())thumbnailTimer.start();
+    }
+
     private void loadNextThumbnail() {
-        if (pendingThumbnails.isEmpty()) { thumbnailTimer.stop(); return; }
-        String filename = pendingThumbnails.iterator().next();
+        // Verify the viewport again: the user may have scrolled hundreds of
+        // rows since the previous timer tick.
+        scheduleVisibleThumbnails();
+        if(pendingThumbnails.isEmpty())return;
+        String filename=pendingThumbnails.iterator().next();
         pendingThumbnails.remove(filename);
-        // The SQLite owner connection is shared: keep access on the UI thread,
-        // but decode only one thumbnail per timer event and only after painting.
-        pageThumbnails.put(filename, ProductImageStore.getInstance().iconCover(filename, 48, 30));
-        if (productsTable != null) productsTable.repaint();
-        if (pendingThumbnails.isEmpty()) thumbnailTimer.stop();
+        // SQLite's exclusive owner connection belongs to the Swing thread.
+        // Decode at most one currently relevant image per timer tick.
+        pageThumbnails.put(filename,
+            ProductImageStore.getInstance().iconCover(filename,48,30));
+        if(productsTable!=null)productsTable.repaint();
+        if(pendingThumbnails.isEmpty())thumbnailTimer.stop();
     }
 
     private void loadProductPage() {
@@ -911,6 +959,7 @@ public class ProductsPanel extends JPanel {
                 }
             }
             TableStyleUtil.appendRows(tableModel,rows);
+            scheduleVisibleThumbnails();
             missingPurchaseCostProductIds.addAll(missingCosts);
             nextProductOffset+=rows.size();
             moreProducts=nextProductOffset<productCount && !rows.isEmpty();
