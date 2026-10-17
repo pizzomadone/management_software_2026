@@ -707,8 +707,11 @@ public class MainWindow extends JFrame {
 
     private void showPanel(String panelName) {
         try {
-            // Create panel if it doesn't exist
-            if (!isPanelCreated(panelName)) {
+            // Every management panel loads its initial data in its
+            // constructor. Refreshing it again here issued duplicate SQL
+            // queries and repopulated all tables on their very first display.
+            boolean firstDisplay = !isPanelCreated(panelName);
+            if (firstDisplay) {
                 createPanel(panelName);
             }
 
@@ -716,28 +719,31 @@ public class MainWindow extends JFrame {
             cardLayout.show(mainPanel, panelName);
             currentPanel = panelName;
 
-            // Refresh dashboard data when returning to HOME
-            if ("HOME".equals(panelName) && dashboardPanel != null) {
-                dashboardPanel.loadData();
-            }
-            if ("SUPPLIER_ORDERS".equals(panelName) && supplierOrdersPanel != null) {
-                supplierOrdersPanel.loadOrders();
-            }
-            if ("BACKUP".equals(panelName) && backupPanel != null) {
-                backupPanel.refreshBackups();
-            }
-
-            switch (panelName) {
-                case "WAREHOUSE": if (warehousePanel!=null) warehousePanel.refreshData(); break;
-                case "WAREHOUSE_REPORT": if (warehouseReportPanel!=null) warehouseReportPanel.refreshData(); break;
-                case "SALES_REPORT": if (salesReportPanel!=null) salesReportPanel.refreshData(); break;
-                case "ADVANCED_STATS": if (advancedStatsPanel!=null) advancedStatsPanel.refreshData(); break;
-                case "PRODUCTS": if (productsPanel!=null) productsPanel.loadProducts(); break;
-                case "ORDERS": if (ordersPanel!=null) ordersPanel.refreshData(); break;
-                case "INVOICES": if (invoicesPanel!=null) invoicesPanel.loadInvoices(); break;
-                case "CUSTOMERS": if (customersPanel!=null) customersPanel.refreshData(); break;
-                case "SUPPLIERS": if (suppliersPanel!=null) suppliersPanel.refreshData(); break;
-                default: break;
+            if (!firstDisplay) {
+                // Refresh dashboard data when returning to HOME
+                if ("HOME".equals(panelName) && dashboardPanel != null) {
+                    dashboardPanel.loadData();
+                }
+                if ("SUPPLIER_ORDERS".equals(panelName) && supplierOrdersPanel != null) {
+                    supplierOrdersPanel.loadOrders();
+                }
+                if ("BACKUP".equals(panelName) && backupPanel != null) {
+                    backupPanel.refreshBackups();
+                }
+    
+                switch (panelName) {
+                    case "WAREHOUSE": if (warehousePanel!=null) warehousePanel.refreshData(); break;
+                    case "WAREHOUSE_REPORT": if (warehouseReportPanel!=null) warehouseReportPanel.refreshData(); break;
+                    case "SALES_REPORT": if (salesReportPanel!=null) salesReportPanel.refreshData(); break;
+                    case "ADVANCED_STATS": if (advancedStatsPanel!=null) advancedStatsPanel.refreshData(); break;
+                    case "PRODUCTS": if (productsPanel!=null) productsPanel.loadProducts(); break;
+                    case "ORDERS": if (ordersPanel!=null) ordersPanel.refreshData(); break;
+                    case "INVOICES": if (invoicesPanel!=null) invoicesPanel.loadInvoices(); break;
+                    case "CUSTOMERS": if (customersPanel!=null) customersPanel.refreshData(); break;
+                    case "SUPPLIERS": if (suppliersPanel!=null) suppliersPanel.refreshData(); break;
+                    default: break;
+                }
+    
             }
 
             // Refresh localization after data reloads, which may replace dynamic labels/table values.
