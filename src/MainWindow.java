@@ -947,8 +947,18 @@ public class MainWindow extends JFrame {
         Path source = chooseDatabaseFile(false);
         if (source == null) return;
         try {
-            BackupManager.getInstance().validateDatabase(source);
-        } catch (RuntimeException exception) {
+            // Preflight checks format only. The actual restore fully validates
+            // an isolated copy before touching the existing company database.
+            // Rebuilding a second 2 GB WSBQ snapshot here made import take
+            // substantially longer. WareStat 1.2 .db is structurally checked
+            // before asking for its original operating currency.
+            if (BackupManager.isArchive(source)) {
+                if (!WareStatFileHeader.isSealed(source))
+                    throw new IllegalArgumentException("Not a signed WareStat .wsbq file");
+            } else {
+                WareStatLegacy12.validate(source);
+            }
+        } catch (Exception exception) {
             showDatabaseError("The selected file is not a valid WareStat database.", exception);
             return;
         }
