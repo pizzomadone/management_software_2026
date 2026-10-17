@@ -91,6 +91,30 @@ public class MainWindow extends JFrame {
 
         ApplicationLock.acquire();
 
+        // An installed 1.2 company must never migrate silently. A declined
+        // migration leaves data.db unchanged and does not create data.wsbq.
+        if (WareStatLocalUpgrade.needsStartupConfirmation()) {
+            Path legacy = WareStatLocalUpgrade.installedLegacyFile();
+            try {
+                if (!WareStatLegacy12.isVersion12(legacy))
+                    throw new IllegalArgumentException(
+                        "The existing data.db is not a recognized WareStat 1.2 database");
+                if (!confirmLegacyMigration(legacy)) {
+                    System.exit(0);
+                    return;
+                }
+                WareStatLocalUpgrade.migrateConfirmed(legacy,
+                    WareStatLegacy12.installedCurrency());
+            } catch (Exception problem) {
+                Dialogs.showMessageDialog(null,
+                    I18n.tr("Unable to migrate WareStat 1.2 database") + ":\n"
+                        + problem.getMessage(),
+                    I18n.tr("Database Error"), JOptionPane.ERROR_MESSAGE);
+                System.exit(1);
+                return;
+            }
+        }
+
         // Initialize the database FIRST before any UI setup
         DatabaseManager.getInstance().initDatabase();
         ProductImageStore.getInstance().removeOrphanFiles();
@@ -947,23 +971,42 @@ public class MainWindow extends JFrame {
             ? chooser.getSelectedFile().toPath() : null;
     }
 
-    /** Open an existing signed company directly from its selected location. */
+    /** One explicit yes/no prompt, reused by startup and File > Open. */
+    private static boolean confirmLegacyMigration(Path source) {
+        String message = I18n.tr("The following file was created with WareStat 1.2:")
+            + "\n" + source.toAbsolutePath() + "\n\n"
+            + I18n.tr("Migrate this database to WareStat 1.3?") + "\n\n"
+            + I18n.tr("Migration changes the original file and may fail.")
+            + "\n" + I18n.tr(
+                "WareStat will not create a backup. Make a manual copy before proceeding.")
+            + "\n" + I18n.tr("On success, the .db file will become a .wsbq file.")
+            + "\n\n" + I18n.tr("Continue?");
+        return Dialogs.showConfirmDialog(null,message,I18n.tr("WareStat 1.2 Migration"),
+            JOptionPane.YES_NO_OPTION,JOptionPane.WARNING_MESSAGE) == JOptionPane.YES_OPTION;
+    }
+
+    /** Open a current .wsbq directly, or migrate a .db only after confirmation. */
     private void openDatabase() {
         Path source = chooseDatabaseFile(false);
         if (source == null) return;
         source = source.toAbsolutePath().normalize();
         if (source.equals(AppConstants.getDatabasePath().toAbsolutePath().normalize()))
             return;
+        boolean legacy = source.getFileName().toString().toLowerCase(
+            java.util.Locale.ROOT).endsWith(".db");
         try {
-            if (!Files.isRegularFile(source) || !WareStatFileHeader.isSealed(source))
+            if (legacy) {
+                if (!WareStatLegacy12.isVersion12(source))
+                    throw new IllegalArgumentException("Not a WareStat 1.2 database");
+                if (!confirmLegacyMigration(source)) return;
+            } else if (!Files.isRegularFile(source) || !WareStatFileHeader.isSealed(source)) {
                 throw new IllegalArgumentException("Select a valid WareStat 1.3 .wsbq database");
+            }
         } catch (Exception problem) {
-            showDatabaseError("The selected file is not a valid WareStat database.", problem);
+            showDatabaseError("The selected file is not a valid WareStat database.",problem);
             return;
         }
 
-        // The current company is never overwritten. An optional Save As
-        // creates a separate user-requested snapshot before switching.
         Object[] choices = {
             I18n.tr("Save a Copy and Open"),
             I18n.tr("Open Without Saving"),
@@ -973,13 +1016,27 @@ public class MainWindow extends JFrame {
             I18n.tr("Save a copy of the current database before opening another?"),
             I18n.tr("Open"), JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE,
             null, choices, choices[0]);
-        if (choice == 0 && saveDatabaseCopy(source) == null) return;
-        if (choice != 0 && choice != 1) return;
+        Path target;
         try {
-            DatabaseManager.getInstance().openDatabase(source);
+            target = legacy ? WareStatLocalUpgrade.upgradedPath(source) : source;
+        } catch (Exception problem) {
+            showDatabaseError("Unable to migrate WareStat 1.2 database",problem);
+            return;
+        }
+        if (choice == 0 && saveDatabaseCopy(target) == null) return;
+        if (choice != 0 && choice != 1) return;
+
+        try {
+            if (legacy) {
+                String currency = DatabaseCurrency.confirmLegacyCurrency(this,source);
+                if (currency == null) return;
+                target = WareStatLocalUpgrade.migrateConfirmed(source,currency);
+            }
+            DatabaseManager.getInstance().openDatabase(target);
             refreshCompanyPanels();
         } catch (Exception problem) {
-            showDatabaseError("Unable to open database", problem);
+            showDatabaseError(legacy ? "Unable to migrate WareStat 1.2 database"
+                : "Unable to open database",problem);
         }
     }
 
@@ -1073,7 +1130,7 @@ public class MainWindow extends JFrame {
             if (save) dialog.setFile(defaultName);
             dialog.setFilenameFilter((directory, name) -> {
                 String lower = name.toLowerCase(java.util.Locale.ROOT);
-                return lower.endsWith(".wsbq");
+                return lower.endsWith(".wsbq") || (!save && lower.endsWith(".db"));
             });
             dialog.setVisible(true);
             return dialog.getFile() == null ? null : new File(dialog.getDirectory(), dialog.getFile()).toPath();
@@ -1081,8 +1138,10 @@ public class MainWindow extends JFrame {
         JFileChooser chooser = new JFileChooser(
             AppConstants.getDatabasePath().getParent().toFile());
         chooser.setDialogTitle(I18n.tr(save ? "Save WareStat Database" : "Select a WareStat Database"));
-        chooser.setFileFilter(new FileNameExtensionFilter(
-            I18n.tr("WareStat Database (*.wsbq)"), "wsbq"));
+        chooser.setFileFilter(save
+            ? new FileNameExtensionFilter(I18n.tr("WareStat Database (*.wsbq)"), "wsbq")
+            : new FileNameExtensionFilter(I18n.tr("WareStat files (*.wsbq, *.db)"),
+                "wsbq", "db"));
         if (save) chooser.setSelectedFile(new File(defaultName));
         int result = save ? chooser.showSaveDialog(this) : chooser.showOpenDialog(this);
         return result == JFileChooser.APPROVE_OPTION ? chooser.getSelectedFile().toPath() : null;
