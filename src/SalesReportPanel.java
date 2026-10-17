@@ -84,6 +84,7 @@ public class SalesReportPanel extends JPanel {
         totalCostLabel.setToolTipText(I18n.tr("Historical cost is the actual cost of the products sold, determined from the FIFO lots used when the sale was completed."));
         grossProfitLabel.setToolTipText(I18n.tr("Gross profit = historical sales revenue - historical FIFO purchase cost. Sales without reconstructable historical cost are excluded."));
         historicalCostNoteLabel = new JLabel();
+        noSalesNote=new JLabel("");
         historicalCostNoteLabel.setFont(historicalCostNoteLabel.getFont().deriveFont(
             Math.max(10f, historicalCostNoteLabel.getFont().getSize2D() - 1f)));
         updateStatistics(0, 0, 0, 0, true);
@@ -144,7 +145,11 @@ public class SalesReportPanel extends JPanel {
         // Main layout
         JPanel statsContainer = new JPanel(new BorderLayout(0, 4));
         statsContainer.add(statsPanel, BorderLayout.CENTER);
-        statsContainer.add(historicalCostNoteLabel, BorderLayout.SOUTH);
+        JPanel reportNotes=new JPanel();
+        reportNotes.setLayout(new BoxLayout(reportNotes,BoxLayout.Y_AXIS));
+        reportNotes.add(noSalesNote);
+        reportNotes.add(historicalCostNoteLabel);
+        statsContainer.add(reportNotes,BorderLayout.SOUTH);
 
         JPanel topPanel = new JPanel(new BorderLayout());
         topPanel.add(filterPanel, BorderLayout.NORTH);
@@ -161,12 +166,14 @@ public class SalesReportPanel extends JPanel {
     }
 
     private boolean reportValid;
+    private JLabel noSalesNote;
 
     private void loadReportData() {
         reportValid=false;
         tableModel.setRowCount(0);
         java.util.List<java.util.Vector<Object>> fetchedRows=new java.util.ArrayList<>();
         updateStatistics(0,0,0,0,true);
+        noSalesNote.setText("");
         try {
             Date start = DateUtils.parseDate(startDateField.getText(),dateFormat);
             Date end = DateUtils.parseDate(endDateField.getText(),dateFormat);
@@ -256,6 +263,10 @@ public class SalesReportPanel extends JPanel {
                 }
 
                 TableStyleUtil.appendRows(tableModel,fetchedRows);
+                // Report empty results accurately: invoices are a separate
+                // document type, not automatically a completed customer sale.
+                noSalesNote.setText(totalOrders==0 ?
+                    SalesDataDiagnostics.explainEmptySales(conn) : "");
                 // Update statistics
                 updateStatistics(totalSales,totalOrders,totalCost,totalGrossProfit,allCostsKnown);
                 reportValid=true;
