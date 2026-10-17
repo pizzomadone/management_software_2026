@@ -197,6 +197,7 @@ public class BackupManager {
             config.setProperty("backup.last_success",Long.toString(System.currentTimeMillis()));
             saveConfig();
             cleanOldBackups();
+            DatabaseManager.reclaimUnusedPages();
             return target;
         }catch(IOException|SQLException e){throw new IllegalStateException("Error during backup: "+e.getMessage(),e);}
         finally{removeTemporary(staged);}
