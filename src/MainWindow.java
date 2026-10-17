@@ -125,7 +125,7 @@ public class MainWindow extends JFrame {
         addWindowListener(new java.awt.event.WindowAdapter() {
             @Override
             public void windowClosing(java.awt.event.WindowEvent windowEvent) {
-                DatabaseManager.getInstance().closeConnection();
+                DatabaseManager.getInstance().shutdownAndSeal();
             }
         });
     }
