@@ -165,6 +165,7 @@ public class SalesReportPanel extends JPanel {
     private void loadReportData() {
         reportValid=false;
         tableModel.setRowCount(0);
+        java.util.List<java.util.Vector<Object>> fetchedRows=new java.util.ArrayList<>();
         updateStatistics(0,0,0,0,true);
         try {
             Date start = DateUtils.parseDate(startDateField.getText(),dateFormat);
@@ -240,12 +241,13 @@ public class SalesReportPanel extends JPanel {
                         allCostsKnown = false;
                     }
 
-                    tableModel.addRow(row);
+                    fetchedRows.add(row);
 
                     totalSales = Numbers.add(totalSales,total);
                     totalOrders++;
                 }
 
+                TableStyleUtil.appendRows(tableModel,fetchedRows);
                 // Update statistics
                 updateStatistics(totalSales,totalOrders,totalCost,totalGrossProfit,allCostsKnown);
                 reportValid=true;
