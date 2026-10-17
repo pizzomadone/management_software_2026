@@ -813,11 +813,12 @@ public class RegressionTest {
             backup.validateDatabase(oldArchive);
             var imported=backup.importBackup(oldArchive);
             require(imported.absolutePath().endsWith(".wsbq"),"Imported backup extension is not .wsbq");
-            try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+imported.absolutePath());
+            Path readableImported=WareStatFileHeader.copyReadable(Path.of(imported.absolutePath()),OUT);
+            try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+readableImported);
                 Statement s=c.createStatement();
                 ResultSet r=s.executeQuery("SELECT COUNT(*) FROM product_images WHERE image_data IS NOT NULL")){
                 require(r.next()&&r.getInt(1)==3,"Legacy backup conversion lost photos");
-            }
+            }finally{Files.deleteIfExists(readableImported);}
             backup.restoreBackup(oldArchive.toString(),null);
             db=DatabaseManager.getInstance().getConnection();
             require("3".equals(value("SELECT COUNT(*) FROM product_images WHERE length(image_data)>0")),
