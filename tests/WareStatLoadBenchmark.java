@@ -409,7 +409,6 @@ public final class WareStatLoadBenchmark {
         record("seed_products_photos_lots_movements",products,()->stockAndProducts(db,products,photos,suppliers,jpeg));
         record("seed_orders_invoices",customerOrders+supplierOrders+invoices,
             ()->documents(db,products,suppliers,customers,customerOrders,supplierOrders,invoices));
-        jpeg=null;
         record("initial_integrity",1,()->verify(db,products,photos,suppliers,customers,
             customerOrders,supplierOrders,invoices));
         System.out.println("DATABASE_BYTES "+Files.size(database));
@@ -437,7 +436,8 @@ public final class WareStatLoadBenchmark {
             record("backup_without_photos",1,()->file[0]=b.performBackup(false));
             check(WareStatFileHeader.isSealed(file[0]),"Photo-free backup was not sealed");
             System.out.println("NO_PHOTO_BACKUP_BYTES "+Files.size(file[0]));
-            record("validate_full_backup",1,()->b.validateDatabase(backupFolder.resolve(backup.getFileName())));
+            final Path fullBackup=backup;
+            record("validate_full_backup",1,()->b.validateDatabase(fullBackup));
             if(restore){
                 final Path input=backup;
                 record("restore_full_backup",1,()->b.importDatabase(input));
