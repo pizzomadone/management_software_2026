@@ -184,9 +184,9 @@ discourages casual opening in generic SQLite tools: **it is not encryption and
 does not prevent someone from reversing the 16-byte modification**.
 
 Backup, export, and New Archive output are single-file **`.wsbq`
-SQLite snapshots**, sealed with the WareStat signature. **Only a signed,
-current-schema WareStat `.wsbq` or a recognized **WareStat 1.2
-SQLite `.db` backup** may be imported**. Version 1.2 (release branch
+SQLite snapshots**, sealed with the WareStat signature. Only two input
+formats are accepted: **a signed current-schema `.wsbq`** or **a SQLite `.db`
+backup structurally matching WareStat 1.2**. Version 1.2 (release branch
 `claude/add-ant-release-license-87WXC`) stored live data in `data.db`
 and exported backups as `.db`. It never used `.wsbu`. Importing a verified
 1.2 database makes a fresh current-schema `.wsbq` copy; it never operates
