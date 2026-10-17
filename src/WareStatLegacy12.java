@@ -28,10 +28,9 @@ public final class WareStatLegacy12 {
         return found.containsAll(java.util.Arrays.asList(columns));
     }
 
-    public static void validate(Connection c) throws SQLException {
-        // Match independent tables and the old price/total/line-price semantics;
-        // a current-schema database or arbitrary SQLite file must not pass.
-        if (!hasColumns(c,"products","id","code","name","price","quantity","supplier_id","vat_rate") ||
+    private static boolean matchesSchema(Connection c) throws SQLException {
+        // A cheap recognition check: it does not scan all data pages.
+        return hasColumns(c,"products","id","code","name","price","quantity","supplier_id","vat_rate") ||
             !hasColumns(c,"customers","id","first_name","last_name") ||
             !hasColumns(c,"suppliers","id","company_name","vat_number") ||
             !hasColumns(c,"orders","id","customer_id","order_date","status","total") ||
@@ -44,10 +43,27 @@ public final class WareStatLegacy12 {
             !hasColumns(c,"warehouse_movements","id","product_id","date","type","quantity") ||
             !hasColumns(c,"stock_reservations","id","product_id","document_type","document_id") ||
             !hasColumns(c,"company_data","id","company_name") ||
-            hasColumns(c,"products","sale_price_ex_vat","sale_price_inc_vat")) {
+            !hasColumns(c,"products","sale_price_ex_vat","sale_price_inc_vat");
+    }
+
+    public static void validate(Connection c) throws SQLException {
+        if (!matchesSchema(c))
             throw new SQLException("This is not a WareStat 1.2 SQLite database");
-        }
         DatabaseIntegrity.validate(c,true);
+    }
+
+    /** Recognize a 1.2 file without running an expensive full integrity scan. */
+    public static boolean isVersion12(Path file) throws SQLException {
+        if (!Files.isRegularFile(file) ||
+                !file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".db"))
+            return false;
+        org.sqlite.SQLiteConfig settings=new org.sqlite.SQLiteConfig();
+        settings.setReadOnly(true);
+        settings.setBusyTimeout(10000);
+        try(Connection c=DriverManager.getConnection("jdbc:sqlite:"+file.toAbsolutePath(),
+                settings.toProperties())) {
+            return matchesSchema(c);
+        }
     }
 
     public static void validate(Path file) throws SQLException {
