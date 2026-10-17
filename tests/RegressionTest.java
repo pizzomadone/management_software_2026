@@ -897,6 +897,7 @@ public class RegressionTest {
             Path savedCurrent=backup.performBackup(true);
             Path legacy=AppConstants.getAppDataDirectory().resolve("data.db");
             WareStatLegacy12Fixture.create(legacy);
+            byte[] untouched12=Files.readAllBytes(legacy);
             DatabaseManager.getInstance().closeConnection();db=null;
             Path live=AppConstants.getDatabasePath();
             Files.deleteIfExists(live);
@@ -912,6 +913,33 @@ public class RegressionTest {
                 "Startup migration lost original supplier");
             require("1".equals(value("SELECT COUNT(*) FROM invoices WHERE number='OLD12-INVOICE'")),
                 "Startup migration lost original invoice");
+            require(Arrays.equals(untouched12,Files.readAllBytes(legacy)),
+                "Migration modified original WareStat 1.2 data.db bytes");
+            // Check each original business area, not just table creation.
+            require("1".equals(value("SELECT COUNT(*) FROM customers WHERE id=1 AND first_name='Historic' AND last_name='Customer' AND email='historic@example.invalid'")),
+                "Migration lost the customer or changed personal data");
+            require("1".equals(value("SELECT COUNT(*) FROM company_data WHERE id=1 AND company_name='Historic Company' AND vat_number='HISTORIC-VAT'")),
+                "Migration lost company details");
+            require("1".equals(value("SELECT COUNT(*) FROM products WHERE id=1 AND code='OLD12' AND quantity=9 AND sale_price_ex_vat=100 AND sale_price_inc_vat=122 AND acquisition_cost=60")),
+                "Migration changed product quantity, original sale price, VAT-inclusive price or cost");
+            require("1".equals(value("SELECT COUNT(*) FROM product_suppliers WHERE product_id=1 AND supplier_id=1 AND purchase_price=60")),
+                "Migration lost the original supplier price list");
+            require("1".equals(value("SELECT COUNT(*) FROM orders WHERE id=1 AND customer_id=1 AND status='Completed' AND total_ex_vat=122")),
+                "Migration lost or changed the original customer order");
+            require("1".equals(value("SELECT COUNT(*) FROM order_details WHERE id=1 AND order_id=1 AND product_id=1 AND quantity=1 AND sale_unit_price_ex_vat=100")),
+                "Migration lost original customer order lines or prices");
+            require("1".equals(value("SELECT COUNT(*) FROM invoices WHERE id=1 AND customer_id=1 AND number='OLD12-INVOICE' AND taxable_amount=100 AND vat=22 AND total=122")),
+                "Migration changed an original invoice's amounts or customer");
+            require("1".equals(value("SELECT COUNT(*) FROM invoice_details WHERE id=1 AND invoice_id=1 AND product_id=1 AND quantity=1 AND sale_unit_price_ex_vat=100 AND vat_rate=22 AND total=122")),
+                "Migration lost original invoice lines or tax details");
+            require("1".equals(value("SELECT COUNT(*) FROM supplier_orders WHERE id=1 AND supplier_id=1 AND number='OLD-PO-1' AND total=120")),
+                "Migration lost the supplier purchase order");
+            require("1".equals(value("SELECT COUNT(*) FROM supplier_order_details WHERE id=1 AND order_id=1 AND product_id=1 AND quantity=2 AND unit_price=60 AND total=120")),
+                "Migration lost original supplier purchase lines or costs");
+            require("1".equals(value("SELECT COUNT(*) FROM warehouse_movements WHERE id=1 AND product_id=1 AND quantity=10 AND reason='Legacy 1.2'")),
+                "Migration lost historical warehouse movements");
+            require("1".equals(value("SELECT COUNT(*) FROM minimum_stock WHERE product_id=1 AND minimum_quantity=3 AND reorder_quantity=10")),
+                "Migration changed the historic reorder settings");
             DatabaseManager.getInstance().shutdownAndSeal();
             require(WareStatFileHeader.isSealed(live),"Converted WSBQ not signed on shutdown");
             DatabaseManager.getInstance().initDatabase();
