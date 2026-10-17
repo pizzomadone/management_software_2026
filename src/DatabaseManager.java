@@ -555,6 +555,8 @@ public class DatabaseManager {
             // Statistics and reports usually read completed orders only.
             stmt.execute("CREATE INDEX IF NOT EXISTS idx_orders_completed_date ON orders(order_date DESC,id DESC) WHERE status='Completed'");
             stmt.execute("CREATE INDEX IF NOT EXISTS idx_order_details_product ON order_details(product_id,order_id)");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_stock_reservations_active_product " +
+                "ON stock_reservations(product_id) WHERE status='ACTIVE'");
         }
 
         // Rebuild triggers only on a schema change or if one is missing.
