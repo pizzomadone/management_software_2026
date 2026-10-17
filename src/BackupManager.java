@@ -324,7 +324,7 @@ public class BackupManager {
     public synchronized void importDatabase(Path source,String legacyCurrency) {
         Path current=AppConstants.getDatabasePath().toAbsolutePath().normalize();
         Path staging=null,safety=null;
-        boolean replaced=false;
+        boolean replaced=false,stoppedLive=false;
         try{
             rejectActive(source);
             staging=prepareInput(source,current.getParent(),legacyCurrency);
@@ -336,6 +336,7 @@ public class BackupManager {
                 safety=retained;
             }
             DatabaseManager.getInstance().closeConnection();
+            stoppedLive=true;
             clearSidecars(current);
             moveReplace(staging,current);
             staging=null;
@@ -346,7 +347,9 @@ public class BackupManager {
         }catch(Exception e){
             if(replaced&&safety!=null){
                 try{restoreSafety(current,safety);}catch(Exception recovery){e.addSuppressed(recovery);}
-            }else if(!replaced){
+            }else if(!replaced&&stoppedLive){
+                // A rejected input never closed or changed the live connection:
+                // do not needlessly reopen SQLite and invalidate callers.
                 try{DatabaseManager.getInstance().initDatabase();}catch(Exception ignored){}
             }
             throw new IllegalStateException("Unable to import database: "+e.getMessage()+
