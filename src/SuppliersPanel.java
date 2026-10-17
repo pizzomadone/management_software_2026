@@ -124,6 +124,7 @@ public class SuppliersPanel extends JPanel {
 
     private void loadSuppliers() {
         tableModel.setRowCount(0);
+        java.util.List<java.util.Vector<Object>> fetchedRows=new java.util.ArrayList<>();
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = "SELECT * FROM suppliers ORDER BY company_name";
@@ -138,9 +139,10 @@ public class SuppliersPanel extends JPanel {
                     row.add(rs.getString("email"));
                     row.add(rs.getString("phone"));
                     row.add(rs.getString("address"));
-                    tableModel.addRow(row);
+                    fetchedRows.add(row);
                 }
             }
+            TableStyleUtil.appendRows(tableModel,fetchedRows);
         } catch (SQLException e) {
             e.printStackTrace();
             Dialogs.showMessageDialog(this,
