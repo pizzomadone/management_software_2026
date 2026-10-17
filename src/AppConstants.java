@@ -128,7 +128,7 @@ public class AppConstants {
     /**
      * The name of the database file.
      */
-    public static final String DATABASE_FILE_NAME = "data.db";
+    public static final String DATABASE_FILE_NAME = "data.wsbq";
 
     /**
      * The name of the backup configuration file.
