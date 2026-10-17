@@ -973,7 +973,7 @@ public class MainWindow extends JFrame {
             I18n.tr("Save a copy of the current database before opening another?"),
             I18n.tr("Open"), JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE,
             null, choices, choices[0]);
-        if (choice == 0 && saveDatabaseCopy() == null) return;
+        if (choice == 0 && saveDatabaseCopy(source) == null) return;
         if (choice != 0 && choice != 1) return;
         try {
             DatabaseManager.getInstance().openDatabase(source);
@@ -1000,12 +1000,23 @@ public class MainWindow extends JFrame {
      * The existing file is never modified or replaced by the save operation.
      */
     private Path saveDatabaseCopy() {
+        return saveDatabaseCopy(null);
+    }
+
+    private Path saveDatabaseCopy(Path databaseBeingOpened) {
         Path destination = chooseDatabaseFile(true);
         if (destination == null) return null;
         if (!destination.getFileName().toString().toLowerCase(java.util.Locale.ROOT)
                 .endsWith(".wsbq"))
             destination = destination.resolveSibling(destination.getFileName() + ".wsbq");
         destination = destination.toAbsolutePath().normalize();
+        if (databaseBeingOpened != null &&
+                destination.equals(databaseBeingOpened.toAbsolutePath().normalize())) {
+            Dialogs.showMessageDialog(this,
+                I18n.tr("The selected save filename is the database being opened. Choose another filename."),
+                I18n.tr("Save As"), JOptionPane.WARNING_MESSAGE);
+            return null;
+        }
         if (destination.equals(AppConstants.getDatabasePath().toAbsolutePath().normalize())) {
             Dialogs.showMessageDialog(this,
                 I18n.tr("Choose a different filename; the current database saves automatically."),
