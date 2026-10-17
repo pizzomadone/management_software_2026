@@ -295,7 +295,7 @@ public class VatRegressionTest extends RegressionTest {
             sql("INSERT INTO orders(id,customer_id,order_date,status,total,payment_status,paid_amount) VALUES(1,1,0,'Completed',100,'PAID',100)");
             sql("INSERT INTO order_details(order_id,product_id,quantity,unit_price,cost_total) VALUES(1,1,1,100,60)");
             Path source=OUT.resolve("pre-017.db");sql("VACUUM INTO '"+source+"'");
-            BackupManager.getInstance().importDatabase(source);db=DatabaseManager.getInstance().getConnection();
+            BackupManager.getInstance().importDatabase(legacy12BackupFixture(source));db=DatabaseManager.getInstance().getConnection();
             require("100.0|122.0".equals(value("SELECT sale_price_ex_vat||'|'||sale_price_inc_vat FROM products WHERE id=1")),"Backup product repriced");
             require("100.0|PARTIALLY_PAID".equals(value("SELECT paid_amount||'|'||payment_status FROM orders")),"Backup import invented money");
             DatabaseMigrationManager.migrate(db);

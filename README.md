@@ -183,17 +183,25 @@ SQLite has closed and no nonempty WAL or journal remains. This mechanism merely
 discourages casual opening in generic SQLite tools: **it is not encryption and
 does not prevent someone from reversing the 16-byte modification**.
 
-Backup, export, and New Archive output are also single-file **`.wsbq`
-SQLite snapshots**, sealed with the same 16-byte signature. WareStat accepts
-either a sealed or standard-header SQLite backup from any installation and
-recognizes prior masked-ZIP `.wsbq` archives for legacy import.
+Backup, export, and New Archive output are single-file **`.wsbq`
+SQLite snapshots**, sealed with the WareStat signature. **Only a signed,
+current-schema WareStat `.wsbq` or the original version-1.2 masked-ZIP
+WareStat `.wsbq` archive may be imported**. Bare `.db` files, renamed
+generic SQLite files, unsealed `.wsbq` files and sealed obsolete schemas
+are rejected by the import API. An extracted legacy SQLite file is converted
+*internally* as part of verified version-1.2 backup import.
 Photos (optimized JPEG, max. 800px and 150KB) are embedded as BLOBs;
 thumbnail previews are derived and cached in RAM. A manual backup/export
 can exclude photo rows in the *copy*, never in the live database.
 Automatic backups include photos.
 
-The first launch after upgrading migrates any earlier `data.db` and its
-external `product_images/` folder, without deleting the originals.
+On first startup without `data.wsbq`, WareStat initializes a **new
+empty database**. It does not open, import or migrate any old `data.db` and
+does not delete that file or its external images. To transfer version-1.2
+data, explicitly select the official **version-1.2 WareStat `.wsbq` backup**
+under Import Backup; validation and migration then embed its JPEGs as BLOBs.
+A standard SQLite header is tolerated only for the *active internal*
+`data.wsbq` during recovery from an interrupted shutdown, not for user imports.
 WareStat can create consistent backups from the exclusive owner connection
 using SQLite `VACUUM INTO`, rather than trying to open a second
 connection to the locked live file. Incremental page reclamation is run

@@ -50,8 +50,9 @@ public class DatabaseManager {
 
             // Never change the header while SQLite might still own the file.
             closeConnection();
-            // A one-time, validated migration preserves the original data.db and photos.
-            WareStatLocalUpgrade.migrateIfNeeded();
+            // Never open, auto-migrate or import a previous data.db.
+            // Version-1.2 data can enter only via an explicitly selected
+            // signed legacy WareStat backup, converted by BackupManager.
             WareStatFileHeader.restoreForSQLite(AppConstants.getDatabasePath());
 
             // Validate an existing database before creating any missing application tables.
