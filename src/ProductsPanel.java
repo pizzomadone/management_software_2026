@@ -318,6 +318,10 @@ public class ProductsPanel extends JPanel {
         // Thumbnail work is driven by the viewport, never by rendering every
         // loaded row. Fast scrolling discards old queued filenames immediately.
         productsScrollPane.getViewport().addChangeListener(e -> scheduleVisibleThumbnails());
+        productsTable.addHierarchyListener(e -> {
+            if((e.getChangeFlags() & java.awt.event.HierarchyEvent.SHOWING_CHANGED)!=0)
+                SwingUtilities.invokeLater(this::scheduleVisibleThumbnails);
+        });
         productsScrollPane.getViewport().addComponentListener(new ComponentAdapter() {
             @Override
             public void componentResized(ComponentEvent e) {
