@@ -53,6 +53,12 @@ public class DatabaseManager {
             boolean existing = java.nio.file.Files.exists(AppConstants.getDatabasePath());
             closeConnection();
             connection = openConnection(DB_URL);
+            if (!existing) {
+                // Keep newly created SQLite databases compactable without full VACUUM.
+                try (Statement stmt = connection.createStatement()) {
+                    stmt.execute("PRAGMA auto_vacuum=INCREMENTAL");
+                }
+            }
             if (existing) {
                 repairOrphanedProductImageReferences(connection);
                 DatabaseIntegrity.validate(connection, true);
@@ -563,6 +569,30 @@ public class DatabaseManager {
             stmt.execute(deleteTrigger);
 
             System.out.println("Stock reservation triggers created successfully!");
+        }
+    }
+
+
+    /**
+     * Opportunistic bounded disk reclamation, called after a successful backup.
+     * Avoids rewriting the whole live database during day-to-day operations.
+     */
+    public static void reclaimUnusedPages() {
+        try (Connection c = openConnection("jdbc:sqlite:" + AppConstants.getDatabasePath());
+             Statement s = c.createStatement()) {
+            int autoVacuum;
+            try (ResultSet r = s.executeQuery("PRAGMA auto_vacuum")) {
+                autoVacuum = r.next() ? r.getInt(1) : 0;
+            }
+            if (autoVacuum != 2) return; // INCREMENTAL
+            int available;
+            try (ResultSet r = s.executeQuery("PRAGMA freelist_count")) {
+                available = r.next() ? r.getInt(1) : 0;
+            }
+            if (available >= 256) s.execute("PRAGMA incremental_vacuum(2048)");
+        } catch (SQLException e) {
+            // A busy database should not invalidate a completed backup.
+            System.err.println("SQLite free-page maintenance deferred: " + e.getMessage());
         }
     }
 
