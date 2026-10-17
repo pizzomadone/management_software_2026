@@ -1033,7 +1033,11 @@ public class ProductDialog extends JDialog {
                     ProductImageStore.getInstance().deleteNamedFiles(removedOriginalPhotos);
                 }
 
-                if (pendingPhotoFilenames != null) pendingPhotoFilenames.clear();
+                if (pendingPhotoFilenames != null) {
+                    // Photos have been committed as BLOBs; release uncommitted JPEG buffers.
+                    ProductImageStore.getInstance().deleteNamedFiles(pendingPhotoFilenames);
+                    pendingPhotoFilenames.clear();
+                }
                 originalPhotoFilenames.clear();
                 pendingPrimaryFilename = null;
                 originalPrimaryFilename = null;
