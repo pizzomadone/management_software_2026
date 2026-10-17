@@ -114,6 +114,8 @@ public class BackupManager {
                 settings.setBusyTimeout(10000);
                 try(Connection c=DriverManager.getConnection("jdbc:sqlite:"+readable.toAbsolutePath(),
                         settings.toProperties())){
+                    if(WareStatFileHeader.isSealed(source))
+                        validateCurrentBackupVersion(c);
                     vacuumInto(c,staging,legacyCurrency);
                 }
             }
@@ -138,6 +140,20 @@ public class BackupManager {
             removeTemporary(readableCopy);
         }
     }
+    /** A signed current-format backup must already contain the complete
+     * current schema: never silently migrate an obsolete SQLite database that
+     * has merely been renamed/resealed with a .wsbq extension. */
+    private static void validateCurrentBackupVersion(Connection c) throws SQLException {
+        try(PreparedStatement p=c.prepareStatement(
+                "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1");
+            ResultSet r=p.executeQuery()){
+            if(!r.next()||!"022".equals(r.getString(1)))
+                throw new SQLException("Incompatible WareStat .wsbq schema version");
+        }
+        DatabaseIntegrity.validate(c,false);
+        ProductImageStore.validateEmbeddedImages(c);
+    }
+
     private static void vacuumInto(Connection c,Path staging,String legacyCurrency)
             throws SQLException {
         if(DatabaseCurrency.read(c)==null&&legacyCurrency==null)
@@ -155,12 +171,17 @@ public class BackupManager {
     private Path prepareInput(Path source,Path folder,String legacyCurrency)
             throws IOException,SQLException {
         if(source==null||!Files.isRegularFile(source))throw new IOException("Backup file not found");
-        if(!isArchive(source)&&!source.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".db"))
-            throw new IOException("Unsupported backup extension");
+        // User imports only the current WareStat .wsbq or the official
+        // version-1.2 masked .wsbq backup. Raw SQLite .db is never importable.
+        if(!isArchive(source))
+            throw new IOException("Only WareStat .wsbq backup files are supported");
+        boolean legacy=isLegacyArchive(source);
+        if(!legacy&&!WareStatFileHeader.isSealed(source))
+            throw new IOException("Unsupported WareStat backup signature (expected current .wsbq or version-1.2 archive)");
         Path work=Files.createTempDirectory(folder,"wsbq-import-");
         Path result=null;
         try{
-            if(isLegacyArchive(source)){
+            if(legacy){
                 ArchiveContent old=extractArchive(source,work);
                 result=snapshot(old.database(),folder,legacyCurrency,false);
                 validateImageCoherence(result,old.images());
@@ -174,15 +195,9 @@ public class BackupManager {
                     finally{c.setAutoCommit(true);}
                 }
             }else{
-                result=snapshot(source,folder,legacyCurrency,false);
+                // This route is reserved for a current, signed WareStat .wsbq.
+                result=snapshot(source,folder,null,false);
                 try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+result)){
-                    // Standalone old .db files do not contain their external photographs.
-                    // Keep complete embedded photos; remove only orphaned legacy metadata.
-                    if(source.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".db")){
-                        try(Statement s=c.createStatement()){
-                            s.executeUpdate("DELETE FROM product_images WHERE image_data IS NULL");
-                        }
-                    }
                     ProductImageStore.validateEmbeddedImages(c);
                 }
             }
@@ -244,7 +259,7 @@ public class BackupManager {
             if(!isArchive(target))throw new IOException("The export filename must end in .wsbq");
             Files.createDirectories(target.getParent());
             staged=snapshot(AppConstants.getDatabasePath(),target.getParent(),null,!includePhotos);
-            validateBackup(staged);
+            validateInternalSnapshot(staged);
             WareStatFileHeader.seal(staged);
             moveReplace(staged,target);
             staged=null;
@@ -268,7 +283,7 @@ public class BackupManager {
             rejectActive(target);
             Files.createDirectories(target.getParent());
             archiveTmp=snapshot(current,target.getParent());
-            validateBackup(archiveTmp);
+            validateInternalSnapshot(archiveTmp);
             WareStatFileHeader.seal(archiveTmp);
             moveReplace(archiveTmp,target);
             archiveTmp=null;
@@ -373,6 +388,14 @@ public class BackupManager {
         importDatabase(Path.of(file),legacyCurrency);
         try{return CostIntegrity.audit(DatabaseManager.getInstance().getConnection());}
         catch(SQLException e){throw new IllegalStateException("Database restored but cost completeness could not be checked: "+e.getMessage(),e);}
+    }
+
+    /** Validates our own unsealed staging file, never a file chosen for import. */
+    private static void validateInternalSnapshot(Path staged) throws SQLException {
+        try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+staged)){
+            DatabaseIntegrity.validate(c,false);
+            ProductImageStore.validateEmbeddedImages(c);
+        }
     }
 
     private void validateBackup(Path path) {
