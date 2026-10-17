@@ -555,6 +555,9 @@ public class DatabaseManager {
             stmt.execute("CREATE INDEX IF NOT EXISTS idx_warehouse_movements_date ON warehouse_movements(date DESC, id DESC)");
             stmt.execute("CREATE INDEX IF NOT EXISTS idx_orders_order_date ON orders(order_date DESC, id DESC)");
             stmt.execute("CREATE INDEX IF NOT EXISTS idx_invoices_date ON invoices(date DESC, id DESC)");
+            // Statistics and reports usually read completed orders only.
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_orders_completed_date ON orders(order_date DESC,id DESC) WHERE status='Completed'");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_order_details_product ON order_details(product_id,order_id)");
         }
 
         // Create triggers for stock reservation synchronization
