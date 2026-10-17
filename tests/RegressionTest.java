@@ -135,6 +135,51 @@ public class RegressionTest {
         require(!Boolean.TRUE.equals(get(dialog,savedField)), "Invalid document was saved");
     }
     static void runAll() throws Exception {
+        test("product catalog pages are bounded and search and navigation find off-page items", () -> {
+            fresh();
+            try (PreparedStatement p = db.prepareStatement("""
+                    INSERT INTO products(code,name,description,sale_price_ex_vat,sale_price_inc_vat,
+                                         quantity,acquisition_cost,supplier_id,vat_rate)
+                    VALUES(?,?,?,?,?,1,5,1,0)
+                    """)) {
+                for (int i=0; i<250; i++) {
+                    String name=String.format(java.util.Locale.ROOT,"Catalog %04d",i);
+                    p.setString(1,String.format(java.util.Locale.ROOT,"P%04d",i));
+                    p.setString(2,name);
+                    p.setString(3,"Bulk catalog fixture");
+                    p.setDouble(4,10);
+                    p.setDouble(5,10);
+                    p.addBatch();
+                }
+                p.executeBatch();
+            }
+            sql("INSERT INTO product_images(product_id,filename,is_primary,sort_order,image_data) " +
+                "VALUES(3,'lazy-test.jpg',1,0,X'FFD8FFD9')");
+            require("3".equals(value("SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name IN " +
+                "('idx_product_images_filename','idx_supplier_order_details_product','idx_products_name_nocase')")),
+                "Large catalog indexes were not installed");
+            ProductsPanel panel=new ProductsPanel();
+            JTable catalog=(JTable)get(panel,"productsTable");
+            DefaultTableModel model=(DefaultTableModel)get(panel,"tableModel");
+            JSpinner pages=(JSpinner)get(panel,"pageSpinner");
+            require(model.getRowCount()==100,"Opening catalog materialized more than one page");
+            require(model.getValueAt(0,16) instanceof String,
+                "Catalog eagerly decoded images instead of retaining filenames");
+            pages.setValue(3);
+            require(model.getRowCount()==52,"Last page did not contain remaining products");
+            JTextField search=(JTextField)get(panel,"searchField");
+            search.setText("P02");
+            call(panel,"searchProducts");
+            require(model.getRowCount()==50 && ((Number)pages.getValue()).intValue()==1,
+                "Search did not filter the complete catalog in SQL");
+            panel.selectProductByCode("P0150");
+            require(search.getText().isEmpty(),"Off-page selection did not clear outdated search");
+            int selected=catalog.getSelectedRow();
+            require(selected>=0 && "P0150".equals(model.getValueAt(
+                catalog.convertRowIndexToModel(selected),1)),
+                "Off-page product could not be found and selected");
+            require(model.getRowCount()<=100,"Off-page navigation loaded all products");
+        });
         test("backup and export photo choices are available in every language", () -> {
             String original=I18n.getLanguage();
             try {
