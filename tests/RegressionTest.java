@@ -155,6 +155,7 @@ public class RegressionTest {
             }
             sql("INSERT INTO product_images(product_id,filename,is_primary,sort_order,image_data) " +
                 "VALUES(3,'lazy-test.jpg',1,0,X'FFD8FFD9')");
+            sql("UPDATE products SET sale_price_ex_vat=999,sale_price_inc_vat=999 WHERE code='P0249'");
             require("3".equals(value("SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name IN " +
                 "('idx_product_images_filename','idx_supplier_order_details_product','idx_products_name_nocase')")),
                 "Large catalog indexes were not installed");
@@ -165,6 +166,11 @@ public class RegressionTest {
             require(model.getRowCount()==100,"Opening catalog materialized more than one page");
             require(model.getValueAt(0,16) instanceof String,
                 "Catalog eagerly decoded images instead of retaining filenames");
+            catalog.getRowSorter().setSortKeys(java.util.List.of(
+                new RowSorter.SortKey(4, SortOrder.DESCENDING)));
+            require("P0249".equals(model.getValueAt(0,1)),
+                "Sorting by price did not select the highest-priced product from the entire catalog");
+            catalog.getRowSorter().setSortKeys(java.util.List.of());
             pages.setValue(3);
             require(model.getRowCount()==52,"Last page did not contain remaining products");
             JTextField search=(JTextField)get(panel,"searchField");
