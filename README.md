@@ -295,6 +295,7 @@ The full test completed successfully on Ubuntu 24.04, Java 21:
 - SQLite database: **2,105,462,784 bytes**.
 - Exact-code lookup (mean per lookup): **0.0086 ms**; 100-row catalog page: **52.7 ms**; name search: **3.20 ms**; individual product update: **0.187 ms**.
 - 200 JPEG thumbnail decodes: **1.82 s**; SQL dashboard query: **7.09 ms** mean.
+- A second full-scale run also succeeded, with corrected thumbnail cache measurement: 100 hot thumbnail lookups averaged **0.556 ms** each ([second full run](https://github.com/pizzomadone/management_software_2026/actions/runs/39011756168)).
 - Full backup: **9.70 s**, no-photo backup: **9.77 s**; full backup validation **17.06 s**, restore **28.62 s**.
 - Startup reopening the sealed ~2.1 GB database: **1.97 s**; SQLite integrity checks passed both before and after restore.
 - Regression suite on the same branch passed **181 tests, 0 failures**: [Actions regression run](https://github.com/pizzomadone/management_software_2026/actions/runs/39011460851).
