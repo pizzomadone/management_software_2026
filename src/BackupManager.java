@@ -111,7 +111,7 @@ public class BackupManager {
                 DatabaseIntegrity.validate(c,false);
             }
             return staging;
-        }catch(IOException|SQLException|RuntimeException e){
+        }catch(SQLException|RuntimeException e){
             removeTemporary(staging);
             throw e;
         }
