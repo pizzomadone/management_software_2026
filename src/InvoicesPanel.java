@@ -522,6 +522,18 @@ public class InvoicesPanel extends JPanel {
     }
     public void selectInvoiceByNumber(String number) {
         if (number == null) return;
+        boolean visible=false;
+        for(int i=0;i<tableModel.getRowCount();i++)
+            if(number.equals(String.valueOf(tableModel.getValueAt(i,0)))) {
+                visible=true;
+                break;
+            }
+        if(!visible){
+            // Linked invoice can be outside the first 100 rows. Narrow the
+            // SQL results instead of scanning the whole company.
+            searchField.setText(number);
+            searchInvoices();
+        }
         for (int modelRow = 0; modelRow < tableModel.getRowCount(); modelRow++) {
             if (!number.equals(String.valueOf(tableModel.getValueAt(modelRow, 0)))) continue;
             int viewRow = invoicesTable.convertRowIndexToView(modelRow);
