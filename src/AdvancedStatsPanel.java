@@ -324,45 +324,52 @@ public class AdvancedStatsPanel extends JPanel {
         loadSelectedProductSales(conn, range, months);
     }
 
+    /**
+     * Fetch the selected series together. The old implementation scanned
+     * historic order details once per product (up to five separate queries).
+     */
     private void loadSelectedProductSales(Connection conn, DateRange range,
             List<String> months) throws SQLException {
-        Map<Integer, Map<String, Double>> result = new LinkedHashMap<>();
-        if (selectedSalesProducts.isEmpty()) {
-            productMonthlySales = result;
+        Map<Integer, Map<String, Double>> result=new LinkedHashMap<>();
+        for(int productId:selectedSalesProducts.keySet()){
+            Map<String,Double> series=new LinkedHashMap<>();
+            for(String month:months)series.put(month,0.0);
+            result.put(productId,series);
+        }
+        if(result.isEmpty()){
+            productMonthlySales=result;
             return;
         }
-
-        String normalizedDate = "warestat_date(COALESCE(o.completed_date,o.order_date))";
-        String query =
-            "SELECT strftime('%Y-%m', " + normalizedDate + ") AS month, " +
-            "SUM(warestat_line_total(d.quantity,d.sale_unit_price_ex_vat)) AS revenue " +
-            "FROM order_details d " +
-            "JOIN orders o ON o.id=d.order_id " +
-            "WHERE d.product_id=? AND o.status='Completed' " +
-            "" +
-            "AND " + normalizedDate + " BETWEEN ? AND ? " +
-            "GROUP BY month ORDER BY month";
-
-        try (PreparedStatement stmt = conn.prepareStatement(query)) {
-            for (Integer productId : selectedSalesProducts.keySet()) {
-                Map<String, Double> series = new LinkedHashMap<>();
-                for (String month : months) series.put(month, 0.0);
-
-                stmt.setInt(1, productId);
-                stmt.setString(2, range.start().toString());
-                stmt.setString(3, range.end().toString());
-                try (ResultSet rs = stmt.executeQuery()) {
-                    while (rs.next()) {
-                        String month = rs.getString("month");
-                        if (month == null || month.isBlank()) continue;
-                        series.put(month, Numbers.money(
-                            java.math.BigDecimal.valueOf(rs.getDouble("revenue"))));
-                    }
+        String placeholders=String.join(",",java.util.Collections.nCopies(result.size(),"?"));
+        String query="""
+            WITH filtered AS MATERIALIZED (
+                SELECT id,warestat_date(COALESCE(completed_date,order_date)) AS sale_date
+                FROM orders
+                WHERE status='Completed'
+                  AND warestat_date(COALESCE(completed_date,order_date)) BETWEEN ? AND ?
+            )
+            SELECT d.product_id,strftime('%Y-%m', f.sale_date) AS month,
+                   SUM(warestat_line_total(d.quantity,d.sale_unit_price_ex_vat)) AS revenue
+            FROM filtered f JOIN order_details d ON d.order_id=f.id
+            WHERE d.product_id IN (""" + placeholders + """
+            )
+            GROUP BY d.product_id,month
+            """;
+        try(PreparedStatement statement=conn.prepareStatement(query)){
+            statement.setString(1,range.start().toString());
+            statement.setString(2,range.end().toString());
+            int index=3;
+            for(int id:result.keySet())statement.setInt(index++,id);
+            try(ResultSet rows=statement.executeQuery()){
+                while(rows.next()){
+                    Map<String,Double> series=result.get(rows.getInt("product_id"));
+                    if(series!=null && series.containsKey(rows.getString("month")))
+                        series.put(rows.getString("month"),Numbers.money(
+                            java.math.BigDecimal.valueOf(rows.getDouble("revenue"))));
                 }
-                result.put(productId, series);
             }
         }
-        productMonthlySales = result;
+        productMonthlySales=result;
     }
 
     private void drawSalesChart(Graphics g) {
@@ -952,37 +959,40 @@ public class AdvancedStatsPanel extends JPanel {
     }
 
     private void loadProductsData(DateRange range) throws SQLException {
-        Connection conn = DatabaseManager.getInstance().getConnection();
-
-        String normalizedDate = "warestat_date(COALESCE(o.completed_date,o.order_date))";
-        String query =
-            "SELECT COALESCE(p.name, 'Product N/A') AS name, " +
-            "SUM(d.quantity) AS total_quantity, " +
-            "SUM(warestat_line_total(d.quantity,d.sale_unit_price_ex_vat)) AS revenue, " +
-            "COUNT(DISTINCT o.id) AS num_orders " +
-            "FROM order_details d " +
-            "LEFT JOIN products p ON d.product_id = p.id " +
-            "LEFT JOIN orders o ON d.order_id = o.id " +
-            "WHERE o.status='Completed' " +
-            "AND " + normalizedDate + " BETWEEN ? AND ? " +
-            "GROUP BY d.product_id, p.name " +
-            "ORDER BY revenue DESC";
-
-        List<Object[]> newStats = new ArrayList<>();
-        double totalRevenue = 0;
-
-        try (PreparedStatement stmt = conn.prepareStatement(query)) {
-            stmt.setString(1, range.start().toString());
-            stmt.setString(2, range.end().toString());
-            try (ResultSet rs = stmt.executeQuery()) {
-                while (rs.next()) {
-                    String name = rs.getString("name");
-                    long quantity = rs.getLong("total_quantity");
-                    double revenue = Numbers.money(
-                        java.math.BigDecimal.valueOf(rs.getDouble("revenue")));
-                    totalRevenue = Numbers.add(totalRevenue, revenue);
-                    if (newStats.size() < 10)
-                        newStats.add(new Object[]{name, quantity, revenue});
+        Connection conn=DatabaseManager.getInstance().getConnection();
+        // Normalize the sale date only once per completed order, before
+        // joining potentially millions of order_detail rows. Return just
+        // the visible top ten rather than materializing every product in Java.
+        String query="""
+            WITH filtered AS MATERIALIZED (
+                SELECT id FROM orders
+                WHERE status='Completed'
+                  AND warestat_date(COALESCE(completed_date,order_date)) BETWEEN ? AND ?
+            ), totals AS (
+                SELECT d.product_id,
+                       SUM(d.quantity) AS total_quantity,
+                       SUM(warestat_line_total(d.quantity,d.sale_unit_price_ex_vat)) AS revenue
+                FROM filtered f JOIN order_details d ON d.order_id=f.id
+                GROUP BY d.product_id
+            )
+            SELECT COALESCE(p.name,'Product N/A') AS name,t.total_quantity,
+                   t.revenue,SUM(t.revenue) OVER () AS all_revenue
+            FROM totals t LEFT JOIN products p ON p.id=t.product_id
+            ORDER BY t.revenue DESC
+            LIMIT 10
+            """;
+        List<Object[]> newStats=new ArrayList<>();
+        double totalRevenue=0;
+        try(PreparedStatement statement=conn.prepareStatement(query)){
+            statement.setString(1,range.start().toString());
+            statement.setString(2,range.end().toString());
+            try(ResultSet rows=statement.executeQuery()){
+                while(rows.next()){
+                    totalRevenue=Numbers.money(
+                        java.math.BigDecimal.valueOf(rows.getDouble("all_revenue")));
+                    newStats.add(new Object[]{rows.getString("name"),
+                        rows.getLong("total_quantity"),
+                        Numbers.money(java.math.BigDecimal.valueOf(rows.getDouble("revenue")))});
                 }
             }
         }
