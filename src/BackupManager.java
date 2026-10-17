@@ -422,20 +422,6 @@ public class BackupManager {
         }
     }
 
-    private static List<String> readImageReferences(Path dbFile) throws SQLException {
-        List<String> names = new ArrayList<>();
-        org.sqlite.SQLiteConfig settings = new org.sqlite.SQLiteConfig();
-        settings.setReadOnly(true);
-        try (Connection c = DriverManager.getConnection(
-                "jdbc:sqlite:" + dbFile.toAbsolutePath(), settings.toProperties());
-             Statement s = c.createStatement();
-             ResultSet r = s.executeQuery(
-                "SELECT filename FROM product_images ORDER BY product_id,sort_order,id")) {
-            while (r.next()) names.add(r.getString(1));
-        }
-        return names;
-    }
-
     private static void validateJpegFilename(String filename) throws IOException {
         if (filename == null || filename.isBlank() ||
                 !filename.equals(Path.of(filename).getFileName().toString()) ||
@@ -483,22 +469,6 @@ public class BackupManager {
     private static Integer manifestInteger(String json, String key) {
         Matcher m = Pattern.compile("\"" + Pattern.quote(key) + "\"\\s*:\\s*(\\d+)").matcher(json);
         return m.find() ? Integer.valueOf(m.group(1)) : null;
-    }
-
-    private static String jsonEscape(String value) {
-        return value.replace("\\", "\\\\").replace("\"", "\\\"");
-    }
-
-    private static void putText(ZipOutputStream zip, String name, String text) throws IOException {
-        zip.putNextEntry(new ZipEntry(name));
-        zip.write(text.getBytes(StandardCharsets.UTF_8));
-        zip.closeEntry();
-    }
-
-    private static void putFile(ZipOutputStream zip, String name, Path file) throws IOException {
-        zip.putNextEntry(new ZipEntry(name));
-        Files.copy(file, zip);
-        zip.closeEntry();
     }
 
     private synchronized BackupRecord registerBackup(Path file) {
