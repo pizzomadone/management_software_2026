@@ -52,7 +52,10 @@ public final class DatabaseMigrationManager {
         new Migration("020", "Store actual customer order completion date",
             DatabaseMigrationManager::migrateCustomerOrderCompletionDate),
         new Migration("021", "Record partial and complete supplier returns",
-            SupplierReturnManager::installSchema)
+            SupplierReturnManager::installSchema),
+        new Migration("022", "Embed optimized product JPEGs directly in SQLite",
+            c -> addColumnIfMissing(c, "product_images", "image_data",
+                "ALTER TABLE product_images ADD COLUMN image_data BLOB"))
     );
 
     private DatabaseMigrationManager() {}
