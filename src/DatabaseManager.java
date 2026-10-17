@@ -71,7 +71,10 @@ public class DatabaseManager {
             }
             if (existing) {
                 repairOrphanedProductImageReferences(connection);
-                DatabaseIntegrity.validate(connection, true);
+                // Preserve structural and foreign-key checks BEFORE migrations,
+                // but avoid the duplicate full integrity_check on each startup.
+                // One complete integrity_check still runs AFTER schema updates.
+                DatabaseIntegrity.validateStructureAndRelations(connection, true);
             }
 
             // Enable foreign keys and set SQLite optimizations
