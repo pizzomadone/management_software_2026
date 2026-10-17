@@ -48,11 +48,17 @@ public class DatabaseManager {
 
             // A one-time, validated migration preserves the original data.db and photos.
             WareStatLocalUpgrade.migrateIfNeeded();
+            WareStatFileHeader.restoreForSQLite(AppConstants.getDatabasePath());
 
             // Validate an existing database before creating any missing application tables.
             boolean existing = java.nio.file.Files.exists(AppConstants.getDatabasePath());
             closeConnection();
             connection = openConnection(DB_URL);
+            // Set the lock before the first schema query / WAL access. In this
+            // mode a second SQLite client cannot open the live company file.
+            try (Statement stmt = connection.createStatement()) {
+                stmt.execute("PRAGMA locking_mode=EXCLUSIVE");
+            }
             if (!existing) {
                 // Keep newly created SQLite databases compactable without full VACUUM.
                 try (Statement stmt = connection.createStatement()) {
@@ -578,8 +584,10 @@ public class DatabaseManager {
      * Avoids rewriting the whole live database during day-to-day operations.
      */
     public static void reclaimUnusedPages() {
-        try (Connection c = openConnection("jdbc:sqlite:" + AppConstants.getDatabasePath());
-             Statement s = c.createStatement()) {
+        try {
+            // EXCLUSIVE forbids a second connection; reuse the live owner.
+            Connection c = getInstance().getConnection();
+            try (Statement s = c.createStatement()) {
             int autoVacuum;
             try (ResultSet r = s.executeQuery("PRAGMA auto_vacuum")) {
                 autoVacuum = r.next() ? r.getInt(1) : 0;
@@ -589,10 +597,34 @@ public class DatabaseManager {
             try (ResultSet r = s.executeQuery("PRAGMA freelist_count")) {
                 available = r.next() ? r.getInt(1) : 0;
             }
-            if (available >= 256) s.execute("PRAGMA incremental_vacuum(2048)");
+            if (available >= 256 && c.getAutoCommit())
+                s.execute("PRAGMA incremental_vacuum(2048)");
+            }
         } catch (SQLException e) {
             // A busy database should not invalidate a completed backup.
             System.err.println("SQLite free-page maintenance deferred: " + e.getMessage());
+        }
+    }
+
+    /**
+     * For VACUUM INTO on the live database. Caller must never close this
+     * connection; the EXCLUSIVE lock belongs to WareStat until shutdown.
+     */
+    public synchronized Connection liveConnectionIfOpen() throws SQLException {
+        if (connection == null || connection.isClosed()) return null;
+        return connection;
+    }
+
+    /** Called on normal application exit; an interrupted or unclean shutdown
+     * leaves a standard SQLite header to let SQLite recover its journal/WAL. */
+    public synchronized void shutdownAndSeal() {
+        if (connection == null) return;
+        closeConnection();
+        try {
+            WareStatFileHeader.seal(AppConstants.getDatabasePath());
+        } catch (java.io.IOException e) {
+            // Recovery takes priority over camouflage: leave SQLite readable.
+            System.err.println("WareStat header not sealed: " + e.getMessage());
         }
     }
 
