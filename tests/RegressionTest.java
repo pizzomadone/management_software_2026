@@ -955,7 +955,7 @@ public class RegressionTest {
             require(filename==null||ProductImageStore.getInstance().imageBytes(filename)!=null,
                 "Archive did not restore image BLOBs");
         });
-        test("installed WareStat 1.2 data.db migrates automatically and remains intact", () -> {
+        test("installed WareStat 1.2 migration requires consent, never creates copies", () -> {
             BackupManager backup=BackupManager.getInstance();
             Path savedCurrent=backup.performBackup(true);
             Path legacy=AppConstants.getAppDataDirectory().resolve("data.db");
@@ -966,18 +966,33 @@ public class RegressionTest {
             Files.deleteIfExists(live);
             Files.deleteIfExists(Path.of(live+"-wal"));
             Files.deleteIfExists(Path.of(live+"-shm"));
+            require(WareStatLocalUpgrade.needsStartupConfirmation(),
+                "Original WareStat 1.2 installation did not require confirmation");
+            require(WareStatLegacy12.isVersion12(legacy),
+                "WareStat 1.2 file was not recognized before asking consent");
+            boolean confirmationRequired=false;
+            try { DatabaseManager.getInstance().initDatabase(); }
+            catch(IllegalStateException expected) { confirmationRequired=true; }
+            require(confirmationRequired,
+                "Startup migrated a WareStat 1.2 company without confirmation");
+            require(!Files.exists(live) && Files.exists(legacy) &&
+                    Arrays.equals(untouched12,Files.readAllBytes(legacy)),
+                "Declining migration modified the original WareStat 1.2 file");
+            // Simulate the user's explicit YES. This modifies the one original
+            // .db in place and renames it only after a successful migration.
+            Path upgraded=WareStatLocalUpgrade.migrateConfirmed(legacy,"EUR");
+            require(upgraded.equals(live)&&!Files.exists(legacy),
+                "Confirmed upgrade did not rename the original .db to .wsbq");
             DatabaseManager.getInstance().initDatabase();
             db=DatabaseManager.getInstance().getConnection();
-            require(Files.exists(legacy)&&WareStatFileHeader.isSQLite(legacy),
-                "Old version 1.2 database was modified");
             require("1".equals(value("SELECT COUNT(*) FROM products WHERE code='OLD12' AND quantity=9")),
                 "Startup failed to convert original 1.2 product and stock");
             require("1".equals(value("SELECT COUNT(*) FROM suppliers WHERE company_name='WareStat 1.2 Supplier'")),
                 "Startup migration lost original supplier");
             require("1".equals(value("SELECT COUNT(*) FROM invoices WHERE number='OLD12-INVOICE'")),
                 "Startup migration lost original invoice");
-            require(Arrays.equals(untouched12,Files.readAllBytes(legacy)),
-                "Migration modified original WareStat 1.2 data.db bytes");
+            require(!Files.exists(legacy),
+                "In-place upgrade unexpectedly retained an automatic legacy database copy");
             // Check each original business area, not just table creation.
             require("1".equals(value("SELECT COUNT(*) FROM customers WHERE id=1 AND first_name='Historic' AND last_name='Customer' AND email='historic@example.invalid'")),
                 "Migration lost the customer or changed personal data");
