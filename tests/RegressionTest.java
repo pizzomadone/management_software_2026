@@ -955,7 +955,7 @@ public class RegressionTest {
             require(filename==null||ProductImageStore.getInstance().imageBytes(filename)!=null,
                 "Archive did not restore image BLOBs");
         });
-        test("installed WareStat 1.2 migration requires consent, never creates copies", () -> {
+        test("installed WareStat 1.2 migration requires consent and preserves original DB", () -> {
             BackupManager backup=BackupManager.getInstance();
             Path savedCurrent=backup.performBackup(true);
             Path legacy=AppConstants.getAppDataDirectory().resolve("data.db");
@@ -978,11 +978,14 @@ public class RegressionTest {
             require(!Files.exists(live) && Files.exists(legacy) &&
                     Arrays.equals(untouched12,Files.readAllBytes(legacy)),
                 "Declining migration modified the original WareStat 1.2 file");
-            // Simulate the user's explicit YES. This modifies the one original
-            // .db in place and renames it only after a successful migration.
+            // Explicit YES creates an independent WareStat 1.3 database and
+            // leaves the real 1.2 input byte-for-byte unchanged.
             Path upgraded=WareStatLocalUpgrade.migrateConfirmed(legacy,"EUR");
-            require(upgraded.equals(live)&&!Files.exists(legacy),
-                "Confirmed upgrade did not rename the original .db to .wsbq");
+            require(upgraded.equals(live) && Files.exists(legacy)
+                    && WareStatFileHeader.isSealed(upgraded),
+                "Confirmed upgrade did not create a separate signed .wsbq");
+            require(Arrays.equals(untouched12,Files.readAllBytes(legacy)),
+                "Confirmed migration changed the original WareStat 1.2 .db");
             DatabaseManager.getInstance().initDatabase();
             db=DatabaseManager.getInstance().getConnection();
             require("1".equals(value("SELECT COUNT(*) FROM products WHERE code='OLD12' AND quantity=9")),
@@ -991,8 +994,9 @@ public class RegressionTest {
                 "Startup migration lost original supplier");
             require("1".equals(value("SELECT COUNT(*) FROM invoices WHERE number='OLD12-INVOICE'")),
                 "Startup migration lost original invoice");
-            require(!Files.exists(legacy),
-                "In-place upgrade unexpectedly retained an automatic legacy database copy");
+            require(Files.exists(legacy)&&WareStatFileHeader.isSQLite(legacy)
+                    && Arrays.equals(untouched12,Files.readAllBytes(legacy)),
+                "Migrating or opening WareStat 1.3 unexpectedly modified the 1.2 original");
             // Check each original business area, not just table creation.
             require("1".equals(value("SELECT COUNT(*) FROM customers WHERE id=1 AND first_name='Historic' AND last_name='Customer' AND email='historic@example.invalid'")),
                 "Migration lost the customer or changed personal data");
@@ -1113,7 +1117,7 @@ public class RegressionTest {
             require(SettingsPanel.getGlobalSetting("database.active_path","").isBlank(),
                 "Default database path preference was not reset after selecting it");
         });
-        test("File Open recognizes external 1.2 DB and migrates it in place without copies", () -> {
+        test("File Open recognizes external 1.2 DB and creates separate WSBQ", () -> {
             Path previous=AppConstants.getDatabasePath().toAbsolutePath().normalize();
             Path source=OUT.resolve("opened-legacy-1.2.db").toAbsolutePath().normalize();
             Path target=WareStatLocalUpgrade.upgradedPath(source);
@@ -1126,9 +1130,22 @@ public class RegressionTest {
                 "Only recognizing a 1.2 file modified it before confirmation");
             require(!WareStatLegacy12.isVersion12(OUT.resolve("nonexistent.db")),
                 "Open accepted a nonexistent legacy database");
+            // A failed migration must never overwrite a previously created 1.3
+            // database or modify the 1.2 original.
+            Files.writeString(target,"existing-destination");
+            boolean destinationProtected=false;
+            try { WareStatLocalUpgrade.migrateConfirmed(source,"EUR"); }
+            catch(java.io.IOException expected) { destinationProtected=true; }
+            require(destinationProtected && "existing-destination".equals(Files.readString(target))
+                    && Arrays.equals(original12,Files.readAllBytes(source)),
+                "Migration overwrote an existing file or modified the original .db");
+            Files.delete(target);
             Path migrated=WareStatLocalUpgrade.migrateConfirmed(source,"EUR");
-            require(migrated.equals(target) && !Files.exists(source) && WareStatFileHeader.isSealed(target),
-                "Confirmed external 1.2 migration did not rename the same original file");
+            require(migrated.equals(target) && Files.exists(source)
+                    && WareStatFileHeader.isSealed(target),
+                "Confirmed external 1.2 migration did not create a separate WSBQ");
+            require(Arrays.equals(original12,Files.readAllBytes(source)),
+                "Confirmed external migration modified the original 1.2 database");
             try {
                 DatabaseManager.getInstance().openDatabase(target);
                 db=DatabaseManager.getInstance().getConnection();
