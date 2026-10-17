@@ -96,6 +96,10 @@ public final class WareStatLocalUpgrade {
                     conn.setAutoCommit(true);
                 }
 
+                // Never publish a newly converted company with invoice
+                // customer/company details missing.
+                InvoiceSnapshots.repairIncompleteLegacy(conn);
+                InvoiceSnapshots.validateMigratedSnapshots(conn);
                 DatabaseIntegrity.validate(conn,false);
                 try (Statement s=conn.createStatement();
                      ResultSet r=s.executeQuery("PRAGMA integrity_check")) {
