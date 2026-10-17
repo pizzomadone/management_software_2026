@@ -15,13 +15,6 @@ public class DatabaseManager {
     private static DatabaseManager instance;
     private Connection connection;
     private volatile boolean shuttingDown;
-    private static final String DB_URL;
-
-    // Static initializer to set up the database URL
-    static {
-        DB_URL = "jdbc:sqlite:" + AppConstants.getDatabasePath().toString();
-        System.out.println("Database will be created at: " + AppConstants.getDatabasePath());
-    }
 
     private DatabaseManager() {
         // Private constructor for the Singleton pattern
@@ -53,12 +46,18 @@ public class DatabaseManager {
             // A real version-1.2 installation stores data.db. Convert an
             // isolated, validated snapshot into signed data.wsbq on first start.
             // Keep data.db untouched; SQLite only opens the new data.wsbq.
+            java.nio.file.Path file = AppConstants.getDatabasePath();
+            if (!file.equals(AppConstants.getDefaultDatabasePath()) &&
+                    !java.nio.file.Files.isRegularFile(file))
+                throw new java.io.IOException("Previously selected WareStat database is missing: " + file);
+            // Only a genuine 1.2 installation at the original default location
+            // requires conversion. Normal startups do not copy or move files.
             WareStatLocalUpgrade.migrateIfNeeded();
-            WareStatFileHeader.restoreForSQLite(AppConstants.getDatabasePath());
+            WareStatFileHeader.restoreForSQLite(file);
 
             // Validate an existing database before creating any missing application tables.
-            boolean existing = java.nio.file.Files.exists(AppConstants.getDatabasePath());
-            connection = openConnection(DB_URL);
+            boolean existing = java.nio.file.Files.exists(file);
+            connection = openConnection("jdbc:sqlite:" + file);
             // Set the lock before the first schema query / WAL access. In this
             // mode a second SQLite client cannot open the live company file.
             try (Statement stmt = connection.createStatement()) {
@@ -632,6 +631,51 @@ public class DatabaseManager {
 
     /** Called on normal application exit; an interrupted or unclean shutdown
      * leaves a standard SQLite header to let SQLite recover its journal/WAL. */
+    /**
+     * Open an existing signed WareStat 1.3 company directly from its location.
+     * Retain the previous database and startup preference if opening fails.
+     * This does not import, copy, overwrite, or rename either company file.
+     */
+    public synchronized void openDatabase(java.nio.file.Path selected) throws Exception {
+        java.nio.file.Path target = selected.toAbsolutePath().normalize();
+        java.nio.file.Path previous = AppConstants.getDatabasePath().toAbsolutePath().normalize();
+        if (target.equals(previous)) return;
+        if (!target.getFileName().toString().toLowerCase(java.util.Locale.ROOT).endsWith(".wsbq")
+                || !java.nio.file.Files.isRegularFile(target)
+                || !WareStatFileHeader.isSealed(target))
+            throw new java.io.IOException("Select an existing, signed WareStat .wsbq database");
+        if (java.nio.file.Files.exists(java.nio.file.Path.of(target + "-wal"))
+                || java.nio.file.Files.exists(java.nio.file.Path.of(target + "-journal")))
+            throw new java.io.IOException("Selected database may be open elsewhere or require recovery");
+
+        // Close and seal the previous company, without creating any copies.
+        shutdownAndSeal();
+        AppConstants.useDatabasePathForSession(target);
+        try {
+            initDatabase();
+            CompanyData.getInstance().reloadFromDatabase();
+            ProductImageStore.getInstance().removeOrphanFiles();
+            AppConstants.rememberDatabasePath(target);
+        } catch (Exception problem) {
+            try {
+                shutdownAndSeal();
+            } catch (Exception rollbackError) {
+                problem.addSuppressed(rollbackError);
+            }
+            AppConstants.useDatabasePathForSession(previous);
+            try {
+                initDatabase();
+                CompanyData.getInstance().reloadFromDatabase();
+                ProductImageStore.getInstance().removeOrphanFiles();
+            } catch (Exception rollbackError) {
+                problem.addSuppressed(rollbackError);
+            }
+            throw problem;
+        } finally {
+            AppConstants.useDatabasePathForSession(null);
+        }
+    }
+
     public synchronized void shutdownAndSeal() {
         shuttingDown = true;
         if (connection == null) return;
