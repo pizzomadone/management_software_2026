@@ -7,15 +7,19 @@ import java.util.regex.*;
 import java.util.zip.*;
 import javax.swing.*;
 
+/**
+ * Native SQLite .wsbq for both live data and backups. The previous masked
+ * ZIP-based .wsbq format is accepted for one-way import and restoration only.
+ */
 public class BackupManager {
     public record BackupRecord(String id, String name, String absolutePath, long createdAt, long size) {
         public boolean exists() { return Files.isRegularFile(Path.of(absolutePath)); }
     }
-
     private record ArchiveContent(Path root, Path database, Path images) {}
 
     public static final String BACKUP_SIGNATURE = "WARESTAT_BACKUP_V1";
     public static final int BACKUP_FORMAT_VERSION = 1;
+    private static final byte[] LEGACY_MAGIC = {'W','S','B','Q','\r','\n',0x1a,'\n'};
 
     private static BackupManager instance;
     private final Properties config = new Properties();
@@ -24,435 +28,322 @@ public class BackupManager {
     private long retryAfter;
 
     private BackupManager() {
-        Path file = AppConstants.getBackupConfigPath();
-        if (Files.exists(file)) {
-            try (Reader r = Files.newBufferedReader(file, StandardCharsets.UTF_8)) { config.load(r); }
-            catch (IOException | IllegalArgumentException e) {
-                throw new IllegalStateException("Unable to read backup settings", e);
-            }
+        Path file=AppConstants.getBackupConfigPath();
+        if(Files.exists(file)) {
+            try(Reader r=Files.newBufferedReader(file,StandardCharsets.UTF_8)){config.load(r);}
+            catch(IOException|IllegalArgumentException e){throw new IllegalStateException("Unable to read backup settings",e);}
         }
     }
-
     public static synchronized BackupManager getInstance() {
-        if (instance == null) instance = new BackupManager();
+        if(instance==null)instance=new BackupManager();
         return instance;
     }
-
     private synchronized void saveConfig() {
-        Path path = AppConstants.getBackupConfigPath();
-        Path temporary = null;
-        try {
+        Path path=AppConstants.getBackupConfigPath();
+        Path tmp=null;
+        try{
             Files.createDirectories(path.getParent());
-            temporary = Files.createTempFile(path.getParent(), "backup-settings-", ".tmp");
-            try (Writer w = Files.newBufferedWriter(temporary, StandardCharsets.UTF_8)) { config.store(w, null); }
-            moveReplace(temporary, path);
-        } catch (IOException e) {
-            throw new IllegalStateException("Unable to save backup settings", e);
-        } finally { removeTemporary(temporary); }
+            tmp=Files.createTempFile(path.getParent(),"backup-settings-",".tmp");
+            try(Writer w=Files.newBufferedWriter(tmp,StandardCharsets.UTF_8)){config.store(w,null);}
+            moveReplace(tmp,path);
+        }catch(IOException e){throw new IllegalStateException("Unable to save backup settings",e);}
+        finally{removeTemporary(tmp);}
     }
-
-    private static boolean sameFile(Path left, Path right) throws IOException {
-        return left.toAbsolutePath().normalize().equals(right.toAbsolutePath().normalize()) ||
-            (Files.exists(left) && Files.exists(right) && Files.isSameFile(left, right));
+    private static boolean sameFile(Path a,Path b) throws IOException {
+        return a.toAbsolutePath().normalize().equals(b.toAbsolutePath().normalize())||
+            (Files.exists(a)&&Files.exists(b)&&Files.isSameFile(a,b));
     }
-
-    private static void rejectActive(Path file) throws IOException {
-        if (sameFile(file, AppConstants.getDatabasePath()))
+    private static void rejectActive(Path path) throws IOException {
+        if(sameFile(path,AppConstants.getDatabasePath()))
             throw new IllegalArgumentException("The selected file is the active database");
     }
-
-    private static void removeTemporary(Path file) {
-        if (file == null) return;
-        try {
-            if (Files.isDirectory(file)) deleteDirectory(file);
-            else Files.deleteIfExists(file);
-        } catch (IOException ignored) {}
+    private static void removeTemporary(Path path) {
+        if(path==null)return;
+        try{
+            if(Files.isDirectory(path))deleteDirectory(path);
+            else Files.deleteIfExists(path);
+        }catch(IOException ignored){}
+    }
+    private static void moveReplace(Path source,Path destination) throws IOException {
+        Files.createDirectories(destination.toAbsolutePath().getParent());
+        try{Files.move(source,destination,StandardCopyOption.REPLACE_EXISTING,StandardCopyOption.ATOMIC_MOVE);}
+        catch(AtomicMoveNotSupportedException ignored){
+            Files.move(source,destination,StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+    private static void clearSidecars(Path file) throws IOException {
+        Files.deleteIfExists(Path.of(file+"-wal"));
+        Files.deleteIfExists(Path.of(file+"-shm"));
+        Files.deleteIfExists(Path.of(file+"-journal"));
     }
 
-    private Path snapshot(Path source, Path directory) throws IOException, SQLException {
-        return snapshot(source, directory, null, false);
-    }
-
-    private Path snapshot(Path source, Path directory, String legacyCurrency, boolean removeImageReferences)
-            throws IOException, SQLException {
-        if (!Files.isRegularFile(source) || !Files.isReadable(source))
+    /**
+     * Creates a consistent SQLite snapshot even if a WAL holds committed rows.
+     * Never file-copy the live database while it is open.
+     */
+    private Path snapshot(Path source,Path directory,String legacyCurrency,boolean excludePhotos)
+            throws IOException,SQLException {
+        if(!Files.isRegularFile(source)||!Files.isReadable(source))
             throw new IOException("Database file not found or not readable");
         Files.createDirectories(directory);
-        Path staging = Files.createTempFile(directory, "warestat-snapshot-", ".db");
+        Path staging=Files.createTempFile(directory,"warestat-snapshot-",".wsbq");
         Files.delete(staging);
-        try {
-            org.sqlite.SQLiteConfig settings = new org.sqlite.SQLiteConfig();
+        try{
+            org.sqlite.SQLiteConfig settings=new org.sqlite.SQLiteConfig();
             settings.setReadOnly(true);
             settings.setBusyTimeout(10000);
-            try (Connection c = DriverManager.getConnection(
-                    "jdbc:sqlite:" + source.toAbsolutePath(), settings.toProperties());
-                 PreparedStatement p = c.prepareStatement("VACUUM INTO ?")) {
-                if (DatabaseCurrency.read(c) == null && legacyCurrency == null)
+            try(Connection c=DriverManager.getConnection("jdbc:sqlite:"+source.toAbsolutePath(),settings.toProperties());
+                PreparedStatement p=c.prepareStatement("VACUUM INTO ?")){
+                if(DatabaseCurrency.read(c)==null&&legacyCurrency==null)
                     throw new SQLException("Original currency is required to import a legacy database");
-                p.setString(1, staging.toAbsolutePath().toString());
+                p.setString(1,staging.toAbsolutePath().toString());
                 p.execute();
             }
-
-            try (Connection c = DatabaseManager.openConnection("jdbc:sqlite:" + staging)) {
-                if (legacyCurrency != null) DatabaseCurrency.initialize(c, legacyCurrency);
+            try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+staging)){
+                if(legacyCurrency!=null)DatabaseCurrency.initialize(c,legacyCurrency);
                 DatabaseManager.prepareDatabase(c);
-                if (removeImageReferences) {
-                    try (Statement s = c.createStatement()) {
+                if(excludePhotos){
+                    try(Statement s=c.createStatement()){
                         s.executeUpdate("DELETE FROM product_images");
                         s.execute("VACUUM");
                     }
                 }
-                DatabaseIntegrity.validate(c, false);
+                DatabaseIntegrity.validate(c,false);
             }
             return staging;
-        } catch (SQLException | RuntimeException e) {
+        }catch(IOException|SQLException|RuntimeException e){
             removeTemporary(staging);
             throw e;
         }
     }
-
-    private static void moveReplace(Path source, Path destination) throws IOException {
-        Files.createDirectories(destination.toAbsolutePath().getParent());
-        try {
-            Files.move(source, destination, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (AtomicMoveNotSupportedException e) {
-            Files.move(source, destination, StandardCopyOption.REPLACE_EXISTING);
-        }
+    private Path snapshot(Path source,Path directory) throws IOException,SQLException {
+        return snapshot(source,directory,null,false);
     }
 
-    public synchronized Path performBackup() { return performBackup(true); }
-
-    public synchronized Path performDatabaseOnlyBackup() { return performBackup(false); }
-
-    /**
-     * Saves the current data as a complete, user-named archive and then replaces
-     * the live database with a brand-new empty one. Application settings remain.
-     */
-    public synchronized Path archiveAndStartNew(Path destination) {
-        Path work = null;
-        Path temporaryArchive = null;
-        Path emptyDatabase = null;
-        Path safetyDatabase = null;
-        Path safetyImages = null;
-        Path target = destination == null ? null : destination.toAbsolutePath().normalize();
-        Path current = AppConstants.getDatabasePath().toAbsolutePath().normalize();
-        boolean databaseReplaced = false;
-
-        try {
-            if (target == null || target.getParent() == null || !isNewArchive(target))
-                throw new IOException("The new archive filename must end in .wsbq");
-            rejectActive(target);
-            Files.createDirectories(target.getParent());
-
-            work = Files.createTempDirectory(AppConstants.getAppDataDirectory(), "new-archive-");
-            safetyDatabase = snapshot(current, work);
-            safetyImages = work.resolve("current-images");
-            ProductImageStore.getInstance().copyAllFilesTo(safetyImages);
-
-            temporaryArchive = Files.createTempFile(target.getParent(), "warestat-archive-", ".tmp");
-            createArchive(safetyDatabase, temporaryArchive, true);
-            moveReplace(temporaryArchive, target);
-            temporaryArchive = null;
-
-            // Never erase the live data unless the just-created archive can be read back.
-            validateBackup(target);
-
-            String currency = DatabaseCurrency.boundCode();
-            if (currency == null || currency.isBlank()) currency = SettingsPanel.getCurrencyCode();
-            emptyDatabase = work.resolve("empty-data.db");
-            DatabaseManager.createEmptyDatabase(emptyDatabase, currency);
-
-            DatabaseManager.getInstance().closeConnection();
-            Files.deleteIfExists(Path.of(current + "-wal"));
-            Files.deleteIfExists(Path.of(current + "-shm"));
-            moveReplace(emptyDatabase, current);
-            emptyDatabase = null;
-            databaseReplaced = true;
-
-            Path emptyImages = work.resolve("empty-images");
-            Files.createDirectories(emptyImages);
-            ProductImageStore.getInstance().replaceAllFilesFrom(emptyImages);
-
-            DatabaseManager.getInstance().initDatabase();
-            CompanyData.getInstance().reloadFromDatabase();
-            ProductImageStore.getInstance().removeOrphanFiles();
-            DatabaseIntegrity.validate(DatabaseManager.getInstance().getConnection(), false);
-
-            // A manually created archive must never be removed by automatic retention.
-            registerBackup(target, false);
-            config.setProperty("archive.last_directory", target.getParent().toString());
-            saveConfig();
-            return target;
-        } catch (Exception e) {
-            if (databaseReplaced && safetyDatabase != null && Files.isRegularFile(safetyDatabase)) {
-                try {
-                    DatabaseManager.getInstance().closeConnection();
-                    Path rollback = snapshot(safetyDatabase, current.getParent());
-                    Files.deleteIfExists(Path.of(current + "-wal"));
-                    Files.deleteIfExists(Path.of(current + "-shm"));
-                    moveReplace(rollback, current);
-                    if (safetyImages != null && Files.isDirectory(safetyImages))
-                        ProductImageStore.getInstance().replaceAllFilesFrom(safetyImages);
-                    DatabaseManager.getInstance().initDatabase();
-                    CompanyData.getInstance().reloadFromDatabase();
-                } catch (Exception recovery) {
-                    e.addSuppressed(recovery);
+    /** A legacy archive contains a masked ZIP plus a manifest and external JPEGs. */
+    private Path prepareInput(Path source,Path folder,String legacyCurrency)
+            throws IOException,SQLException {
+        if(source==null||!Files.isRegularFile(source))throw new IOException("Backup file not found");
+        if(!isArchive(source)&&!source.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".db"))
+            throw new IOException("Unsupported backup extension");
+        Path work=Files.createTempDirectory(folder,"wsbq-import-");
+        Path result=null;
+        try{
+            if(isLegacyArchive(source)){
+                ArchiveContent old=extractArchive(source,work);
+                result=snapshot(old.database(),folder,legacyCurrency,false);
+                validateImageCoherence(result,old.images());
+                try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+result)){
+                    DatabaseManager.beginTransaction(c);
+                    try{
+                        ProductImageStore.embedLegacyImages(c,old.images());
+                        ProductImageStore.validateEmbeddedImages(c);
+                        c.commit();
+                    }catch(SQLException|IOException e){c.rollback();throw e;}
+                    finally{c.setAutoCommit(true);}
+                }
+            }else{
+                result=snapshot(source,folder,legacyCurrency,false);
+                try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+result)){
+                    // Standalone old .db files do not contain their external photographs.
+                    // Keep complete embedded photos; remove only orphaned legacy metadata.
+                    if(source.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".db")){
+                        try(Statement s=c.createStatement()){
+                            s.executeUpdate("DELETE FROM product_images WHERE image_data IS NULL");
+                        }
+                    }
+                    ProductImageStore.validateEmbeddedImages(c);
                 }
             }
-            throw new IllegalStateException("Unable to create new archive: " + e.getMessage(), e);
-        } finally {
-            removeTemporary(emptyDatabase);
-            removeTemporary(temporaryArchive);
-            removeTemporary(work);
-        }
+            try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+result)){
+                DatabaseIntegrity.validate(c,false);
+                try(Statement s=c.createStatement();ResultSet r=s.executeQuery("PRAGMA integrity_check")){
+                    if(!r.next()||!"ok".equalsIgnoreCase(r.getString(1)))
+                        throw new SQLException("SQLite integrity check failed");
+                }
+            }
+            return result;
+        }catch(IOException|SQLException|RuntimeException e){
+            removeTemporary(result);
+            throw e;
+        }finally{removeTemporary(work);}
+    }
+    private static boolean isLegacyArchive(Path file) {
+        if(file==null||!Files.isRegularFile(file))return false;
+        try(InputStream in=Files.newInputStream(file)){
+            byte[] magic=in.readNBytes(LEGACY_MAGIC.length);
+            return Arrays.equals(magic,LEGACY_MAGIC);
+        }catch(IOException e){return false;}
     }
 
+    /** Whether the UI may treat the file as a WareStat .wsbq (new or legacy). */
+    public static boolean isArchive(Path file) {
+        return file!=null&&file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".wsbq");
+    }
+
+    public synchronized Path performBackup(){return performBackup(true);}
+    public synchronized Path performDatabaseOnlyBackup(){return performBackup(false);}
     public synchronized Path performBackup(boolean includePhotos) {
-        Path staging = null;
-        Path temporaryArchive = null;
-        try {
-            Path folder = Path.of(getBackupDirectory()).toAbsolutePath();
+        Path staged=null;
+        try{
+            Path folder=Path.of(getBackupDirectory()).toAbsolutePath();
             Files.createDirectories(folder);
-            staging = snapshot(AppConstants.getDatabasePath(), folder, null, !includePhotos);
-
-            Path target = folder.resolve("WareStat-Backup-" + System.currentTimeMillis() + "-" +
-                UUID.randomUUID() + ".wsbq");
-            temporaryArchive = Files.createTempFile(folder, "warestat-backup-", ".wsbq");
-            createArchive(staging, temporaryArchive, includePhotos);
-            validateBackup(temporaryArchive);
-            moveReplace(temporaryArchive, target);
-            temporaryArchive = null;
-
+            staged=snapshot(AppConstants.getDatabasePath(),folder,null,!includePhotos);
+            try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+staged)){ProductImageStore.validateEmbeddedImages(c);}
+            Path target=folder.resolve("WareStat-Backup-"+System.currentTimeMillis()+"-"+UUID.randomUUID()+".wsbq");
+            moveReplace(staged,target);
+            staged=null;
             registerBackup(target);
-            config.setProperty("backup.last_success", Long.toString(System.currentTimeMillis()));
+            config.setProperty("backup.last_success",Long.toString(System.currentTimeMillis()));
             saveConfig();
             cleanOldBackups();
             return target;
-        } catch (IOException | SQLException e) {
-            throw new IllegalStateException("Error during backup: " + e.getMessage(), e);
-        } finally {
-            removeTemporary(staging);
-            removeTemporary(temporaryArchive);
-        }
+        }catch(IOException|SQLException e){throw new IllegalStateException("Error during backup: "+e.getMessage(),e);}
+        finally{removeTemporary(staged);}
     }
 
-    private void createArchive(Path databaseSnapshot, Path destination, boolean includePhotos) throws IOException, SQLException {
-        List<String> referenced = readImageReferences(databaseSnapshot);
-        for (String filename : referenced) {
-            validateJpegFilename(filename);
-            if (!Files.isRegularFile(ProductImageStore.getInstance().imagePath(filename)))
-                throw new IOException("Missing product image " + filename);
-        }
-
-        StringBuilder imageArray = new StringBuilder();
-        for (int i = 0; i < referenced.size(); i++) {
-            if (i > 0) imageArray.append(',');
-            imageArray.append('"').append(jsonEscape(referenced.get(i))).append('"');
-        }
-
-        String manifest = "{" +
-            "\"signature\":\"" + BACKUP_SIGNATURE + "\"," +
-            "\"format\":\"WareStat-Backup\"," +
-            "\"format_version\":" + BACKUP_FORMAT_VERSION + "," +
-            "\"created_at\":" + System.currentTimeMillis() + "," +
-            "\"database\":\"" + jsonEscape(AppConstants.DATABASE_FILE_NAME) + "\"," +
-            "\"image_format\":\"jpeg\"," +
-            "\"images_included\":" + includePhotos + "," +
-            "\"images\":[" + imageArray + "]" +
-            "}";
-
-        Path zipStaging = null;
-        try {
-            zipStaging = Files.createTempFile(destination.toAbsolutePath().getParent(), "warestat-zip-", ".tmp");
-            try (OutputStream raw = Files.newOutputStream(zipStaging, StandardOpenOption.TRUNCATE_EXISTING);
-                 ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(raw))) {
-                putText(zip, "manifest.json", manifest);
-                putFile(zip, "database/" + AppConstants.DATABASE_FILE_NAME, databaseSnapshot);
-                if (includePhotos) {
-                    for (String filename : referenced)
-                        putFile(zip, "images/" + filename, ProductImageStore.getInstance().imagePath(filename));
-                }
-            }
-            WareStatArchiveFormat.wrap(zipStaging, destination);
-        } finally {
-            removeTemporary(zipStaging);
-        }
-    }
-
-    public synchronized BackupRecord importBackup(Path file) { return importBackup(file, null); }
-
-    public synchronized BackupRecord importBackup(Path file, String legacyCurrency) {
-        Path staging = null;
-        Path work = null;
-        try {
-            rejectActive(file);
-            Path folder = Path.of(getBackupDirectory()).toAbsolutePath();
-            Files.createDirectories(folder);
-            if (isArchive(file)) {
-                work = Files.createTempDirectory(AppConstants.getAppDataDirectory(), "backup-import-");
-                validateArchive(file, work);
-                Path target = folder.resolve("imported_" + UUID.randomUUID() + ".wsbq");
-                Files.copy(file, target, StandardCopyOption.REPLACE_EXISTING);
-                return registerBackup(target);
-            }
-
-            staging = snapshot(file, folder, legacyCurrency, true);
-            Path target = folder.resolve("imported_" + UUID.randomUUID() + ".db");
-            moveReplace(staging, target);
-            staging = null;
-            return registerBackup(target);
-        } catch (IOException | SQLException e) {
-            throw new IllegalArgumentException("Unable to import backup: " + e.getMessage(), e);
-        } finally {
-            removeTemporary(staging);
-            removeTemporary(work);
-        }
-    }
-
-    public synchronized Path exportDatabase(Path destination) {
-        return exportDatabase(destination, true);
-    }
-
-    public synchronized Path exportDatabase(Path destination, boolean includePhotos) {
-        Path staging = null;
-        Path temporaryArchive = null;
-        try {
-            Path target = destination.toAbsolutePath().normalize();
+    public synchronized Path exportDatabase(Path destination){return exportDatabase(destination,true);}
+    public synchronized Path exportDatabase(Path destination,boolean includePhotos) {
+        Path staged=null;
+        try{
+            Path target=destination.toAbsolutePath().normalize();
             rejectActive(target);
-            if (!isNewArchive(target))
-                throw new IOException("The export filename must end in .wsbq");
-            staging = snapshot(AppConstants.getDatabasePath(), target.getParent(), null, !includePhotos);
-            temporaryArchive = Files.createTempFile(target.getParent(), "warestat-export-", ".wsbq");
-            createArchive(staging, temporaryArchive, includePhotos);
-            validateBackup(temporaryArchive);
-            moveReplace(temporaryArchive, target);
-            temporaryArchive = null;
+            if(!isArchive(target))throw new IOException("The export filename must end in .wsbq");
+            Files.createDirectories(target.getParent());
+            staged=snapshot(AppConstants.getDatabasePath(),target.getParent(),null,!includePhotos);
+            validateBackup(staged);
+            moveReplace(staged,target);
+            staged=null;
             return target;
-        } catch (IOException | SQLException e) {
-            throw new IllegalStateException("Unable to export database: " + e.getMessage(), e);
-        } finally {
-            removeTemporary(staging);
-            removeTemporary(temporaryArchive);
-        }
+        }catch(IOException|SQLException e){throw new IllegalStateException("Unable to export database: "+e.getMessage(),e);}
+        finally{removeTemporary(staged);}
     }
 
-    public synchronized void importDatabase(Path sourceFile) { importDatabase(sourceFile, null); }
+    /**
+     * Archive the current company as a usable SQLite .wsbq and start a new one.
+     * Retain a safety snapshot until the replacement has been validated.
+     */
+    public synchronized Path archiveAndStartNew(Path destination) {
+        Path archiveTmp=null,empty=null,safety=null;
+        Path target=destination==null?null:destination.toAbsolutePath().normalize();
+        Path current=AppConstants.getDatabasePath().toAbsolutePath().normalize();
+        boolean replaced=false;
+        try{
+            if(target==null||target.getParent()==null||!isArchive(target))
+                throw new IOException("The new archive filename must end in .wsbq");
+            rejectActive(target);
+            Files.createDirectories(target.getParent());
+            archiveTmp=snapshot(current,target.getParent());
+            validateBackup(archiveTmp);
+            moveReplace(archiveTmp,target);
+            archiveTmp=null;
+            safety=snapshot(current,current.getParent());
 
-    public synchronized void importDatabase(Path sourceFile, String legacyCurrency) {
-        Path current = AppConstants.getDatabasePath().toAbsolutePath();
-        Path staging = null;
-        Path safetyCopy = null;
-        boolean replaced = false;
-        try {
-            rejectActive(sourceFile);
-            staging = snapshot(sourceFile, current.getParent(), legacyCurrency, true);
-            if (Files.exists(current)) {
-                safetyCopy = snapshot(current, current.getParent());
-                Path retained = current.resolveSibling("data_before_restore_" + UUID.randomUUID() + ".db");
-                moveReplace(safetyCopy, retained);
-                safetyCopy = retained;
-            }
-
+            String currency=DatabaseCurrency.boundCode();
+            if(currency==null||currency.isBlank())currency=SettingsPanel.getCurrencyCode();
+            empty=Files.createTempFile(current.getParent(),"warestat-empty-",".wsbq");
+            DatabaseManager.createEmptyDatabase(empty,currency);
             DatabaseManager.getInstance().closeConnection();
-            Files.deleteIfExists(Path.of(current + "-wal"));
-            Files.deleteIfExists(Path.of(current + "-shm"));
-            moveReplace(staging, current);
-            staging = null;
-            replaced = true;
+            clearSidecars(current);
+            moveReplace(empty,current);
+            empty=null;
+            replaced=true;
             DatabaseManager.getInstance().initDatabase();
             CompanyData.getInstance().reloadFromDatabase();
             ProductImageStore.getInstance().removeOrphanFiles();
-        } catch (Exception e) {
-            if (replaced && safetyCopy != null) {
-                try {
-                    DatabaseManager.getInstance().closeConnection();
-                    Path rollback = snapshot(safetyCopy, current.getParent());
-                    Files.deleteIfExists(Path.of(current + "-wal"));
-                    Files.deleteIfExists(Path.of(current + "-shm"));
-                    moveReplace(rollback, current);
-                    DatabaseManager.getInstance().initDatabase();
-                    CompanyData.getInstance().reloadFromDatabase();
-                } catch (Exception recovery) { e.addSuppressed(recovery); }
+            DatabaseIntegrity.validate(DatabaseManager.getInstance().getConnection(),false);
+            registerBackup(target,false);
+            config.setProperty("archive.last_directory",target.getParent().toString());
+            saveConfig();
+            return target;
+        }catch(Exception e){
+            if(replaced&&safety!=null){
+                try{restoreSafety(current,safety);}catch(Exception rollback){e.addSuppressed(rollback);}
+            }else if(!replaced){
+                try{DatabaseManager.getInstance().initDatabase();}catch(Exception ignored){}
             }
-            throw new IllegalStateException("Unable to import database: " + e.getMessage() +
-                (safetyCopy == null ? "" : ". Previous database retained at " + safetyCopy), e);
-        } finally { removeTemporary(staging); }
-    }
-
-    public void restoreBackup(String file) { restoreBackup(file, null); }
-
-    public synchronized CostIntegrity.Audit restoreBackup(String file, String legacyCurrency) {
-        Path path = Path.of(file);
-        if (isArchive(path)) restoreArchive(path);
-        else importDatabase(path, legacyCurrency);
-        try {
-            return CostIntegrity.audit(DatabaseManager.getInstance().getConnection());
-        } catch (SQLException e) {
-            throw new IllegalStateException(
-                "Database restored but cost completeness could not be checked: " + e.getMessage(), e);
+            throw new IllegalStateException("Unable to create new archive: "+e.getMessage(),e);
+        }finally{
+            removeTemporary(archiveTmp);removeTemporary(empty);removeTemporary(safety);
         }
     }
 
-    private void restoreArchive(Path archive) {
-        Path work = null;
-        Path prepared = null;
-        Path safetyDb = null;
-        Path safetyImages = null;
-        Path current = AppConstants.getDatabasePath().toAbsolutePath();
-        boolean databaseReplaced = false;
-        try {
-            work = Files.createTempDirectory(AppConstants.getAppDataDirectory(), "backup-restore-");
-            ArchiveContent extracted = extractArchive(archive, work);
-            prepared = snapshot(extracted.database(), current.getParent(), null, false);
-            validateImageCoherence(prepared, extracted.images());
+    public synchronized BackupRecord importBackup(Path file){return importBackup(file,null);}
+    public synchronized BackupRecord importBackup(Path file,String legacyCurrency) {
+        Path staged=null;
+        try{
+            rejectActive(file);
+            Path folder=Path.of(getBackupDirectory()).toAbsolutePath();
+            Files.createDirectories(folder);
+            staged=prepareInput(file,folder,legacyCurrency);
+            Path target=folder.resolve("imported_"+UUID.randomUUID()+".wsbq");
+            moveReplace(staged,target);
+            staged=null;
+            return registerBackup(target);
+        }catch(IOException|SQLException e){throw new IllegalArgumentException("Unable to import backup: "+e.getMessage(),e);}
+        finally{removeTemporary(staged);}
+    }
 
-            if (Files.exists(current)) safetyDb = snapshot(current, work);
-            safetyImages = work.resolve("current-images");
-            ProductImageStore.getInstance().copyAllFilesTo(safetyImages);
-
+    public synchronized void importDatabase(Path source){importDatabase(source,null);}
+    public synchronized void importDatabase(Path source,String legacyCurrency) {
+        Path current=AppConstants.getDatabasePath().toAbsolutePath().normalize();
+        Path staging=null,safety=null;
+        boolean replaced=false;
+        try{
+            rejectActive(source);
+            staging=prepareInput(source,current.getParent(),legacyCurrency);
+            if(Files.exists(current)){
+                safety=snapshot(current,current.getParent());
+                Path retained=current.resolveSibling("data_before_restore_"+UUID.randomUUID()+".wsbq");
+                moveReplace(safety,retained);
+                safety=retained;
+            }
             DatabaseManager.getInstance().closeConnection();
-            Files.deleteIfExists(Path.of(current + "-wal"));
-            Files.deleteIfExists(Path.of(current + "-shm"));
-            moveReplace(prepared, current);
-            prepared = null;
-            databaseReplaced = true;
-
-            ProductImageStore.getInstance().replaceOriginalsFrom(extracted.images());
+            clearSidecars(current);
+            moveReplace(staging,current);
+            staging=null;
+            replaced=true;
             DatabaseManager.getInstance().initDatabase();
             CompanyData.getInstance().reloadFromDatabase();
             ProductImageStore.getInstance().removeOrphanFiles();
-            DatabaseIntegrity.validate(DatabaseManager.getInstance().getConnection(), false);
-        } catch (Exception e) {
-            try {
-                if (databaseReplaced && safetyDb != null && Files.isRegularFile(safetyDb)) {
-                    DatabaseManager.getInstance().closeConnection();
-                    Path rollback = snapshot(safetyDb, current.getParent());
-                    Files.deleteIfExists(Path.of(current + "-wal"));
-                    Files.deleteIfExists(Path.of(current + "-shm"));
-                    moveReplace(rollback, current);
-                }
-                if (safetyImages != null && Files.isDirectory(safetyImages))
-                    ProductImageStore.getInstance().replaceAllFilesFrom(safetyImages);
-                DatabaseManager.getInstance().initDatabase();
-                CompanyData.getInstance().reloadFromDatabase();
-            } catch (Exception recovery) {
-                e.addSuppressed(recovery);
+        }catch(Exception e){
+            if(replaced&&safety!=null){
+                try{restoreSafety(current,safety);}catch(Exception recovery){e.addSuppressed(recovery);}
+            }else if(!replaced){
+                try{DatabaseManager.getInstance().initDatabase();}catch(Exception ignored){}
             }
-            throw new IllegalStateException("Unable to restore backup: " + e.getMessage(), e);
-        } finally {
-            removeTemporary(prepared);
-            removeTemporary(work);
-        }
+            throw new IllegalStateException("Unable to import database: "+e.getMessage()+
+                (safety==null?"":". Previous database retained at "+safety),e);
+        }finally{removeTemporary(staging);}
+    }
+    private void restoreSafety(Path current,Path safety) throws IOException,SQLException {
+        Path rollback=snapshot(safety,current.getParent());
+        try{
+            DatabaseManager.getInstance().closeConnection();
+            clearSidecars(current);
+            moveReplace(rollback,current);
+            DatabaseManager.getInstance().initDatabase();
+            CompanyData.getInstance().reloadFromDatabase();
+            ProductImageStore.getInstance().removeOrphanFiles();
+        }finally{removeTemporary(rollback);}
     }
 
-    private void validateArchive(Path archive, Path work) throws IOException, SQLException {
-        ArchiveContent extracted = extractArchive(archive, work);
-        Path prepared = null;
-        try {
-            prepared = snapshot(extracted.database(), work, null, false);
-            validateImageCoherence(prepared, extracted.images());
-        } finally { removeTemporary(prepared); }
+    public void restoreBackup(String file){restoreBackup(file,null);}
+    public synchronized CostIntegrity.Audit restoreBackup(String file,String legacyCurrency){
+        importDatabase(Path.of(file),legacyCurrency);
+        try{return CostIntegrity.audit(DatabaseManager.getInstance().getConnection());}
+        catch(SQLException e){throw new IllegalStateException("Database restored but cost completeness could not be checked: "+e.getMessage(),e);}
     }
+
+    private void validateBackup(Path path) {
+        Path prepared=null;
+        try{
+            prepared=prepareInput(path,AppConstants.getAppDataDirectory(),null);
+            try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+prepared)){ProductImageStore.validateEmbeddedImages(c);}
+        }catch(IOException|SQLException e){throw new IllegalArgumentException("Invalid WareStat backup: "+e.getMessage(),e);}
+        finally{removeTemporary(prepared);}
+    }
+    public void validateDatabase(Path path){validateBackup(path);}
 
     private ArchiveContent extractArchive(Path archive, Path work) throws IOException {
         if (!Files.isRegularFile(archive) || !Files.isReadable(archive))
@@ -460,7 +351,7 @@ public class BackupManager {
         Path extracted = work.resolve("extracted");
         Files.createDirectories(extracted);
         Path payload = archive;
-        if (isNewArchive(archive)) {
+        if (isLegacyArchive(archive)) {
             payload = work.resolve("verified-payload.zip");
             WareStatArchiveFormat.unwrap(archive, payload);
         }
@@ -608,40 +499,6 @@ public class BackupManager {
         Files.copy(file, zip);
         zip.closeEntry();
     }
-
-    private static boolean isNewArchive(Path file) {
-        return file != null && file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".wsbq");
-    }
-
-    public static boolean isArchive(Path file) {
-        return isNewArchive(file);
-    }
-
-    private void validateBackup(Path file) {
-        if (isArchive(file)) {
-            Path work = null;
-            try {
-                work = Files.createTempDirectory(AppConstants.getAppDataDirectory(), "backup-validate-");
-                validateArchive(file, work);
-            } catch (IOException | SQLException e) {
-                throw new IllegalArgumentException("Invalid WareStat backup: " + e.getMessage(), e);
-            } finally { removeTemporary(work); }
-            return;
-        }
-
-        if (!Files.isRegularFile(file) || !Files.isReadable(file))
-            throw new IllegalArgumentException("Backup file not found or not readable");
-        org.sqlite.SQLiteConfig settings = new org.sqlite.SQLiteConfig();
-        settings.setReadOnly(true);
-        try (Connection c = DriverManager.getConnection(
-                "jdbc:sqlite:" + file.toAbsolutePath(), settings.toProperties())) {
-            DatabaseIntegrity.validate(c, true);
-        } catch (SQLException e) {
-            throw new IllegalArgumentException("Invalid WareStat backup: " + e.getMessage(), e);
-        }
-    }
-
-    public void validateDatabase(Path file) { validateBackup(file); }
 
     private synchronized BackupRecord registerBackup(Path file) {
         return registerBackup(file, true);
