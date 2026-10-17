@@ -169,23 +169,32 @@ WareStat stores its database and configuration files in a per-user directory:
 - **Windows:** `%USERPROFILE%\AppData\Local\WareStat\`
 - **macOS:** `~/Library/Application Support/WareStat/`
 
-The primary working database is the local SQLite `data.db`. Backup and export
-files use the versioned proprietary `.wsbq` format. Every `.wsbq` contains
-a compressed archive with `manifest.json` and `database/data.db`; when selected,
-the archive also contains original JPEG product photos under `images/`.
-Both export and manual backup offer complete (database plus photos) or
-database-only output. Automatic backups and New Archive include photos.
+The live company data is stored in `data.wsbq`: **standard SQLite**, opened
+through the regular Xerial JDBC driver. All optimized JPEG product photos
+(maximum 800 px long side and 150 KB per JPEG) are stored in a dedicated BLOB
+column within SQLite. Thumbnail previews are derived as needed and temporarily
+cached in memory, not copied into the database.
 
-WareStat verifies the WSBQ signature, format version, payload size, and SHA-256
-checksum before reading its internal compressed archive. The ZIP payload is
-reversibly masked so standard ZIP and SQLite tools cannot open `.wsbq` directly.
-**This is format encapsulation, not encryption or a confidentiality guarantee.**
-The active database remains SQLite.
+Backups, manual exports and new archives are also **ordinary SQLite `.wsbq`
+files**, written as consistent SQLite snapshots. The user may choose to
+exclude product photos from a backup; that option removes only the images
+from the backup copy, never from the running database. Automatic backups
+include photos. Copies can be inspected using standard SQLite tools.
 
-Legacy `.db` SQLite databases remain importable/restorable. New backups and
-exports are always `.wsbq`. Backup files are stored in the configured backup
-directory, which
-defaults to the `backups` subdirectory of the WareStat data directory.
+On the first launch after upgrading, WareStat migrates the earlier `data.db`
+and external `product_images/` JPEGs into `data.wsbq`. It verifies all
+referenced photographs before activating the new database. The original files
+are **retained for recovery**, and existing masked-ZIP `.wsbq` backups
+remain importable/restorable through one-way conversion to the new format.
+Legacy standalone `.db` imports remain supported; because they did not embed
+photographs, unavailable external-photo references are omitted.
+
+SQLite's WAL mode may temporarily create `data.wsbq-wal` and
+`data.wsbq-shm` alongside the live database; they are SQLite transaction
+support files, not separate photo stores. Unused image pages are reused
+automatically, and incremental maintenance can reclaim free pages after
+backups. Backup files are stored in the configured backup folder (by default,
+`backups/` inside the per-user WareStat data directory).
 
 ## Barcode support
 
