@@ -199,12 +199,22 @@ public final class SupplierReturnTest extends RegressionTest {
             require("5".equals(value("SELECT remaining_quantity FROM inventory_lots WHERE supplier_order_detail_id=81")),
                 "Original FIFO stock was not debited");
             require(SupplierReturnManager.returnState(db,80)==1,"First return was not partial");
+            SupplierOrdersPanel supplierOrders=new SupplierOrdersPanel();
+            javax.swing.table.DefaultTableModel listed=
+                (javax.swing.table.DefaultTableModel)get(supplierOrders,"model");
+            require(listed.getRowCount()==1 &&
+                "Completed|Partial Return".equals(listed.getValueAt(0,5)),
+                "Supplier orders list disagrees with the partial-return state");
             require("Completed|124.0".equals(value("SELECT status||'|'||total FROM supplier_orders WHERE id=80")),
                 "Original purchase order was mutated");
             require("43.0".equals(value("SELECT SUM(quantity*unit_price) FROM supplier_return_items WHERE return_id="+first)),
                 "Historical return value was incorrect");
             int second=SupplierReturnManager.create(80,List.of(q(81,5),q(82,3)),"remaining goods");
             require(SupplierReturnManager.returnState(db,80)==2,"Fully returned order not detected");
+            supplierOrders.loadOrders();
+            require(listed.getRowCount()==1 &&
+                "Completed|Full Return".equals(listed.getValueAt(0,5)),
+                "Supplier orders list disagrees with the full-return state");
             require(qty()==10 && "10".equals(value("SELECT quantity FROM products WHERE id=2")),
                 "Wrong physical stock after full return");
             require("0".equals(value("SELECT remaining_quantity FROM inventory_lots WHERE supplier_order_detail_id=81")),
