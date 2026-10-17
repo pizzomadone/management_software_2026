@@ -701,9 +701,11 @@ public class RegressionTest {
             sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status,snapshot_version) "
                 + "VALUES(901,'OLD-GAP',1,1,10,0,10,'Issued',0)");
             sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status,snapshot_version,customer_snapshot,company_snapshot) "
-                + "VALUES(902,'NEW-IMMUTABLE',1,1,10,0,10,'Issued',1,'first_name=Archived\\nlast_name=Client\\n','company_name=Archived\\n')");
+                + "VALUES(902,'NEW-IMMUTABLE',1,1,10,0,10,'Issued',1," +
+                "'first_name=Archived'||char(10)||'last_name=Client'||char(10)," +
+                "'company_name=Archived'||char(10))");
             sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status,snapshot_version,company_snapshot) "
-                + "VALUES(903,'NEW-INCOMPLETE',1,1,10,0,10,'Issued',1,'company_name=Archived\\n')");
+                + "VALUES(903,'NEW-INCOMPLETE',1,1,10,0,10,'Issued',1,'company_name=Archived'||char(10))");
             require(InvoiceSnapshots.repairIncompleteLegacy(db)==1,
                 "Only the incomplete legacy snapshot must be repaired");
             java.util.Properties recovered=InvoiceSnapshots.decode(
@@ -712,7 +714,7 @@ public class RegressionTest {
                 && "Customer".equals(recovered.getProperty("last_name"))
                 && "0".equals(value("SELECT snapshot_version FROM invoices WHERE id=901")),
                 "Incomplete legacy invoice was not restored with recorded customer data");
-            require("first_name=Archived\\nlast_name=Client\\n".equals(
+            require(("first_name=Archived"+(char)10+"last_name=Client"+(char)10).equals(
                 value("SELECT customer_snapshot FROM invoices WHERE id=902")),
                 "Saved historical 1.3 customer snapshot was modified");
             require(value("SELECT customer_snapshot FROM invoices WHERE id=903")==null,
