@@ -74,6 +74,24 @@ public class RegressionTest {
             out.putNextEntry(new java.util.zip.ZipEntry("database/data.db"));
             Files.copy(sqlite,out);
             out.closeEntry();
+            // Real v1.2 archives also carried JPEGs as external files.
+            try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+sqlite);
+                Statement st=c.createStatement();
+                ResultSet photos=st.executeQuery("SELECT filename FROM product_images")) {
+                while(photos.next()){
+                    String name=photos.getString(1);
+                    if(name==null || !name.equals(Path.of(name).getFileName().toString())
+                            || name.contains(".."))continue;
+                    Path photo=AppConstants.getProductImagesDirectory().resolve(name);
+                    if(Files.isRegularFile(photo)){
+                        out.putNextEntry(new java.util.zip.ZipEntry("images/"+name));
+                        Files.copy(photo,out);
+                        out.closeEntry();
+                    }
+                }
+            } catch(SQLException ignored){
+                // Older 1.2 fixtures may predate product image metadata.
+            }
         }
         WareStatArchiveFormat.wrap(zip,archive);
         Files.deleteIfExists(zip);
@@ -915,7 +933,7 @@ public class RegressionTest {
             require(filename==null||ProductImageStore.getInstance().imageBytes(filename)!=null,
                 "Archive did not restore image BLOBs");
         });
-        test("existing data.db with external photos upgrades without changing originals", () -> {
+        test("legacy 1.2 data.db is ignored until explicit backup import", () -> {
             Path legacy=AppConstants.getAppDataDirectory().resolve("data.db");
             Files.deleteIfExists(legacy);
             String filename=value("SELECT filename FROM product_images ORDER BY id LIMIT 1");
@@ -940,12 +958,19 @@ public class RegressionTest {
             Files.deleteIfExists(Path.of(live+"-shm"));
             DatabaseManager.getInstance().initDatabase();
             db=DatabaseManager.getInstance().getConnection();
-            require(Files.exists(legacy),"Migration deleted the original data.db");
-            require(Files.exists(originalFolder.resolve(filename)),"Migration deleted original JPEGs");
+            require(Files.exists(legacy),"Startup deleted the old 1.2 data.db");
+            require(Files.exists(originalFolder.resolve(filename)),"Startup deleted old JPEGs");
+            require("0".equals(value("SELECT COUNT(*) FROM products")),
+                "Legacy data.db was silently loaded instead of a fresh current WSBQ");
+
+            Path officialLegacyBackup=legacy12BackupFixture(legacy);
+            BackupManager.getInstance().restoreBackup(officialLegacyBackup.toString(),null);
+            db=DatabaseManager.getInstance().getConnection();
             require("3".equals(value("SELECT COUNT(*) FROM product_images WHERE length(image_data)>0")),
-                "Local upgrade did not copy every photo into SQLite");
+                "1.2 archive migration did not embed external JPEGs");
             require(Arrays.equals(jpeg,ProductImageStore.getInstance().imageBytes(filename)),
-                "Legacy conversion altered JPEG bytes");
+                "1.2 backup conversion modified JPEG bytes");
+            require(Files.exists(legacy),"Explicit import deleted the original data.db");
         });
         test("sealed .wsbq opens after being copied from another WareStat installation", () -> {
             BackupManager backups=BackupManager.getInstance();
