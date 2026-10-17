@@ -48,13 +48,14 @@ public class DatabaseManager {
             // Load the SQLite JDBC driver
             Class.forName("org.sqlite.JDBC");
 
+            // Never change the header while SQLite might still own the file.
+            closeConnection();
             // A one-time, validated migration preserves the original data.db and photos.
             WareStatLocalUpgrade.migrateIfNeeded();
             WareStatFileHeader.restoreForSQLite(AppConstants.getDatabasePath());
 
             // Validate an existing database before creating any missing application tables.
             boolean existing = java.nio.file.Files.exists(AppConstants.getDatabasePath());
-            closeConnection();
             connection = openConnection(DB_URL);
             // Set the lock before the first schema query / WAL access. In this
             // mode a second SQLite client cannot open the live company file.
