@@ -831,8 +831,9 @@ public class RegressionTest {
             require(rejected,"An experimental or unsigned .wsbq was accepted");
         });
         test("real WareStat 1.2 SQLite backup converts to signed WSBQ", () -> {
-            Path backup12=WareStatLegacy12Fixture.create(OUT.resolve("version-1.2-backup.db"));
             BackupManager backups=BackupManager.getInstance();
+            Path previous=backups.performBackup(true);
+            Path backup12=WareStatLegacy12Fixture.create(OUT.resolve("version-1.2-backup.db"));
             boolean noCurrency=false;
             try{backups.importBackup(backup12);}catch(RuntimeException expected){noCurrency=true;}
             require(noCurrency,"Currency-less 1.2 backup imported without requesting original currency");
@@ -852,10 +853,16 @@ public class RegressionTest {
             }finally{Files.deleteIfExists(readable);}
             require(Files.exists(backup12)&&WareStatFileHeader.isSQLite(backup12),
                 "Original 1.2 backup was modified");
-            backups.restoreBackup(imported.absolutePath(),null);
-            db=DatabaseManager.getInstance().getConnection();
-            require("1".equals(value("SELECT COUNT(*) FROM products WHERE code='OLD12'")),
-                "WareStat 1.2 imported backup cannot be restored");
+            try {
+                backups.restoreBackup(imported.absolutePath(),null);
+                db=DatabaseManager.getInstance().getConnection();
+                require("1".equals(value("SELECT COUNT(*) FROM products WHERE code='OLD12'")),
+                    "WareStat 1.2 imported backup cannot be restored");
+            } finally {
+                // Later regressions rely on the previous JPEG BLOB fixture.
+                backups.restoreBackup(previous.toString(),null);
+                db=DatabaseManager.getInstance().getConnection();
+            }
         });
         test("new archive saves BLOBs and starts a clean SQLite company", () -> {
             db=DatabaseManager.getInstance().getConnection();
