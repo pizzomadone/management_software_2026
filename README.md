@@ -271,12 +271,15 @@ The command prints the sandbox path (including the isolated `home`).
 Only launch an application build against this home explicitly if you wish to
 browse the synthetic company. Do not copy the fixture over real WareStat data.
 
-GitHub's **Actions → WareStat 20k load benchmark → Run workflow** launches the
-same test on demand and uploads `results.csv`, `dataset.txt`
-and `run.log` for 7 days. It is deliberately not tied to pushes
-or pull requests because large data generation consumes significant runner
-disk, CPU and time. Start with 200/200 or 1000/1000 if Actions has not been
-tested on the branch. Setting `restore=true` adds an expensive full
+A pull request touching the benchmark runs a **small 200-product, 200-photo smoke test**.
+To use **Actions → WareStat 20k load benchmark → Run workflow** for the
+full dataset, GitHub requires this workflow file to exist on the repository's
+**default branch first**; keeping it on this experimental branch alone is
+not sufficient for the manual-run button. Once available, it uploads `results.csv`, `dataset.txt`
+and `run.log` for 7 days. The 20k configuration is deliberately **not** tied to pushes
+or pull requests, since large data generation consumes significant runner
+disk, CPU and time. Start with 200/200 or 1000/1000 if hosted Actions has not
+been tested on this repository. Setting `restore=true` adds an expensive full
 restore with an additional safety copy; allow extra disk space.
 
 **This benchmark is not a GUI frame-rate test**. Real user-interface lag,
