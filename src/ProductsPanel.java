@@ -902,6 +902,8 @@ public class ProductsPanel extends JPanel {
                 productsScrollPane.getVerticalScrollBar().setValue(0);
             scheduleProductColumnFit();
         } catch (SQLException e) {
+            // Preserve the underlying SQL error in headless regression logs.
+            e.printStackTrace();
             Dialogs.showMessageDialog(this,
                 "Error loading products: " + e.getMessage(),
                 "Error", JOptionPane.ERROR_MESSAGE);
