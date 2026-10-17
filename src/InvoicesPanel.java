@@ -162,7 +162,7 @@ public class InvoicesPanel extends JPanel {
                         row.add("");
                     }
 
-                    row.add(snapshotCustomerName(conn,rs.getInt("id"),rs.getString("customer_name")));
+                    row.add(snapshotCustomerName(rs.getString("customer_snapshot"),rs.getString("customer_name")));
                     String currency=rs.getString("currency_code");
                     row.add(SettingsPanel.formatCurrency(taxableAmount,currency));
                     row.add(SettingsPanel.formatCurrency(vat,currency));
@@ -227,7 +227,7 @@ public class InvoicesPanel extends JPanel {
                 try (ResultSet rs = pstmt.executeQuery()) {
                     while (rs.next()) {
                         String number = rs.getString("number");
-                        String customerName = snapshotCustomerName(conn,rs.getInt("id"),rs.getString("customer_name"));
+                        String customerName = snapshotCustomerName(rs.getString("customer_snapshot"),rs.getString("customer_name"));
                         String term = searchTerm.toLowerCase(java.util.Locale.ROOT);
                         if(!number.toLowerCase(java.util.Locale.ROOT).contains(term) && !customerName.toLowerCase(java.util.Locale.ROOT).contains(term))continue;
 
@@ -247,7 +247,7 @@ public class InvoicesPanel extends JPanel {
                             row.add("");
                         }
 
-                        row.add(snapshotCustomerName(conn,rs.getInt("id"),rs.getString("customer_name")));
+                        row.add(snapshotCustomerName(rs.getString("customer_snapshot"),rs.getString("customer_name")));
                         String currency=rs.getString("currency_code");
                         row.add(SettingsPanel.formatCurrency(totals[0],currency));
                         row.add(SettingsPanel.formatCurrency(totals[1],currency));
