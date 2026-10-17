@@ -39,6 +39,7 @@ public class AdvancedStatsPanel extends JPanel {
     private JPanel productsChartPanel;
     private JTable topProductsTable;
     private JComboBox<String> periodCombo;
+    private JLabel emptySalesNote;
     private JLabel fromDateLabel;
     private JLabel toDateLabel;
     private DatePickerField fromDateField;
@@ -112,6 +113,10 @@ public class AdvancedStatsPanel extends JPanel {
             if (periodCombo.getSelectedIndex() != 3) loadData();
         });
         controls.add(periodPanel);
+        emptySalesNote=new JLabel("");
+        emptySalesNote.setAlignmentX(Component.LEFT_ALIGNMENT);
+        emptySalesNote.setBorder(BorderFactory.createEmptyBorder(0,8,2,4));
+        controls.add(emptySalesNote);
 
         updateCustomRangeVisibility();
 
@@ -269,9 +274,14 @@ public class AdvancedStatsPanel extends JPanel {
         try {
             DateRange range = selectedDateRange();
             loadSalesData(range);
+            boolean empty=monthlySales.values().stream().noneMatch(v->v[1]>0);
+            emptySalesNote.setText(empty ?
+                SalesDataDiagnostics.explainEmptySales(
+                    DatabaseManager.getInstance().getConnection()) : "");
             loadProductsData(range);
             repaint();
         } catch (Exception e) {
+            emptySalesNote.setText(I18n.tr("Unable to load statistics"));
             Dialogs.showMessageDialog(this,
                 I18n.tr(e.getMessage() == null ? "Unable to load statistics" : e.getMessage()),
                 I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
