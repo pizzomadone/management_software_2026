@@ -154,7 +154,8 @@ public class RegressionTest {
                 p.executeBatch();
             }
             sql("INSERT INTO product_images(product_id,filename,is_primary,sort_order,image_data) " +
-                "VALUES(3,'lazy-test.jpg',1,0,X'FFD8FFD9')");
+                "VALUES(3,'lazy-test.jpg',1,0,X'FFD8FFD9')," +
+                "(65,'offscreen-test.jpg',1,0,X'FFD8FFD9')");
             sql("UPDATE products SET sale_price_ex_vat=999,sale_price_inc_vat=999 WHERE code='P0249'");
             require("3".equals(value("SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name IN " +
                 "('idx_product_images_filename','idx_supplier_order_details_product','idx_products_name_nocase')")),
@@ -165,6 +166,25 @@ public class RegressionTest {
             require(model.getRowCount()==100,"Opening catalog materialized more than one scroll chunk");
             require(model.getValueAt(0,16) instanceof String,
                 "Catalog eagerly decoded images instead of retaining filenames");
+            @SuppressWarnings("unchecked")
+            Set<String> pendingThumbs=(Set<String>)get(panel,"pendingThumbnails");
+            require(pendingThumbs.isEmpty(),
+                "Catalog queued off-screen thumbnails during its initial layout");
+            int photoColumn=catalog.convertColumnIndexToView(16);
+            // Even an explicit renderer request for an off-screen row must not
+            // initiate decoding; table layout and column sizing do this.
+            catalog.prepareRenderer(catalog.getCellRenderer(62,photoColumn),62,photoColumn);
+            require(pendingThumbs.isEmpty(),
+                "A renderer request scheduled an off-screen JPEG decode");
+            call(panel,"setThumbnailWindow",new Class<?>[]{int.class,int.class},0,5);
+            require(pendingThumbs.contains("lazy-test.jpg") &&
+                    !pendingThumbs.contains("offscreen-test.jpg"),
+                "Initial thumbnail queue includes photos outside visible rows");
+            call(panel,"setThumbnailWindow",new Class<?>[]{int.class,int.class},55,75);
+            require(!pendingThumbs.contains("lazy-test.jpg") &&
+                    pendingThumbs.contains("offscreen-test.jpg"),
+                "Scrolling failed to cancel old queued thumbnails and request new visible ones");
+
             catalog.getRowSorter().setSortKeys(java.util.List.of(
                 new RowSorter.SortKey(4, SortOrder.DESCENDING)));
             require("P0249".equals(catalog.getValueAt(0,catalog.convertColumnIndexToView(1))),
