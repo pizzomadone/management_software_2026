@@ -196,8 +196,45 @@ public class AppConstants {
      *
      * @return The path to the database file
      */
+    private static volatile Path sessionDatabasePath;
+    private static final String ACTIVE_DATABASE_SETTING = "database.active_path";
+
+    /** The original company location used for a new installation or a 1.2 upgrade. */
+    public static Path getDefaultDatabasePath() {
+        return getAppDataDirectory().resolve(DATABASE_FILE_NAME).toAbsolutePath().normalize();
+    }
+
+    /**
+     * The selected company is opened IN PLACE. No snapshot, import or relocation
+     * is necessary on normal startup. Preferences merely remember its path.
+     */
     public static Path getDatabasePath() {
-        return getAppDataDirectory().resolve(DATABASE_FILE_NAME);
+        Path selected = sessionDatabasePath;
+        if (selected != null) return selected;
+        String saved = SettingsPanel.getGlobalSetting(ACTIVE_DATABASE_SETTING, "").trim();
+        return saved.isEmpty() ? getDefaultDatabasePath()
+            : Paths.get(saved).toAbsolutePath().normalize();
+    }
+
+    /** Select a prospective file without changing the persistent startup path. */
+    static void useDatabasePathForSession(Path path) {
+        sessionDatabasePath = path == null ? null : path.toAbsolutePath().normalize();
+    }
+
+    /** Persist only after the selected database has opened successfully. */
+    static void rememberDatabasePath(Path path) throws IOException {
+        Path selected = path.toAbsolutePath().normalize();
+        SettingsPanel.setGlobalSetting(ACTIVE_DATABASE_SETTING,
+            selected.equals(getDefaultDatabasePath()) ? "" : selected.toString());
+        // setGlobalSetting is historically best-effort; do not silently claim
+        // that the selected company will be remembered if writing failed.
+        java.util.Properties verified = new java.util.Properties();
+        try (java.io.InputStream in = Files.newInputStream(getSettingsPath())) {
+            verified.load(in);
+        }
+        String expected = selected.equals(getDefaultDatabasePath()) ? "" : selected.toString();
+        if (!expected.equals(verified.getProperty(ACTIVE_DATABASE_SETTING, "")))
+            throw new IOException("Unable to remember the selected database path");
     }
 
     /**
