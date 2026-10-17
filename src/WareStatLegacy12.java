@@ -30,7 +30,7 @@ public final class WareStatLegacy12 {
 
     private static boolean matchesSchema(Connection c) throws SQLException {
         // A cheap recognition check: it does not scan all data pages.
-        return hasColumns(c,"products","id","code","name","price","quantity","supplier_id","vat_rate") ||
+        return !(!hasColumns(c,"products","id","code","name","price","quantity","supplier_id","vat_rate") ||
             !hasColumns(c,"customers","id","first_name","last_name") ||
             !hasColumns(c,"suppliers","id","company_name","vat_number") ||
             !hasColumns(c,"orders","id","customer_id","order_date","status","total") ||
@@ -43,7 +43,7 @@ public final class WareStatLegacy12 {
             !hasColumns(c,"warehouse_movements","id","product_id","date","type","quantity") ||
             !hasColumns(c,"stock_reservations","id","product_id","document_type","document_id") ||
             !hasColumns(c,"company_data","id","company_name") ||
-            !hasColumns(c,"products","sale_price_ex_vat","sale_price_inc_vat");
+            hasColumns(c,"products","sale_price_ex_vat","sale_price_inc_vat"));
     }
 
     public static void validate(Connection c) throws SQLException {
