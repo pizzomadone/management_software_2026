@@ -830,8 +830,7 @@ public class ProductsPanel extends JPanel {
                            ELSE 0 END), 0) AS on_order_quantity
                 FROM (
                     SELECT * FROM products p
-                """ + where + """
-                    ORDER BY """ + orderBy + " LIMIT ? OFFSET ?\n" + """
+                """ + where + " ORDER BY " + orderBy + " LIMIT ? OFFSET ?\n" + """
                 ) p
                 LEFT JOIN minimum_stock sm ON sm.product_id=p.id
                 LEFT JOIN product_suppliers ps ON ps.product_id=p.id AND ps.is_preferred=1
