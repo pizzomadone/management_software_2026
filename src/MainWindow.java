@@ -973,11 +973,11 @@ public class MainWindow extends JFrame {
 
     /** One explicit yes/no prompt, reused by startup and File > Open. */
     private static boolean confirmLegacyMigration(Path source) {
-        String message = I18n.tr("File created with WareStat 1.2.")
-            + "\n" + I18n.tr("Migrate to WareStat 1.3?") + "\n\n"
-            + I18n.tr("Migration may fail.")
+        String message = I18n.tr(
+            "The following file was created with WareStat 1.2. Migrate to version 1.3?")
+            + "\n" + I18n.tr("Migration may fail.")
             + "\n" + I18n.tr("Make a manual copy before proceeding.")
-            + "\n\n" + I18n.tr("Continue?");
+            + "\n" + I18n.tr("Continue?");
         return Dialogs.showConfirmDialog(null,message,I18n.tr("WareStat 1.2 Migration"),
             JOptionPane.YES_NO_OPTION,JOptionPane.WARNING_MESSAGE) == JOptionPane.YES_OPTION;
     }
