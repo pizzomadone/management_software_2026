@@ -1,0 +1,67 @@
+name: WareStat 20k load benchmark
+
+# PR: tiny smoke test; manual dispatch: potentially multi-GB 20k benchmark.
+on:
+  pull_request:
+    paths:
+      - 'tests/WareStatLoadBenchmark.java'
+      - 'tests/run-load-benchmark.sh'
+      - '.github/workflows/wsbq-load-benchmark.yml'
+  workflow_dispatch:
+    inputs:
+      products:
+        description: "Number of synthetic products (100–100000)"
+        required: true
+        default: "20000"
+        type: string
+      photos:
+        description: "JPEG BLOB count (1 through product count)"
+        required: true
+        default: "20000"
+        type: string
+      backups:
+        description: "Measure real WareStat backups with and without photos"
+        required: true
+        default: true
+        type: boolean
+      restore:
+        description: "Also measure full restore (higher disk use)"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PRODUCTS: ${{ github.event_name == 'pull_request' && '200' || inputs.products }}
+      PHOTOS: ${{ github.event_name == 'pull_request' && '200' || inputs.photos }}
+      BACKUPS: ${{ github.event_name == 'pull_request' && 'false' || inputs.backups }}
+      RESTORE: ${{ github.event_name == 'pull_request' && 'false' || inputs.restore }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Available disk space
+        run: df -h .
+      - name: Compile and run isolated benchmark
+        run: bash tests/run-load-benchmark.sh "$PRODUCTS" "$PHOTOS" "$BACKUPS" "$RESTORE"
+      - name: Upload CSV results and diagnostic log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: warestat-load-benchmark-report
+          path: |
+            build/load-benchmark-output/results.csv
+            build/load-benchmark-output/dataset.txt
+            build/load-benchmark-output/run.log
+          if-no-files-found: warn
+          retention-days: 7
