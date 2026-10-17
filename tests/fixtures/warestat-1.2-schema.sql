@@ -187,21 +187,3 @@ CREATE TABLE IF NOT EXISTS company_data (
                 website TEXT,
                 logo_path TEXT
             );
-
-CREATE TABLE products_new (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        code TEXT UNIQUE NOT NULL,
-                        name TEXT NOT NULL,
-                        description TEXT,
-                        price REAL NOT NULL,
-                        quantity INTEGER DEFAULT 0,
-                        category TEXT DEFAULT '',
-                        alternative_sku TEXT DEFAULT '',
-                        weight REAL DEFAULT 0.0,
-                        unit_of_measure TEXT DEFAULT 'pcs',
-                        minimum_quantity INTEGER DEFAULT 0,
-                        acquisition_cost REAL DEFAULT 0.0,
-                        active INTEGER DEFAULT 1,
-                        supplier_id INTEGER,
-                        FOREIGN KEY (supplier_id) REFERENCES suppliers (id)
-                    );
