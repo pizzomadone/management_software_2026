@@ -834,6 +834,50 @@ public class ExtendedRegressionTest extends RegressionTest {
                 "SELECT status||'|'||payment_status||'|'||paid_amount||'|'||currency_code||'|'||taxable_amount||'|'||vat||'|'||total||'|'||(SELECT sale_unit_price_ex_vat FROM invoice_details WHERE invoice_id=10) FROM invoices WHERE id=10")),
                 "Historical invoice content changed while updating payment");
         });
+        test("issued invoice payment uses stored total and rejects invalid partial payments",()->{
+            fresh();
+            sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status,payment_status,paid_amount,currency_code) "
+                + "VALUES(70,'HIST-PARTIAL',0,1,80,20,100,'Issued','NOT_PAID',0,'EUR')");
+            sql("INSERT INTO invoice_details(invoice_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate,total) "
+                + "VALUES(70,1,1,80,100,25,80)");
+            Invoice model = new Invoice(70,"HIST-PARTIAL",new java.util.Date(),1,
+                "Test Customer",80,20,100,"Issued");
+            ID dialog = empty(ID.class);
+            put(dialog,"invoice",model);
+            put(dialog,"documentCurrency","EUR");
+            put(dialog,"historicalForeignCurrencyLocked",true);
+            put(dialog,"linkedOrderLocked",false);
+            put(dialog,"statusCombo",new JComboBox<>(new String[]{"Issued"}));
+            put(dialog,"paymentStatusCombo",new JComboBox<>(new String[]{"Partially Paid"}));
+            put(dialog,"paidAmountField",new JTextField("25.00"));
+            put(dialog,"numberField",new JTextField("HIST-PARTIAL"));
+            put(dialog,"currentTotal",0.0); // Simulates a historical UI total differing from storage.
+            require((Double)call(dialog,"paymentTargetTotal")==100.0,
+                "Historical payment field did not use the persisted invoice total");
+            call(dialog,"saveInvoice");
+            require(Boolean.TRUE.equals(get(dialog,"invoiceSaved")),
+                "Valid partial payment failed when UI total differed from stored invoice");
+            require("Issued|PARTIALLY_PAID|25.0|100.0".equals(value(
+                "SELECT status||'|'||payment_status||'|'||paid_amount||'|'||total FROM invoices WHERE id=70")),
+                "Historical partial payment or total was saved incorrectly");
+
+            for (String invalidAmount : java.util.List.of("0.00", "100.00", "")) {
+                ID invalid = empty(ID.class);
+                put(invalid,"invoice",model);
+                put(invalid,"documentCurrency","EUR");
+                put(invalid,"historicalForeignCurrencyLocked",true);
+                put(invalid,"linkedOrderLocked",false);
+                put(invalid,"statusCombo",new JComboBox<>(new String[]{"Canceled"}));
+                put(invalid,"paymentStatusCombo",new JComboBox<>(new String[]{"Partially Paid"}));
+                put(invalid,"paidAmountField",new JTextField(invalidAmount));
+                put(invalid,"numberField",new JTextField("HIST-PARTIAL"));
+                put(invalid,"currentTotal",0.0);
+                rejectedSave(invalid,"saveInvoice","invoiceSaved");
+                require("Issued|PARTIALLY_PAID|25.0|100.0".equals(value(
+                    "SELECT status||'|'||payment_status||'|'||paid_amount||'|'||total FROM invoices WHERE id=70")),
+                    "Invalid partial payment (" + invalidAmount + ") changed the invoice");
+            }
+        });
         test("invoice snapshots survive later party and catalog changes",()->{
             fresh();sql("UPDATE customers SET first_name='Łódź',last_name='Original' WHERE id=1");
             ID d=invoice();DefaultTableModel m=(DefaultTableModel)get(d,"itemsTableModel");m.setValueAt("5901234123457",0,0);m.setValueAt("Crème Łódź original",0,1);
@@ -848,7 +892,11 @@ public class ExtendedRegressionTest extends RegressionTest {
             try {
                 for(String status:List.of("Draft","Issued","Canceled")) {
                     fresh();
-                    ID d=invoice();put(d,"statusCombo",new JComboBox<>(new String[]{status}));call(d,"saveInvoice");
+                    // Canceled invoices must have been issued first; a draft cannot be canceled.
+                    ID d=invoice();put(d,"statusCombo",new JComboBox<>(
+                        new String[]{"Canceled".equals(status) ? "Issued" : status}));call(d,"saveInvoice");
+                    if("Canceled".equals(status))
+                        sql("UPDATE invoices SET status='Canceled' WHERE id=1");
                     Invoice i=new Invoice(1,"PDF",new java.util.Date(),1,"",30,6.6,36.6,status);
                     Path file=OUT.resolve("invoice-status-"+status+".pdf");
                     call(new InvoicePDFGenerator(i,customer()),"generatePDF",new Class<?>[]{java.io.File.class},file.toFile());

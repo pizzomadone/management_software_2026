@@ -131,6 +131,27 @@ public class RegressionTest {
         require(!Boolean.TRUE.equals(get(dialog,savedField)), "Invalid document was saved");
     }
     static void runAll() throws Exception {
+        test("backup and export photo choices are available in every language", () -> {
+            String original=I18n.getLanguage();
+            try {
+                for(String language:List.of("en","it","es","pt_BR","fr","de","pl")) {
+                    I18n.setLanguage(language);
+                    String with=I18n.tr("With photos");
+                    String without=I18n.tr("Without photos (smaller file)");
+                    require(!with.isBlank() && !without.isBlank() && !with.equals(without),
+                        "Unusable backup selection for "+language);
+                    require(language.equals("en") || !without.equals("Without photos (smaller file)"),
+                        "Untranslated backup selection for "+language);
+                    if(language.equals("it")) {
+                        require(with.equals("Con foto"),"Italian with-photos label differs");
+                        require(without.equals("Senza foto (più leggero)"),
+                            "Italian without-photos label differs");
+                    }
+                }
+            } finally {
+                I18n.setLanguage(original);
+            }
+        });
         test("warehouse movement search keeps hidden IDs and column alignment", () -> {
             fresh();
             sql("INSERT INTO warehouse_movements(id,product_id,date,type,quantity,reason,notes) " +
@@ -623,7 +644,10 @@ public class RegressionTest {
         test("WAL import includes committed data and retains a prior copy", () -> {
             if(db!=null)db.close();Path current=AppConstants.getDatabasePath();Files.deleteIfExists(current);
             DatabaseManager.getInstance().initDatabase();db=DatabaseManager.getInstance().getConnection();
-            BackupManager b=BackupManager.getInstance();Path source=OUT.resolve("open-wal.db");b.exportDatabase(source);
+            BackupManager b=BackupManager.getInstance();Path source=OUT.resolve("open-wal.db");
+            try(PreparedStatement p=db.prepareStatement("VACUUM INTO ?")) {
+                p.setString(1,source.toString());p.execute();
+            }
             try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+source);Statement st=c.createStatement()) {
                 st.execute("PRAGMA journal_mode=WAL");st.execute("PRAGMA wal_autocheckpoint=0");
                 st.execute("INSERT INTO customers(first_name,last_name) VALUES('WAL','Committed')");
@@ -711,13 +735,42 @@ public class RegressionTest {
             BackupManager backup=BackupManager.getInstance();
             Path folder=OUT.resolve("photo-backups");Files.createDirectories(folder);backup.setBackupDirectory(folder.toString());
             Path complete=backup.performBackup(true);
-            require(complete.getFileName().toString().endsWith(".wsbu"),"Complete backup extension differs");
-            try(java.util.zip.ZipFile zip=new java.util.zip.ZipFile(complete.toFile())) {
+            require(complete.getFileName().toString().endsWith(".wsbq"),"Complete backup extension differs");
+            require(Files.readAllBytes(complete)[0]=='W',"Proprietary backup signature missing");
+            boolean genericZipRejected=false;
+            try(java.util.zip.ZipFile ignored=new java.util.zip.ZipFile(complete.toFile())) {
+                genericZipRejected = false;
+            }catch(java.util.zip.ZipException expected){genericZipRejected=true;}
+            require(genericZipRejected,"WSBQ opened directly as ZIP");
+
+            Path unpacked=OUT.resolve("decoded-for-regression.zip");
+            Files.deleteIfExists(unpacked);
+            WareStatArchiveFormat.unwrap(complete,unpacked);
+            try(java.util.zip.ZipFile zip=new java.util.zip.ZipFile(unpacked.toFile())) {
                 require(zip.getEntry("manifest.json")!=null,"Complete backup has no manifest");
                 require(zip.getEntry("database/"+AppConstants.DATABASE_FILE_NAME)!=null,"Complete backup has no database");
                 require(zip.getEntry("images/"+first.filename())!=null,"Complete backup has no product image");
                 require(zip.getEntry("images/thumb_"+first.filename())==null,"Derived thumbnail was stored in backup");
+                String manifest=new String(zip.getInputStream(zip.getEntry("manifest.json")).readAllBytes(),
+                    java.nio.charset.StandardCharsets.UTF_8);
+                require(manifest.contains("\"images_included\":true"),"Complete backup manifest has no photo flag");
             }
+            Path legacy=OUT.resolve("legacy-photo-backup.wsbu");
+            Files.copy(unpacked,legacy,StandardCopyOption.REPLACE_EXISTING);
+            boolean obsoleteRejected=false;
+            try { backup.validateDatabase(legacy); }catch(RuntimeException expected){obsoleteRejected=true;}
+            require(obsoleteRejected,"Obsolete .wsbu archive was accepted");
+            obsoleteRejected=false;
+            try { backup.importBackup(legacy); }catch(RuntimeException expected){obsoleteRejected=true;}
+            require(obsoleteRejected,"Obsolete .wsbu archive was imported");
+
+            Path tampered=OUT.resolve("damaged-backup.wsbq");
+            byte[] damaged=Files.readAllBytes(complete);
+            damaged[damaged.length-1] ^= 1;
+            Files.write(tampered,damaged);
+            boolean corruptionRejected=false;
+            try { backup.validateDatabase(tampered); }catch(RuntimeException expected){corruptionRejected=true;}
+            require(corruptionRejected,"Damaged WSBQ was accepted");
 
             sql("UPDATE products SET name='Changed after backup' WHERE id=1");
             store.deleteFiles(first.filename());
@@ -728,12 +781,40 @@ public class RegressionTest {
             require(Files.isRegularFile(store.thumbnailPath(first.filename())),"Complete restore did not rebuild thumbnail");
 
             Path databaseOnly=backup.performBackup(false);
-            require(databaseOnly.getFileName().toString().endsWith(".db"),"Database-only backup extension differs");
-            try(Connection c2=DatabaseManager.openConnection("jdbc:sqlite:"+databaseOnly);
-                Statement s2=c2.createStatement();
-                ResultSet r2=s2.executeQuery("SELECT COUNT(*) FROM product_images")) {
-                require(r2.next() && r2.getInt(1)==0,"Database-only backup retained photo references");
+            require(databaseOnly.getFileName().toString().endsWith(".wsbq"),"Database-only backup extension differs");
+            Path onlyZip=OUT.resolve("database-only-decoded.zip");
+            Files.deleteIfExists(onlyZip);
+            WareStatArchiveFormat.unwrap(databaseOnly,onlyZip);
+            try(java.util.zip.ZipFile zip=new java.util.zip.ZipFile(onlyZip.toFile())) {
+                String manifest=new String(zip.getInputStream(zip.getEntry("manifest.json")).readAllBytes(),
+                    java.nio.charset.StandardCharsets.UTF_8);
+                require(manifest.contains("\"images_included\":false"),"Database-only manifest reports photos");
+                require(zip.stream().noneMatch(e -> e.getName().startsWith("images/")),
+                    "Database-only backup contains images");
+                Path extracted=OUT.resolve("database-only-extracted.db");
+                try(var sourceDb=zip.getInputStream(zip.getEntry("database/"+AppConstants.DATABASE_FILE_NAME))) {
+                    Files.copy(sourceDb,extracted,StandardCopyOption.REPLACE_EXISTING);
+                }
+                try(Connection c2=DatabaseManager.openConnection("jdbc:sqlite:"+extracted);
+                    Statement s2=c2.createStatement();
+                    ResultSet r2=s2.executeQuery("SELECT COUNT(*) FROM product_images")) {
+                    require(r2.next() && r2.getInt(1)==0,"Database-only backup retained photo references");
+                }
             }
+
+            backup.restoreBackup(databaseOnly.toString(),null);
+            db=DatabaseManager.getInstance().getConnection();
+            require("0".equals(value("SELECT COUNT(*) FROM product_images")),
+                "Database-only restore did not remove image references");
+            backup.restoreBackup(complete.toString(),null);
+            db=DatabaseManager.getInstance().getConnection();
+            require("3".equals(value("SELECT COUNT(*) FROM product_images")),
+                "Complete WSBQ restore did not restore image references");
+
+            Path exported=OUT.resolve("manual-export.wsbq");
+            backup.exportDatabase(exported,false);
+            require(Files.isRegularFile(exported),"Manual export did not produce WSBQ");
+            backup.validateDatabase(exported);
         });
         test("new archive saves current data and starts with an empty database", () -> {
             db=DatabaseManager.getInstance().getConnection();
@@ -742,7 +823,7 @@ public class RegressionTest {
 
             Path folder=OUT.resolve("named-archives");
             Files.createDirectories(folder);
-            Path archive=folder.resolve("My Warehouse 2026.wsbu");
+            Path archive=folder.resolve("My Warehouse 2026.wsbq");
             Files.deleteIfExists(archive);
 
             BackupManager backup=BackupManager.getInstance();

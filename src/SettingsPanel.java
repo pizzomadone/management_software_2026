@@ -82,13 +82,8 @@ public class SettingsPanel extends JPanel {
     private void initComponents() {
         JTabbedPane tabbedPane = new JTabbedPane();
 
-        // Appearance Tab
-        JPanel appearancePanel = createAppearancePanel();
-        tabbedPane.addTab("Appearance", appearancePanel);
-
-        // General Tab
-        JPanel generalPanel = createGeneralPanel();
-        tabbedPane.addTab("General", generalPanel);
+        // General settings: appearance and application options on one screen
+        tabbedPane.addTab("Settings", createCombinedSettingsPanel());
 
         // Company Data Tab
         JPanel companyPanel = createCompanyDataPanel();
@@ -104,6 +99,40 @@ public class SettingsPanel extends JPanel {
 
         add(tabbedPane, BorderLayout.CENTER);
         add(buttonPanel, BorderLayout.SOUTH);
+    }
+
+    private JPanel createCombinedSettingsPanel() {
+        JPanel groupsPanel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.weightx = 1.0;
+        gbc.anchor = GridBagConstraints.NORTHWEST;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.insets = new Insets(8, 8, 8, 8);
+
+        JPanel appearancePanel = createAppearancePanel();
+        appearancePanel.setBorder(BorderFactory.createTitledBorder("Appearance"));
+        gbc.gridy = 0;
+        groupsPanel.add(appearancePanel, gbc);
+
+        JPanel generalPanel = createGeneralPanel();
+        generalPanel.setBorder(BorderFactory.createTitledBorder("General"));
+        gbc.gridy = 1;
+        groupsPanel.add(generalPanel, gbc);
+
+        gbc.gridy = 2;
+        gbc.weighty = 1.0;
+        gbc.fill = GridBagConstraints.BOTH;
+        groupsPanel.add(Box.createVerticalGlue(), gbc);
+
+        JScrollPane scrollPane = new JScrollPane(groupsPanel);
+        scrollPane.setBorder(BorderFactory.createEmptyBorder());
+        scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+
+        JPanel container = new JPanel(new BorderLayout());
+        container.add(scrollPane, BorderLayout.CENTER);
+        return container;
     }
 
     private JPanel createAppearancePanel() {
@@ -169,13 +198,17 @@ public class SettingsPanel extends JPanel {
         pdfDirPanel.add(browsePdfButton, BorderLayout.EAST);
         panel.add(pdfDirPanel, gbc);
 
+        // Keep short options at their natural width; only the PDF path expands.
+        gbc.fill = GridBagConstraints.NONE;
+
         // Currency
         gbc.gridx = 0; gbc.gridy = 1; gbc.weightx = 0.0;
         panel.add(new JLabel("Currency:"), gbc);
 
-        gbc.gridx = 1; gbc.weightx = 1.0;
+        gbc.gridx = 1;
         String[] currencies = getSupportedCurrencyChoices();
         currencyCombo = new JComboBox<>(currencies);
+        currencyCombo.setPrototypeDisplayValue("ZAR - South African Rand (R)");
         for(String choice:currencies) {
             if(choice.startsWith(getCurrencyCode()+" - "))currencyCombo.setSelectedItem(choice);
         }
@@ -186,8 +219,7 @@ public class SettingsPanel extends JPanel {
         panel.add(new JLabel("Default VAT Rate (%) *:"), gbc);
 
         gbc.gridx = 1;
-        defaultVatField = new JTextField(getSetting("default_vat", "22.0"));
-        defaultVatField.setPreferredSize(new Dimension(200, 25));
+        defaultVatField = new JTextField(getSetting("default_vat", "22.0"), 8);
         panel.add(defaultVatField, gbc);
 
         // Language
@@ -196,6 +228,7 @@ public class SettingsPanel extends JPanel {
 
         gbc.gridx = 1;
         languageCombo = new JComboBox<>(I18n.languageNames());
+        languageCombo.setPrototypeDisplayValue("Português (Brasil)");
         languageCombo.setSelectedItem(I18n.nameForCode(getSetting("language", "it")));
         panel.add(languageCombo, gbc);
 

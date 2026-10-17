@@ -139,8 +139,8 @@ public class BackupManager {
         boolean databaseReplaced = false;
 
         try {
-            if (target == null || target.getParent() == null)
-                throw new IOException("Invalid archive destination");
+            if (target == null || target.getParent() == null || !isNewArchive(target))
+                throw new IOException("The new archive filename must end in .wsbq");
             rejectActive(target);
             Files.createDirectories(target.getParent());
 
@@ -150,7 +150,7 @@ public class BackupManager {
             ProductImageStore.getInstance().copyAllFilesTo(safetyImages);
 
             temporaryArchive = Files.createTempFile(target.getParent(), "warestat-archive-", ".tmp");
-            createArchive(safetyDatabase, temporaryArchive);
+            createArchive(safetyDatabase, temporaryArchive, true);
             moveReplace(temporaryArchive, target);
             temporaryArchive = null;
 
@@ -215,19 +215,13 @@ public class BackupManager {
             Files.createDirectories(folder);
             staging = snapshot(AppConstants.getDatabasePath(), folder, null, !includePhotos);
 
-            Path target;
-            if (includePhotos) {
-                target = folder.resolve("WareStat-Backup-" + System.currentTimeMillis() + "-" +
-                    UUID.randomUUID() + ".wsbu");
-                temporaryArchive = Files.createTempFile(folder, "warestat-backup-", ".tmp");
-                createArchive(staging, temporaryArchive);
-                moveReplace(temporaryArchive, target);
-                temporaryArchive = null;
-            } else {
-                target = folder.resolve("data_" + System.currentTimeMillis() + "_" + UUID.randomUUID() + ".db");
-                moveReplace(staging, target);
-                staging = null;
-            }
+            Path target = folder.resolve("WareStat-Backup-" + System.currentTimeMillis() + "-" +
+                UUID.randomUUID() + ".wsbq");
+            temporaryArchive = Files.createTempFile(folder, "warestat-backup-", ".wsbq");
+            createArchive(staging, temporaryArchive, includePhotos);
+            validateBackup(temporaryArchive);
+            moveReplace(temporaryArchive, target);
+            temporaryArchive = null;
 
             registerBackup(target);
             config.setProperty("backup.last_success", Long.toString(System.currentTimeMillis()));
@@ -242,7 +236,7 @@ public class BackupManager {
         }
     }
 
-    private void createArchive(Path databaseSnapshot, Path destination) throws IOException, SQLException {
+    private void createArchive(Path databaseSnapshot, Path destination, boolean includePhotos) throws IOException, SQLException {
         List<String> referenced = readImageReferences(databaseSnapshot);
         for (String filename : referenced) {
             validateJpegFilename(filename);
@@ -263,17 +257,25 @@ public class BackupManager {
             "\"created_at\":" + System.currentTimeMillis() + "," +
             "\"database\":\"" + jsonEscape(AppConstants.DATABASE_FILE_NAME) + "\"," +
             "\"image_format\":\"jpeg\"," +
-            "\"images_included\":true," +
+            "\"images_included\":" + includePhotos + "," +
             "\"images\":[" + imageArray + "]" +
             "}";
 
-        try (OutputStream raw = Files.newOutputStream(destination, StandardOpenOption.TRUNCATE_EXISTING);
-             ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(raw))) {
-            putText(zip, "manifest.json", manifest);
-            putFile(zip, "database/" + AppConstants.DATABASE_FILE_NAME, databaseSnapshot);
-            for (String filename : referenced) {
-                putFile(zip, "images/" + filename, ProductImageStore.getInstance().imagePath(filename));
+        Path zipStaging = null;
+        try {
+            zipStaging = Files.createTempFile(destination.toAbsolutePath().getParent(), "warestat-zip-", ".tmp");
+            try (OutputStream raw = Files.newOutputStream(zipStaging, StandardOpenOption.TRUNCATE_EXISTING);
+                 ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(raw))) {
+                putText(zip, "manifest.json", manifest);
+                putFile(zip, "database/" + AppConstants.DATABASE_FILE_NAME, databaseSnapshot);
+                if (includePhotos) {
+                    for (String filename : referenced)
+                        putFile(zip, "images/" + filename, ProductImageStore.getInstance().imagePath(filename));
+                }
             }
+            WareStatArchiveFormat.wrap(zipStaging, destination);
+        } finally {
+            removeTemporary(zipStaging);
         }
     }
 
@@ -289,7 +291,7 @@ public class BackupManager {
             if (isArchive(file)) {
                 work = Files.createTempDirectory(AppConstants.getAppDataDirectory(), "backup-import-");
                 validateArchive(file, work);
-                Path target = folder.resolve("imported_" + UUID.randomUUID() + ".wsbu");
+                Path target = folder.resolve("imported_" + UUID.randomUUID() + ".wsbq");
                 Files.copy(file, target, StandardCopyOption.REPLACE_EXISTING);
                 return registerBackup(target);
             }
@@ -308,17 +310,30 @@ public class BackupManager {
     }
 
     public synchronized Path exportDatabase(Path destination) {
+        return exportDatabase(destination, true);
+    }
+
+    public synchronized Path exportDatabase(Path destination, boolean includePhotos) {
         Path staging = null;
+        Path temporaryArchive = null;
         try {
             Path target = destination.toAbsolutePath().normalize();
             rejectActive(target);
-            staging = snapshot(AppConstants.getDatabasePath(), target.getParent(), null, true);
-            moveReplace(staging, target);
-            staging = null;
+            if (!isNewArchive(target))
+                throw new IOException("The export filename must end in .wsbq");
+            staging = snapshot(AppConstants.getDatabasePath(), target.getParent(), null, !includePhotos);
+            temporaryArchive = Files.createTempFile(target.getParent(), "warestat-export-", ".wsbq");
+            createArchive(staging, temporaryArchive, includePhotos);
+            validateBackup(temporaryArchive);
+            moveReplace(temporaryArchive, target);
+            temporaryArchive = null;
             return target;
         } catch (IOException | SQLException e) {
             throw new IllegalStateException("Unable to export database: " + e.getMessage(), e);
-        } finally { removeTemporary(staging); }
+        } finally {
+            removeTemporary(staging);
+            removeTemporary(temporaryArchive);
+        }
     }
 
     public synchronized void importDatabase(Path sourceFile) { importDatabase(sourceFile, null); }
@@ -444,7 +459,12 @@ public class BackupManager {
             throw new IOException("Backup file not found or not readable");
         Path extracted = work.resolve("extracted");
         Files.createDirectories(extracted);
-        extractSafely(archive, extracted);
+        Path payload = archive;
+        if (isNewArchive(archive)) {
+            payload = work.resolve("verified-payload.zip");
+            WareStatArchiveFormat.unwrap(archive, payload);
+        }
+        extractSafely(payload, extracted);
 
         Path manifestPath = extracted.resolve("manifest.json");
         if (!Files.isRegularFile(manifestPath)) throw new IOException("Backup manifest is missing");
@@ -589,8 +609,12 @@ public class BackupManager {
         zip.closeEntry();
     }
 
+    private static boolean isNewArchive(Path file) {
+        return file != null && file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".wsbq");
+    }
+
     public static boolean isArchive(Path file) {
-        return file != null && file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".wsbu");
+        return isNewArchive(file);
     }
 
     private void validateBackup(Path file) {

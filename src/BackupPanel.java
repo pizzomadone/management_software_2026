@@ -174,7 +174,7 @@ public class BackupPanel extends JPanel {
             FileDialog dialog = new FileDialog(ownerFrame(), I18n.tr("Import Backup"), FileDialog.LOAD);
             dialog.setFilenameFilter((directory, name) -> {
                 String lower = name.toLowerCase(java.util.Locale.ROOT);
-                return lower.endsWith(".db") || lower.endsWith(".wsbu");
+                return lower.endsWith(".wsbq") || lower.endsWith(".db");
             });
             dialog.setVisible(true);
             try {
@@ -185,7 +185,7 @@ public class BackupPanel extends JPanel {
         chooser.setDialogTitle(I18n.tr("Import Backup"));
         chooser.setAcceptAllFileFilterUsed(false);
         chooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter(
-            I18n.tr("WareStat backups (*.wsbu, *.db)"), "wsbu", "db"));
+            I18n.tr("WareStat backups (*.wsbq, *.db)"), "wsbq", "db"));
         return chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION ? chooser.getSelectedFile() : null;
     }
 
@@ -223,17 +223,17 @@ public class BackupPanel extends JPanel {
     }
 
     private void performBackup() {
+        // Closing the dialog cancels; only the two backup choices are buttons.
         Object[] options = {
-            I18n.tr("Complete backup"),
-            I18n.tr("Database only"),
-            I18n.tr("Cancel")
+            I18n.tr("With photos"),
+            I18n.tr("Without photos (smaller file)")
         };
         int choice = Dialogs.showOptionDialog(
             this,
             "Choose what to include in this backup.",
             "Backup type",
             JOptionPane.DEFAULT_OPTION,
-            JOptionPane.QUESTION_MESSAGE,
+            JOptionPane.PLAIN_MESSAGE,
             null,
             options,
             options[0]
