@@ -25,11 +25,15 @@ public final class WareStatFileHeader {
         return Arrays.equals(readHeader(path), WARESTAT);
     }
 
+    public static boolean isSQLite(Path path) throws IOException {
+        return Arrays.equals(readHeader(path), SQLITE);
+    }
+
     public static void restoreForSQLite(Path path) throws IOException {
         if (!Files.exists(path)) return;
         byte[] header = readHeader(path);
         if (Arrays.equals(header, SQLITE)) return;
-        if (!Arrays.equals(header, WARESTAT))
+        if (!Arrays.equals(header, WARESTAT) && !isInterruptedHeader(header))
             throw new IOException("Unknown WareStat/SQLite database signature: " + path);
         replaceHeader(path, SQLITE);
     }
@@ -59,6 +63,19 @@ public final class WareStatFileHeader {
             Files.deleteIfExists(staging);
             throw e;
         }
+    }
+
+    // A crash during a 16-byte signature write can leave a partial mixture.
+    // Accept only a byte-for-byte mixture of our two fixed signatures.
+    private static boolean isInterruptedHeader(byte[] candidate) {
+        boolean warestatByte = false;
+        for (int i = 0; i < SQLITE.length; i++) {
+            if (candidate[i] != SQLITE[i] && candidate[i] != WARESTAT[i])
+                return false;
+            if (candidate[i] == WARESTAT[i] && candidate[i] != SQLITE[i])
+                warestatByte = true;
+        }
+        return warestatByte;
     }
 
     private static byte[] readHeader(Path path) throws IOException {
