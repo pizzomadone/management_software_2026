@@ -289,6 +289,7 @@ public class WarehousePanel extends JPanel {
 
     private void loadStockData() {
         stockModel.setRowCount(0);
+        java.util.List<java.util.Vector<Object>> fetchedRows=new java.util.ArrayList<>();
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
@@ -335,9 +336,10 @@ public class WarehousePanel extends JPanel {
                     row.add(status);
 
                     row.add(rs.getString("supplier_name"));
-                    stockModel.addRow(row);
+                    fetchedRows.add(row);
                 }
             }
+            TableStyleUtil.appendRows(stockModel,fetchedRows);
         } catch (SQLException e) {
             e.printStackTrace();
             Dialogs.showMessageDialog(this,
