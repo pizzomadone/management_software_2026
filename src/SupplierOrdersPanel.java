@@ -222,7 +222,8 @@ public class SupplierOrdersPanel extends JPanel {
     }
 
     public void loadOrders() {
-        model.setRowCount(0); String term = search.getText().trim();
+        model.setRowCount(0);
+        java.util.List<java.util.Vector<Object>> fetchedRows=new java.util.ArrayList<>(); String term = search.getText().trim();
         // Compute supplier return state for every listed order in one SQL
         // query rather than issuing two SUM queries for EACH completed order.
         String sql = """
@@ -263,9 +264,10 @@ public class SupplierOrdersPanel extends JPanel {
                         if (returned==1) status += "|Partial Return";
                         if (returned==2) status += "|Full Return";
                     }
-                    row.add(status); row.add(SettingsPanel.formatCurrency(rs.getDouble("total"))); row.add(rs.getString("notes")); model.addRow(row);
+                    row.add(status); row.add(SettingsPanel.formatCurrency(rs.getDouble("total"))); row.add(rs.getString("notes")); fetchedRows.add(row);
                 }
             }
+            TableStyleUtil.appendRows(model,fetchedRows);
         } catch (SQLException ex) { Dialogs.showMessageDialog(this, "Error loading supplier orders: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE); }
     }
 
