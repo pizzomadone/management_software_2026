@@ -726,8 +726,10 @@ public class RegressionTest {
             backup.setBackupDirectory(folder.toString());
             Path complete=backup.performBackup(true);
             require(complete.getFileName().toString().endsWith(".wsbq"),"Backup extension differs");
-            require(Files.readString(complete,java.nio.charset.StandardCharsets.ISO_8859_1).startsWith("SQLite format 3"),
-                "New .wsbq is not a standard SQLite database");
+            try(var stream=Files.newInputStream(complete)){
+                String header=new String(stream.readNBytes(16),java.nio.charset.StandardCharsets.ISO_8859_1);
+                require(header.startsWith("SQLite format 3"),"New .wsbq is not a standard SQLite database");
+            }
             try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+complete);
                 Statement s=c.createStatement();
                 ResultSet r=s.executeQuery("SELECT COUNT(*) FROM product_images WHERE length(image_data)>0")){
