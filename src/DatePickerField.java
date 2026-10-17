@@ -159,7 +159,11 @@ public class DatePickerField extends JTextField {
                 year.commitEdit();
                 displayedMonth = YearMonth.of(((Number)year.getValue()).intValue(),
                     months.getSelectedIndex() + 1);
-                rebuildPopup(selected);
+                // OK applies the new month/year to the field immediately,
+                // retaining the selected day (or clipping 31 to month end).
+                LocalDate base=selected==null ? LocalDate.now() : selected;
+                selectDate(displayedMonth.atDay(
+                    Math.min(base.getDayOfMonth(),displayedMonth.lengthOfMonth())));
             } catch (java.text.ParseException invalid) {
                 Toolkit.getDefaultToolkit().beep();
             }
