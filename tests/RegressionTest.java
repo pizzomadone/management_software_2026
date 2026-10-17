@@ -994,6 +994,12 @@ public class RegressionTest {
                 "Startup migration lost original supplier");
             require("1".equals(value("SELECT COUNT(*) FROM invoices WHERE number='OLD12-INVOICE'")),
                 "Startup migration lost original invoice");
+            require("1".equals(value("SELECT COUNT(*) FROM invoices WHERE number='OLD12-INVOICE' AND customer_snapshot IS NOT NULL AND company_snapshot IS NOT NULL AND snapshot_version=0")),
+                "WareStat 1.2 migration lost invoice historical snapshots");
+            java.util.Properties legacyCustomer=InvoiceSnapshots.decode(value("SELECT customer_snapshot FROM invoices WHERE number='OLD12-INVOICE'"));
+            require("Historic".equals(legacyCustomer.getProperty("first_name"))
+                    && "Customer".equals(legacyCustomer.getProperty("last_name")),
+                "WareStat 1.2 migration stored incorrect invoice customer identity");
             require(Files.exists(legacy)&&WareStatFileHeader.isSQLite(legacy)
                     && Arrays.equals(untouched12,Files.readAllBytes(legacy)),
                 "Migrating or opening WareStat 1.3 unexpectedly modified the 1.2 original");
