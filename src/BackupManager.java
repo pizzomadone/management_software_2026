@@ -72,14 +72,18 @@ public class BackupManager {
         }
     }
     private static void clearSidecars(Path file) throws IOException {
-        Files.deleteIfExists(Path.of(file+"-wal"));
+        Path wal=Path.of(file+"-wal"),journal=Path.of(file+"-journal");
+        // Never discard committed WAL frames or a rollback journal.
+        if ((Files.exists(wal)&&Files.size(wal)>0)||Files.exists(journal))
+            throw new IOException("SQLite has uncheckpointed changes; refusing to replace "+file);
+        Files.deleteIfExists(wal);
         Files.deleteIfExists(Path.of(file+"-shm"));
-        Files.deleteIfExists(Path.of(file+"-journal"));
     }
 
     /**
-     * Creates a consistent SQLite snapshot even if a WAL holds committed rows.
-     * Never file-copy the live database while it is open.
+     * Build a consistent SQLite snapshot. EXCLUSIVE prevents a second client
+     * opening the live file: VACUUM INTO must therefore use its owner connection.
+     * For a sealed external .wsbq, unseal only a private temporary copy.
      */
     private Path snapshot(Path source,Path directory,String legacyCurrency,boolean excludePhotos)
             throws IOException,SQLException {
@@ -88,32 +92,59 @@ public class BackupManager {
         Files.createDirectories(directory);
         Path staging=Files.createTempFile(directory,"warestat-snapshot-",".wsbq");
         Files.delete(staging);
+        Path readableCopy=null;
         try{
-            org.sqlite.SQLiteConfig settings=new org.sqlite.SQLiteConfig();
-            settings.setReadOnly(true);
-            settings.setBusyTimeout(10000);
-            try(Connection c=DriverManager.getConnection("jdbc:sqlite:"+source.toAbsolutePath(),settings.toProperties());
-                PreparedStatement p=c.prepareStatement("VACUUM INTO ?")){
-                if(DatabaseCurrency.read(c)==null&&legacyCurrency==null)
-                    throw new SQLException("Original currency is required to import a legacy database");
-                p.setString(1,staging.toAbsolutePath().toString());
-                p.execute();
+            Connection owner=null;
+            if(sameFile(source,AppConstants.getDatabasePath()))
+                owner=DatabaseManager.getInstance().liveConnectionIfOpen();
+            if(owner!=null){
+                // Keep the existing EXCLUSIVE owner alive; never close it.
+                synchronized(owner){ vacuumInto(owner,staging,legacyCurrency); }
+            }else{
+                Path readable=source;
+                if(WareStatFileHeader.isSealed(source)){
+                    readableCopy=WareStatFileHeader.copyReadable(source,directory);
+                    readable=readableCopy;
+                }else{
+                    // Reject unidentified data instead of letting JDBC create or
+                    // treat an arbitrary file as a SQLite database.
+                    WareStatFileHeader.restoreForSQLite(readable);
+                }
+                org.sqlite.SQLiteConfig settings=new org.sqlite.SQLiteConfig();
+                settings.setReadOnly(true);
+                settings.setBusyTimeout(10000);
+                try(Connection c=DriverManager.getConnection("jdbc:sqlite:"+readable.toAbsolutePath(),
+                        settings.toProperties())){
+                    vacuumInto(c,staging,legacyCurrency);
+                }
             }
             try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+staging)){
                 if(legacyCurrency!=null)DatabaseCurrency.initialize(c,legacyCurrency);
                 DatabaseManager.prepareDatabase(c);
                 if(excludePhotos){
-                    try(Statement s=c.createStatement()){
-                        s.executeUpdate("DELETE FROM product_images");
-                        s.execute("VACUUM");
+                    try(Statement st=c.createStatement()){
+                        st.executeUpdate("DELETE FROM product_images");
+                        st.execute("VACUUM");
                     }
                 }
+                ProductImageStore.validateEmbeddedImages(c);
                 DatabaseIntegrity.validate(c,false);
             }
             return staging;
-        }catch(SQLException|RuntimeException e){
+        }catch(IOException|SQLException|RuntimeException e){
             removeTemporary(staging);
             throw e;
+        }finally{
+            removeTemporary(readableCopy);
+        }
+    }
+    private static void vacuumInto(Connection c,Path staging,String legacyCurrency)
+            throws SQLException {
+        if(DatabaseCurrency.read(c)==null&&legacyCurrency==null)
+            throw new SQLException("Original currency is required to import a legacy database");
+        try(PreparedStatement p=c.prepareStatement("VACUUM INTO ?")){
+            p.setString(1,staging.toAbsolutePath().toString());
+            p.execute();
         }
     }
     private Path snapshot(Path source,Path directory) throws IOException,SQLException {
@@ -191,6 +222,7 @@ public class BackupManager {
             staged=snapshot(AppConstants.getDatabasePath(),folder,null,!includePhotos);
             try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+staged)){ProductImageStore.validateEmbeddedImages(c);}
             Path target=folder.resolve("WareStat-Backup-"+System.currentTimeMillis()+"-"+UUID.randomUUID()+".wsbq");
+            WareStatFileHeader.seal(staged);
             moveReplace(staged,target);
             staged=null;
             registerBackup(target);
@@ -213,6 +245,7 @@ public class BackupManager {
             Files.createDirectories(target.getParent());
             staged=snapshot(AppConstants.getDatabasePath(),target.getParent(),null,!includePhotos);
             validateBackup(staged);
+            WareStatFileHeader.seal(staged);
             moveReplace(staged,target);
             staged=null;
             return target;
@@ -236,6 +269,7 @@ public class BackupManager {
             Files.createDirectories(target.getParent());
             archiveTmp=snapshot(current,target.getParent());
             validateBackup(archiveTmp);
+            WareStatFileHeader.seal(archiveTmp);
             moveReplace(archiveTmp,target);
             archiveTmp=null;
             safety=snapshot(current,current.getParent());
@@ -278,6 +312,7 @@ public class BackupManager {
             Files.createDirectories(folder);
             staged=prepareInput(file,folder,legacyCurrency);
             Path target=folder.resolve("imported_"+UUID.randomUUID()+".wsbq");
+            WareStatFileHeader.seal(staged);
             moveReplace(staged,target);
             staged=null;
             return registerBackup(target);
@@ -296,6 +331,7 @@ public class BackupManager {
             if(Files.exists(current)){
                 safety=snapshot(current,current.getParent());
                 Path retained=current.resolveSibling("data_before_restore_"+UUID.randomUUID()+".wsbq");
+                WareStatFileHeader.seal(safety);
                 moveReplace(safety,retained);
                 safety=retained;
             }
