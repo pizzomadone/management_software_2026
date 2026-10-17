@@ -94,6 +94,7 @@ public class ProductsPanel extends JPanel {
     private int nextProductOffset;
     private boolean moreProducts = true;
     private boolean loadingProductChunk;
+    private boolean scrollLoadQueued;
     // Keep recently drawn thumbnails without retaining every image while
     // scrolling through a very large inventory.
     private final Map<String, ImageIcon> pageThumbnails =
@@ -303,11 +304,17 @@ public class ProductsPanel extends JPanel {
         productsScrollPane.setHorizontalScrollBarPolicy(
             JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         productsScrollPane.getVerticalScrollBar().addAdjustmentListener(event -> {
-            JScrollBar bar = productsScrollPane.getVerticalScrollBar();
-            if (!event.getValueIsAdjusting() && moreProducts && !loadingProductChunk
-                    && bar.getMaximum() > bar.getVisibleAmount()
-                    && bar.getValue() + bar.getVisibleAmount() >= bar.getMaximum() - 120) {
-                SwingUtilities.invokeLater(this::loadMoreProducts);
+            JScrollBar bar=productsScrollPane.getVerticalScrollBar();
+            // Work even while the thumb is being dragged. Preload BEFORE
+            // the bottom, so the user need not release and scroll upwards.
+            if(moreProducts && !loadingProductChunk && !scrollLoadQueued &&
+                    bar.getMaximum()>bar.getVisibleAmount() &&
+                    bar.getValue()+bar.getVisibleAmount()>=bar.getMaximum()-450) {
+                scrollLoadQueued=true;
+                SwingUtilities.invokeLater(() -> {
+                    scrollLoadQueued=false;
+                    if(moreProducts && !loadingProductChunk)loadMoreProducts();
+                });
             }
         });
         productsScrollPane.getViewport().addComponentListener(new ComponentAdapter() {
