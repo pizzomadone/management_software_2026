@@ -161,7 +161,7 @@ public class InvoicesPanel extends JPanel {
                         row.add("");
                     }
 
-                    row.add(snapshotCustomerName(conn,rs.getInt("id")));
+                    row.add(snapshotCustomerName(conn,rs.getInt("id"),rs.getString("customer_name")));
                     String currency=rs.getString("currency_code");
                     row.add(SettingsPanel.formatCurrency(taxableAmount,currency));
                     row.add(SettingsPanel.formatCurrency(vat,currency));
@@ -225,7 +225,7 @@ public class InvoicesPanel extends JPanel {
                 try (ResultSet rs = pstmt.executeQuery()) {
                     while (rs.next()) {
                         String number = rs.getString("number");
-                        String customerName = snapshotCustomerName(conn,rs.getInt("id"));
+                        String customerName = snapshotCustomerName(conn,rs.getInt("id"),rs.getString("customer_name"));
                         String term = searchTerm.toLowerCase(java.util.Locale.ROOT);
                         if(!number.toLowerCase(java.util.Locale.ROOT).contains(term) && !customerName.toLowerCase(java.util.Locale.ROOT).contains(term))continue;
 
@@ -242,7 +242,7 @@ public class InvoicesPanel extends JPanel {
                             row.add("");
                         }
 
-                        row.add(snapshotCustomerName(conn,rs.getInt("id")));
+                        row.add(snapshotCustomerName(conn,rs.getInt("id"),rs.getString("customer_name")));
                         String currency=rs.getString("currency_code");
                         row.add(SettingsPanel.formatCurrency(totals[0],currency));
                         row.add(SettingsPanel.formatCurrency(totals[1],currency));
@@ -394,7 +394,7 @@ public class InvoicesPanel extends JPanel {
                         rs.getString("number"),
                         date,
                         rs.getInt("customer_id"),
-                        snapshotCustomerName(conn,rs.getInt("id")),
+                        snapshotCustomerName(conn,rs.getInt("id"),rs.getString("customer_name")),
                         totals[0], // taxableAmount
                         totals[1], // vat
                         totals[2], // total
@@ -560,12 +560,17 @@ public class InvoicesPanel extends JPanel {
         }
     }
 
-    private String snapshotCustomerName(Connection c,int invoiceId) throws SQLException {
+    private String snapshotCustomerName(Connection c,int invoiceId,String currentName)
+            throws SQLException {
         try(PreparedStatement p=c.prepareStatement("SELECT customer_snapshot FROM invoices WHERE id=?")) {
             p.setInt(1,invoiceId);try(ResultSet r=p.executeQuery()) {
                 if(!r.next())throw new SQLException("Invoice no longer exists");
-                java.util.Properties v=InvoiceSnapshots.decode(r.getString(1));
-                return v.getProperty("first_name","")+" "+v.getProperty("last_name","");
+                String original=r.getString(1);
+                // Legacy records can lack a snapshot. Use the linked customer
+                // name for display only, without rewriting historical invoices.
+                if(original==null)return currentName==null?"":currentName;
+                java.util.Properties v=InvoiceSnapshots.decode(original);
+                return (v.getProperty("first_name","")+" "+v.getProperty("last_name","")).trim();
             }
         }
     }
