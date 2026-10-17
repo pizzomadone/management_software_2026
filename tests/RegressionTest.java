@@ -726,21 +726,28 @@ public class RegressionTest {
             backup.setBackupDirectory(folder.toString());
             Path complete=backup.performBackup(true);
             require(complete.getFileName().toString().endsWith(".wsbq"),"Backup extension differs");
-            try(var stream=Files.newInputStream(complete)){
-                String header=new String(stream.readNBytes(16),java.nio.charset.StandardCharsets.ISO_8859_1);
-                require(header.startsWith("SQLite format 3"),"New .wsbq is not a standard SQLite database");
-            }
-            try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+complete);
-                Statement s=c.createStatement();
-                ResultSet r=s.executeQuery("SELECT COUNT(*) FROM product_images WHERE length(image_data)>0")){
+            require(WareStatFileHeader.isSealed(complete),"Backup does not have the WareStat signature");
+            boolean genericSqliteRejected=false;
+            try(Connection other=DatabaseManager.openConnection("jdbc:sqlite:"+complete);
+                Statement st=other.createStatement()){
+                st.executeQuery("SELECT COUNT(*) FROM product_images");
+            }catch(SQLException expected){genericSqliteRejected=true;}
+            require(genericSqliteRejected,"Ordinary SQLite opened the sealed backup");
+            Path readableComplete=WareStatFileHeader.copyReadable(complete,OUT);
+            try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+readableComplete);
+                Statement st=c.createStatement();
+                ResultSet r=st.executeQuery("SELECT COUNT(*) FROM product_images WHERE length(image_data)>0")){
                 require(r.next()&&r.getInt(1)==3,"Backup lost embedded photographs");
-            }
+            }finally{Files.deleteIfExists(readableComplete);}
+            require(WareStatFileHeader.isSealed(complete),"Reading backup altered its saved signature");
             Path databaseOnly=backup.performBackup(false);
-            try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+databaseOnly);
+            require(WareStatFileHeader.isSealed(databaseOnly),"Photo-free backup not sealed");
+            Path readableWithoutPhotos=WareStatFileHeader.copyReadable(databaseOnly,OUT);
+            try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+readableWithoutPhotos);
                 Statement s=c.createStatement();
                 ResultSet r=s.executeQuery("SELECT COUNT(*) FROM product_images")){
                 require(r.next()&&r.getInt(1)==0,"Photo-free backup retained images");
-            }
+            }finally{Files.deleteIfExists(readableWithoutPhotos);}
             require(Files.size(databaseOnly)<Files.size(complete),
                 "Photo-free backup is not smaller than complete backup");
 
@@ -826,6 +833,7 @@ public class RegressionTest {
             Path created=backup.archiveAndStartNew(archive);
             db=DatabaseManager.getInstance().getConnection();
             require(Files.isRegularFile(created),"Named archive was not created");
+            require(WareStatFileHeader.isSealed(created),"New archive not sealed");
             require("0".equals(value("SELECT COUNT(*) FROM customers")),
                 "New archive workflow did not clear customers");
             require("0".equals(value("SELECT COUNT(*) FROM products")),
@@ -874,6 +882,37 @@ public class RegressionTest {
                 "Local upgrade did not copy every photo into SQLite");
             require(Arrays.equals(jpeg,ProductImageStore.getInstance().imageBytes(filename)),
                 "Legacy conversion altered JPEG bytes");
+        });
+        test("exclusive live SQLite and crash-tolerant reversible signature", () -> {
+            Path live=AppConstants.getDatabasePath();
+            db=DatabaseManager.getInstance().getConnection();
+            require(!WareStatFileHeader.isSealed(live),"Live SQLite database unexpectedly sealed");
+            String mode=value("PRAGMA locking_mode");
+            require("exclusive".equalsIgnoreCase(mode),"Live SQLite is not exclusively locked");
+            boolean blocked=false;
+            org.sqlite.SQLiteConfig cfg=new org.sqlite.SQLiteConfig();
+            cfg.setBusyTimeout(200);
+            try(Connection other=DriverManager.getConnection("jdbc:sqlite:"+live,cfg.toProperties());
+                Statement s=other.createStatement()){
+                s.executeQuery("SELECT COUNT(*) FROM products");
+            }catch(SQLException expected){blocked=true;}
+            require(blocked,"Second SQLite client read the exclusively locked database");
+            DatabaseManager.getInstance().shutdownAndSeal();
+            db=null;
+            require(WareStatFileHeader.isSealed(live),"Normal shutdown did not seal database");
+            DatabaseManager.getInstance().initDatabase();
+            db=DatabaseManager.getInstance().getConnection();
+            require(!WareStatFileHeader.isSealed(live),"Start-up did not restore SQLite header");
+            require("3".equals(value("SELECT COUNT(*) FROM product_images WHERE image_data IS NOT NULL")),
+                "Reopening WareStat lost photographs");
+
+            // Simulate an unclean exit: the header remains the normal SQLite one.
+            DatabaseManager.getInstance().closeConnection();
+            db=null;
+            require(!WareStatFileHeader.isSealed(live),"Unclean close unexpectedly sealed database");
+            DatabaseManager.getInstance().initDatabase();
+            db=DatabaseManager.getInstance().getConnection();
+            sql("UPDATE products SET name=name WHERE id=1");
         });
 
     }
