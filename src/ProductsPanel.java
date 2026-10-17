@@ -67,6 +67,27 @@ public class ProductsPanel extends JPanel {
     private static final int PAGE_SIZE = 100;
     private int currentPage;
     private int productCount;
+    private int sortColumn = 2; // Product name
+    private boolean sortAscending = true;
+    private boolean adjustingSort;
+    // Each expression uses the products alias 'p' in the page-select SQL.
+    // All entries are trusted literals, never interpolated user values.
+    private static final String[] PAGE_SORT_COLUMNS = {
+        "p.id", "p.code COLLATE NOCASE", "p.name COLLATE NOCASE",
+        "p.description COLLATE NOCASE", "p.sale_price_inc_vat",
+        "p.quantity", "p.reserved_quantity", "(p.quantity-p.reserved_quantity)",
+        "(SELECT COALESCE(SUM(sod.quantity),0) FROM supplier_order_details sod " +
+            "JOIN supplier_orders so ON so.id=sod.order_id WHERE sod.product_id=p.id " +
+            "AND so.status IN ('Draft','Confirmed','In Transit'))",
+        "p.category COLLATE NOCASE", "p.unit_of_measure COLLATE NOCASE",
+        "COALESCE((SELECT minimum_quantity FROM minimum_stock WHERE product_id=p.id),0)",
+        "p.active",
+        "(SELECT f.company_name FROM product_suppliers ps JOIN suppliers f ON f.id=ps.supplier_id " +
+            "WHERE ps.product_id=p.id AND ps.is_preferred=1 LIMIT 1) COLLATE NOCASE",
+        "p.warehouse_position COLLATE NOCASE", "p.vat_rate",
+        "(SELECT filename FROM product_images pi WHERE pi.product_id=p.id " +
+            "ORDER BY pi.is_primary DESC,pi.sort_order,pi.id LIMIT 1) COLLATE NOCASE"
+    };
     private String activeSearch = "";
     private JButton previousPageButton;
     private JButton nextPageButton;
@@ -175,6 +196,23 @@ public class ProductsPanel extends JPanel {
 
         // Enable column sorting
         TableSorterUtil.enableSorting(productsTable);
+        // The JTable sorter controls the visible page, while SQL selects the
+        // correct page from the entire catalog using that same sort column.
+        productsTable.getRowSorter().addRowSorterListener(e -> {
+            if (adjustingSort || e.getType() != javax.swing.event.RowSorterEvent.Type.SORT_ORDER_CHANGED)
+                return;
+            java.util.List<? extends RowSorter.SortKey> keys =
+                productsTable.getRowSorter().getSortKeys();
+            if (keys.isEmpty()) {
+                sortColumn = 2;
+                sortAscending = true;
+            } else {
+                sortColumn = keys.get(0).getColumn();
+                sortAscending = keys.get(0).getSortOrder() != SortOrder.DESCENDING;
+            }
+            currentPage = 0;
+            loadProductPage();
+        });
 
         // Add Delete key shortcut
         TableInteractionUtil.addDeleteKeyAction(productsTable, this::deleteSelectedProduct);
@@ -779,6 +817,8 @@ public class ProductsPanel extends JPanel {
             }
             int pages = Math.max(1, (total + PAGE_SIZE - 1) / PAGE_SIZE);
             currentPage = Math.max(0, Math.min(currentPage, pages - 1));
+            String orderBy = PAGE_SORT_COLUMNS[sortColumn] +
+                (sortAscending ? " ASC" : " DESC") + ", p.id ASC";
             String query = """
                 SELECT p.*, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity,
                        f.company_name AS supplier_name,
@@ -791,7 +831,7 @@ public class ProductsPanel extends JPanel {
                 FROM (
                     SELECT * FROM products p
                 """ + where + """
-                    ORDER BY p.name COLLATE NOCASE, p.id LIMIT ? OFFSET ?
+                    ORDER BY """ + orderBy + " LIMIT ? OFFSET ?\n" + """
                 ) p
                 LEFT JOIN minimum_stock sm ON sm.product_id=p.id
                 LEFT JOIN product_suppliers ps ON ps.product_id=p.id AND ps.is_preferred=1
@@ -839,6 +879,8 @@ public class ProductsPanel extends JPanel {
                     }
                 }
             }
+            cancelPhotoPreviewTimer();
+            closePhotoPreviewWindow();
             thumbnailTimer.stop();
             pendingThumbnails.clear();
             pageThumbnails.clear();
@@ -919,6 +961,13 @@ public class ProductsPanel extends JPanel {
             }
             activeSearch = "";
             searchField.setText("");
+            sortColumn = 2;
+            sortAscending = true;
+            // Navigating to an arbitrary product uses stable name/id order.
+            // Clear a prior column sort without reloading a second time.
+            adjustingSort = true;
+            try { productsTable.getRowSorter().setSortKeys(java.util.List.of()); }
+            finally { adjustingSort = false; }
             currentPage = before / PAGE_SIZE;
             loadProductPage();
             selectVisibleProductById(productId);
