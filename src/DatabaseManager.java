@@ -93,6 +93,19 @@ public class DatabaseManager {
             }
             // Create tables if they do not exist
             createTables();
+
+            // Repair only missing snapshots of pre-1.3 historical invoices.
+            // Never modify immutable snapshots captured by WareStat 1.3.
+            // If legacy party records have been deleted, keep the database
+            // available; the invoices list has a non-destructive fallback.
+            try {
+                int recovered = InvoiceSnapshots.repairIncompleteLegacy(connection);
+                if (recovered > 0)
+                    System.out.println("Recovered " + recovered + " legacy invoice snapshots");
+            } catch (SQLException oldDataIncomplete) {
+                System.err.println("Legacy invoice snapshot repair skipped: "
+                    + oldDataIncomplete.getMessage());
+            }
             DatabaseIntegrity.validate(connection, false);
             ProductImageStore.validateEmbeddedImages(connection);
             DatabaseCurrency.bind(connection);
