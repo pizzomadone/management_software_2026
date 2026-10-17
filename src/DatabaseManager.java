@@ -547,6 +547,14 @@ public class DatabaseManager {
             stmt.execute("CREATE INDEX IF NOT EXISTS idx_product_images_filename ON product_images(filename)");
             stmt.execute("CREATE INDEX IF NOT EXISTS idx_supplier_order_details_product ON supplier_order_details(product_id)");
             stmt.execute("CREATE INDEX IF NOT EXISTS idx_products_name_nocase ON products(name COLLATE NOCASE, id)");
+            // High-traffic relationships shared by invoices, orders, warehouse,
+            // sales reports and returns. Built only once, maintained incrementally.
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_order_details_order ON order_details(order_id)");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_invoice_details_invoice ON invoice_details(invoice_id)");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_supplier_order_details_order ON supplier_order_details(order_id)");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_warehouse_movements_date ON warehouse_movements(date DESC, id DESC)");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_orders_order_date ON orders(order_date DESC, id DESC)");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_invoices_date ON invoices(date DESC, id DESC)");
         }
 
         // Create triggers for stock reservation synchronization
