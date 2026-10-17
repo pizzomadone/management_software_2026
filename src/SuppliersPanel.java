@@ -159,6 +159,7 @@ public class SuppliersPanel extends JPanel {
         }
 
         tableModel.setRowCount(0);
+        java.util.List<java.util.Vector<Object>> fetchedRows=new java.util.ArrayList<>();
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
@@ -184,10 +185,11 @@ public class SuppliersPanel extends JPanel {
                         row.add(rs.getString("email"));
                         row.add(rs.getString("phone"));
                         row.add(rs.getString("address"));
-                        tableModel.addRow(row);
+                        fetchedRows.add(row);
                     }
                 }
             }
+            TableStyleUtil.appendRows(tableModel,fetchedRows);
         } catch (SQLException e) {
             e.printStackTrace();
             Dialogs.showMessageDialog(this,
