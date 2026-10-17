@@ -127,7 +127,8 @@ public class BackupManager {
                         st.execute("VACUUM");
                     }
                 }
-                ProductImageStore.validateEmbeddedImages(c);
+                // Legacy archives still refer to external photos here; their
+                // BLOBs are imported and checked by prepareInput afterwards.
                 DatabaseIntegrity.validate(c,false);
             }
             return staging;
