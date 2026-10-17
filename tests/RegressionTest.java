@@ -135,7 +135,7 @@ public class RegressionTest {
         require(!Boolean.TRUE.equals(get(dialog,savedField)), "Invalid document was saved");
     }
     static void runAll() throws Exception {
-        test("product catalog pages are bounded and search and navigation find off-page items", () -> {
+        test("product catalog loads incrementally on scroll, with global SQL sorting and search", () -> {
             fresh();
             try (PreparedStatement p = db.prepareStatement("""
                     INSERT INTO products(code,name,description,sale_price_ex_vat,sale_price_inc_vat,
@@ -162,8 +162,7 @@ public class RegressionTest {
             ProductsPanel panel=new ProductsPanel();
             JTable catalog=(JTable)get(panel,"productsTable");
             DefaultTableModel model=(DefaultTableModel)get(panel,"tableModel");
-            JSpinner pages=(JSpinner)get(panel,"pageSpinner");
-            require(model.getRowCount()==100,"Opening catalog materialized more than one page");
+            require(model.getRowCount()==100,"Opening catalog materialized more than one scroll chunk");
             require(model.getValueAt(0,16) instanceof String,
                 "Catalog eagerly decoded images instead of retaining filenames");
             catalog.getRowSorter().setSortKeys(java.util.List.of(
@@ -171,12 +170,18 @@ public class RegressionTest {
             require("P0249".equals(catalog.getValueAt(0,catalog.convertColumnIndexToView(1))),
                 "SQL sort did not display the highest-priced product across catalog pages");
             catalog.getRowSorter().setSortKeys(java.util.List.of());
-            pages.setValue(3);
-            require(model.getRowCount()==52,"Last page did not contain remaining products");
+            call(panel,"loadMoreProducts");
+            require(model.getRowCount()==200,
+                "Scrolling did not append the next 100 products");
+            call(panel,"loadMoreProducts");
+            require(model.getRowCount()==252,
+                "Scrolling did not append the last products");
+            require("252 / 252".equals(((JLabel)get(panel,"pageCountLabel")).getText()),
+                "Progress indicator does not reflect the catalog size");
             JTextField search=(JTextField)get(panel,"searchField");
             search.setText("P02");
             call(panel,"searchProducts");
-            require(model.getRowCount()==50 && ((Number)pages.getValue()).intValue()==1,
+            require(model.getRowCount()==50,
                 "Search did not filter the complete catalog in SQL");
             panel.selectProductByCode("P0150");
             require(search.getText().isEmpty(),"Off-page selection did not clear outdated search");
@@ -184,7 +189,8 @@ public class RegressionTest {
             require(selected>=0 && "P0150".equals(model.getValueAt(
                 catalog.convertRowIndexToModel(selected),1)),
                 "Off-page product could not be found and selected");
-            require(model.getRowCount()<=100,"Off-page navigation loaded all products");
+            require(model.getRowCount()<=100,
+                "Off-page navigation materialized more than a single chunk");
         });
         test("backup and export photo choices are available in every language", () -> {
             String original=I18n.getLanguage();
