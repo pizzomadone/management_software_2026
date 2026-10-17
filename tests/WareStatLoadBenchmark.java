@@ -419,6 +419,9 @@ public final class WareStatLoadBenchmark {
         record("dashboard_queries",100,()->dashboard(db,100));
         record("first_200_thumbnail_previews",Math.min(photos,200),
             ()->thumbnails(photos,Math.min(photos,200)));
+        // Cache holds 128 thumbnails; explicitly warm the same 100 keys
+        // after the first-200 scan so this really measures cache hits.
+        thumbnails(photos,Math.min(photos,100));
         record("cached_100_thumbnail_previews",Math.min(photos,100),
             ()->thumbnails(photos,Math.min(photos,100)));
 
