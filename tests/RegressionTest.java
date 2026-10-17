@@ -192,6 +192,39 @@ public class RegressionTest {
             require(model.getRowCount()<=100,
                 "Off-page navigation materialized more than a single chunk");
         });
+        test("invoices render lazily and SQL searches an invoice outside the first 100", () -> {
+            fresh();
+            try(PreparedStatement ps=db.prepareStatement(
+                    "INSERT INTO invoices(number,date,customer_id,status,taxable_amount,vat,total) " +
+                    "VALUES(?,? ,1,'Draft',10,0,10)")) {
+                for(int i=1;i<=260;i++){
+                    ps.setString(1,String.format(java.util.Locale.ROOT,"INV-%04d",i));
+                    ps.setLong(2,1700000000000L+1000L*i);
+                    ps.addBatch();
+                }
+                ps.executeBatch();
+            }
+            InvoicesPanel panel=new InvoicesPanel();
+            DefaultTableModel model=(DefaultTableModel)get(panel,"tableModel");
+            require(model.getRowCount()==100,"Invoice panel eagerly read all 260 documents");
+            call(panel,"loadMoreInvoices");
+            require(model.getRowCount()==200,"Second invoice scroll chunk was missing");
+            call(panel,"loadMoreInvoices");
+            require(model.getRowCount()==260,"Invoice scroll skipped the last batch");
+            panel.selectInvoiceByNumber("INV-0001");
+            require("INV-0001".equals(model.getValueAt(0,0)),
+                "Linked invoice outside loaded rows was not found by SQL search");
+        });
+        test("empty charts and sales report distinguish invoices from completed orders", () -> {
+            fresh();
+            require(SalesDataDiagnostics.explainEmptySales(db).contains("completed"),
+                "No-completed-orders diagnosis is missing");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat) " +
+                "VALUES(1,1,'2022-08-19','Completed',10,10)");
+            String warning=SalesDataDiagnostics.explainEmptySales(db);
+            require(warning.contains("2022-08-19"),
+                "The no-sales diagnosis did not show available historic sale dates");
+        });
         test("customer orders open quickly in 100-row chunks and search numeric IDs", () -> {
             fresh();
             try(PreparedStatement ps=db.prepareStatement(
