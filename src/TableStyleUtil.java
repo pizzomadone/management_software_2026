@@ -28,6 +28,23 @@ public final class TableStyleUtil {
     private TableStyleUtil() {}
 
     /**
+     * Append fetched rows with a single table-model notification instead of
+     * one event (and potentially one table sorter pass) for every database row.
+     * Call from the Swing event thread after the SELECT has fully completed.
+     * No column layout or custom JTable renderer is recreated.
+     */
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    public static void appendRows(DefaultTableModel model,
+                                  java.util.List<? extends java.util.Vector<?>> rows) {
+        if (rows.isEmpty()) return;
+        java.util.Vector data=model.getDataVector();
+        data.addAll(rows);
+        model.fireTableDataChanged();
+    }
+
+
+
+    /**
      * Standard WareStat table style: compact rows, very light grid, zebra rows,
      * centered headers, smart alignment, badges and clipped-text tooltips.
      */
