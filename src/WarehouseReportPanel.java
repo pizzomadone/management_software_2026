@@ -292,6 +292,7 @@ public class WarehouseReportPanel extends JPanel {
     private void loadMovementsData() {
         movementsValid=false;
         movementsModel.setRowCount(0);
+        java.util.List<java.util.Vector<Object>> fetchedRows=new java.util.ArrayList<>();
         try {
             String startDateText = startDateField.getText().trim();
             String endDateText = endDateField.getText().trim();
@@ -374,10 +375,11 @@ public class WarehouseReportPanel extends JPanel {
                     }
                     row.add(document);
 
-                    movementsModel.addRow(row);
+                    fetchedRows.add(row);
                 }
             }
             movementsValid=true;
+            TableStyleUtil.appendRows(movementsModel,fetchedRows);
         } catch (Exception e) {
             e.printStackTrace();
             Dialogs.showMessageDialog(this,
