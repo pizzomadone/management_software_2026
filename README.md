@@ -285,3 +285,25 @@ restore with an additional safety copy; allow extra disk space.
 **This benchmark is not a GUI frame-rate test**. Real user-interface lag,
 table scrolling, and paint events should be measured with the retained
 dataset on macOS/Windows. Results are hardware and storage dependent.
+
+### Verified on public GitHub Actions — 20,000 product run (2026-10-17)
+
+The full test completed successfully on Ubuntu 24.04, Java 21:
+[GitHub Actions full-run log](https://github.com/pizzomadone/management_software_2026/actions/runs/39011550526).
+
+- **20,000** product rows, **20,000** valid JPEG BLOB rows (~100 KiB each; 16 varied JPEG templates), **100,000** movements, **40,000** FIFO lots and **60,000** consumption links.
+- SQLite database: **2,105,462,784 bytes**.
+- Exact-code lookup (mean per lookup): **0.0086 ms**; 100-row catalog page: **52.7 ms**; name search: **3.20 ms**; individual product update: **0.187 ms**.
+- 200 JPEG thumbnail decodes: **1.82 s**; SQL dashboard query: **7.09 ms** mean.
+- Full backup: **9.70 s**, no-photo backup: **9.77 s**; full backup validation **17.06 s**, restore **28.62 s**.
+- Startup reopening the sealed ~2.1 GB database: **1.97 s**; SQLite integrity checks passed both before and after restore.
+- Regression suite on the same branch passed **181 tests, 0 failures**: [Actions regression run](https://github.com/pizzomadone/management_software_2026/actions/runs/39011460851).
+
+**Note:** The temporary auto-triggered one-shot 20k workflow used for the
+successful run was deleted afterward to prevent accidental repeated high-cost
+jobs. The normal lightweight PR smoke workflow remains. Java benchmark startup,
+query and image metrics above measure GitHub's Linux runner only, *not* GUI
+scrolling/frame times on a user's Mac. A post-run cleanup commit also fixed the
+"cached thumbnails" benchmark to warm the correct thumbnails before sampling;
+the full-run cache metric from this first run should not be treated as a
+true cache-hit measurement.
