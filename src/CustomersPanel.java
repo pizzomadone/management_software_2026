@@ -145,6 +145,7 @@ public class CustomersPanel extends JPanel {
         }
 
         tableModel.setRowCount(0);
+        java.util.List<java.util.Vector<Object>> fetchedRows=new java.util.ArrayList<>();
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
@@ -169,10 +170,11 @@ public class CustomersPanel extends JPanel {
                         row.add(rs.getString("email"));
                         row.add(rs.getString("phone"));
                         row.add(rs.getString("address"));
-                        tableModel.addRow(row);
+                        fetchedRows.add(row);
                     }
                 }
             }
+            TableStyleUtil.appendRows(tableModel,fetchedRows);
         } catch (SQLException e) {
             Dialogs.showMessageDialog(this,
                 "Error while searching for customers: " + e.getMessage(),
