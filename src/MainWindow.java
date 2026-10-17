@@ -186,13 +186,17 @@ public class MainWindow extends JFrame {
         newArchiveItem.addActionListener(e -> createNewArchive());
         fileMenu.add(newArchiveItem);
 
-        JMenuItem importDatabaseItem = new JMenuItem("Import Database...");
-        importDatabaseItem.addActionListener(e -> importDatabase());
-        fileMenu.add(importDatabaseItem);
+        JMenuItem openDatabaseItem = new JMenuItem("Open...");
+        openDatabaseItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_O,
+            Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx()));
+        openDatabaseItem.addActionListener(e -> openDatabase());
+        fileMenu.add(openDatabaseItem);
 
-        JMenuItem exportDatabaseItem = new JMenuItem("Export Database...");
-        exportDatabaseItem.addActionListener(e -> exportDatabase());
-        fileMenu.add(exportDatabaseItem);
+        JMenuItem saveAsDatabaseItem = new JMenuItem("Save As...");
+        saveAsDatabaseItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_S,
+            Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx() | KeyEvent.SHIFT_DOWN_MASK));
+        saveAsDatabaseItem.addActionListener(e -> saveAsDatabase());
+        fileMenu.add(saveAsDatabaseItem);
         fileMenu.addSeparator();
         
         JMenuItem settingsItem = new JMenuItem("Settings...");
@@ -943,91 +947,110 @@ public class MainWindow extends JFrame {
             ? chooser.getSelectedFile().toPath() : null;
     }
 
-    private void importDatabase() {
+    /** Open an existing signed company directly from its selected location. */
+    private void openDatabase() {
         Path source = chooseDatabaseFile(false);
         if (source == null) return;
+        source = source.toAbsolutePath().normalize();
+        if (source.equals(AppConstants.getDatabasePath().toAbsolutePath().normalize()))
+            return;
         try {
-            // Preflight checks format only. The actual restore fully validates
-            // an isolated copy before touching the existing company database.
-            // Rebuilding a second 2 GB WSBQ snapshot here made import take
-            // substantially longer. WareStat 1.2 .db is structurally checked
-            // before asking for its original operating currency.
-            if (BackupManager.isArchive(source)) {
-                if (!WareStatFileHeader.isSealed(source))
-                    throw new IllegalArgumentException("Not a signed WareStat .wsbq file");
-            } else {
-                WareStatLegacy12.validate(source);
-            }
-        } catch (Exception exception) {
-            showDatabaseError("The selected file is not a valid WareStat database.", exception);
+            if (!Files.isRegularFile(source) || !WareStatFileHeader.isSealed(source))
+                throw new IllegalArgumentException("Select a valid WareStat 1.3 .wsbq database");
+        } catch (Exception problem) {
+            showDatabaseError("The selected file is not a valid WareStat database.", problem);
             return;
         }
 
-        String warning = I18n.tr("The current WareStat data will be lost.") + "\n\n"
-                + I18n.tr("It is recommended to export the current database before continuing.");
-        Object[] options = {
-            I18n.tr("Export and Continue"),
-            I18n.tr("Continue Without Exporting"),
+        // The current company is never overwritten. An optional Save As
+        // creates a separate user-requested snapshot before switching.
+        Object[] choices = {
+            I18n.tr("Save a Copy and Open"),
+            I18n.tr("Open Without Saving"),
             I18n.tr("Cancel")
         };
-        int choice = Dialogs.showOptionDialog(this, warning, I18n.tr("Import Database"),
-                JOptionPane.DEFAULT_OPTION, JOptionPane.WARNING_MESSAGE, null, options, options[0]);
-        if (choice == 0 && !exportDatabase()) return;
+        int choice = Dialogs.showOptionDialog(this,
+            I18n.tr("Save a copy of the current database before opening another?"),
+            I18n.tr("Open"), JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE,
+            null, choices, choices[0]);
+        if (choice == 0 && saveDatabaseCopy() == null) return;
         if (choice != 0 && choice != 1) return;
-
         try {
-            if (BackupManager.isArchive(source)) {
-                BackupManager.getInstance().restoreBackup(source.toString(), null);
-            } else {
-                String currency = DatabaseCurrency.confirmLegacyCurrency(this, source);
-                if (currency == null) return;
-                BackupManager.getInstance().importDatabase(source, currency);
-            }
-            CostIntegrity.Audit importAudit =
-                CostIntegrity.audit(DatabaseManager.getInstance().getConnection());
-            Dialogs.showMessageDialog(this,
-                    CostIntegrity.summary(importAudit) + "\n\n"
-                    + I18n.tr("WareStat will now close. Reopen it to use the imported database."),
-                    I18n.tr("Import Database"), JOptionPane.INFORMATION_MESSAGE);
-            dispose();
-            System.exit(0);
-        } catch (Exception exception) {
-            showDatabaseError("Unable to import database", exception);
+            DatabaseManager.getInstance().openDatabase(source);
+            refreshCompanyPanels();
+        } catch (Exception problem) {
+            showDatabaseError("Unable to open database", problem);
         }
     }
 
-    private boolean exportDatabase() {
+    /** Save As is an exact, complete company snapshot including all JPEG BLOBs. */
+    private void saveAsDatabase() {
+        Path copy = saveDatabaseCopy();
+        if (copy == null) return;
+        try {
+            DatabaseManager.getInstance().openDatabase(copy);
+            refreshCompanyPanels();
+        } catch (Exception problem) {
+            showDatabaseError("Database saved, but unable to open the saved copy", problem);
+        }
+    }
+
+    /**
+     * Only an explicit Save As (or the user's confirmation in Open) copies data.
+     * The existing file is never modified or replaced by the save operation.
+     */
+    private Path saveDatabaseCopy() {
         Path destination = chooseDatabaseFile(true);
-        if (destination == null) return false;
-        if (!destination.getFileName().toString().toLowerCase().endsWith(".wsbq")) {
+        if (destination == null) return null;
+        if (!destination.getFileName().toString().toLowerCase(java.util.Locale.ROOT)
+                .endsWith(".wsbq"))
             destination = destination.resolveSibling(destination.getFileName() + ".wsbq");
+        destination = destination.toAbsolutePath().normalize();
+        if (destination.equals(AppConstants.getDatabasePath().toAbsolutePath().normalize())) {
+            Dialogs.showMessageDialog(this,
+                I18n.tr("Choose a different filename; the current database saves automatically."),
+                I18n.tr("Save As"), JOptionPane.WARNING_MESSAGE);
+            return null;
         }
         if (Files.exists(destination)) {
-            int answer = Dialogs.showConfirmDialog(this,
-                    I18n.tr("A file with this name already exists. Replace it?"),
-                    I18n.tr("Confirm Replacement"), JOptionPane.YES_NO_OPTION,
-                    JOptionPane.WARNING_MESSAGE);
-            if (answer != JOptionPane.YES_OPTION) return false;
+            int replace = Dialogs.showConfirmDialog(this,
+                I18n.tr("A file with this name already exists. Replace it?"),
+                I18n.tr("Confirm Replacement"), JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE);
+            if (replace != JOptionPane.YES_OPTION) return null;
         }
-        // Closing the dialog cancels; use the same two choices as Backup Management.
-        Object[] backupOptions = {
-            I18n.tr("With photos"), I18n.tr("Without photos (smaller file)")
-        };
-        int selection = Dialogs.showOptionDialog(this,
-            I18n.tr("Choose what to include in this backup."),
-            I18n.tr("Backup type"), JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE,
-            null, backupOptions, backupOptions[0]);
-        if (selection != 0 && selection != 1) return false;
         try {
-            Path exported = BackupManager.getInstance().exportDatabase(destination, selection == 0);
-            Dialogs.showMessageDialog(this,
-                    I18n.tr("Database exported successfully.") + "\n" + exported,
-                    I18n.tr("Export Database"), JOptionPane.INFORMATION_MESSAGE);
-            return true;
-        } catch (RuntimeException exception) {
-            showDatabaseError("Unable to export database", exception);
-            return false;
+            return BackupManager.getInstance().exportDatabase(destination, true);
+        } catch (RuntimeException problem) {
+            showDatabaseError("Unable to save database", problem);
+            return null;
         }
+    }
+
+    /**
+     * Old company-specific panels must not retain cached objects from the
+     * previously opened database. The shared news browser is not company data.
+     */
+    private void refreshCompanyPanels() {
+        mainPanel.removeAll();
+        dashboardPanel = null;
+        customersPanel = null;
+        productsPanel = null;
+        ordersPanel = null;
+        supplierOrdersPanel = null;
+        invoicesPanel = null;
+        suppliersPanel = null;
+        warehousePanel = null;
+        salesReportPanel = null;
+        advancedStatsPanel = null;
+        warehouseReportPanel = null;
+        backupPanel = null;
+        settingsPanel = null;
+        if (webPanel != null) mainPanel.add(webPanel, "WEB");
+        currentPanel = "HOME";
+        showPanel("HOME");
+        mainPanel.revalidate();
+        mainPanel.repaint();
     }
 
     private Path chooseDatabaseFile(boolean save) {
@@ -1039,18 +1062,16 @@ public class MainWindow extends JFrame {
             if (save) dialog.setFile(defaultName);
             dialog.setFilenameFilter((directory, name) -> {
                 String lower = name.toLowerCase(java.util.Locale.ROOT);
-                return save ? lower.endsWith(".wsbq")
-                    : lower.endsWith(".wsbq") || lower.endsWith(".db");
+                return lower.endsWith(".wsbq");
             });
             dialog.setVisible(true);
             return dialog.getFile() == null ? null : new File(dialog.getDirectory(), dialog.getFile()).toPath();
         }
-        JFileChooser chooser = new JFileChooser();
+        JFileChooser chooser = new JFileChooser(
+            AppConstants.getDatabasePath().getParent().toFile());
         chooser.setDialogTitle(I18n.tr(save ? "Save WareStat Database" : "Select a WareStat Database"));
-        chooser.setFileFilter(save
-            ? new FileNameExtensionFilter(I18n.tr("WareStat Archive (*.wsbq)"), "wsbq")
-            : new FileNameExtensionFilter(I18n.tr("WareStat files (*.wsbq, *.db)"),
-                "wsbq", "db"));
+        chooser.setFileFilter(new FileNameExtensionFilter(
+            I18n.tr("WareStat Database (*.wsbq)"), "wsbq"));
         if (save) chooser.setSelectedFile(new File(defaultName));
         int result = save ? chooser.showSaveDialog(this) : chooser.showOpenDialog(this);
         return result == JFileChooser.APPROVE_OPTION ? chooser.getSelectedFile().toPath() : null;
