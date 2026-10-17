@@ -224,3 +224,61 @@ in its per-user data directory; see that file for the complete terms and
 
 For support, product news, and release communications, visit
 <https://www.warestat.com/discover/> or contact your software provider.
+
+
+## Optional large-data benchmark (manual only)
+
+The benchmark is on branch `test/wsbq-20k-load-benchmark`,
+based on `feature/sqlite-wsbq-image-blobs`. It is not a production
+migration. It always runs with a **temporary isolated user.home** protected by a
+marker file and refuses to overwrite an existing database. A private repository
+does **not** need to be made public to run the workflow; usage/billing limits
+may nevertheless prevent hosted Actions from starting.
+
+To run on macOS/Linux with JDK 21:
+
+```bash
+bash tests/run-load-benchmark.sh 20000 20000 true false
+```
+
+Arguments: `<products> <photos> <run_backups> <run_restore>`.
+For a quick smoke test without heavyweight file copies:
+
+```bash
+bash tests/run-load-benchmark.sh 200 200 false false
+```
+
+A full 20k run creates 1,000 suppliers, 5,000 customers, 30,000 customer
+orders, 15,000 supplier orders, 20,000 draft invoices, 100,000 movements,
+40,000 FIFO lots and 60,000 movement-to-lot consumption references. It
+generates 20,000 separate valid JPEG **BLOB rows** (16 reproducible visual
+variants reused with unique photo filenames to keep generation fast).
+It measures SQL search/pagination/update/aggregate performance, actual
+thumbnail decoding, backup with and without photos, validation, header
+seal/reopen, database size and SQLite integrity. The document examples are
+synthetic rather than a complete business-transaction simulation; tests
+of pricing and sales correctness remain in the standard regression suite.
+
+CSV/diagnostics are written to `build/load-benchmark-output/`.
+By default, the multi-GB sandbox is removed after execution. To retain the
+database for **manual UI scrolling** on the same machine, run:
+
+```bash
+WARESTAT_KEEP_DATA=1 bash tests/run-load-benchmark.sh 20000 20000 true false
+```
+
+The command prints the sandbox path (including the isolated `home`).
+Only launch an application build against this home explicitly if you wish to
+browse the synthetic company. Do not copy the fixture over real WareStat data.
+
+GitHub's **Actions → WareStat 20k load benchmark → Run workflow** launches the
+same test on demand and uploads `results.csv`, `dataset.txt`
+and `run.log` for 7 days. It is deliberately not tied to pushes
+or pull requests because large data generation consumes significant runner
+disk, CPU and time. Start with 200/200 or 1000/1000 if Actions has not been
+tested on the branch. Setting `restore=true` adds an expensive full
+restore with an additional safety copy; allow extra disk space.
+
+**This benchmark is not a GUI frame-rate test**. Real user-interface lag,
+table scrolling, and paint events should be measured with the retained
+dataset on macOS/Windows. Results are hardware and storage dependent.
