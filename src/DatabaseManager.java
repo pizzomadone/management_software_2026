@@ -639,7 +639,10 @@ public class DatabaseManager {
     public void closeConnection() {
         try {
             if (connection != null && !connection.isClosed()) {
-                connection.close();
+                // Wait for VACUUM INTO to finish before closing the exclusive owner.
+                synchronized (connection) {
+                    connection.close();
+                }
                 connection = null;
                 System.out.println("Database connection closed");
             }
