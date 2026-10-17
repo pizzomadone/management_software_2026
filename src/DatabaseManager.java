@@ -525,6 +525,15 @@ public class DatabaseManager {
         // Apply ordered, versioned schema migrations for existing databases.
         DatabaseMigrationManager.migrate(connection);
 
+        // These indexes are needed for large page-based catalogs. In particular,
+        // thumbnail lookup by filename must not scan a 2 GB image-BLOB table.
+        // IF NOT EXISTS also upgrades already-migrated WareStat 1.3 databases.
+        try (Statement stmt = connection.createStatement()) {
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_product_images_filename ON product_images(filename)");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_supplier_order_details_product ON supplier_order_details(product_id)");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_products_name_nocase ON products(name COLLATE NOCASE, id)");
+        }
+
         // Create triggers for stock reservation synchronization
         createStockReservationTriggers();
         StockManager.reconcileReservedStock(connection);
