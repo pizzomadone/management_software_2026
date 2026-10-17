@@ -112,6 +112,7 @@ public class CustomersPanel extends JPanel {
 
     private void loadCustomers() {
         tableModel.setRowCount(0);
+        java.util.List<java.util.Vector<Object>> fetchedRows=new java.util.ArrayList<>();
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = "SELECT * FROM customers ORDER BY last_name, first_name";
@@ -125,9 +126,10 @@ public class CustomersPanel extends JPanel {
                     row.add(rs.getString("email"));
                     row.add(rs.getString("phone"));
                     row.add(rs.getString("address"));
-                    tableModel.addRow(row);
+                    fetchedRows.add(row);
                 }
             }
+            TableStyleUtil.appendRows(tableModel,fetchedRows);
         } catch (SQLException e) {
             Dialogs.showMessageDialog(this,
                 "Error while loading customers: " + e.getMessage(),
