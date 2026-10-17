@@ -172,29 +172,37 @@ public class SalesReportPanel extends JPanel {
             Date end = DateUtils.parseDate(endDateField.getText(),dateFormat);
             if (start!=null && end!=null && start.after(end)) throw new IllegalArgumentException("Start date must not follow end date");
             Connection conn = DatabaseManager.getInstance().getConnection();
+            // Restrict the expensive per-line FIFO cost calculation to the
+            // requested sales window. The previous cost CTE aggregated all
+            // historical order_details even when only one month was visible.
             String query = """
-                WITH detail_cost AS (
-                    SELECT d.order_id, %s AS effective_cost
-                    FROM order_details d
-                ),
-                cg AS (
-                    SELECT order_id,
-                           SUM(effective_cost) AS cost_total,
-                           SUM(CASE WHEN effective_cost IS NULL THEN 1 ELSE 0 END) AS missing_cost
-                    FROM detail_cost
-                    GROUP BY order_id
+                WITH filtered_orders AS MATERIALIZED (
+                    SELECT id FROM orders
+                    WHERE status='Completed'
+                """;
+            if (start!=null)
+                query += " AND warestat_date(COALESCE(completed_date,order_date))>=?";
+            if (end!=null)
+                query += " AND warestat_date(COALESCE(completed_date,order_date))<=?";
+            query += """
+                ), cg AS (
+                    SELECT d.order_id,SUM(%s) AS cost_total,
+                           SUM(CASE WHEN %s IS NULL THEN 1 ELSE 0 END) AS missing_cost
+                    FROM filtered_orders filtered
+                    JOIN order_details d ON d.order_id=filtered.id
+                    GROUP BY d.order_id
                 )
-                SELECT o.id,COALESCE(o.completed_date,o.order_date) AS sale_date,o.status,o.total_ex_vat AS total,
-                       COALESCE(c.first_name || ' ' || c.last_name,'N/A') customer_name,
+                SELECT o.id,COALESCE(o.completed_date,o.order_date) AS sale_date,
+                       o.status,o.total_ex_vat AS total,
+                       COALESCE(c.first_name || ' ' || c.last_name,'N/A') AS customer_name,
                        cg.cost_total,cg.missing_cost
-                FROM orders o
+                FROM filtered_orders filtered
+                JOIN orders o ON o.id=filtered.id
                 LEFT JOIN customers c ON c.id=o.customer_id
                 LEFT JOIN cg ON cg.order_id=o.id
-                WHERE o.status='Completed'
-                """.formatted(CostIntegrity.historicalCostSql("d"));
-            if (start!=null) query += " AND " + "warestat_date(COALESCE(o.completed_date,o.order_date))" + ">=?";
-            if (end!=null) query += " AND " + "warestat_date(COALESCE(o.completed_date,o.order_date))" + "<=?";
-            query += " ORDER BY " + "warestat_date(COALESCE(o.completed_date,o.order_date))" + " DESC,o.id DESC";
+                ORDER BY warestat_date(COALESCE(o.completed_date,o.order_date)) DESC,o.id DESC
+                """.formatted(CostIntegrity.historicalCostSql("d"),
+                               CostIntegrity.historicalCostSql("d"));
             PreparedStatement pstmt = conn.prepareStatement(query);
             int parameter=1;
             SimpleDateFormat iso=new SimpleDateFormat("yyyy-MM-dd");
