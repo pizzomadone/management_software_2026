@@ -624,7 +624,20 @@ public class DatabaseManager {
     public synchronized void shutdownAndSeal() {
         shuttingDown = true;
         if (connection == null) return;
-        closeConnection();
+        // Run bounded SQLite statistics optimization once per normal exit.
+        // Coordinate with snapshots before closing the exclusive owner.
+        synchronized (connection) {
+            try {
+                if (connection.getAutoCommit()) {
+                    try (Statement stmt = connection.createStatement()) {
+                        stmt.execute("PRAGMA optimize");
+                    }
+                }
+            } catch (SQLException e) {
+                System.err.println("SQLite optimization deferred: " + e.getMessage());
+            }
+            closeConnection();
+        }
         try {
             WareStatFileHeader.seal(AppConstants.getDatabasePath());
         } catch (java.io.IOException e) {
