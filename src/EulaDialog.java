@@ -2,21 +2,14 @@
  * Copyright © 2026 WareStat (www.warestat.com). All rights reserved.
  *
  * This software is proprietary and confidential.
- * Unauthorized copying, modification, distribution, or reverse engineering
- * is strictly prohibited.
- *
  * See LICENSE.txt for full terms.
  */
 
 import javax.swing.*;
 import java.awt.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
+import java.io.IOException;
 
-/**
- * Dialog to display and request acceptance of the End User License Agreement (EULA).
- * This dialog is shown on first application startup and must be accepted to continue.
- */
+/** Modal, mandatory EULA acceptance before WareStat initializes any company database. */
 public class EulaDialog extends JDialog {
     private boolean accepted = false;
 
@@ -31,7 +24,6 @@ public class EulaDialog extends JDialog {
         Dialogs.centerWindow(this);
         setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
 
-        // Title panel
         JPanel titlePanel = new JPanel();
         titlePanel.setBackground(new Color(240, 240, 240));
         titlePanel.setBorder(BorderFactory.createEmptyBorder(15, 20, 15, 20));
@@ -40,97 +32,92 @@ public class EulaDialog extends JDialog {
         titlePanel.add(titleLabel);
         add(titlePanel, BorderLayout.NORTH);
 
-        // License text area
-        JTextArea licenseTextArea = new JTextArea(LicenseText.getSoftwareLicense());
+        // Retain the exact string displayed: the acceptance record hashes these bytes.
+        final String displayedLicenseText = LicenseText.getSoftwareLicense();
+        JTextArea licenseTextArea = new JTextArea(displayedLicenseText);
         licenseTextArea.setEditable(false);
         licenseTextArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
         licenseTextArea.setLineWrap(true);
         licenseTextArea.setWrapStyleWord(true);
         licenseTextArea.setCaretPosition(0);
-
         JScrollPane scrollPane = new JScrollPane(licenseTextArea);
         scrollPane.setBorder(BorderFactory.createEmptyBorder(10, 20, 10, 20));
         add(scrollPane, BorderLayout.CENTER);
 
-        // Bottom panel with checkbox and buttons
-        JPanel bottomPanel = new JPanel(new BorderLayout());
+        JPanel bottomPanel = new JPanel(new BorderLayout(10, 8));
         bottomPanel.setBorder(BorderFactory.createEmptyBorder(10, 20, 15, 20));
 
-        // Checkbox panel
-        JPanel checkboxPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        JCheckBox acceptCheckBox = new JCheckBox("I have read and accept the terms of this license agreement");
-        acceptCheckBox.setFont(new Font("Arial", Font.PLAIN, 12));
-        checkboxPanel.add(acceptCheckBox);
+        JPanel checkboxPanel = new JPanel();
+        checkboxPanel.setLayout(new BoxLayout(checkboxPanel, BoxLayout.Y_AXIS));
+        JCheckBox generalCheckBox = new JCheckBox(
+            "I have read and accept the terms of this license agreement.");
+        generalCheckBox.setFont(new Font("Arial", Font.PLAIN, 12));
+        generalCheckBox.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JCheckBox specificCheckBox = new JCheckBox(
+            "<html>I specifically approve Sections 5 (No Warranty), 6 (Limitation of Liability),<br>" +
+            "8 (Termination), and 11 (Governing Law / Jurisdiction).</html>");
+        specificCheckBox.setFont(new Font("Arial", Font.PLAIN, 12));
+        specificCheckBox.setAlignmentX(Component.LEFT_ALIGNMENT);
+        checkboxPanel.add(generalCheckBox);
+        checkboxPanel.add(Box.createVerticalStrut(5));
+        checkboxPanel.add(specificCheckBox);
         bottomPanel.add(checkboxPanel, BorderLayout.CENTER);
 
-        // Buttons panel
         JPanel buttonsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
-
-        JButton acceptButton = new JButton("Accept");
-        acceptButton.setFont(new Font("Arial", Font.BOLD, 12));
-        acceptButton.setEnabled(false); // Initially disabled
-        acceptButton.setPreferredSize(new Dimension(100, 30));
-        acceptButton.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                accepted = true;
-                AppConstants.markEulaAsAccepted();
+        JButton declineButton = new JButton("Decline");
+        declineButton.setPreferredSize(new Dimension(100, 30));
+        declineButton.addActionListener(event -> {
+            int result = Dialogs.showConfirmDialog(
+                EulaDialog.this,
+                "You must accept the license agreement to use this software.\n" +
+                "Do you want to exit the application?",
+                "License Not Accepted",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE);
+            if (result == JOptionPane.YES_OPTION) {
+                accepted = false;
                 dispose();
             }
         });
 
-        JButton declineButton = new JButton("Decline");
-        declineButton.setFont(new Font("Arial", Font.PLAIN, 12));
-        declineButton.setPreferredSize(new Dimension(100, 30));
-        declineButton.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                int result = Dialogs.showConfirmDialog(
-                    EulaDialog.this,
-                    "You must accept the license agreement to use this software.\n" +
-                    "Do you want to exit the application?",
-                    "License Not Accepted",
-                    JOptionPane.YES_NO_OPTION,
-                    JOptionPane.WARNING_MESSAGE
-                );
-                if (result == JOptionPane.YES_OPTION) {
-                    accepted = false;
-                    dispose();
-                    System.exit(0);
-                }
-            }
-        });
+        JButton acceptButton = new JButton("Accept");
+        acceptButton.setFont(new Font("Arial", Font.BOLD, 12));
+        acceptButton.setPreferredSize(new Dimension(100, 30));
+        acceptButton.setEnabled(false);
 
-        // Enable Accept button only when checkbox is checked
-        acceptCheckBox.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                acceptButton.setEnabled(acceptCheckBox.isSelected());
+        Runnable refreshAcceptance = () ->
+            acceptButton.setEnabled(generalCheckBox.isSelected() && specificCheckBox.isSelected());
+        generalCheckBox.addActionListener(event -> refreshAcceptance.run());
+        specificCheckBox.addActionListener(event -> refreshAcceptance.run());
+
+        acceptButton.addActionListener(event -> {
+            try {
+                EulaAcceptanceStore.recordAcceptance(
+                    displayedLicenseText, generalCheckBox.isSelected(), specificCheckBox.isSelected());
+                accepted = true;
+                dispose();
+            } catch (IOException error) {
+                // Never claim acceptance or proceed with a failed/partial disk or preference write.
+                Dialogs.showMessageDialog(EulaDialog.this,
+                    "Unable to save the license acceptance.\n" +
+                    "Check available disk space and folder permissions, then retry.\n\n" +
+                    error.getMessage(),
+                    "License Acceptance Error",
+                    JOptionPane.ERROR_MESSAGE);
             }
         });
 
         buttonsPanel.add(declineButton);
         buttonsPanel.add(acceptButton);
-        bottomPanel.add(buttonsPanel, BorderLayout.EAST);
-
+        bottomPanel.add(buttonsPanel, BorderLayout.SOUTH);
         add(bottomPanel, BorderLayout.SOUTH);
     }
 
-    /**
-     * Checks if the user accepted the EULA.
-     *
-     * @return true if accepted, false otherwise
-     */
     public boolean isAccepted() {
         return accepted;
     }
 
-    /**
-     * Shows the EULA dialog and returns whether it was accepted.
-     *
-     * @param parent The parent frame
-     * @return true if accepted, false otherwise
-     */
     public static boolean showDialog(Frame parent) {
         EulaDialog dialog = new EulaDialog(parent);
         dialog.setVisible(true);

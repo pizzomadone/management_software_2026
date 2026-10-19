@@ -80,12 +80,13 @@ public class MainWindow extends JFrame {
         I18n.setLanguage(language);
         I18n.install();
 
-        // Check EULA acceptance FIRST before any initialization
-        if (!AppConstants.isEulaAccepted()) {
-            // Show EULA dialog - must accept to continue
+        // EULA must be accepted again for every app-version or license-text change.
+        // The local receipt and native user preferences are outside company .wsbq files.
+        if (!EulaAcceptanceStore.isCurrentLicenseAccepted()) {
             boolean accepted = EulaDialog.showDialog(null);
             if (!accepted) {
                 System.exit(0);
+                return;
             }
         }
 
