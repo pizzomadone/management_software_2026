@@ -125,6 +125,7 @@ public class MainWindow extends JFrame {
         LicenseText.ensureLicenseFileExists();
 
         setupWindow();
+        RuntimeNotice.install(this);
         setupMenuBar();
         setupToolBar();
         setupMainPanel();
