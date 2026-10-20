@@ -1344,8 +1344,10 @@ public class MainWindow extends JFrame {
             dialog.setVisible(true);
             return dialog.getFile() == null ? null : new File(dialog.getDirectory(), dialog.getFile()).toPath();
         }
-        JFileChooser chooser = new JFileChooser(
-            AppConstants.getDatabasePath().getParent().toFile());
+        Path initialFolder = AppConstants.getDatabasePath().getParent();
+        if (initialFolder == null || !Files.isDirectory(initialFolder))
+            initialFolder = AppConstants.getAppDataDirectory();
+        JFileChooser chooser = new JFileChooser(initialFolder.toFile());
         chooser.setDialogTitle(I18n.tr(save ? "Save WareStat Database" : "Select a WareStat Database"));
         chooser.setFileFilter(save
             ? new FileNameExtensionFilter(I18n.tr("WareStat Database (*.wsbq)"), "wsbq")
