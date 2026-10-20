@@ -69,6 +69,7 @@ public class MainWindow extends JFrame {
     private Path missingDatabaseAtStartup;
     private JMenuItem newDatabaseItem;
     private JMenuItem openDatabaseItem;
+    private JMenuItem settingsMenuItem;
     private JMenuItem backupManagementItem;
     private JMenuItem exitMenuItem;
     
@@ -185,7 +186,7 @@ public class MainWindow extends JFrame {
                         item.setEnabled(available
                             ? item != newDatabaseItem
                             : item == newDatabaseItem || item == openDatabaseItem
-                                || item == exitMenuItem);
+                                || item == settingsMenuItem || item == exitMenuItem);
                 }
             } else if (i == 3) {
                 menu.setEnabled(true);
@@ -195,7 +196,8 @@ public class MainWindow extends JFrame {
                         item.setEnabled(available || item == backupManagementItem);
                 }
             } else {
-                menu.setEnabled(available);
+                // About, license and shortcuts work without a company database.
+                menu.setEnabled(available || i == 5);
             }
         }
         toolBar.setVisible(available);
@@ -400,6 +402,7 @@ public class MainWindow extends JFrame {
         fileMenu.addSeparator();
         
         JMenuItem settingsItem = new JMenuItem("Settings...");
+        settingsMenuItem = settingsItem;
         settingsItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_COMMA,
             Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx()));
         settingsItem.addActionListener(e -> openSettings());
@@ -906,7 +909,8 @@ public class MainWindow extends JFrame {
     }
 
     private void showPanel(String panelName) {
-        if (!databaseReady && !"BACKUP".equals(panelName)) return;
+        if (!databaseReady && !"BACKUP".equals(panelName)
+                && !"SETTINGS".equals(panelName)) return;
         try {
             // Every management panel loads its initial data in its
             // constructor. Refreshing it again here issued duplicate SQL
@@ -1076,7 +1080,7 @@ public class MainWindow extends JFrame {
                 
             case "SETTINGS":
                 if (settingsPanel == null) {
-                    settingsPanel = new SettingsPanel();
+                    settingsPanel = new SettingsPanel(!databaseReady);
                 }
                 panel = settingsPanel;
                 break;
