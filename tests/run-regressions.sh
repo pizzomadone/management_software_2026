@@ -23,7 +23,7 @@ sed -n '/^PASS:/p' "$test_dir/eula-results.log"
 "$test_java" -Djava.awt.headless=true -Duser.home="$test_dir/home" \
     -cp "$test_dir/classes:lib/*:resources" StartupDatabaseRecoveryRegressionTest
 "$test_java" -Djava.awt.headless=true -Duser.home="$test_dir/home" \
-    -cp "$test_dir/classes:lib/*:resources" WrappingToolBarRegressionTest
+    -cp "$test_dir/classes:lib/*:resources" ResponsiveToolBarRegressionTest
 "$test_java" -Djava.awt.headless=true -Duser.home="$test_dir/home" -Dtest.output="$test_dir/evidence" \
     -cp "$test_dir/classes:lib/*:resources" RegressionTest > "$test_dir/results.log" 2>&1 || {
     cat "$test_dir/results.log"
