@@ -47,6 +47,22 @@ public final class StartupDatabaseRecoveryRegressionTest {
                 "Opening recovery settings must not create a database");
             System.out.println("PASS: Recovery settings are database-independent");
 
+            // The ordinary dashboard layout must remain visible in recovery
+            // without ever attempting a SQLite connection or inventing KPI data.
+            DashboardPanel dashboard = new DashboardPanel(null, true);
+            check(dashboard.getComponentCount() > 0,
+                "Dashboard must be visible in recovery");
+            java.util.ArrayList<javax.swing.JButton> dashboardButtons =
+                new java.util.ArrayList<>();
+            collectButtons(dashboard, dashboardButtons);
+            check(!dashboardButtons.isEmpty()
+                    && dashboardButtons.stream().noneMatch(javax.swing.JButton::isEnabled),
+                "Dashboard database actions and refresh must be disabled");
+            dashboard.loadData();
+            check(defaultExisted == Files.exists(defaultFile),
+                "Recovery dashboard must not create a default database");
+            System.out.println("PASS: Recovery dashboard renders without database access");
+
             // Restoring must create a new company, leave the original backup
             // byte-for-byte unchanged, and reject overwriting existing files.
             Path originalBackup = temp.resolve("backup.wsbq");
@@ -79,6 +95,14 @@ public final class StartupDatabaseRecoveryRegressionTest {
             Files.deleteIfExists(missing);
             Files.deleteIfExists(directory);
             Files.deleteIfExists(temp);
+        }
+    }
+
+    private static void collectButtons(java.awt.Container container,
+            java.util.List<javax.swing.JButton> result) {
+        for (java.awt.Component child : container.getComponents()) {
+            if (child instanceof javax.swing.JButton button) result.add(button);
+            if (child instanceof java.awt.Container nested) collectButtons(nested, result);
         }
     }
 
