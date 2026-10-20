@@ -669,15 +669,14 @@ public class MainWindow extends JFrame {
         JButton button = new JButton();
         button.setLayout(new BorderLayout());
         
-        // Icon
-        JLabel iconLabel = new JLabel(icon);
-        iconLabel.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 24));
-        iconLabel.setHorizontalAlignment(SwingConstants.CENTER);
-        
-        // Text
+        // Caption and icon stay linked as the active language changes.
         JLabel textLabel = new JLabel(text);
         textLabel.setFont(new Font("Arial", Font.PLAIN, 13));
         textLabel.setHorizontalAlignment(SwingConstants.CENTER);
+
+        // A separate tooltip target identifies disabled buttons as well.
+        JLabel iconLabel = new ToolbarIconLabel(icon, textLabel);
+        iconLabel.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 24));
         
         button.add(iconLabel, BorderLayout.CENTER);
         button.add(textLabel, BorderLayout.SOUTH);
