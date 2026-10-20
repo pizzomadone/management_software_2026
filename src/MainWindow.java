@@ -684,11 +684,11 @@ public class MainWindow extends JFrame {
         button.add(textLabel, BorderLayout.SOUTH);
         
         button.setToolTipText(tooltip);
-        int buttonWidth = Math.max(80, textLabel.getFontMetrics(textLabel.getFont()).stringWidth(text) + 20);
+        int buttonWidth = Math.max(72, textLabel.getFontMetrics(textLabel.getFont()).stringWidth(text) + 12);
         button.setPreferredSize(new Dimension(buttonWidth, 60));
         textLabel.addPropertyChangeListener("text", event -> {
-            int translatedWidth = Math.max(80,
-                textLabel.getFontMetrics(textLabel.getFont()).stringWidth(textLabel.getText()) + 20);
+            int translatedWidth = Math.max(72,
+                textLabel.getFontMetrics(textLabel.getFont()).stringWidth(textLabel.getText()) + 12);
             button.setPreferredSize(new Dimension(translatedWidth, 60));
             if (toolBar != null) toolBar.revalidate();
         });
