@@ -26,6 +26,9 @@ public class MainWindow extends JFrame {
     private JPanel mainPanel;
     private JToolBar toolBar;
     private JMenuBar menuBar;
+    private JMenu fileMenuForRecovery;
+    private JMenu toolsMenuForRecovery;
+    private JMenu helpMenuForRecovery;
 
     // Toolbar buttons
     private JButton homeButton;
@@ -178,7 +181,7 @@ public class MainWindow extends JFrame {
         for (int i = 0; i < menuBar.getMenuCount(); i++) {
             JMenu menu = menuBar.getMenu(i);
             if (menu == null) continue;
-            if (i == 0) {
+            if (menu == fileMenuForRecovery) {
                 menu.setEnabled(true);
                 for (int j = 0; j < menu.getItemCount(); j++) {
                     JMenuItem item = menu.getItem(j);
@@ -188,7 +191,7 @@ public class MainWindow extends JFrame {
                             : item == newDatabaseItem || item == openDatabaseItem
                                 || item == settingsMenuItem || item == exitMenuItem);
                 }
-            } else if (i == 3) {
+            } else if (menu == toolsMenuForRecovery) {
                 menu.setEnabled(true);
                 for (int j = 0; j < menu.getItemCount(); j++) {
                     JMenuItem item = menu.getItem(j);
@@ -197,7 +200,7 @@ public class MainWindow extends JFrame {
                 }
             } else {
                 // About, license and shortcuts work without a company database.
-                menu.setEnabled(available || i == 5);
+                menu.setEnabled(available || menu == helpMenuForRecovery);
             }
         }
         toolBar.setVisible(available);
@@ -544,6 +547,11 @@ public class MainWindow extends JFrame {
         helpMenu.addSeparator();
         helpMenu.add(aboutItem);
         
+        // Save menu references; recovery restrictions must not depend on menu order.
+        fileMenuForRecovery = fileMenu;
+        toolsMenuForRecovery = toolsMenu;
+        helpMenuForRecovery = helpMenu;
+
         // Add all menus to menu bar
         menuBar.add(fileMenu);
         menuBar.add(managementMenu);
