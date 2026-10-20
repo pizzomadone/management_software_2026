@@ -584,7 +584,7 @@ public class MainWindow extends JFrame {
         toolBar = new JToolBar();
         toolBar.setFloatable(false);
         toolBar.setRollover(true);
-        toolBar.setLayout(new WrappingToolBarLayout());
+        toolBar.setLayout(new ResponsiveToolBarLayout());
 
         // Home button
         homeButton = createToolBarButton("🏠", "Home", "Go to Dashboard");
@@ -653,8 +653,7 @@ public class MainWindow extends JFrame {
         toolBar.add(settingsButton);
 
         add(toolBar, BorderLayout.NORTH);
-        // BorderLayout's NORTH height must be recalculated whenever the window
-        // width changes; a fixed single-row toolbar clipped the final buttons.
+        // Layout size and button sizes adapt whenever the window is resized.
         getContentPane().addComponentListener(new java.awt.event.ComponentAdapter() {
             @Override public void componentResized(java.awt.event.ComponentEvent event) {
                 toolBar.revalidate();
@@ -682,14 +681,13 @@ public class MainWindow extends JFrame {
         
         button.add(iconLabel, BorderLayout.CENTER);
         button.add(textLabel, BorderLayout.SOUTH);
-        
+        button.putClientProperty(ResponsiveToolBarLayout.ICON_PROPERTY, iconLabel);
+        button.putClientProperty(ResponsiveToolBarLayout.CAPTION_PROPERTY, textLabel);
+
         button.setToolTipText(tooltip);
-        int buttonWidth = Math.max(72, textLabel.getFontMetrics(textLabel.getFont()).stringWidth(text) + 12);
-        button.setPreferredSize(new Dimension(buttonWidth, 60));
+        // Translate captions without fixing button widths at startup.
+        // The single-row layout measures the current caption each time.
         textLabel.addPropertyChangeListener("text", event -> {
-            int translatedWidth = Math.max(72,
-                textLabel.getFontMetrics(textLabel.getFont()).stringWidth(textLabel.getText()) + 12);
-            button.setPreferredSize(new Dimension(translatedWidth, 60));
             if (toolBar != null) toolBar.revalidate();
         });
         button.setFocusPainted(false);
