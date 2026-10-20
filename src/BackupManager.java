@@ -317,6 +317,35 @@ public class BackupManager {
         finally{removeTemporary(staged);}
     }
 
+    /**
+     * Restore a backup into a NEW company file when no company is open.
+     * Never replace an existing database or modify the backup itself.
+     * The caller opens the completed file and saves its startup preference.
+     */
+    public synchronized Path restoreBackupAsNewDatabase(
+            Path source, Path destination, String legacyCurrency) throws Exception {
+        Path target = destination.toAbsolutePath().normalize();
+        if (target.getParent() == null || !isArchive(target))
+            throw new IOException("The new database filename must end in .wsbq");
+        if (Files.exists(target))
+            throw new java.nio.file.FileAlreadyExistsException(target.toString());
+        rejectActive(source);
+        Path staging = null;
+        try {
+            Files.createDirectories(target.getParent());
+            staging = prepareInput(source, target.getParent(), legacyCurrency);
+            WareStatFileHeader.seal(staging);
+            if (Files.exists(target))
+                throw new java.nio.file.FileAlreadyExistsException(target.toString());
+            // No REPLACE_EXISTING: restoring must not destroy another company.
+            Files.move(staging, target);
+            staging = null;
+            return target;
+        } finally {
+            removeTemporary(staging);
+        }
+    }
+
     public synchronized void importDatabase(Path source){importDatabase(source,null);}
     public synchronized void importDatabase(Path source,String legacyCurrency) {
         Path current=AppConstants.getDatabasePath().toAbsolutePath().normalize();
