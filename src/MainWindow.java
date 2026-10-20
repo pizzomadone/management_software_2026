@@ -869,11 +869,12 @@ public class MainWindow extends JFrame {
         StringBuilder shortcutsText = new StringBuilder();
         for (int i = 0; i < menuBar.getMenuCount(); i++) {
             JMenu menu = menuBar.getMenu(i);
-            if (menu == null) continue;
+            if (menu == null || !menu.isEnabled()) continue;
             StringBuilder section = new StringBuilder();
             for (int j = 0; j < menu.getItemCount(); j++) {
                 JMenuItem item = menu.getItem(j);
-                if (item == null || item.getAccelerator() == null) continue;
+                if (item == null || !item.isEnabled()
+                        || item.getAccelerator() == null) continue;
                 section.append(String.format("%-18s %s%n",
                     describeShortcut(item.getAccelerator()), item.getText()));
             }
