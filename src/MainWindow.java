@@ -131,13 +131,13 @@ public class MainWindow extends JFrame {
     }
     
     /**
-     * If a previously selected company has moved, ask the user how to proceed.
-     * Preferences change only after the replacement has opened successfully.
-     * A missing default database still follows the normal first-install flow.
+     * No database means recovery-only UI. A genuine 1.2 installation still
+     * receives its explicit legacy migration prompt instead.
      */
     static boolean needsStartupDatabaseRecovery(Path selected) {
-        return !selected.equals(AppConstants.getDefaultDatabasePath())
-            && !Files.isRegularFile(selected);
+        return !Files.isRegularFile(selected)
+            && !(selected.equals(AppConstants.getDefaultDatabasePath())
+                && WareStatLocalUpgrade.needsStartupConfirmation());
     }
 
     private static boolean initializeStartupDatabase() {
@@ -164,9 +164,11 @@ public class MainWindow extends JFrame {
     }
 
     private void showMissingDatabaseNotice() {
+        String notice = missingDatabaseAtStartup.equals(AppConstants.getDefaultDatabasePath())
+            ? I18n.tr("No WareStat database was found.")
+            : I18n.tr("The previously selected WareStat database cannot be found.");
         Dialogs.showMessageDialog(this,
-            I18n.tr("The previously selected WareStat database cannot be found.") +
-                "\n" + missingDatabaseAtStartup + "\n\n" +
+            notice + "\n" + missingDatabaseAtStartup + "\n\n" +
                 I18n.tr("Use File to open or create a database, or Tools to restore a backup."),
             I18n.tr("Database Not Found"), JOptionPane.WARNING_MESSAGE);
     }
