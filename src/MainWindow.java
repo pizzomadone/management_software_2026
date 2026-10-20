@@ -152,7 +152,10 @@ public class MainWindow extends JFrame {
                 }
 
                 DatabaseManager.getInstance().initDatabase();
-                if (recovering) AppConstants.rememberDatabasePath(selected);
+                if (recovering) {
+                    AppConstants.rememberDatabasePath(selected);
+                    AppConstants.useDatabasePathForSession(null);
+                }
                 return true;
             } catch (Exception problem) {
                 if (!recovering) {
