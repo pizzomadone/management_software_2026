@@ -7,9 +7,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.function.Consumer;
 
 public class BackupPanel extends JPanel {
     private final BackupManager backupManager = BackupManager.getInstance();
+    private final boolean recoveryMode;
+    private final Consumer<Path> recoveryRestore;
     private final SimpleDateFormat dateTimeFormat = new SimpleDateFormat("dd/MM/yyyy HH:mm:ss");
     private JTextField backupDirField;
     private JCheckBox autoBackupCheck;
@@ -19,6 +22,13 @@ public class BackupPanel extends JPanel {
     private DefaultTableModel tableModel;
 
     public BackupPanel() {
+        this(false, null);
+    }
+
+    /** Recovery mode exposes only the non-destructive backup restore workflow. */
+    public BackupPanel(boolean recoveryMode, Consumer<Path> recoveryRestore) {
+        this.recoveryMode = recoveryMode;
+        this.recoveryRestore = recoveryRestore;
         setLayout(new BorderLayout(10, 10));
         setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         initComponents();
@@ -86,6 +96,18 @@ public class BackupPanel extends JPanel {
         backupsTable.getColumnModel().getColumn(3).setPreferredWidth(420);
         backupsTable.getColumnModel().getColumn(4).setCellRenderer(new StatusRenderer());
         TableStyleUtil.applyCompact(backupsTable);
+        if (recoveryMode) {
+            JPanel recoveryButtons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+            addButton(recoveryButtons, "Restore Backup",
+                "Restore the selected backup into a new database file.",
+                this::restoreBackup);
+            addButton(recoveryButtons, "Refresh",
+                "Reload the backup history.",
+                this::loadBackupsList);
+            add(new JScrollPane(backupsTable), BorderLayout.CENTER);
+            add(recoveryButtons, BorderLayout.SOUTH);
+            return;
+        }
         TableInteractionUtil.addDeleteKeyAction(backupsTable, this::deleteSelectedBackup);
         TableInteractionUtil.addContextMenu(backupsTable,
             new TableInteractionUtil.TableAction("Perform Backup", this::performBackup, false),
@@ -277,6 +299,15 @@ public class BackupPanel extends JPanel {
         if (!Files.isRegularFile(path)) {
             Dialogs.showMessageDialog(this, I18n.tr("Backup file not found"),
                 I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        if (recoveryMode) {
+            if (Dialogs.showConfirmDialog(this,
+                    I18n.tr("Restore this backup into a new database file?"),
+                    I18n.tr("Confirm Restore"), JOptionPane.YES_NO_OPTION,
+                    JOptionPane.WARNING_MESSAGE) == JOptionPane.YES_OPTION
+                    && recoveryRestore != null)
+                recoveryRestore.accept(path);
             return;
         }
         if (Dialogs.showConfirmDialog(this,
