@@ -92,32 +92,12 @@ public class MainWindow extends JFrame {
 
         ApplicationLock.acquire();
 
-        // An installed 1.2 company must never migrate silently. A declined
-        // migration leaves data.db unchanged and does not create data.wsbq.
-        if (WareStatLocalUpgrade.needsStartupConfirmation()) {
-            Path legacy = WareStatLocalUpgrade.installedLegacyFile();
-            try {
-                if (!WareStatLegacy12.isVersion12(legacy))
-                    throw new IllegalArgumentException(
-                        "The existing data.db is not a recognized WareStat 1.2 database");
-                if (!confirmLegacyMigration(legacy)) {
-                    System.exit(0);
-                    return;
-                }
-                WareStatLocalUpgrade.migrateConfirmed(legacy,
-                    WareStatLegacy12.installedCurrency());
-            } catch (Exception problem) {
-                Dialogs.showMessageDialog(null,
-                    I18n.tr("Unable to migrate WareStat 1.2 database") + ":\n"
-                        + problem.getMessage(),
-                    I18n.tr("Database Error"), JOptionPane.ERROR_MESSAGE);
-                System.exit(1);
-                return;
-            }
+        // Resolve a missing user-selected company before creating any windows.
+        // Never replace that company silently with an empty database.
+        if (!initializeStartupDatabase()) {
+            System.exit(0);
+            return;
         }
-
-        // Initialize the database FIRST before any UI setup
-        DatabaseManager.getInstance().initDatabase();
         ProductImageStore.getInstance().removeOrphanFiles();
         BackupManager.getInstance().startAutomaticBackups();
 
@@ -139,6 +119,146 @@ public class MainWindow extends JFrame {
         SwingUtilities.invokeLater(() -> showPanel("WEB"));
     }
     
+    /**
+     * If a previously selected company has moved, ask the user how to proceed.
+     * Preferences change only after the replacement has opened successfully.
+     * A missing default database still follows the normal first-install flow.
+     */
+    static boolean needsStartupDatabaseRecovery(Path selected) {
+        return !selected.equals(AppConstants.getDefaultDatabasePath())
+            && !Files.isRegularFile(selected);
+    }
+
+    private static boolean initializeStartupDatabase() {
+        Path missing = AppConstants.getDatabasePath();
+        boolean recovering = needsStartupDatabaseRecovery(missing);
+        while (true) {
+            Path selected = missing;
+            if (recovering) {
+                selected = chooseStartupDatabase(missing);
+                if (selected == null) return false;
+                AppConstants.useDatabasePathForSession(selected);
+            }
+            try {
+                // A WareStat 1.2 database is never migrated without confirmation.
+                if (WareStatLocalUpgrade.needsStartupConfirmation()) {
+                    Path legacy = WareStatLocalUpgrade.installedLegacyFile();
+                    if (!WareStatLegacy12.isVersion12(legacy))
+                        throw new IllegalArgumentException(
+                            "The existing data.db is not a recognized WareStat 1.2 database");
+                    if (!confirmLegacyMigration(legacy)) return false;
+                    WareStatLocalUpgrade.migrateConfirmed(legacy,
+                        WareStatLegacy12.installedCurrency());
+                }
+
+                DatabaseManager.getInstance().initDatabase();
+                if (recovering) AppConstants.rememberDatabasePath(selected);
+                return true;
+            } catch (Exception problem) {
+                if (!recovering) {
+                    throw new IllegalStateException(
+                        "Unable to initialize the WareStat database: " + problem.getMessage(),
+                        problem);
+                }
+                // A failed candidate must not replace the old preference. If it
+                // opened before preference persistence failed, close it safely.
+                DatabaseManager.getInstance().shutdownAndSeal();
+                AppConstants.useDatabasePathForSession(null);
+                Dialogs.showMessageDialog(null,
+                    I18n.tr("Unable to open the selected database") + ":\n"
+                        + problem.getMessage(),
+                    I18n.tr("Database Error"), JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+
+    private static Path chooseStartupDatabase(Path missing) {
+        Path fallback = AppConstants.getDefaultDatabasePath();
+        boolean existingDefault = Files.exists(fallback)
+            || Files.isRegularFile(WareStatLocalUpgrade.installedLegacyFile());
+        String alternative = existingDefault ? "Use Default Database" : "Create New Database";
+        int screenWidth = GraphicsEnvironment.getLocalGraphicsEnvironment()
+            .getMaximumWindowBounds().width;
+        int width = Math.max(200, Math.min(500, screenWidth - 180));
+
+        while (true) {
+            JPanel content = new JPanel(new BorderLayout(0, 10));
+            JTextArea explanation = new JTextArea(
+                I18n.tr("The previously selected WareStat database cannot be found.")
+                    + "\n" + I18n.tr("Locate it or select another database to continue."));
+            explanation.setEditable(false);
+            explanation.setFocusable(false);
+            explanation.setOpaque(false);
+            explanation.setLineWrap(true);
+            explanation.setWrapStyleWord(true);
+            explanation.setFont(UIManager.getFont("OptionPane.messageFont"));
+            explanation.setSize(width, 100);
+            explanation.setPreferredSize(new Dimension(width,
+                Math.max(48, explanation.getPreferredSize().height)));
+            content.add(explanation, BorderLayout.NORTH);
+
+            JTextArea pathText = new JTextArea(missing.toString());
+            pathText.setEditable(false);
+            pathText.setLineWrap(true);
+            pathText.setWrapStyleWord(false);
+            pathText.setFont(UIManager.getFont("OptionPane.messageFont"));
+            pathText.setBackground(UIManager.getColor("Panel.background"));
+            JScrollPane pathPane = new JScrollPane(pathText);
+            pathPane.setBorder(BorderFactory.createTitledBorder(I18n.tr("Previous Database")));
+            pathPane.setPreferredSize(new Dimension(width, 82));
+            content.add(pathPane, BorderLayout.CENTER);
+
+            Object[] choices = { "Locate Database...", alternative, "Exit" };
+            int action = Dialogs.showOptionDialog(null, content,
+                I18n.tr("Database Not Found"), JOptionPane.DEFAULT_OPTION,
+                JOptionPane.WARNING_MESSAGE, null, choices, choices[0]);
+            if (action == 1) return fallback;
+            if (action != 0) return null;
+
+            Path candidate = chooseExistingStartupDatabase(missing);
+            if (candidate == null) continue;
+            try {
+                if (!candidate.getFileName().toString()
+                        .toLowerCase(java.util.Locale.ROOT).endsWith(".wsbq")
+                        || !Files.isRegularFile(candidate)
+                        || (!WareStatFileHeader.isSealed(candidate)
+                            && !WareStatFileHeader.isSQLite(candidate)))
+                    throw new java.io.IOException(
+                        "Select an existing WareStat .wsbq database");
+                return candidate;
+            } catch (Exception problem) {
+                Dialogs.showMessageDialog(null, problem.getMessage(),
+                    I18n.tr("Database Error"), JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+
+    private static Path chooseExistingStartupDatabase(Path previous) {
+        Path directory = previous.getParent();
+        if (directory == null || !Files.isDirectory(directory))
+            directory = AppConstants.getAppDataDirectory();
+
+        if (System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT)
+                .contains("mac")) {
+            FileDialog dialog = new FileDialog((Frame) null,
+                I18n.tr("Select a WareStat Database"), FileDialog.LOAD);
+            dialog.setDirectory(directory.toString());
+            dialog.setFilenameFilter((folder, name) ->
+                name.toLowerCase(java.util.Locale.ROOT).endsWith(".wsbq"));
+            dialog.setVisible(true);
+            return dialog.getFile() == null ? null
+                : new File(dialog.getDirectory(), dialog.getFile())
+                    .toPath().toAbsolutePath().normalize();
+        }
+
+        JFileChooser chooser = new JFileChooser(directory.toFile());
+        chooser.setDialogTitle(I18n.tr("Select a WareStat Database"));
+        chooser.setFileFilter(new FileNameExtensionFilter(
+            I18n.tr("WareStat Database (*.wsbq)"), "wsbq"));
+        return chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION
+            ? chooser.getSelectedFile().toPath().toAbsolutePath().normalize() : null;
+    }
+
     private void setupWindow() {
         setTitle(AppConstants.SOFTWARE_NAME + " - " + I18n.tr("Management System"));
         Image applicationIcon = loadApplicationIcon();
