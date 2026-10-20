@@ -101,6 +101,9 @@ public class BackupPanel extends JPanel {
             addButton(recoveryButtons, "Restore Backup",
                 "Restore the selected backup into a new database file.",
                 this::restoreBackup);
+            addButton(recoveryButtons, "Restore from File...",
+                "Select an existing backup file to restore into a new database.",
+                this::restoreRecoveryBackupFromFile);
             addButton(recoveryButtons, "Refresh",
                 "Reload the backup history.",
                 this::loadBackupsList);
@@ -290,6 +293,17 @@ public class BackupPanel extends JPanel {
         } catch (Exception exception) {
             showError("Unable to import backup", exception);
         }
+    }
+
+    private void restoreRecoveryBackupFromFile() {
+        if (!recoveryMode || recoveryRestore == null) return;
+        File selected = chooseBackupFile();
+        if (selected == null) return;
+        if (Dialogs.showConfirmDialog(this,
+                I18n.tr("Restore this backup into a new database file?"),
+                I18n.tr("Confirm Restore"), JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE) == JOptionPane.YES_OPTION)
+            recoveryRestore.accept(selected.toPath());
     }
 
     private void restoreBackup() {
