@@ -27,6 +27,7 @@ public final class ResponsiveToolBarLayout implements LayoutManager {
         new Mode(12f, 22f, 62, 10, 8, 57),
         new Mode(11f, 20f, 54, 8, 6, 54),
         new Mode(10f, 18f, 46, 6, 4, 50),
+        new Mode(9f, 16f, 42, 4, 3, 48),
         new Mode(0f, 20f, 39, 0, 3, 46)
     };
 
