@@ -24,6 +24,29 @@ public final class StartupDatabaseRecoveryRegressionTest {
             Files.delete(missing);
             check(MainWindow.needsStartupDatabaseRecovery(missing),
                 "Removed database must offer recovery again");
+            // Recovery-only settings must not initialize SQLite or expose
+            // company fields, and currency changes must remain unavailable.
+            Path defaultFile = AppConstants.getDefaultDatabasePath();
+            boolean defaultExisted = Files.exists(defaultFile);
+            SettingsPanel preferences = new SettingsPanel(true);
+            javax.swing.JTabbedPane tabs = null;
+            for (java.awt.Component component : preferences.getComponents()) {
+                if (component instanceof javax.swing.JTabbedPane found) tabs = found;
+            }
+            check(tabs != null && tabs.getTabCount() == 1
+                    && "Settings".equals(tabs.getTitleAt(0)),
+                "Recovery settings must hide the database-dependent Company Data tab");
+            java.lang.reflect.Field currencyField =
+                SettingsPanel.class.getDeclaredField("currencyCombo");
+            currencyField.setAccessible(true);
+            javax.swing.JComboBox<?> currency =
+                (javax.swing.JComboBox<?>) currencyField.get(preferences);
+            check(currency != null && !currency.isEnabled(),
+                "Currency change must be disabled without a company database");
+            check(defaultExisted == Files.exists(defaultFile),
+                "Opening recovery settings must not create a database");
+            System.out.println("PASS: Recovery settings are database-independent");
+
             // Restoring must create a new company, leave the original backup
             // byte-for-byte unchanged, and reject overwriting existing files.
             Path originalBackup = temp.resolve("backup.wsbq");
