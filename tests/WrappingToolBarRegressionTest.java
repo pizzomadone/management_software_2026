@@ -12,8 +12,8 @@ public final class WrappingToolBarRegressionTest {
         toolbar.setFloatable(false);
         toolbar.setLayout(new WrappingToolBarLayout());
         List<JButton> buttons = new ArrayList<>();
-        int[] widths = {80, 90, 110, 95, 155, 175, 95, 105, 105,
-                        125, 105, 165, 90, 95};
+        int[] widths = {72, 82, 102, 87, 147, 167, 87, 97, 97,
+                        117, 97, 157, 82, 87};
         for (int i = 0; i < widths.length; i++) {
             if (i == 2 || i == 9 || i == 12) toolbar.addSeparator(new Dimension(12, 55));
             JButton button = new JButton("Section " + i);
@@ -22,12 +22,16 @@ public final class WrappingToolBarRegressionTest {
             toolbar.add(button);
         }
 
-        // Screen size in the reported macOS screenshot: all 14 sections must fit.
-        checkLayout(toolbar, buttons, 1536, true);
+        // Fit compact-but-labeled buttons into the reported 1536px Mac screen.
+        checkLayout(toolbar, buttons, 1536, false);
         checkLayout(toolbar, buttons, 1100, true);
         checkLayout(toolbar, buttons, 800, true);
         // Restoring a larger window collapses the additional rows.
         checkLayout(toolbar, buttons, 2400, false);
+        // Long translated captions still wrap rather than become unreachable.
+        buttons.get(4).setPreferredSize(new Dimension(350, 60));
+        buttons.get(5).setPreferredSize(new Dimension(370, 60));
+        checkLayout(toolbar, buttons, 1536, true);
         System.out.println("PASS: Toolbar sections remain inside window at different widths");
     }
 
