@@ -584,6 +584,7 @@ public class MainWindow extends JFrame {
         toolBar = new JToolBar();
         toolBar.setFloatable(false);
         toolBar.setRollover(true);
+        toolBar.setLayout(new WrappingToolBarLayout());
 
         // Home button
         homeButton = createToolBarButton("🏠", "Home", "Go to Dashboard");
@@ -652,6 +653,14 @@ public class MainWindow extends JFrame {
         toolBar.add(settingsButton);
 
         add(toolBar, BorderLayout.NORTH);
+        // BorderLayout's NORTH height must be recalculated whenever the window
+        // width changes; a fixed single-row toolbar clipped the final buttons.
+        getContentPane().addComponentListener(new java.awt.event.ComponentAdapter() {
+            @Override public void componentResized(java.awt.event.ComponentEvent event) {
+                toolBar.revalidate();
+                toolBar.repaint();
+            }
+        });
 
         // Set home button as active by default
         setActiveButton(homeButton);
