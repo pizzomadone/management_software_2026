@@ -71,8 +71,13 @@ public class DashboardPanel extends JPanel {
     }
 
     private void showNoDatabaseDashboard() {
-        JLabel notice = new JLabel(I18n.tr(
+        JTextArea notice = new JTextArea(I18n.tr(
             "No database open. Open, create or restore a database to view company data."));
+        notice.setEditable(false);
+        notice.setFocusable(false);
+        notice.setLineWrap(true);
+        notice.setWrapStyleWord(true);
+        notice.setRows(2);
         notice.setFont(dashboardFont(Font.PLAIN, 13f));
         notice.setForeground(PRIMARY_COLOR);
         notice.setOpaque(true);
