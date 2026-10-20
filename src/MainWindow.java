@@ -65,6 +65,12 @@ public class MainWindow extends JFrame {
     
     // Current panel name for reference
     private String currentPanel = "HOME";
+    private boolean databaseReady;
+    private Path missingDatabaseAtStartup;
+    private JMenuItem newDatabaseItem;
+    private JMenuItem openDatabaseItem;
+    private JMenuItem backupManagementItem;
+    private JMenuItem exitMenuItem;
     
     public MainWindow() {
         SettingsPanel.loadGlobalSettings();
@@ -92,14 +98,19 @@ public class MainWindow extends JFrame {
 
         ApplicationLock.acquire();
 
-        // Resolve a missing user-selected company before creating any windows.
-        // Never replace that company silently with an empty database.
-        if (!initializeStartupDatabase()) {
-            System.exit(0);
-            return;
+        // The window remains usable for recovery when a selected company is missing.
+        // Do not create, move or replace a database without an explicit action.
+        Path selectedAtStartup = AppConstants.getDatabasePath();
+        databaseReady = !needsStartupDatabaseRecovery(selectedAtStartup);
+        missingDatabaseAtStartup = databaseReady ? null : selectedAtStartup;
+        if (databaseReady) {
+            if (!initializeStartupDatabase()) {
+                System.exit(0);
+                return;
+            }
+            ProductImageStore.getInstance().removeOrphanFiles();
+            BackupManager.getInstance().startAutomaticBackups();
         }
-        ProductImageStore.getInstance().removeOrphanFiles();
-        BackupManager.getInstance().startAutomaticBackups();
 
         // Ensure license file exists
         LicenseText.ensureLicenseFileExists();
@@ -115,8 +126,8 @@ public class MainWindow extends JFrame {
         SettingsPanel.applyGlobalSettings();
         I18n.localize(this);
 
-        // Show the online WareStat page at every application start.
-        SwingUtilities.invokeLater(() -> showPanel("WEB"));
+        setDatabaseAvailability(databaseReady);
+        if (databaseReady) SwingUtilities.invokeLater(() -> showPanel("WEB"));
     }
     
     /**
@@ -130,136 +141,170 @@ public class MainWindow extends JFrame {
     }
 
     private static boolean initializeStartupDatabase() {
-        Path missing = AppConstants.getDatabasePath();
-        boolean recovering = needsStartupDatabaseRecovery(missing);
-        while (true) {
-            Path selected = missing;
-            if (recovering) {
-                selected = chooseStartupDatabase(missing);
-                if (selected == null) return false;
-                AppConstants.useDatabasePathForSession(selected);
-            }
+        // Genuine WareStat 1.2 installations still require explicit consent.
+        if (WareStatLocalUpgrade.needsStartupConfirmation()) {
+            Path legacy = WareStatLocalUpgrade.installedLegacyFile();
             try {
-                // A WareStat 1.2 database is never migrated without confirmation.
-                if (WareStatLocalUpgrade.needsStartupConfirmation()) {
-                    Path legacy = WareStatLocalUpgrade.installedLegacyFile();
-                    if (!WareStatLegacy12.isVersion12(legacy))
-                        throw new IllegalArgumentException(
-                            "The existing data.db is not a recognized WareStat 1.2 database");
-                    if (!confirmLegacyMigration(legacy)) return false;
-                    WareStatLocalUpgrade.migrateConfirmed(legacy,
-                        WareStatLegacy12.installedCurrency());
-                }
-
-                DatabaseManager.getInstance().initDatabase();
-                if (recovering) {
-                    AppConstants.rememberDatabasePath(selected);
-                    AppConstants.useDatabasePathForSession(null);
-                }
-                return true;
+                if (!WareStatLegacy12.isVersion12(legacy))
+                    throw new IllegalArgumentException(
+                        "The existing data.db is not a recognized WareStat 1.2 database");
+                if (!confirmLegacyMigration(legacy)) return false;
+                WareStatLocalUpgrade.migrateConfirmed(legacy,
+                    WareStatLegacy12.installedCurrency());
             } catch (Exception problem) {
-                if (!recovering) {
-                    throw new IllegalStateException(
-                        "Unable to initialize the WareStat database: " + problem.getMessage(),
-                        problem);
-                }
-                // A failed candidate must not replace the old preference. If it
-                // opened before preference persistence failed, close it safely.
-                DatabaseManager.getInstance().shutdownAndSeal();
-                AppConstants.useDatabasePathForSession(null);
                 Dialogs.showMessageDialog(null,
-                    I18n.tr("Unable to open the selected database") + ":\n"
-                        + problem.getMessage(),
-                    I18n.tr("Database Error"), JOptionPane.ERROR_MESSAGE);
+                    I18n.tr("Unable to migrate WareStat 1.2 database") + ":\n"
+                        + problem.getMessage(), I18n.tr("Database Error"),
+                    JOptionPane.ERROR_MESSAGE);
+                return false;
             }
         }
+        DatabaseManager.getInstance().initDatabase();
+        return true;
     }
 
-    private static Path chooseStartupDatabase(Path missing) {
-        Path fallback = AppConstants.getDefaultDatabasePath();
-        boolean existingDefault = Files.exists(fallback)
-            || Files.isRegularFile(WareStatLocalUpgrade.installedLegacyFile());
-        String alternative = existingDefault ? "Use Default Database" : "Create New Database";
-        int screenWidth = GraphicsEnvironment.getLocalGraphicsEnvironment()
-            .getMaximumWindowBounds().width;
-        int width = Math.max(200, Math.min(500, screenWidth - 180));
+    private void showMissingDatabaseNotice() {
+        Dialogs.showMessageDialog(this,
+            I18n.tr("The previously selected WareStat database cannot be found.") +
+                "\n" + missingDatabaseAtStartup + "\n\n" +
+                I18n.tr("Use File to open or create a database, or Tools to restore a backup."),
+            I18n.tr("Database Not Found"), JOptionPane.WARNING_MESSAGE);
+    }
 
-        while (true) {
-            JPanel content = new JPanel(new BorderLayout(0, 10));
-            JTextArea explanation = new JTextArea(
-                I18n.tr("The previously selected WareStat database cannot be found.")
-                    + "\n" + I18n.tr("Locate it or select another database to continue."));
-            explanation.setEditable(false);
-            explanation.setFocusable(false);
-            explanation.setOpaque(false);
-            explanation.setLineWrap(true);
-            explanation.setWrapStyleWord(true);
-            explanation.setFont(UIManager.getFont("OptionPane.messageFont"));
-            explanation.setSize(width, 100);
-            explanation.setPreferredSize(new Dimension(width,
-                Math.max(48, explanation.getPreferredSize().height)));
-            content.add(explanation, BorderLayout.NORTH);
+    private void setDatabaseAvailability(boolean available) {
+        for (int i = 0; i < menuBar.getMenuCount(); i++) {
+            JMenu menu = menuBar.getMenu(i);
+            if (menu == null) continue;
+            if (i == 0) {
+                menu.setEnabled(true);
+                for (int j = 0; j < menu.getItemCount(); j++) {
+                    JMenuItem item = menu.getItem(j);
+                    if (item != null)
+                        item.setEnabled(available
+                            ? item != newDatabaseItem
+                            : item == newDatabaseItem || item == openDatabaseItem
+                                || item == exitMenuItem);
+                }
+            } else if (i == 3) {
+                menu.setEnabled(true);
+                for (int j = 0; j < menu.getItemCount(); j++) {
+                    JMenuItem item = menu.getItem(j);
+                    if (item != null)
+                        item.setEnabled(available || item == backupManagementItem);
+                }
+            } else {
+                menu.setEnabled(available);
+            }
+        }
+        toolBar.setVisible(available);
+        menuBar.revalidate();
+        revalidate();
+        repaint();
+    }
 
-            JTextArea pathText = new JTextArea(missing.toString());
-            pathText.setEditable(false);
-            pathText.setLineWrap(true);
-            pathText.setWrapStyleWord(false);
-            pathText.setFont(UIManager.getFont("OptionPane.messageFont"));
-            pathText.setBackground(UIManager.getColor("Panel.background"));
-            JScrollPane pathPane = new JScrollPane(pathText);
-            pathPane.setBorder(BorderFactory.createTitledBorder(I18n.tr("Previous Database")));
-            pathPane.setPreferredSize(new Dimension(width, 82));
-            content.add(pathPane, BorderLayout.CENTER);
+    private void activateRecoveredDatabase() {
+        databaseReady = true;
+        missingDatabaseAtStartup = null;
+        ProductImageStore.getInstance().removeOrphanFiles();
+        BackupManager.getInstance().startAutomaticBackups();
+        setupPanels();
+        setDatabaseAvailability(true);
+        refreshCompanyPanels();
+    }
 
-            Object[] choices = { "Locate Database...", alternative, "Exit" };
-            int action = Dialogs.showOptionDialog(null, content,
-                I18n.tr("Database Not Found"), JOptionPane.DEFAULT_OPTION,
-                JOptionPane.WARNING_MESSAGE, null, choices, choices[0]);
-            if (action == 1) return fallback;
-            if (action != 0) return null;
+    /** A failed recovery must never save a new active path or unlock the app. */
+    private void openRecoveryDatabase(Path chosen) {
+        Path candidate = chosen.toAbsolutePath().normalize();
+        try {
+            boolean legacy = candidate.getFileName().toString()
+                .toLowerCase(java.util.Locale.ROOT).endsWith(".db");
+            if (legacy) {
+                if (!WareStatLegacy12.isVersion12(candidate))
+                    throw new java.io.IOException("Not a WareStat 1.2 database");
+                if (!confirmLegacyMigration(candidate)) return;
+                String currency = DatabaseCurrency.confirmLegacyCurrency(this, candidate);
+                if (currency == null) return;
+                candidate = WareStatLocalUpgrade.migrateConfirmed(candidate, currency);
+            } else if (!candidate.getFileName().toString()
+                    .toLowerCase(java.util.Locale.ROOT).endsWith(".wsbq")
+                    || !Files.isRegularFile(candidate)
+                    || !WareStatFileHeader.isSealed(candidate))
+                throw new java.io.IOException("Select a valid WareStat .wsbq database");
 
-            Path candidate = chooseExistingStartupDatabase(missing);
-            if (candidate == null) continue;
+            AppConstants.useDatabasePathForSession(candidate);
+            DatabaseManager.getInstance().initDatabase();
+            CompanyData.getInstance().reloadFromDatabase();
+            AppConstants.rememberDatabasePath(candidate);
+            AppConstants.useDatabasePathForSession(null);
+            activateRecoveredDatabase();
+        } catch (Exception problem) {
             try {
-                if (!candidate.getFileName().toString()
-                        .toLowerCase(java.util.Locale.ROOT).endsWith(".wsbq")
-                        || !Files.isRegularFile(candidate)
-                        || (!WareStatFileHeader.isSealed(candidate)
-                            && !WareStatFileHeader.isSQLite(candidate)))
-                    throw new java.io.IOException(
-                        "Select an existing WareStat .wsbq database");
-                return candidate;
-            } catch (Exception problem) {
-                Dialogs.showMessageDialog(null, problem.getMessage(),
-                    I18n.tr("Database Error"), JOptionPane.ERROR_MESSAGE);
+                DatabaseManager.getInstance().shutdownAndSeal();
+            } catch (RuntimeException closeError) {
+                problem.addSuppressed(closeError);
+            } finally {
+                AppConstants.useDatabasePathForSession(null);
+            }
+            showDatabaseError("Unable to open database", problem);
+        }
+    }
+
+    private void createRecoveryDatabase() {
+        Path target = chooseDatabaseFile(true);
+        if (target == null) return;
+        if (!target.getFileName().toString()
+                .toLowerCase(java.util.Locale.ROOT).endsWith(".wsbq"))
+            target = target.resolveSibling(target.getFileName() + ".wsbq");
+        target = target.toAbsolutePath().normalize();
+        if (Files.exists(target)) {
+            Dialogs.showMessageDialog(this,
+                I18n.tr("The selected file already exists. Choose another filename."),
+                I18n.tr("New Database"), JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        Path staging = null;
+        try {
+            Files.createDirectories(target.getParent());
+            staging = Files.createTempFile(target.getParent(), "warestat-new-", ".wsbq");
+            DatabaseManager.createEmptyDatabase(staging, SettingsPanel.getCurrencyCode());
+            WareStatFileHeader.seal(staging);
+            Files.move(staging, target);
+            staging = null;
+            openRecoveryDatabase(target);
+        } catch (Exception problem) {
+            showDatabaseError("Unable to create database", problem);
+        } finally {
+            if (staging != null) {
+                try { Files.deleteIfExists(staging); } catch (java.io.IOException ignored) {}
             }
         }
     }
 
-    private static Path chooseExistingStartupDatabase(Path previous) {
-        Path directory = previous.getParent();
-        if (directory == null || !Files.isDirectory(directory))
-            directory = AppConstants.getAppDataDirectory();
-
-        if (System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT)
-                .contains("mac")) {
-            FileDialog dialog = new FileDialog((Frame) null,
-                I18n.tr("Select a WareStat Database"), FileDialog.LOAD);
-            dialog.setDirectory(directory.toString());
-            dialog.setFilenameFilter((folder, name) ->
-                name.toLowerCase(java.util.Locale.ROOT).endsWith(".wsbq"));
-            dialog.setVisible(true);
-            return dialog.getFile() == null ? null
-                : new File(dialog.getDirectory(), dialog.getFile())
-                    .toPath().toAbsolutePath().normalize();
+    private void restoreRecoveryBackup(Path source) {
+        Path target = chooseDatabaseFile(true);
+        if (target == null) return;
+        if (!target.getFileName().toString()
+                .toLowerCase(java.util.Locale.ROOT).endsWith(".wsbq"))
+            target = target.resolveSibling(target.getFileName() + ".wsbq");
+        target = target.toAbsolutePath().normalize();
+        if (Files.exists(target)) {
+            Dialogs.showMessageDialog(this,
+                I18n.tr("The selected file already exists. Choose another filename."),
+                I18n.tr("Restore Backup"), JOptionPane.WARNING_MESSAGE);
+            return;
         }
-
-        JFileChooser chooser = new JFileChooser(directory.toFile());
-        chooser.setDialogTitle(I18n.tr("Select a WareStat Database"));
-        chooser.setFileFilter(new FileNameExtensionFilter(
-            I18n.tr("WareStat Database (*.wsbq)"), "wsbq"));
-        return chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION
-            ? chooser.getSelectedFile().toPath().toAbsolutePath().normalize() : null;
+        try {
+            String legacyCurrency = null;
+            if (!BackupManager.isArchive(source)) {
+                legacyCurrency = DatabaseCurrency.confirmLegacyCurrency(this, source);
+                if (legacyCurrency == null) return;
+            }
+            BackupManager.getInstance().restoreBackupAsNewDatabase(source, target, legacyCurrency);
+            openRecoveryDatabase(target);
+        } catch (Exception problem) {
+            showDatabaseError("Unable to restore backup", problem);
+        }
     }
 
     private void setupWindow() {
@@ -331,11 +376,15 @@ public class MainWindow extends JFrame {
         fileMenu.add(newInvoiceItem);
         fileMenu.addSeparator();
 
+        newDatabaseItem = new JMenuItem("New Database...");
+        newDatabaseItem.addActionListener(e -> createRecoveryDatabase());
+        fileMenu.add(newDatabaseItem);
+
         JMenuItem newArchiveItem = new JMenuItem("New Archive...");
         newArchiveItem.addActionListener(e -> createNewArchive());
         fileMenu.add(newArchiveItem);
 
-        JMenuItem openDatabaseItem = new JMenuItem("Open...");
+        openDatabaseItem = new JMenuItem("Open...");
         openDatabaseItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_O,
             Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx()));
         openDatabaseItem.addActionListener(e -> openDatabase());
@@ -357,6 +406,7 @@ public class MainWindow extends JFrame {
         fileMenu.addSeparator();
         
         JMenuItem exitItem = new JMenuItem("Exit");
+        exitMenuItem = exitItem;
         exitItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_Q, 
             Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx()));
         exitItem.addActionListener(e -> System.exit(0));
@@ -438,6 +488,7 @@ public class MainWindow extends JFrame {
         toolsMenu.setMnemonic(KeyEvent.VK_T);
         
         JMenuItem backupItem = new JMenuItem("Backup Management");
+        backupManagementItem = backupItem;
         backupItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_B, 
             Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx()));
         backupItem.addActionListener(e -> showPanel("BACKUP"));
@@ -674,15 +725,37 @@ public class MainWindow extends JFrame {
         cardLayout = new CardLayout();
         mainPanel = new JPanel(cardLayout);
 
-        // Create dashboard panel
-        dashboardPanel = new DashboardPanel(this);
-        dashboardPanel.setName("HOME");
-        mainPanel.add(dashboardPanel, "HOME");
+        if (databaseReady) {
+            dashboardPanel = new DashboardPanel(this);
+            dashboardPanel.setName("HOME");
+            mainPanel.add(dashboardPanel, "HOME");
+        } else {
+            JPanel empty = new JPanel(new GridBagLayout());
+            empty.setName("NO_DATABASE");
+            JPanel text = new JPanel(new BorderLayout(0, 14));
+            JLabel title = new JLabel(I18n.tr("No database open"));
+            title.setFont(title.getFont().deriveFont(Font.BOLD, 19f));
+            text.add(title, BorderLayout.NORTH);
+            JTextArea instructions = new JTextArea(
+                I18n.tr("Use File to open or create a database, or Tools to restore a backup."));
+            instructions.setEditable(false);
+            instructions.setOpaque(false);
+            instructions.setLineWrap(true);
+            instructions.setWrapStyleWord(true);
+            instructions.setFocusable(false);
+            instructions.setPreferredSize(new Dimension(440, 70));
+            text.add(instructions, BorderLayout.CENTER);
+            empty.add(text);
+            mainPanel.add(empty, "NO_DATABASE");
+            currentPanel = "NO_DATABASE";
+            cardLayout.show(mainPanel, "NO_DATABASE");
+        }
 
         add(mainPanel, BorderLayout.CENTER);
     }
     
     private void setupPanels() {
+        if (!databaseReady || webPanel != null) return;
         // Discover is the startup page: create its browser eagerly so that the
         // configured URL starts loading even before the card is made visible.
         // The remaining management panels stay lazy to preserve startup cost.
@@ -831,6 +904,7 @@ public class MainWindow extends JFrame {
     }
 
     private void showPanel(String panelName) {
+        if (!databaseReady && !"BACKUP".equals(panelName)) return;
         try {
             // Every management panel loads its initial data in its
             // constructor. Refreshing it again here issued duplicate SQL
@@ -992,7 +1066,8 @@ public class MainWindow extends JFrame {
                 
             case "BACKUP":
                 if (backupPanel == null) {
-                    backupPanel = new BackupPanel();
+                    backupPanel = databaseReady ? new BackupPanel()
+                        : new BackupPanel(true, this::restoreRecoveryBackup);
                 }
                 panel = backupPanel;
                 break;
@@ -1118,6 +1193,10 @@ public class MainWindow extends JFrame {
         Path source = chooseDatabaseFile(false);
         if (source == null) return;
         source = source.toAbsolutePath().normalize();
+        if (!databaseReady) {
+            openRecoveryDatabase(source);
+            return;
+        }
         if (source.equals(AppConstants.getDatabasePath().toAbsolutePath().normalize()))
             return;
         boolean legacy = source.getFileName().toString().toLowerCase(
@@ -1384,6 +1463,7 @@ public class MainWindow extends JFrame {
             try {
                 MainWindow mainWindow = new MainWindow();
                 mainWindow.setVisible(true);
+                if (!mainWindow.databaseReady) mainWindow.showMissingDatabaseNotice();
                 CostIntegrity.Audit audit=DatabaseManager.getInstance().takeStartupCostAudit();
                 if (audit != null) Dialogs.showMessageDialog(mainWindow,
                     CostIntegrity.summary(audit), I18n.tr("Database Updated"), JOptionPane.INFORMATION_MESSAGE);
