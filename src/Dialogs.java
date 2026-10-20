@@ -142,7 +142,36 @@ public final class Dialogs {
     }
 
     private static Object message(Object value) {
-        if (value instanceof String text) return I18n.tr(text);
+        if (value instanceof String text) {
+            String translated = I18n.tr(text);
+            // JOptionPane does not wrap a long file path or exception message.
+            // Keep long messages readable and inside the usable screen area.
+            int longestLine = 0;
+            for (String line : translated.split("\\n", -1))
+                longestLine = Math.max(longestLine, line.length());
+            if (longestLine <= 90 && translated.length() <= 240
+                    || GraphicsEnvironment.isHeadless())
+                return translated;
+
+            Rectangle screen = GraphicsEnvironment.getLocalGraphicsEnvironment()
+                .getMaximumWindowBounds();
+            int width = Math.max(180, Math.min(560, screen.width - 140));
+            JTextArea area = new JTextArea(translated);
+            area.setEditable(false);
+            area.setLineWrap(true);
+            area.setWrapStyleWord(true);
+            area.setFont(UIManager.getFont("OptionPane.messageFont"));
+            area.setOpaque(false);
+            area.setSize(new Dimension(width, 2000));
+            int height = Math.max(45, Math.min(area.getPreferredSize().height + 8,
+                Math.max(80, Math.min(300, screen.height - 170))));
+            JScrollPane pane = new JScrollPane(area,
+                ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
+                ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+            pane.setBorder(BorderFactory.createEmptyBorder());
+            pane.setPreferredSize(new Dimension(width, height));
+            return pane;
+        }
         if (value instanceof Object[] values) {
   Object[] translated = values.clone();
   for (int i = 0; i < translated.length; i++) translated[i] = message(translated[i]);
