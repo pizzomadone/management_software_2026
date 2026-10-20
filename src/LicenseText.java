@@ -65,6 +65,9 @@ public class LicenseText {
 "    to any third party, whether for free or for commercial gain\n" +
 "  ✗ Use this software for any illegal or unauthorized purpose\n" +
 "\n" +
+"These restrictions do not limit rights that cannot be excluded under\n" +
+"applicable law, including mandatory software interoperability exceptions.\n" +
+"\n" +
 "REDISTRIBUTION IS STRICTLY PROHIBITED. This software may only be distributed\n" +
 "by %s or authorized parties. Any unauthorized distribution, whether free\n" +
 "or commercial, constitutes a violation of this license and applicable copyright\n" +
@@ -85,34 +88,41 @@ public class LicenseText {
 "5. NO WARRANTY\n" +
 "================================================================================\n" +
 "\n" +
-"THIS SOFTWARE IS PROVIDED \"AS IS\" WITHOUT WARRANTY OF ANY KIND, EITHER\n" +
-"EXPRESS OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF\n" +
-"MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, OR NON-INFRINGEMENT.\n" +
+"TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THIS SOFTWARE IS\n" +
+"PROVIDED \"AS IS\" WITHOUT VOLUNTARY WARRANTIES OF ANY KIND. MANDATORY\n" +
+"STATUTORY RIGHTS AND WARRANTIES ARE NOT EXCLUDED OR RESTRICTED.\n" +
 "\n" +
-"%s CREATOR DOES NOT WARRANT THAT THE SOFTWARE WILL MEET YOUR REQUIREMENTS\n" +
-"OR THAT THE OPERATION OF THE SOFTWARE WILL BE UNINTERRUPTED OR ERROR-FREE.\n" +
+"%s CREATOR DOES NOT GUARANTEE UNINTERRUPTED OR ERROR-FREE OPERATION.\n" +
+"INVENTORY, COST, PROFIT, TAX, VAT, INVOICE, REPORTING, AND OTHER BUSINESS\n" +
+"CALCULATIONS MAY CONTAIN ERRORS OR REQUIRE USER-SPECIFIC CONFIGURATION.\n" +
+"USERS MUST INDEPENDENTLY CHECK RESULTS BEFORE RELYING ON THEM FOR LEGAL,\n" +
+"TAX, ACCOUNTING, COMMERCIAL, OR FINANCIAL DECISIONS. KEEP VERIFIED BACKUPS.\n" +
 "\n" +
 "================================================================================\n" +
 "6. LIMITATION OF LIABILITY\n" +
 "================================================================================\n" +
 "\n" +
-"IN NO EVENT SHALL THE %s CREATOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,\n" +
-"SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,\n" +
-"PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;\n" +
-"OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,\n" +
-"WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR\n" +
-"OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF\n" +
-"ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.\n" +
+"TO THE EXTENT PERMITTED BY APPLICABLE LAW, THE %s CREATOR SHALL NOT\n" +
+"BE LIABLE FOR LOSSES ARISING FROM RELIANCE ON INCORRECT CALCULATIONS,\n" +
+"REPORTS, INVENTORY RECORDS, INVOICES, DATA LOSS, LOST PROFITS, OR BUSINESS\n" +
+"INTERRUPTION. USERS REMAIN RESPONSIBLE FOR VERIFYING IMPORTANT OUTPUTS.\n" +
 "\n" +
-"YOU ASSUME ALL RISKS AND RESPONSIBILITY FOR THE USE OF THIS SOFTWARE.\n" +
+"NOTHING IN THIS AGREEMENT EXCLUDES OR LIMITS LIABILITY WHERE SUCH EXCLUSION\n" +
+"OR LIMITATION IS PROHIBITED BY MANDATORY LAW, INCLUDING LIABILITY ARISING\n" +
+"FROM INTENTIONAL MISCONDUCT OR GROSS NEGLIGENCE WHERE APPLICABLE.\n" +
 "\n" +
 "================================================================================\n" +
 "7. DATA AND PRIVACY\n" +
 "================================================================================\n" +
 "\n" +
-"This software stores all data LOCALLY on your device. No data is transmitted\n" +
-"to %s or any third party. You are the data controller for any\n" +
-"personal data you process using this software.\n" +
+"WareStat stores company records in local database files. The embedded\n" +
+"Discover page connects to %s's website and necessarily transmits\n" +
+"connection information (such as your IP address and technical user-agent\n" +
+"details including device, operating system, language, and display settings).\n" +
+"Website resources may involve additional third-party network requests.\n" +
+"The local company database is not uploaded merely by opening Discover.\n" +
+"Where you determine the purposes and means of processing business personal\n" +
+"data, you are responsible for complying with applicable privacy laws.\n" +
 "\n" +
 "You are responsible for:\n" +
 "  • Compliance with applicable data protection laws (including GDPR)\n" +
@@ -161,8 +171,9 @@ public class LicenseText {
 "This agreement shall be governed by and construed in accordance with the laws\n" +
 "of %s.\n" +
 "\n" +
-"Any disputes arising from this agreement shall be subject to the exclusive\n" +
-"jurisdiction of the %s.\n" +
+"Subject to any mandatory consumer-protection rules and jurisdictional\n" +
+"requirements, disputes shall be subject to the competent courts, including\n" +
+"the %s where legally applicable. Mandatory consumer forums prevail.\n" +
 "\n" +
 "================================================================================\n" +
 "12. ENTIRE AGREEMENT\n" +
@@ -217,29 +228,22 @@ public class LicenseText {
     }
 
     /**
-     * Generate LICENSE.txt file if it doesn't exist.
-     * Creates in app data directory on all platforms.
-     * Should be called at application startup.
+     * Synchronize the user-visible LICENSE.txt with the currently installed version.
+     * Accepted copies and receipts are kept separately by EulaAcceptanceStore.
      */
     public static void ensureLicenseFileExists() {
         try {
-            // Use app data directory on all platforms
-            java.io.File licenseFile = new java.io.File(AppConstants.getAppDataDirectory().toFile(), "LICENSE.txt");
-
-            // If license file already exists, don't create it
-            if (licenseFile.exists()) {
-                System.out.println("LICENSE.txt found at: " + licenseFile.getAbsolutePath());
+            java.nio.file.Path file = AppConstants.getAppDataDirectory().resolve("LICENSE.txt");
+            String current = getSoftwareLicense();
+            if (java.nio.file.Files.isRegularFile(file)
+                    && current.equals(java.nio.file.Files.readString(
+                        file, java.nio.charset.StandardCharsets.UTF_8))) {
                 return;
             }
-
-            // Create the license file
-            java.io.FileWriter writer = new java.io.FileWriter(licenseFile, java.nio.charset.StandardCharsets.UTF_8);
-            writer.write(getSoftwareLicense());
-            writer.close();
-            System.out.println("LICENSE.txt generated successfully at: " + licenseFile.getAbsolutePath());
-
+            java.nio.file.Files.writeString(file, current, java.nio.charset.StandardCharsets.UTF_8);
+            System.out.println("LICENSE.txt updated at: " + file);
         } catch (Exception e) {
-            System.err.println("Warning: Could not create LICENSE.txt: " + e.getMessage());
+            System.err.println("Warning: Could not update LICENSE.txt: " + e.getMessage());
         }
     }
 

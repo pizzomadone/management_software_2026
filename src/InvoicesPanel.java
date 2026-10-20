@@ -8,6 +8,11 @@ import java.util.Date;
 
 public class InvoicesPanel extends JPanel {
     private JTable invoicesTable;
+    private JScrollPane invoicesScrollPane;
+    private static final int INVOICE_BATCH_SIZE=100;
+    private boolean moreInvoices=true;
+    private boolean loadingInvoices;
+    private String activeInvoiceSearch="";
     private DefaultTableModel tableModel;
     private JTextField searchField;
     private JButton addButton;
@@ -110,7 +115,15 @@ public class InvoicesPanel extends JPanel {
 
         // Main layout
         add(searchPanel, BorderLayout.NORTH);
-        add(new JScrollPane(invoicesTable), BorderLayout.CENTER);
+        invoicesScrollPane=new JScrollPane(invoicesTable);
+        invoicesScrollPane.getVerticalScrollBar().addAdjustmentListener(e -> {
+            JScrollBar bar=invoicesScrollPane.getVerticalScrollBar();
+            if(moreInvoices && !loadingInvoices &&
+               bar.getMaximum()>bar.getVisibleAmount() &&
+               bar.getValue()+bar.getVisibleAmount()>=bar.getMaximum()-160)
+                SwingUtilities.invokeLater(this::loadMoreInvoices);
+        });
+        add(invoicesScrollPane, BorderLayout.CENTER);
         add(buttonPanel, BorderLayout.SOUTH);
 
         updateButtonStates();
@@ -124,65 +137,97 @@ public class InvoicesPanel extends JPanel {
     }
 
     public void loadInvoices() {
+        activeInvoiceSearch="";
+        if(searchField!=null)searchField.setText("");
+        resetInvoiceResults();
+    }
+
+    private void searchInvoices() {
+        activeInvoiceSearch=searchField.getText().trim();
+        resetInvoiceResults();
+    }
+
+    private void resetInvoiceResults() {
         tableModel.setRowCount(0);
+        moreInvoices=true;
+        loadMoreInvoices();
+        if(invoicesScrollPane!=null)
+            invoicesScrollPane.getVerticalScrollBar().setValue(0);
+    }
+
+    private void loadMoreInvoices() {
+        if(loadingInvoices || !moreInvoices)return;
+        loadingInvoices=true;
         try {
-            Connection conn = DatabaseManager.getInstance().getConnection();
-            String query = """
-                SELECT i.id, i.number, i.date, i.customer_id, i.status, i.currency_code,
+            Connection conn=DatabaseManager.getInstance().getConnection();
+            // Search is performed IN SQL, including historical snapshot names;
+            // never iterate over tens of thousands of invoices in Java.
+            String where=activeInvoiceSearch.isEmpty()?"":"""
+                WHERE i.number LIKE ? OR CAST(i.id AS TEXT) LIKE ?
+                    OR c.first_name LIKE ? OR c.last_name LIKE ?
+                    OR i.customer_snapshot LIKE ?
+                """;
+            String query="""
+                SELECT i.id, i.number, i.date, i.status, i.currency_code,
+                       i.taxable_amount, i.vat, i.total, i.customer_snapshot,
                        i.order_id, i.payment_status AS invoice_payment_status,
                        i.paid_amount AS invoice_paid_amount,
                        o.payment_status AS order_payment_status,
                        o.paid_amount AS order_paid_amount,
-                       c.first_name || ' ' || c.last_name as customer_name
+                       c.first_name || ' ' || c.last_name AS customer_name
                 FROM invoices i
-                LEFT JOIN customers c ON i.customer_id = c.id
-                LEFT JOIN orders o ON o.id = i.order_id
-                ORDER BY i.date DESC
-            """;
-
-            try (Statement stmt = conn.createStatement();
-                 ResultSet rs = stmt.executeQuery(query)) {
-                while (rs.next()) {
-                    String number = rs.getString("number");
-
-                    // Recalculate totals from details
-                    double[] totals = recalculateInvoiceTotals(number);
-                    double taxableAmount = totals[0];
-                    double vat = totals[1];
-                    double total = totals[2];
-
-                    Vector<Object> row = new Vector<>();
-                    row.add(number);
-
-                    Date date = DateUtils.parseDate(rs, "date");
-                    if (date != null) {
-                        row.add(DateUtils.formatDate(date, dateFormat));
-                    } else {
-                        row.add("");
+                LEFT JOIN customers c ON i.customer_id=c.id
+                LEFT JOIN orders o ON o.id=i.order_id
+                """ + where + """
+                ORDER BY i.date DESC,i.id DESC LIMIT ? OFFSET ?
+                """;
+            java.util.List<Vector<Object>> fetched=new java.util.ArrayList<>();
+            boolean extraRow=false;
+            try(PreparedStatement stmt=conn.prepareStatement(query)){
+                int index=1;
+                if(!activeInvoiceSearch.isEmpty()){
+                    String pattern="%"+activeInvoiceSearch+"%";
+                    for(int i=0;i<5;i++)stmt.setString(index++,pattern);
+                }
+                stmt.setInt(index++,INVOICE_BATCH_SIZE+1);
+                stmt.setInt(index,tableModel.getRowCount());
+                try(ResultSet rs=stmt.executeQuery()){
+                    while(rs.next()){
+                        if(fetched.size()>=INVOICE_BATCH_SIZE){
+                            extraRow=true;
+                            break;
+                        }
+                        String number=rs.getString("number");
+                        Vector<Object> row=new Vector<>();
+                        row.add(number);
+                        Date date=DateUtils.parseDate(rs,"date");
+                        row.add(date==null?"":DateUtils.formatDate(date,dateFormat));
+                        row.add(snapshotCustomerName(rs.getString("customer_snapshot"),
+                            rs.getString("customer_name")));
+                        String currency=rs.getString("currency_code");
+                        row.add(SettingsPanel.formatCurrency(rs.getDouble("taxable_amount"),currency));
+                        row.add(SettingsPanel.formatCurrency(rs.getDouble("vat"),currency));
+                        row.add(SettingsPanel.formatCurrency(rs.getDouble("total"),currency));
+                        row.add(rs.getString("status"));
+                        boolean linked=rs.getObject("order_id")!=null;
+                        String paymentStatus=rs.getString(linked ?
+                            "order_payment_status":"invoice_payment_status");
+                        double paidAmount=rs.getDouble(linked ?
+                            "order_paid_amount":"invoice_paid_amount");
+                        row.add(formatPaymentStatus(paymentStatus,paidAmount,currency));
+                        fetched.add(row);
                     }
-
-                    row.add(snapshotCustomerName(conn,rs.getInt("id")));
-                    String currency=rs.getString("currency_code");
-                    row.add(SettingsPanel.formatCurrency(taxableAmount,currency));
-                    row.add(SettingsPanel.formatCurrency(vat,currency));
-                    row.add(SettingsPanel.formatCurrency(total,currency));
-                    row.add(rs.getString("status"));
-                    boolean linked = rs.getObject("order_id") != null;
-                    String paymentStatus = linked
-                        ? rs.getString("order_payment_status")
-                        : rs.getString("invoice_payment_status");
-                    double paidAmount = linked
-                        ? rs.getDouble("order_paid_amount")
-                        : rs.getDouble("invoice_paid_amount");
-                    row.add(formatPaymentStatus(paymentStatus, paidAmount, currency));
-                    tableModel.addRow(row);
                 }
             }
-        } catch (Exception e) {
+            moreInvoices=extraRow;
+            TableStyleUtil.appendRows(tableModel,fetched);
+        }catch(Exception e){
+            moreInvoices=false;
             e.printStackTrace();
             Dialogs.showMessageDialog(this,
-                "Error while loading invoices: " + e.getMessage(),
-                "Error", JOptionPane.ERROR_MESSAGE);
+                "Error loading invoices: "+e.getMessage(),"Error",JOptionPane.ERROR_MESSAGE);
+        }finally {
+            loadingInvoices=false;
         }
     }
 
@@ -193,78 +238,6 @@ public class InvoicesPanel extends JPanel {
                 if(!r.next())throw new SQLException("Invoice no longer exists");
                 return new double[]{r.getDouble(1),r.getDouble(2),r.getDouble(3)};
             }
-        }
-    }
-
-    private void searchInvoices() {
-        String searchTerm = searchField.getText().trim();
-        if (searchTerm.isEmpty()) {
-            loadInvoices();
-            return;
-        }
-
-        tableModel.setRowCount(0);
-        try {
-            Connection conn = DatabaseManager.getInstance().getConnection();
-            String query = """
-                SELECT i.id, i.number, i.date, i.customer_id, i.status, i.currency_code,
-                       i.order_id, i.payment_status AS invoice_payment_status,
-                       i.paid_amount AS invoice_paid_amount,
-                       o.payment_status AS order_payment_status,
-                       o.paid_amount AS order_paid_amount,
-                       c.first_name || ' ' || c.last_name as customer_name
-                FROM invoices i
-                LEFT JOIN customers c ON i.customer_id = c.id
-                LEFT JOIN orders o ON o.id = i.order_id
-                ORDER BY i.date DESC
-            """;
-
-            String searchPattern = "%" + searchTerm + "%";
-            try (PreparedStatement pstmt = conn.prepareStatement(query)) {
-
-                try (ResultSet rs = pstmt.executeQuery()) {
-                    while (rs.next()) {
-                        String number = rs.getString("number");
-                        String customerName = snapshotCustomerName(conn,rs.getInt("id"));
-                        String term = searchTerm.toLowerCase(java.util.Locale.ROOT);
-                        if(!number.toLowerCase(java.util.Locale.ROOT).contains(term) && !customerName.toLowerCase(java.util.Locale.ROOT).contains(term))continue;
-
-                        // Recalculate totals
-                        double[] totals = recalculateInvoiceTotals(number);
-
-                        Vector<Object> row = new Vector<>();
-                        row.add(number);
-
-                        Date date = DateUtils.parseDate(rs, "date");
-                        if (date != null) {
-                            row.add(DateUtils.formatDate(date, dateFormat));
-                        } else {
-                            row.add("");
-                        }
-
-                        row.add(snapshotCustomerName(conn,rs.getInt("id")));
-                        String currency=rs.getString("currency_code");
-                        row.add(SettingsPanel.formatCurrency(totals[0],currency));
-                        row.add(SettingsPanel.formatCurrency(totals[1],currency));
-                        row.add(SettingsPanel.formatCurrency(totals[2],currency));
-                        row.add(rs.getString("status"));
-                        boolean linked = rs.getObject("order_id") != null;
-                        String paymentStatus = linked
-                            ? rs.getString("order_payment_status")
-                            : rs.getString("invoice_payment_status");
-                        double paidAmount = linked
-                            ? rs.getDouble("order_paid_amount")
-                            : rs.getDouble("invoice_paid_amount");
-                        row.add(formatPaymentStatus(paymentStatus, paidAmount, currency));
-                        tableModel.addRow(row);
-                    }
-                }
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-            Dialogs.showMessageDialog(this,
-                "Error while searching for invoices: " + e.getMessage(),
-                "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
 
@@ -394,7 +367,7 @@ public class InvoicesPanel extends JPanel {
                         rs.getString("number"),
                         date,
                         rs.getInt("customer_id"),
-                        snapshotCustomerName(conn,rs.getInt("id")),
+                        snapshotCustomerName(conn,rs.getInt("id"),rs.getString("customer_name")),
                         totals[0], // taxableAmount
                         totals[1], // vat
                         totals[2], // total
@@ -549,6 +522,18 @@ public class InvoicesPanel extends JPanel {
     }
     public void selectInvoiceByNumber(String number) {
         if (number == null) return;
+        boolean visible=false;
+        for(int i=0;i<tableModel.getRowCount();i++)
+            if(number.equals(String.valueOf(tableModel.getValueAt(i,0)))) {
+                visible=true;
+                break;
+            }
+        if(!visible){
+            // Linked invoice can be outside the first 100 rows. Narrow the
+            // SQL results instead of scanning the whole company.
+            searchField.setText(number);
+            searchInvoices();
+        }
         for (int modelRow = 0; modelRow < tableModel.getRowCount(); modelRow++) {
             if (!number.equals(String.valueOf(tableModel.getValueAt(modelRow, 0)))) continue;
             int viewRow = invoicesTable.convertRowIndexToView(modelRow);
@@ -560,12 +545,22 @@ public class InvoicesPanel extends JPanel {
         }
     }
 
-    private String snapshotCustomerName(Connection c,int invoiceId) throws SQLException {
+    /**
+     * Prefer the immutable invoice customer snapshot. On incomplete legacy
+     * invoices, display the joined customer's name without extra SQL queries.
+     */
+    static String snapshotCustomerName(String snapshot,String currentName) throws SQLException {
+        if(snapshot==null)return currentName==null?"":currentName;
+        java.util.Properties v=InvoiceSnapshots.decode(snapshot);
+        return (v.getProperty("first_name","")+" "+v.getProperty("last_name","")).trim();
+    }
+
+    private String snapshotCustomerName(Connection c,int invoiceId,String currentName)
+            throws SQLException {
         try(PreparedStatement p=c.prepareStatement("SELECT customer_snapshot FROM invoices WHERE id=?")) {
             p.setInt(1,invoiceId);try(ResultSet r=p.executeQuery()) {
                 if(!r.next())throw new SQLException("Invoice no longer exists");
-                java.util.Properties v=InvoiceSnapshots.decode(r.getString(1));
-                return v.getProperty("first_name","")+" "+v.getProperty("last_name","");
+                return snapshotCustomerName(r.getString(1),currentName);
             }
         }
     }

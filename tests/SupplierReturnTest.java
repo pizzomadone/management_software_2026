@@ -32,7 +32,7 @@ public final class SupplierReturnTest extends RegressionTest {
     }
 
     public static void supplierReturns() throws Exception {
-        test("import of pre-return v020 database preserves purchases and enables partial returns",()->{
+        test("internal pre-return schema migration preserves purchases and enables partial returns",()->{
             receipt();
             java.nio.file.Path oldFile=OUT.resolve("supplier-before-returns-v020.db");
             java.nio.file.Files.deleteIfExists(oldFile);
@@ -46,12 +46,11 @@ public final class SupplierReturnTest extends RegressionTest {
                 s.execute("DROP TABLE supplier_returns");
                 s.execute("DELETE FROM schema_migrations WHERE version='021'");
             }
-            BackupManager backups=BackupManager.getInstance();
-            BackupManager.BackupRecord imported=backups.importBackup(oldFile);
             java.sql.Connection original=DatabaseManager.getInstance().getConnection();
             try {
                 try(java.sql.Connection upgraded=DatabaseManager.openConnection(
-                        "jdbc:sqlite:"+imported.absolutePath())) {
+                        "jdbc:sqlite:"+oldFile)) {
+                    DatabaseManager.prepareDatabase(upgraded);
                     DatabaseIntegrity.validate(upgraded,false);
                     try(java.sql.Statement s=upgraded.createStatement();
                         java.sql.ResultSet rows=s.executeQuery("""
@@ -92,7 +91,7 @@ public final class SupplierReturnTest extends RegressionTest {
                 }
             } finally {
                 put(DatabaseManager.getInstance(),"connection",original);
-                backups.deleteBackup(imported.id());
+                // Source fixture was intentionally upgraded in place, not imported.
             }
             require(java.nio.file.Files.isRegularFile(oldFile),
                 "Import deleted or modified the user's original database");
@@ -123,11 +122,10 @@ public final class SupplierReturnTest extends RegressionTest {
                 s.execute("DROP TABLE product_suppliers");
                 s.execute("DELETE FROM schema_migrations WHERE version>='012'");
             }
-            BackupManager backups=BackupManager.getInstance();
-            BackupManager.BackupRecord migrated=backups.importBackup(source);
             try {
                 try(java.sql.Connection upgraded=DatabaseManager.openConnection(
-                        "jdbc:sqlite:"+migrated.absolutePath())) {
+                        "jdbc:sqlite:"+source)) {
+                    DatabaseManager.prepareDatabase(upgraded);
                     DatabaseIntegrity.validate(upgraded,false);
                     try(java.sql.Statement s=upgraded.createStatement();
                         java.sql.ResultSet rows=s.executeQuery("""
@@ -160,9 +158,11 @@ public final class SupplierReturnTest extends RegressionTest {
                     DatabaseManager.prepareDatabase(upgraded);
                     DatabaseIntegrity.validate(upgraded,false);
                 }
-            } finally {backups.deleteBackup(migrated.id());}
+            } finally {
+                // The internal migration fixture remains available for inspection.
+            }
         });
-        test("tampered supplier returns are rejected during import",()->{
+        test("tampered non-1.2 SQLite imports are rejected",()->{
             receipt();
             SupplierReturnManager.create(80,List.of(q(81,3)),"test");
             java.nio.file.Path bad=OUT.resolve("supplier-return-tampered.db");
@@ -199,12 +199,22 @@ public final class SupplierReturnTest extends RegressionTest {
             require("5".equals(value("SELECT remaining_quantity FROM inventory_lots WHERE supplier_order_detail_id=81")),
                 "Original FIFO stock was not debited");
             require(SupplierReturnManager.returnState(db,80)==1,"First return was not partial");
+            SupplierOrdersPanel supplierOrders=new SupplierOrdersPanel();
+            javax.swing.table.DefaultTableModel listed=
+                (javax.swing.table.DefaultTableModel)get(supplierOrders,"model");
+            require(listed.getRowCount()==1 &&
+                "Completed|Partial Return".equals(listed.getValueAt(0,5)),
+                "Supplier orders list disagrees with the partial-return state");
             require("Completed|124.0".equals(value("SELECT status||'|'||total FROM supplier_orders WHERE id=80")),
                 "Original purchase order was mutated");
             require("43.0".equals(value("SELECT SUM(quantity*unit_price) FROM supplier_return_items WHERE return_id="+first)),
                 "Historical return value was incorrect");
             int second=SupplierReturnManager.create(80,List.of(q(81,5),q(82,3)),"remaining goods");
             require(SupplierReturnManager.returnState(db,80)==2,"Fully returned order not detected");
+            supplierOrders.loadOrders();
+            require(listed.getRowCount()==1 &&
+                "Completed|Full Return".equals(listed.getValueAt(0,5)),
+                "Supplier orders list disagrees with the full-return state");
             require(qty()==10 && "10".equals(value("SELECT quantity FROM products WHERE id=2")),
                 "Wrong physical stock after full return");
             require("0".equals(value("SELECT remaining_quantity FROM inventory_lots WHERE supplier_order_detail_id=81")),

@@ -34,15 +34,24 @@ public final class DatabaseIntegrity {
         Map.entry("company_data", "id company_name vat_number tax_code address city postal_code country phone email website logo_path"),
         Map.entry("invoice_numbering", "year last_number"));
 
+    /**
+     * Lightweight pre-migration check. A full SQLite integrity_check is run
+     * later in DatabaseManager.initDatabase(), after migrations, so doing it
+     * again here scans multi-gigabyte companies twice on every startup.
+     */
+    public static void validateStructureAndRelations(Connection c,boolean legacy) throws SQLException {
+        requireColumns(c, legacy ? LEGACY_CORE : CURRENT);
+        try (Statement s = c.createStatement(); ResultSet r = s.executeQuery("PRAGMA foreign_key_check")) {
+            if (r.next()) throw new SQLException("Orphaned database reference in " + r.getString(1));
+        }
+    }
+
     public static void validate(Connection c, boolean legacy) throws SQLException {
         try (Statement s = c.createStatement(); ResultSet r = s.executeQuery("PRAGMA integrity_check")) {
             if (!r.next() || !"ok".equalsIgnoreCase(r.getString(1)))
                 throw new SQLException("SQLite integrity check failed");
         }
-        requireColumns(c, legacy ? LEGACY_CORE : CURRENT);
-        try (Statement s = c.createStatement(); ResultSet r = s.executeQuery("PRAGMA foreign_key_check")) {
-            if (r.next()) throw new SQLException("Orphaned database reference in " + r.getString(1));
-        }
+        validateStructureAndRelations(c,legacy);
         if (!legacy) {
             String currency=DatabaseCurrency.read(c);
             try {DatabaseCurrency.codeFromSetting(currency);} catch(IllegalArgumentException e) {throw new SQLException("Database currency is missing or invalid",e);}
@@ -240,7 +249,9 @@ public final class DatabaseIntegrity {
             orderLine += " OR " + amount("sale_unit_price_inc_vat");
         if (hasColumn(c,"order_details","vat_rate"))
             orderLine += " OR " + amount("vat_rate") + " OR NEW.vat_rate>100";
-        rules.put("order_details",orderLine+" OR ("+nullableAmount("cost_total")+")");
+        if (hasColumn(c,"order_details","cost_total"))
+            orderLine += " OR ("+nullableAmount("cost_total")+")";
+        rules.put("order_details",orderLine);
 
         String invoiceUnitPrice = hasColumn(c,"invoice_details","sale_unit_price_ex_vat")
             ? "sale_unit_price_ex_vat" : "unit_price";
