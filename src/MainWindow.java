@@ -28,6 +28,7 @@ public class MainWindow extends JFrame {
     private JMenuBar menuBar;
     private JMenu fileMenuForRecovery;
     private JMenu toolsMenuForRecovery;
+    private JMenu viewMenuForRecovery;
     private JMenu helpMenuForRecovery;
 
     // Toolbar buttons
@@ -131,7 +132,9 @@ public class MainWindow extends JFrame {
         I18n.localize(this);
 
         setDatabaseAvailability(databaseReady);
-        if (databaseReady) SwingUtilities.invokeLater(() -> showPanel("WEB"));
+        // On a normal start show Discover; during recovery keep the dashboard
+        // visible with unavailable figures and disabled management actions.
+        SwingUtilities.invokeLater(() -> showPanel(databaseReady ? "WEB" : "HOME"));
     }
     
     /**
@@ -199,11 +202,24 @@ public class MainWindow extends JFrame {
                         item.setEnabled(available || item == backupManagementItem);
                 }
             } else {
-                // About, license and shortcuts work without a company database.
-                menu.setEnabled(available || menu == helpMenuForRecovery);
+                // Dashboard/Discover and Help do not depend on a company database.
+                menu.setEnabled(available || menu == viewMenuForRecovery
+                    || menu == helpMenuForRecovery);
             }
         }
-        toolBar.setVisible(available);
+        // Keep the entire toolbar visible; disable only database-bound actions.
+        // Also disable child labels so both icons and text look unavailable.
+        for (Component item : toolBar.getComponents()) {
+            if (!(item instanceof JButton button)) continue;
+            boolean enabled = available || button == homeButton || button == webButton
+                || button == backupButton || button == settingsButton;
+            button.setEnabled(enabled);
+            for (Component label : button.getComponents())
+                if (label instanceof JLabel text) text.setEnabled(enabled);
+        }
+        if (!available) setActiveButton(homeButton);
+        toolBar.revalidate();
+        toolBar.repaint();
         menuBar.revalidate();
         revalidate();
         repaint();
@@ -550,6 +566,7 @@ public class MainWindow extends JFrame {
         // Save menu references; recovery restrictions must not depend on menu order.
         fileMenuForRecovery = fileMenu;
         toolsMenuForRecovery = toolsMenu;
+        viewMenuForRecovery = viewMenu;
         helpMenuForRecovery = helpMenu;
 
         // Add all menus to menu bar
@@ -676,7 +693,7 @@ public class MainWindow extends JFrame {
         button.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override
             public void mouseEntered(java.awt.event.MouseEvent evt) {
-                if (button != activeButton) {
+                if (button.isEnabled() && button != activeButton) {
                     button.setContentAreaFilled(true);
                     button.setBackground(new Color(230, 230, 230));
                 }
@@ -684,7 +701,7 @@ public class MainWindow extends JFrame {
 
             @Override
             public void mouseExited(java.awt.event.MouseEvent evt) {
-                if (button != activeButton) {
+                if (button.isEnabled() && button != activeButton) {
                     button.setContentAreaFilled(false);
                 }
             }
@@ -738,37 +755,17 @@ public class MainWindow extends JFrame {
         cardLayout = new CardLayout();
         mainPanel = new JPanel(cardLayout);
 
-        if (databaseReady) {
-            dashboardPanel = new DashboardPanel(this);
-            dashboardPanel.setName("HOME");
-            mainPanel.add(dashboardPanel, "HOME");
-        } else {
-            JPanel empty = new JPanel(new GridBagLayout());
-            empty.setName("NO_DATABASE");
-            JPanel text = new JPanel(new BorderLayout(0, 14));
-            JLabel title = new JLabel(I18n.tr("No database open"));
-            title.setFont(title.getFont().deriveFont(Font.BOLD, 19f));
-            text.add(title, BorderLayout.NORTH);
-            JTextArea instructions = new JTextArea(
-                I18n.tr("Use File to open or create a database, or Tools to restore a backup."));
-            instructions.setEditable(false);
-            instructions.setOpaque(false);
-            instructions.setLineWrap(true);
-            instructions.setWrapStyleWord(true);
-            instructions.setFocusable(false);
-            instructions.setPreferredSize(new Dimension(440, 70));
-            text.add(instructions, BorderLayout.CENTER);
-            empty.add(text);
-            mainPanel.add(empty, "NO_DATABASE");
-            currentPanel = "NO_DATABASE";
-            cardLayout.show(mainPanel, "NO_DATABASE");
-        }
+        // Use the same dashboard layout in both states. In recovery mode its
+        // KPI values remain unavailable and its database actions are disabled.
+        dashboardPanel = new DashboardPanel(this, !databaseReady);
+        dashboardPanel.setName("HOME");
+        mainPanel.add(dashboardPanel, "HOME");
 
         add(mainPanel, BorderLayout.CENTER);
     }
     
     private void setupPanels() {
-        if (!databaseReady || webPanel != null) return;
+        if (webPanel != null) return;
         // Discover is the startup page: create its browser eagerly so that the
         // configured URL starts loading even before the card is made visible.
         // The remaining management panels stay lazy to preserve startup cost.
@@ -918,7 +915,9 @@ public class MainWindow extends JFrame {
     }
 
     private void showPanel(String panelName) {
-        if (!databaseReady && !"BACKUP".equals(panelName)
+        if (!databaseReady && !"HOME".equals(panelName)
+                && !"WEB".equals(panelName)
+                && !"BACKUP".equals(panelName)
                 && !"SETTINGS".equals(panelName)) return;
         try {
             // Every management panel loads its initial data in its
