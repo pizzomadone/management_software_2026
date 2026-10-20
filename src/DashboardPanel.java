@@ -46,9 +46,19 @@ public class DashboardPanel extends JPanel {
     private SimpleDateFormat dateFormat;
 
     private MainWindow mainWindow;
+    private final boolean recoveryMode;
 
     public DashboardPanel(MainWindow mainWindow) {
+        this(mainWindow, false);
+    }
+
+    /**
+     * Show the existing dashboard layout without querying SQLite if no
+     * company database has been opened. Figures remain unavailable, not zero.
+     */
+    public DashboardPanel(MainWindow mainWindow, boolean recoveryMode) {
         this.mainWindow = mainWindow;
+        this.recoveryMode = recoveryMode;
 
         percentFormat = NumberFormat.getPercentInstance();
         percentFormat.setMinimumFractionDigits(1);
@@ -56,7 +66,30 @@ public class DashboardPanel extends JPanel {
         dateFormat = new SimpleDateFormat("dd/MM/yyyy");
 
         setupPanel();
-        loadData();
+        if (recoveryMode) showNoDatabaseDashboard();
+        else loadData();
+    }
+
+    private void showNoDatabaseDashboard() {
+        JLabel notice = new JLabel(I18n.tr(
+            "No database open. Open, create or restore a database to view company data."));
+        notice.setFont(dashboardFont(Font.PLAIN, 13f));
+        notice.setForeground(PRIMARY_COLOR);
+        notice.setOpaque(true);
+        notice.setBackground(SOFT_WARNING_COLOR);
+        notice.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(BORDER_COLOR),
+            BorderFactory.createEmptyBorder(10, 14, 10, 14)));
+        add(notice, BorderLayout.NORTH);
+
+        JLabel missingAlerts = new JLabel(I18n.tr("Data unavailable without an open database."));
+        missingAlerts.setForeground(MUTED_TEXT_COLOR);
+        alertsPanel.add(missingAlerts);
+        JLabel missingOrders = new JLabel(I18n.tr("Data unavailable without an open database."));
+        missingOrders.setForeground(MUTED_TEXT_COLOR);
+        pendingOrdersPanel.add(missingOrders);
+        topProductsTable.setEnabled(false);
+        abcAnalysisTable.setEnabled(false);
     }
 
     private void setupPanel() {
@@ -138,6 +171,7 @@ public class DashboardPanel extends JPanel {
             BorderFactory.createEmptyBorder(5, 12, 5, 12)
         ));
         refreshButton.addActionListener(e -> loadData());
+        refreshButton.setEnabled(!recoveryMode);
 
         panel.add(titleLabel, BorderLayout.WEST);
         panel.add(refreshButton, BorderLayout.EAST);
@@ -335,12 +369,13 @@ public class DashboardPanel extends JPanel {
             BorderFactory.createEmptyBorder(4, 11, 4, 11)
         ));
         button.addActionListener(e -> action.run());
+        button.setEnabled(!recoveryMode);
 
         Color normal = button.getBackground();
         Color hover = tint(color, 0.84);
         button.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override public void mouseEntered(java.awt.event.MouseEvent evt) {
-                button.setBackground(hover);
+                if (button.isEnabled()) button.setBackground(hover);
             }
             @Override public void mouseExited(java.awt.event.MouseEvent evt) {
                 button.setBackground(normal);
@@ -504,6 +539,7 @@ public class DashboardPanel extends JPanel {
 
     // Data loading methods
     public void loadData() {
+        if (recoveryMode) return;
         SwingUtilities.invokeLater(() -> {
             loadKPIData();
             loadAlerts();
