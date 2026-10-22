@@ -29,7 +29,7 @@ import java.util.prefs.Preferences;
  */
 public final class EulaAcceptanceStore {
     private static final String PREFERENCES_NODE = "/com/warestat/eula";
-    public static final String SPECIFIC_CLAUSES = "5,6,8,11";
+    public static final String SPECIFIC_CLAUSES = "5,6,7,15,16,18";
 
     private EulaAcceptanceStore() { }
 
