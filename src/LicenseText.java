@@ -296,7 +296,7 @@ public class LicenseText {
             if (start < 0) {
                 throw new IllegalStateException("Missing license section " + number);
             }
-            if (selected.length() > 0) selected.append("\\n\\n");
+            if (selected.length() > 0) selected.append("\n\n");
             selected.append(license.substring(start, end).strip());
         }
         return selected.toString();
