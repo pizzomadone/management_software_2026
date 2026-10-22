@@ -56,13 +56,33 @@ public class EulaDialog extends JDialog {
 
         JCheckBox specificCheckBox = new JCheckBox(
             "<html>I specifically approve Sections 5 (No Warranties), 6 (Exclusion of Liability),<br>" +
-            "7 (EUR 25 Liability Cap), 15 (Third-Party Claims), 16 (Termination),<br>" +
+            "7 (EUR 5 Liability Cap), 15 (Third-Party Claims), 16 (Termination),<br>" +
             "and 18 (Governing Law / Courts).</html>");
         specificCheckBox.setFont(new Font("Arial", Font.PLAIN, 12));
         specificCheckBox.setAlignmentX(Component.LEFT_ALIGNMENT);
         checkboxPanel.add(generalCheckBox);
         checkboxPanel.add(Box.createVerticalStrut(5));
         checkboxPanel.add(specificCheckBox);
+        checkboxPanel.add(Box.createVerticalStrut(5));
+        JButton reviewClausesButton = new JButton("Read the specifically approved sections");
+        reviewClausesButton.setAlignmentX(Component.LEFT_ALIGNMENT);
+        reviewClausesButton.addActionListener(event -> {
+            JTextArea clausesArea = new JTextArea(
+                LicenseText.getSpecificallyApprovedSections(displayedLicenseText));
+            clausesArea.setEditable(false);
+            clausesArea.setLineWrap(true);
+            clausesArea.setWrapStyleWord(true);
+            clausesArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+            clausesArea.setCaretPosition(0);
+            JScrollPane clausesScrollPane = new JScrollPane(clausesArea);
+            clausesScrollPane.setPreferredSize(new Dimension(680, 360));
+            JOptionPane.showMessageDialog(
+                EulaDialog.this,
+                clausesScrollPane,
+                "Sections requiring separate approval",
+                JOptionPane.INFORMATION_MESSAGE);
+        });
+        checkboxPanel.add(reviewClausesButton);
         bottomPanel.add(checkboxPanel, BorderLayout.CENTER);
 
         JPanel buttonsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
