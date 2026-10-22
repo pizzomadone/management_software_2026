@@ -42,13 +42,15 @@ public class LicenseText {
         "2. FREE LICENSE GRANT AND PERMITTED USE\n" +
         "----------------------------------------\n" +
         "Subject to compliance with this Agreement, the Licensor grants the User a\n" +
-        "revocable upon breach, non-exclusive, non-transferable, royalty-free license to\n" +
+        "non-exclusive, non-transferable, royalty-free license, terminable for a material\n" +
+        "breach as set out in Section 16, to\n" +
         "run the Software for personal or commercial purposes, including managing an\n" +
         "organization's inventory and business operations. There is no per-device fee\n" +
         "and no numerical limit on installations on devices owned or controlled by the\n" +
         "User. Employees and authorized contractors may operate the Software on the\n" +
-        "User's behalf. This permission does not authorize public redistribution, sale,\n" +
-        "sublicensing or providing copies to unrelated third parties.\n" +
+        "User's behalf. Authorized technicians may install or configure WareStat solely\n" +
+        "for the User; this does not grant them independent distribution rights. Public\n" +
+        "redistribution, sale, sublicensing or unrelated third-party copying is forbidden.\n" +
         "\n" +
         "3. RESTRICTIONS AND REDISTRIBUTION\n" +
         "----------------------------------\n" +
@@ -73,8 +75,9 @@ public class LicenseText {
         "5. NO WARRANTIES\n" +
         "----------------\n" +
         "TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE SOFTWARE IS PROVIDED\n" +
-        "FREE OF CHARGE, \"AS IS\" AND \"AS AVAILABLE\", WITHOUT ANY VOLUNTARY WARRANTY,\n" +
-        "EXPRESS, IMPLIED OR STATUTORY, INCLUDING WARRANTIES OF ACCURACY, RELIABILITY,\n" +
+        "FREE OF CHARGE, \"AS IS\" AND \"AS AVAILABLE\", WITHOUT ANY WARRANTY THAT\n" +
+        "CAN LAWFULLY BE DISCLAIMED, EXPRESS OR IMPLIED, INCLUDING WARRANTIES OF\n" +
+        "ACCURACY, RELIABILITY,\n" +
         "MERCHANTABILITY, SATISFACTORY QUALITY, FITNESS FOR A PARTICULAR PURPOSE,\n" +
         "NON-INFRINGEMENT, CONTINUOUS OPERATION OR FREEDOM FROM DEFECTS.\n" +
         "\n" +
@@ -112,10 +115,11 @@ public class LicenseText {
         "IF AND ONLY TO THE EXTENT A CLAIM CANNOT VALIDLY BE EXCLUDED UNDER SECTION\n" +
         "6 BUT THE AMOUNT OF LIABILITY MAY LAWFULLY BE LIMITED, THE TOTAL AGGREGATE\n" +
         "LIABILITY OF THE LICENSOR ARISING FROM OR RELATED TO THIS SOFTWARE AND\n" +
-        "AGREEMENT SHALL NOT EXCEED EUR 25 (TWENTY-FIVE EUROS) IN TOTAL, NOT PER\n" +
-        "INCIDENT, USER, TRANSACTION, CLAIM OR YEAR, REGARDLESS OF THE NUMBER OR\n" +
-        "LEGAL BASIS OF CLAIMS. THIS IS A FALLBACK LIMIT, NOT AN ACKNOWLEDGMENT THAT\n" +
-        "ANY COMPENSATION IS OWED. SECTIONS 6 AND 7 ARE SEPARATE LIMITATIONS AND\n" +
+        "AGREEMENT SHALL NOT EXCEED EUR 5 (FIVE EUROS) IN THE AGGREGATE FOR EACH\n" +
+        "USER, ACROSS ALL CLAIMS, INCIDENTS, TRANSACTIONS AND YEARS, REGARDLESS\n" +
+        "OF THE NUMBER OR LEGAL BASIS OF CLAIMS. THIS IS NOT A PAYMENT PER CLAIM,\n" +
+        "NOR AN ACKNOWLEDGMENT THAT ANY COMPENSATION IS OWED. SECTIONS 6 AND 7\n" +
+        "ARE SEPARATE LIMITATIONS AND\n" +
         "SHALL EACH OPERATE TO THE FULLEST EXTENT LEGALLY PERMITTED.\n" +
         "\n" +
         "NOTHING IN THIS AGREEMENT EXCLUDES OR LIMITS LIABILITY OR REMEDIES WHEN\n" +
@@ -125,32 +129,34 @@ public class LicenseText {
         "8. USER VERIFICATION AND RESPONSIBILITY\n" +
         "----------------------------------------\n" +
         "The Software is an information management tool, not a certification of the\n" +
-        "accuracy or legal validity of its results. Before using outputs for business,\n" +
-        "legal, tax, accounting, purchasing, selling, inventory or financial decisions,\n" +
-        "the User is responsible for independently checking material quantities,\n" +
-        "calculations, records and documents and for arranging appropriate professional\n" +
-        "review when necessary. The User is responsible for the accuracy of input data,\n" +
-        "settings, tax rates and operational procedures. This allocation of tasks does\n" +
-        "not extinguish liability that applicable law makes non-waivable.\n" +
+        "accuracy or legal validity of its results. Before using the Software for\n" +
+        "material business operations, the User is responsible for testing it in its\n" +
+        "own environment with representative sample data, including relevant stock,\n" +
+        "FIFO, invoice, tax and backup/restore operations. Before relying on outputs\n" +
+        "for business, legal, tax, accounting, purchasing, selling or financial\n" +
+        "decisions, the User must independently verify material quantities, amounts,\n" +
+        "records and documents, with professional review where appropriate. The User\n" +
+        "is responsible for its inputs, settings, tax rates and operational checks.\n" +
+        "No provision removes responsibilities imposed by mandatory law.\n" +
         "\n" +
         "9. BUSINESS DECISIONS AND FINANCIAL RISKS\n" +
         "-----------------------------------------\n" +
         "WareStat does not provide accounting, tax, legal, auditing, investment or\n" +
-        "business consultancy. It does not guarantee stock availability, profit,\n" +
-        "compliance, document validity, delivery dates, customer satisfaction or any\n" +
-        "commercial outcome. The User remains responsible for decisions, submissions,\n" +
-        "invoices, declarations and other actions based on Software outputs, subject\n" +
-        "to mandatory legal rights and responsibilities.\n" +
+        "business consultancy and does not guarantee regulatory compliance, stock\n" +
+        "availability, document validity, profit or any commercial outcome. Decisions\n" +
+        "and submissions remain the User's responsibility, subject to mandatory law.\n" +
         "\n" +
         "10. BACKUPS, SECURITY AND DATA RECOVERY\n" +
         "----------------------------------------\n" +
-        "The User is responsible for maintaining independent, appropriately protected\n" +
-        "backups of its data and for testing the ability to restore them. The User\n" +
-        "should preserve original records before important changes and verify the\n" +
-        "integrity and accessibility of backups. Hardware failure, operating-system\n" +
-        "issues, file damage, user actions and Software defects may cause data loss.\n" +
-        "The Licensor makes no voluntary guarantee of data retention, restoration,\n" +
-        "confidentiality or uninterrupted access, subject to mandatory law.\n" +
+        "The User is responsible for maintaining separate, appropriately protected\n" +
+        "copies of its data, independent from the active database, and for regularly\n" +
+        "checking backup integrity and testing actual restoration. Independent backup\n" +
+        "copies should be created before upgrades, migrations and irreversible\n" +
+        "operations. A built-in backup feature does not replace these checks. Hardware\n" +
+        "failure, operating-system issues, file damage, user actions and Software\n" +
+        "defects may cause data loss. The Licensor makes no voluntary guarantee of\n" +
+        "retention, restoration, confidentiality or uninterrupted access, subject to\n" +
+        "mandatory law.\n" +
         "\n" +
         "11. IMPORTS, EXPORTS AND MIGRATIONS\n" +
         "------------------------------------\n" +
@@ -191,12 +197,18 @@ public class LicenseText {
         "\n" +
         "15. UNLAWFUL USE AND THIRD-PARTY CLAIMS\n" +
         "----------------------------------------\n" +
-        "The User must not use the Software to infringe laws or third-party rights.\n" +
-        "To the extent permitted by law, the User shall indemnify the Licensor against\n" +
-        "third-party claims and reasonable resulting costs arising from the User's\n" +
-        "unlawful distribution, intentional misuse or unlawful data or content, but not\n" +
-        "to the extent caused by the Licensor's own conduct for which liability cannot\n" +
-        "lawfully be excluded. This clause does not remove mandatory consumer rights.\n" +
+        "The User must not distribute the Software without authorization or use it\n" +
+        "to infringe laws or the rights of others. To the extent permitted by law,\n" +
+        "the User shall indemnify the Licensor for substantiated third-party claims\n" +
+        "and reasonable, documented defense costs directly caused by the User's\n" +
+        "unauthorized distribution, intentional unlawful misuse, or unlawful data\n" +
+        "or content supplied by the User. The Licensor shall, where reasonably\n" +
+        "practicable, notify the User of such claims and allow reasonable participation\n" +
+        "in their defense. No settlement imposing obligations on the User may be\n" +
+        "entered into without the User's prior agreement, unless law requires it.\n" +
+        "This indemnity does not apply to claims caused by defects in the Software\n" +
+        "or by the Licensor's own acts or omissions, and does not remove any\n" +
+        "mandatory consumer or other non-waivable rights.\n" +
         "\n" +
         "16. TERMINATION\n" +
         "---------------\n" +
@@ -232,7 +244,10 @@ public class LicenseText {
         "insofar as legally possible. Each exclusion, limitation and fallback in this\n" +
         "Agreement is intended to operate independently and to the maximum extent\n" +
         "permitted by law. Headings assist reading and do not narrow any provision.\n" +
-        "Nothing here displaces mandatory statutory rights.\n" +
+        "Failure or delay by the Licensor to exercise a contractual right does not\n" +
+        "by itself waive that right. Any waiver applies only to its stated occasion,\n" +
+        "subject to applicable mandatory law. Nothing here displaces mandatory\n" +
+        "statutory rights.\n" +
         "\n" +
         "20. CONTACT\n" +
         "-----------\n" +
@@ -255,6 +270,36 @@ public class LicenseText {
             AppConstants.WEBSITE,
             AppConstants.CONTACT_EMAIL
         );
+    }
+
+    /**
+     * Exact passages referenced by the separate approval checkbox.
+     * Uses the same immutable text displayed in the acceptance dialog.
+     */
+    public static String getSpecificallyApprovedSections(String license) {
+        java.util.regex.Pattern headings = java.util.regex.Pattern.compile(
+            "(?m)^\\d+\\. [A-Z][^\\n]*$");
+        StringBuilder selected = new StringBuilder();
+        for (String number : EulaAcceptanceStore.SPECIFIC_CLAUSES.split(",")) {
+            java.util.regex.Matcher matcher = headings.matcher(license);
+            int start = -1;
+            int end = license.length();
+            while (matcher.find()) {
+                if (start >= 0) {
+                    end = matcher.start();
+                    break;
+                }
+                if (matcher.group().startsWith(number + ". ")) {
+                    start = matcher.start();
+                }
+            }
+            if (start < 0) {
+                throw new IllegalStateException("Missing license section " + number);
+            }
+            if (selected.length() > 0) selected.append("\\n\\n");
+            selected.append(license.substring(start, end).strip());
+        }
+        return selected.toString();
     }
 
     /**
