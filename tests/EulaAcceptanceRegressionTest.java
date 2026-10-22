@@ -16,6 +16,16 @@ public class EulaAcceptanceRegressionTest {
         Path root = Files.createTempDirectory("warestat-eula-test-");
         Path evidence = root.resolve("evidence");
         Preferences prefs = Preferences.userRoot().node("/com/warestat/eula-test-" + UUID.randomUUID());
+        String actualLicense = LicenseText.getSoftwareLicense();
+        check(actualLicense.contains("6. EXCLUSION OF ALL LIABILITY"),
+            "license retains broad general exclusion");
+        check(actualLicense.contains("7. FALLBACK AGGREGATE LIABILITY CAP")
+                && actualLicense.contains("EUR 25 (TWENTY-FIVE EUROS)"),
+            "license specifies EUR 25 total fallback cap");
+        check(actualLicense.contains("NOTHING IN THIS AGREEMENT EXCLUDES OR LIMITS LIABILITY"),
+            "mandatory law protections preserved");
+        check("5,6,7,15,16,18".equals(EulaAcceptanceStore.SPECIFIC_CLAUSES),
+            "specific approval section references updated");
         String text = "WareStat license terms for this regression test";
         try {
             check(!EulaAcceptanceStore.isAccepted(prefs, evidence, "1.3", text), "first launch");
