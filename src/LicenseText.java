@@ -21,206 +21,236 @@ public class LicenseText {
      */
     public static String getSoftwareLicense() {
         return String.format(
-"================================================================================\n" +
-"WARESTAT SOFTWARE LICENSE AGREEMENT\n" +
-"================================================================================\n" +
-"\n" +
-"Copyright © %s %s (%s)\n" +
-"All Rights Reserved.\n" +
-"\n" +
-"================================================================================\n" +
-"1. LICENSE GRANT\n" +
-"================================================================================\n" +
-"\n" +
-"This version of %s (version %s) is provided FREE OF CHARGE for both\n" +
-"PERSONAL and COMMERCIAL use, subject to the terms and conditions of this\n" +
-"license agreement.\n" +
-"\n" +
-"By installing, copying, or using this software, you agree to be bound by the\n" +
-"terms of this license.\n" +
-"\n" +
-"================================================================================\n" +
-"2. PERMITTED USE\n" +
-"================================================================================\n" +
-"\n" +
-"You are permitted to:\n" +
-"\n" +
-"  ✓ Use this software for personal purposes\n" +
-"  ✓ Use this software for commercial purposes\n" +
-"  ✓ Install this software on unlimited number of devices that you own or control\n" +
-"  ✓ Use this software to manage your business operations\n" +
-"\n" +
-"================================================================================\n" +
-"3. RESTRICTIONS\n" +
-"================================================================================\n" +
-"\n" +
-"You are NOT permitted to:\n" +
-"\n" +
-"  ✗ Modify, adapt, translate, or create derivative works of this software\n" +
-"  ✗ Reverse engineer, decompile, disassemble, or attempt to discover the\n" +
-"    source code of this software\n" +
-"  ✗ Remove, alter, or obscure any copyright, trademark, or other proprietary\n" +
-"    rights notices contained in or on the software\n" +
-"  ✗ Redistribute, sell, lease, sublicense, or otherwise transfer this software\n" +
-"    to any third party, whether for free or for commercial gain\n" +
-"  ✗ Use this software for any illegal or unauthorized purpose\n" +
-"\n" +
-"These restrictions do not limit rights that cannot be excluded under\n" +
-"applicable law, including mandatory software interoperability exceptions.\n" +
-"\n" +
-"REDISTRIBUTION IS STRICTLY PROHIBITED. This software may only be distributed\n" +
-"by %s or authorized parties. Any unauthorized distribution, whether free\n" +
-"or commercial, constitutes a violation of this license and applicable copyright\n" +
-"laws.\n" +
-"\n" +
-"================================================================================\n" +
-"4. OWNERSHIP\n" +
-"================================================================================\n" +
-"\n" +
-"This software is proprietary and is protected by copyright laws and\n" +
-"international treaty provisions. %s (%s) retains all\n" +
-"rights, title, and interest in and to the software, including all copyrights,\n" +
-"patents, trade secrets, trademarks, and other intellectual property rights.\n" +
-"\n" +
-"Your license does NOT grant you any ownership rights to the software.\n" +
-"\n" +
-"================================================================================\n" +
-"5. NO WARRANTY\n" +
-"================================================================================\n" +
-"\n" +
-"TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THIS SOFTWARE IS\n" +
-"PROVIDED \"AS IS\" WITHOUT VOLUNTARY WARRANTIES OF ANY KIND. MANDATORY\n" +
-"STATUTORY RIGHTS AND WARRANTIES ARE NOT EXCLUDED OR RESTRICTED.\n" +
-"\n" +
-"%s CREATOR DOES NOT GUARANTEE UNINTERRUPTED OR ERROR-FREE OPERATION.\n" +
-"INVENTORY, COST, PROFIT, TAX, VAT, INVOICE, REPORTING, AND OTHER BUSINESS\n" +
-"CALCULATIONS MAY CONTAIN ERRORS OR REQUIRE USER-SPECIFIC CONFIGURATION.\n" +
-"USERS MUST INDEPENDENTLY CHECK RESULTS BEFORE RELYING ON THEM FOR LEGAL,\n" +
-"TAX, ACCOUNTING, COMMERCIAL, OR FINANCIAL DECISIONS. KEEP VERIFIED BACKUPS.\n" +
-"\n" +
-"================================================================================\n" +
-"6. LIMITATION OF LIABILITY\n" +
-"================================================================================\n" +
-"\n" +
-"TO THE EXTENT PERMITTED BY APPLICABLE LAW, THE %s CREATOR SHALL NOT\n" +
-"BE LIABLE FOR LOSSES ARISING FROM RELIANCE ON INCORRECT CALCULATIONS,\n" +
-"REPORTS, INVENTORY RECORDS, INVOICES, DATA LOSS, LOST PROFITS, OR BUSINESS\n" +
-"INTERRUPTION. USERS REMAIN RESPONSIBLE FOR VERIFYING IMPORTANT OUTPUTS.\n" +
-"\n" +
-"NOTHING IN THIS AGREEMENT EXCLUDES OR LIMITS LIABILITY WHERE SUCH EXCLUSION\n" +
-"OR LIMITATION IS PROHIBITED BY MANDATORY LAW, INCLUDING LIABILITY ARISING\n" +
-"FROM INTENTIONAL MISCONDUCT OR GROSS NEGLIGENCE WHERE APPLICABLE.\n" +
-"\n" +
-"================================================================================\n" +
-"7. DATA AND PRIVACY\n" +
-"================================================================================\n" +
-"\n" +
-"WareStat stores company records in local database files. The embedded\n" +
-"Discover page connects to %s's website and necessarily transmits\n" +
-"connection information (such as your IP address and technical user-agent\n" +
-"details including device, operating system, language, and display settings).\n" +
-"Website resources may involve additional third-party network requests.\n" +
-"The local company database is not uploaded merely by opening Discover.\n" +
-"Where you determine the purposes and means of processing business personal\n" +
-"data, you are responsible for complying with applicable privacy laws.\n" +
-"\n" +
-"You are responsible for:\n" +
-"  • Compliance with applicable data protection laws (including GDPR)\n" +
-"  • Obtaining necessary consents from data subjects\n" +
-"  • Implementing appropriate security measures\n" +
-"  • Managing data backup and recovery\n" +
-"\n" +
-"================================================================================\n" +
-"8. TERMINATION\n" +
-"================================================================================\n" +
-"\n" +
-"This license is effective until terminated. Your rights under this license\n" +
-"will terminate automatically without notice if you fail to comply with any\n" +
-"term of this agreement.\n" +
-"\n" +
-"Upon termination, you must:\n" +
-"  • Cease all use of the software\n" +
-"  • Destroy all copies of the software in your possession\n" +
-"\n" +
-"================================================================================\n" +
-"9. FUTURE VERSIONS\n" +
-"================================================================================\n" +
-"\n" +
-"This license agreement applies specifically to %s version %s.\n" +
-"\n" +
-"%s reserves the right to release future versions of this software under\n" +
-"different license terms, including commercial licenses.\n" +
-"\n" +
-"Users of version %s may continue to use that version under these terms, but\n" +
-"are not automatically entitled to upgrades or future versions.\n" +
-"\n" +
-"================================================================================\n" +
-"10. THIRD-PARTY COMPONENTS\n" +
-"================================================================================\n" +
-"\n" +
-"This software includes third-party open-source libraries, each with its own\n" +
-"license terms. See LICENSE-THIRD-PARTY.txt for complete information.\n" +
-"\n" +
-"The licenses for third-party components are separate from this license and\n" +
-"remain subject to their original terms.\n" +
-"\n" +
-"================================================================================\n" +
-"11. GOVERNING LAW\n" +
-"================================================================================\n" +
-"\n" +
-"This agreement shall be governed by and construed in accordance with the laws\n" +
-"of %s.\n" +
-"\n" +
-"Subject to any mandatory consumer-protection rules and jurisdictional\n" +
-"requirements, disputes shall be subject to the competent courts, including\n" +
-"the %s where legally applicable. Mandatory consumer forums prevail.\n" +
-"\n" +
-"================================================================================\n" +
-"12. ENTIRE AGREEMENT\n" +
-"================================================================================\n" +
-"\n" +
-"This license agreement constitutes the entire agreement between you and\n" +
-"%s concerning the software and supersedes all prior agreements and\n" +
-"understandings.\n" +
-"\n" +
-"================================================================================\n" +
-"13. SEVERABILITY\n" +
-"================================================================================\n" +
-"\n" +
-"If any provision of this agreement is held to be invalid or unenforceable,\n" +
-"the remaining provisions shall remain in full force and effect.\n" +
-"\n" +
-"================================================================================\n" +
-"14. CONTACT INFORMATION\n" +
-"================================================================================\n" +
-"\n" +
-"For questions regarding this license, please contact:\n" +
-"\n" +
-"  %s\n" +
-"  Website: %s\n" +
-"  Email: %s\n" +
-"\n" +
-"================================================================================\n" +
-"END OF LICENSE AGREEMENT\n" +
-"================================================================================\n",
+        "================================================================================\n" +
+        "WARESTAT SOFTWARE LICENSE AGREEMENT\n" +
+        "================================================================================\n" +
+        "\n" +
+        "Copyright © %s %s (%s)\n" +
+        "All Rights Reserved.\n" +
+        "\n" +
+        "1. DEFINITIONS AND ACCEPTANCE\n" +
+        "-----------------------------\n" +
+        "\"Software\" means WareStat version %s, its executable code, documentation,\n" +
+        "interfaces and components supplied under this Agreement.\n" +
+        "\"Licensor\" means the owner of the rights in the Software distributing it under\n" +
+        "the WareStat name. \"User\" means the person or organization using the Software.\n" +
+        "By accepting this Agreement and then installing or using the Software, the User\n" +
+        "accepts its terms. A person accepting for an organization represents that they\n" +
+        "are authorized to do so. If the User does not accept, the Software must not be\n" +
+        "used. This Agreement grants no rights beyond those expressly stated.\n" +
+        "\n" +
+        "2. FREE LICENSE GRANT AND PERMITTED USE\n" +
+        "----------------------------------------\n" +
+        "Subject to compliance with this Agreement, the Licensor grants the User a\n" +
+        "revocable upon breach, non-exclusive, non-transferable, royalty-free license to\n" +
+        "run the Software for personal or commercial purposes, including managing an\n" +
+        "organization's inventory and business operations. There is no per-device fee\n" +
+        "and no numerical limit on installations on devices owned or controlled by the\n" +
+        "User. Employees and authorized contractors may operate the Software on the\n" +
+        "User's behalf. This permission does not authorize public redistribution, sale,\n" +
+        "sublicensing or providing copies to unrelated third parties.\n" +
+        "\n" +
+        "3. RESTRICTIONS AND REDISTRIBUTION\n" +
+        "----------------------------------\n" +
+        "Except where expressly permitted by the Licensor or by non-waivable law, the\n" +
+        "User must not modify, translate, adapt or create derivative versions of the\n" +
+        "Software; reverse engineer, decompile or disassemble it; remove proprietary\n" +
+        "notices; sell, rent, sublicense, publish, repackage or redistribute copies;\n" +
+        "or use it unlawfully. Any distribution must be authorized by WareStat.\n" +
+        "Nothing here restricts statutory rights to make permitted backup copies, study\n" +
+        "lawfully accessible software, or achieve interoperability where applicable law\n" +
+        "does not allow those rights to be waived.\n" +
+        "\n" +
+        "4. INTELLECTUAL PROPERTY AND USER DATA\n" +
+        "---------------------------------------\n" +
+        "The Software is licensed, not sold. The Licensor and any applicable third-party\n" +
+        "rightsholders retain their respective intellectual property rights. No rights\n" +
+        "in the Software are transferred to the User. The User retains any rights it\n" +
+        "lawfully holds in business records, files and other data entered into or\n" +
+        "created with the Software. The Licensor does not acquire ownership of those\n" +
+        "records merely because WareStat processes them.\n" +
+        "\n" +
+        "5. NO WARRANTIES\n" +
+        "----------------\n" +
+        "TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE SOFTWARE IS PROVIDED\n" +
+        "FREE OF CHARGE, \"AS IS\" AND \"AS AVAILABLE\", WITHOUT ANY VOLUNTARY WARRANTY,\n" +
+        "EXPRESS, IMPLIED OR STATUTORY, INCLUDING WARRANTIES OF ACCURACY, RELIABILITY,\n" +
+        "MERCHANTABILITY, SATISFACTORY QUALITY, FITNESS FOR A PARTICULAR PURPOSE,\n" +
+        "NON-INFRINGEMENT, CONTINUOUS OPERATION OR FREEDOM FROM DEFECTS.\n" +
+        "\n" +
+        "THE LICENSOR DOES NOT WARRANT THAT FUNCTIONS, FORMULAS, REPORTS, OUTPUTS,\n" +
+        "DATABASES, BACKUPS, IMPORTS, EXPORTS OR UPDATES WILL BE ERROR-FREE, COMPLETE,\n" +
+        "SECURE, COMPATIBLE, AVAILABLE OR RECOVERABLE. RESULTS MAY BE INCORRECT,\n" +
+        "OUTDATED, INCONSISTENT OR AFFECTED BY SETTINGS, INPUTS, ROUNDING, PLATFORM\n" +
+        "DIFFERENCES, SOFTWARE DEFECTS OR USER ACTIONS. NO INFORMATION OR ADVICE\n" +
+        "CREATES A WARRANTY UNLESS THE LICENSOR EXPRESSLY ASSUMES ONE IN WRITING.\n" +
+        "MANDATORY STATUTORY WARRANTIES AND RIGHTS REMAIN UNAFFECTED.\n" +
+        "\n" +
+        "6. EXCLUSION OF ALL LIABILITY\n" +
+        "------------------------------\n" +
+        "TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL THE\n" +
+        "LICENSOR, SOFTWARE AUTHORS, DEVELOPERS OR AUTHORIZED DISTRIBUTORS BE LIABLE\n" +
+        "FOR ANY DAMAGES, LOSSES, CLAIMS, COSTS OR LIABILITIES OF ANY KIND, WHETHER\n" +
+        "DIRECT, INDIRECT, INCIDENTAL, CONSEQUENTIAL, SPECIAL, EXEMPLARY OR PUNITIVE,\n" +
+        "ARISING OUT OF OR RELATED TO THE SOFTWARE, ITS USE, INABILITY TO USE,\n" +
+        "FUNCTIONS, ERRORS, OMISSIONS, DEFECTS, SECURITY INCIDENTS, MALFUNCTIONS,\n" +
+        "INTERRUPTIONS, OUTPUTS, DOCUMENTS OR DATA, EVEN IF ADVISED OF THE\n" +
+        "POSSIBILITY OF SUCH DAMAGES.\n" +
+        "\n" +
+        "THIS EXCLUSION INCLUDES, WITHOUT LIMITATION, INCORRECT INVENTORY QUANTITIES,\n" +
+        "STOCK AVAILABILITY, LOT OR FIFO VALUATIONS, PRICES, COSTS, MARGINS, PROFITS,\n" +
+        "TAXES, VAT, INVOICES, ORDERS, RESERVATIONS, REPORTS, ANALYSES, FORECASTS,\n" +
+        "IMPORTS, EXPORTS OR MIGRATIONS; DATA LOSS, ALTERATION OR CORRUPTION; BUSINESS\n" +
+        "INTERRUPTION; LOST SALES, PROFITS, REVENUE, CUSTOMERS, CONTRACTS OR\n" +
+        "OPPORTUNITIES; PENALTIES; AND CLAIMS BY CUSTOMERS, SUPPLIERS OR OTHER THIRD\n" +
+        "PARTIES. THE EXCLUSION IS INTENDED TO APPLY REGARDLESS OF WHETHER A CLAIM\n" +
+        "IS ASSERTED IN CONTRACT, TORT (INCLUDING NEGLIGENCE), STATUTE OR OTHERWISE,\n" +
+        "TO THE EXTENT SUCH EXCLUSION IS LEGALLY PERMITTED.\n" +
+        "\n" +
+        "7. FALLBACK AGGREGATE LIABILITY CAP\n" +
+        "------------------------------------\n" +
+        "IF AND ONLY TO THE EXTENT A CLAIM CANNOT VALIDLY BE EXCLUDED UNDER SECTION\n" +
+        "6 BUT THE AMOUNT OF LIABILITY MAY LAWFULLY BE LIMITED, THE TOTAL AGGREGATE\n" +
+        "LIABILITY OF THE LICENSOR ARISING FROM OR RELATED TO THIS SOFTWARE AND\n" +
+        "AGREEMENT SHALL NOT EXCEED EUR 25 (TWENTY-FIVE EUROS) IN TOTAL, NOT PER\n" +
+        "INCIDENT, USER, TRANSACTION, CLAIM OR YEAR, REGARDLESS OF THE NUMBER OR\n" +
+        "LEGAL BASIS OF CLAIMS. THIS IS A FALLBACK LIMIT, NOT AN ACKNOWLEDGMENT THAT\n" +
+        "ANY COMPENSATION IS OWED. SECTIONS 6 AND 7 ARE SEPARATE LIMITATIONS AND\n" +
+        "SHALL EACH OPERATE TO THE FULLEST EXTENT LEGALLY PERMITTED.\n" +
+        "\n" +
+        "NOTHING IN THIS AGREEMENT EXCLUDES OR LIMITS LIABILITY OR REMEDIES WHEN\n" +
+        "PROHIBITED BY MANDATORY LAW, INCLUDING FOR INTENTIONAL MISCONDUCT OR GROSS\n" +
+        "NEGLIGENCE WHERE APPLICABLE, OR ANY OTHER NON-WAIVABLE RIGHTS.\n" +
+        "\n" +
+        "8. USER VERIFICATION AND RESPONSIBILITY\n" +
+        "----------------------------------------\n" +
+        "The Software is an information management tool, not a certification of the\n" +
+        "accuracy or legal validity of its results. Before using outputs for business,\n" +
+        "legal, tax, accounting, purchasing, selling, inventory or financial decisions,\n" +
+        "the User is responsible for independently checking material quantities,\n" +
+        "calculations, records and documents and for arranging appropriate professional\n" +
+        "review when necessary. The User is responsible for the accuracy of input data,\n" +
+        "settings, tax rates and operational procedures. This allocation of tasks does\n" +
+        "not extinguish liability that applicable law makes non-waivable.\n" +
+        "\n" +
+        "9. BUSINESS DECISIONS AND FINANCIAL RISKS\n" +
+        "-----------------------------------------\n" +
+        "WareStat does not provide accounting, tax, legal, auditing, investment or\n" +
+        "business consultancy. It does not guarantee stock availability, profit,\n" +
+        "compliance, document validity, delivery dates, customer satisfaction or any\n" +
+        "commercial outcome. The User remains responsible for decisions, submissions,\n" +
+        "invoices, declarations and other actions based on Software outputs, subject\n" +
+        "to mandatory legal rights and responsibilities.\n" +
+        "\n" +
+        "10. BACKUPS, SECURITY AND DATA RECOVERY\n" +
+        "----------------------------------------\n" +
+        "The User is responsible for maintaining independent, appropriately protected\n" +
+        "backups of its data and for testing the ability to restore them. The User\n" +
+        "should preserve original records before important changes and verify the\n" +
+        "integrity and accessibility of backups. Hardware failure, operating-system\n" +
+        "issues, file damage, user actions and Software defects may cause data loss.\n" +
+        "The Licensor makes no voluntary guarantee of data retention, restoration,\n" +
+        "confidentiality or uninterrupted access, subject to mandatory law.\n" +
+        "\n" +
+        "11. IMPORTS, EXPORTS AND MIGRATIONS\n" +
+        "------------------------------------\n" +
+        "The User should preserve separate copies of source files and verify migrated,\n" +
+        "imported and exported data before relying on them. Conversion between Software\n" +
+        "versions or data formats can expose missing, incompatible, pre-existing\n" +
+        "corrupt or inaccurately mapped data. Availability of a migration or recovery\n" +
+        "feature does not guarantee success or compatibility with every source file.\n" +
+        "The Licensor does not voluntarily warrant any conversion or restoration\n" +
+        "result, except as required by applicable law.\n" +
+        "\n" +
+        "12. DATA PROTECTION AND NETWORK FEATURES\n" +
+        "-----------------------------------------\n" +
+        "WareStat stores company records in local database files. Opening the embedded\n" +
+        "Discover page connects to the WareStat website at %s and necessarily transmits\n" +
+        "connection information such as IP address and technical browser details;\n" +
+        "website resources may initiate additional third-party requests. Merely opening\n" +
+        "Discover does not upload the local company database. The User is responsible\n" +
+        "for complying with data-protection requirements applicable to the personal\n" +
+        "data it determines how and why to process, including selecting an appropriate\n" +
+        "lawful basis where required. Nothing here excludes the Licensor's own\n" +
+        "non-waivable data-protection obligations, if any.\n" +
+        "\n" +
+        "13. THIRD-PARTY SOFTWARE\n" +
+        "-------------------------\n" +
+        "The Software includes third-party components governed by their respective\n" +
+        "licenses. See LICENSE-THIRD-PARTY.txt for the applicable notices and terms.\n" +
+        "Nothing in this Agreement overrides rights granted or obligations imposed by\n" +
+        "those separate licenses.\n" +
+        "\n" +
+        "14. NO SUPPORT, MAINTENANCE OR UPDATE COMMITMENT\n" +
+        "------------------------------------------------\n" +
+        "The free license does not include any voluntary commitment to provide\n" +
+        "technical support, training, customizations, service levels, maintenance,\n" +
+        "corrections, security fixes, continued availability or future updates. The\n" +
+        "Licensor may release, modify or discontinue versions or features. Any\n" +
+        "obligations imposed by mandatory law remain unaffected.\n" +
+        "\n" +
+        "15. UNLAWFUL USE AND THIRD-PARTY CLAIMS\n" +
+        "----------------------------------------\n" +
+        "The User must not use the Software to infringe laws or third-party rights.\n" +
+        "To the extent permitted by law, the User shall indemnify the Licensor against\n" +
+        "third-party claims and reasonable resulting costs arising from the User's\n" +
+        "unlawful distribution, intentional misuse or unlawful data or content, but not\n" +
+        "to the extent caused by the Licensor's own conduct for which liability cannot\n" +
+        "lawfully be excluded. This clause does not remove mandatory consumer rights.\n" +
+        "\n" +
+        "16. TERMINATION\n" +
+        "---------------\n" +
+        "The license remains effective until terminated. A material breach may result\n" +
+        "in termination of the right to use the Software, subject to any notice or cure\n" +
+        "requirements imposed by law. Upon termination the User must stop using and\n" +
+        "delete unauthorized copies of the Software, without prejudice to rights or\n" +
+        "obligations to retain its own business records, lawful backups or documents.\n" +
+        "Clauses which by their nature must survive termination remain effective to\n" +
+        "the extent legally permitted.\n" +
+        "\n" +
+        "17. FUTURE VERSIONS\n" +
+        "--------------------\n" +
+        "This Agreement applies to WareStat version %s. Future releases may be subject\n" +
+        "to different terms, may be offered commercially, or may not be released at all.\n" +
+        "The User has no contractual entitlement to a new version or continued free\n" +
+        "upgrades. Lawful use of an earlier version under its accepted terms is not\n" +
+        "automatically revoked solely because later versions use different terms.\n" +
+        "\n" +
+        "18. GOVERNING LAW AND COURTS\n" +
+        "-----------------------------\n" +
+        "To the extent permitted by applicable law, this Agreement is governed by the\n" +
+        "laws of %s. Where a contractual choice of court is legally effective, the\n" +
+        "competent courts shall include the %s. Any mandatory consumer forum,\n" +
+        "applicable conflict-of-laws rule or other non-waivable jurisdictional\n" +
+        "protection takes precedence.\n" +
+        "\n" +
+        "19. ENTIRE AGREEMENT, SEVERABILITY AND INTERPRETATION\n" +
+        "-----------------------------------------------------\n" +
+        "This Agreement states the license conditions for this Software version,\n" +
+        "together with separate mandatory third-party license terms. If any provision\n" +
+        "or limitation is invalid or unenforceable, the remainder shall remain effective\n" +
+        "insofar as legally possible. Each exclusion, limitation and fallback in this\n" +
+        "Agreement is intended to operate independently and to the maximum extent\n" +
+        "permitted by law. Headings assist reading and do not narrow any provision.\n" +
+        "Nothing here displaces mandatory statutory rights.\n" +
+        "\n" +
+        "20. CONTACT\n" +
+        "-----------\n" +
+        "Licensor: %s\n" +
+        "Website: %s\n" +
+        "Email: %s\n" +
+        "\n" +
+        "================================================================================\n" +
+        "END OF LICENSE AGREEMENT\n" +
+        "================================================================================\n",
             AppConstants.COPYRIGHT_YEAR,
             AppConstants.COPYRIGHT_HOLDER,
             AppConstants.WEBSITE,
-            AppConstants.SOFTWARE_NAME,
             AppConstants.LICENSE_VERSION_APPLIES_TO,
-            AppConstants.COPYRIGHT_HOLDER,
-            AppConstants.COPYRIGHT_HOLDER,
             AppConstants.WEBSITE,
-            AppConstants.COPYRIGHT_HOLDER,
-            AppConstants.COPYRIGHT_HOLDER,
-            AppConstants.COPYRIGHT_HOLDER,
-            AppConstants.SOFTWARE_NAME,
-            AppConstants.LICENSE_VERSION_APPLIES_TO,
-            AppConstants.COPYRIGHT_HOLDER,
             AppConstants.LICENSE_VERSION_APPLIES_TO,
             AppConstants.JURISDICTION_COUNTRY,
             AppConstants.JURISDICTION_COURT,
-            AppConstants.COPYRIGHT_HOLDER,
             AppConstants.COPYRIGHT_HOLDER,
             AppConstants.WEBSITE,
             AppConstants.CONTACT_EMAIL
