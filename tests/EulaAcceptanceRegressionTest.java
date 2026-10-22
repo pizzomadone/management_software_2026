@@ -20,8 +20,26 @@ public class EulaAcceptanceRegressionTest {
         check(actualLicense.contains("6. EXCLUSION OF ALL LIABILITY"),
             "license retains broad general exclusion");
         check(actualLicense.contains("7. FALLBACK AGGREGATE LIABILITY CAP")
-                && actualLicense.contains("EUR 25 (TWENTY-FIVE EUROS)"),
-            "license specifies EUR 25 total fallback cap");
+                && actualLicense.contains("EUR 5 (FIVE EUROS)")
+                && !actualLicense.contains("EUR 25 (TWENTY-FIVE EUROS)"),
+            "license specifies EUR 5 total fallback cap");
+        check(actualLicense.contains("representative sample data")
+                && actualLicense.contains("testing actual restoration"),
+            "license requires sample testing and independent restoration checks");
+        check(actualLicense.contains("reasonable, documented defense costs")
+                && actualLicense.contains("No settlement imposing obligations"),
+            "third-party indemnity is limited and requires settlement consent");
+        String reviewedSections = LicenseText.getSpecificallyApprovedSections(actualLicense);
+        for (String section : new String[] {
+                "5. NO WARRANTIES", "6. EXCLUSION OF ALL LIABILITY",
+                "7. FALLBACK AGGREGATE LIABILITY CAP",
+                "15. UNLAWFUL USE AND THIRD-PARTY CLAIMS",
+                "16. TERMINATION", "18. GOVERNING LAW AND COURTS"}) {
+            check(reviewedSections.contains(section), "specific review includes " + section);
+        }
+        check(!reviewedSections.contains("8. USER VERIFICATION AND RESPONSIBILITY")
+                && !reviewedSections.contains("19. ENTIRE AGREEMENT"),
+            "specific review omits unlisted sections");
         check(actualLicense.contains("NOTHING IN THIS AGREEMENT EXCLUDES OR LIMITS LIABILITY"),
             "mandatory law protections preserved");
         check("5,6,7,15,16,18".equals(EulaAcceptanceStore.SPECIFIC_CLAUSES),
