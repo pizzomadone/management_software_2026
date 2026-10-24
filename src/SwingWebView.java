@@ -14,6 +14,7 @@ public final class SwingWebView extends JPanel {
 
     private final WebViewComponent webView;
     private final NavigationListener navigationListener;
+    private final String userAgentScript;
     private final Timer stateTimer;
     private final Timer loadingTimeoutTimer;
     private final List<String> history = new ArrayList<>();
@@ -27,11 +28,14 @@ public final class SwingWebView extends JPanel {
             java.util.function.Consumer<String> failureListener) {
         super(new BorderLayout());
         this.navigationListener = navigationListener;
+        this.userAgentScript = "window.wareStatUserAgent = " + javascriptString(userAgent) + ";";
         webView = WebViewComponent.create();
         add(webView, BorderLayout.CENTER);
 
-        // eval() configures browser-side behaviour; evalAsync() monitors loading.
-        webView.eval("window.wareStatUserAgent = " + javascriptString(userAgent) + ";");
+        // Do not call synchronous eval() before the AWT peer is displayed.
+        // Windows WebView2 can wait for a native window/message loop here,
+        // blocking the EDT while the containing frame is still constructing.
+        // Browser-side metadata is set asynchronously once the peer is showing.
         webView.setUrl(url);
         stateTimer = new Timer(350, event -> pollDocumentState(failureListener));
         loadingTimeoutTimer = new Timer(8_000, event ->
@@ -46,7 +50,7 @@ public final class SwingWebView extends JPanel {
         // This also prevents background cards from producing false startup errors.
         if (!webView.isShowing() || stateRequestPending) return;
         stateRequestPending = true;
-        webView.evalAsync("return document.readyState + '|' + location.href;").whenComplete((state, error) ->
+        webView.evalAsync(userAgentScript + " return document.readyState + '|' + location.href;").whenComplete((state, error) ->
             SwingUtilities.invokeLater(() -> {
                 stateRequestPending = false;
                 if (error == null) {
