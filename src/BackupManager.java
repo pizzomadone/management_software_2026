@@ -114,17 +114,24 @@ public class BackupManager {
                 }
             }
             try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+staging)){
-                if(legacyCurrency!=null)DatabaseCurrency.initialize(c,legacyCurrency);
-                DatabaseManager.prepareDatabase(c);
-                if(excludePhotos){
-                    try(Statement st=c.createStatement()){
-                        st.executeUpdate("DELETE FROM product_images");
-                        st.execute("VACUUM");
+                if(legacyCurrency!=null){
+                    // The Backup panel uses exactly the same legacy conversion
+                    // and checks as startup / File > Open, including external
+                    // photos and historic invoice snapshots.
+                    if(excludePhotos)
+                        throw new IOException("Legacy database migration cannot discard photos");
+                    WareStatLocalUpgrade.prepareLegacyStaging(c,source,legacyCurrency);
+                }else{
+                    DatabaseManager.prepareDatabase(c);
+                    if(excludePhotos){
+                        try(Statement st=c.createStatement()){
+                            st.executeUpdate("DELETE FROM product_images");
+                            st.execute("VACUUM");
+                        }
                     }
+                    DatabaseIntegrity.validate(c,false);
+                    ProductImageStore.validateEmbeddedImages(c);
                 }
-                // Legacy archives still refer to external photos here; their
-                // BLOBs are imported and checked by prepareInput afterwards.
-                DatabaseIntegrity.validate(c,false);
             }
             return staging;
         }catch(IOException|SQLException|RuntimeException e){
@@ -177,8 +184,9 @@ public class BackupManager {
         Path result=null;
         try {
             if (legacy) {
-                // 1.2 genuinely needs a schema conversion. snapshot() validates
-                // both the migrated structure and SQLite pages before returning.
+                // The legacy .db is copied through VACUUM INTO. The shared
+                // converter then embeds any referenced photos, validates invoice
+                // snapshots and checks SQLite integrity before publication.
                 return snapshot(source,folder,legacyCurrency,false);
             }
 
