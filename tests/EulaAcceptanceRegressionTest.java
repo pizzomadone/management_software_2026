@@ -20,9 +20,9 @@ public class EulaAcceptanceRegressionTest {
         check(actualLicense.contains("6. EXCLUSION OF ALL LIABILITY"),
             "license retains broad general exclusion");
         check(actualLicense.contains("7. FALLBACK AGGREGATE LIABILITY CAP")
-                && actualLicense.contains("EUR 5 (FIVE EUROS)")
-                && !actualLicense.contains("EUR 25 (TWENTY-FIVE EUROS)"),
-            "license specifies EUR 5 total fallback cap");
+                && actualLicense.contains("EUR 1 (ONE EURO)")
+                && !actualLicense.contains("EUR 5 (FIVE EUROS)"),
+            "license specifies EUR 1 total fallback cap");
         check(actualLicense.contains("representative sample data")
                 && actualLicense.contains("testing actual restoration"),
             "license requires sample testing and independent restoration checks");
