@@ -21,6 +21,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.imageio.ImageIO;
+import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JFrame;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
@@ -57,6 +59,14 @@ public final class GraalProbe {
         String mode = args[0];
         Path workDir = args.length > 1 ? Path.of(args[1]) : Files.createTempDirectory("warestat-graal-probe");
         Files.createDirectories(workDir);
+
+        // Native probes must never read or change an actual user's company.
+        // This runs only in the CI-only GraalProbe entry point, not WareStat.
+        if ("trace".equals(mode) || "startup".equals(mode) || "startup-no-libs".equals(mode)) {
+            Path isolatedHome = workDir.resolve("warestat-probe-home");
+            Files.createDirectories(isolatedHome);
+            System.setProperty("user.home", isolatedHome.toString());
+        }
 
         boolean skipLibraryWarmup = "startup-no-libs".equals(mode);
         if (!skipLibraryWarmup) {
@@ -302,8 +312,46 @@ public final class GraalProbe {
         watchdog.setDaemon(true);
         watchdog.start();
 
+        // Exercise the real startup with a valid, disposable company database.
+        // A fresh installation intentionally opens the recovery dashboard,
+        // where the embedded Discover browser is not displayed.
+        SettingsPanel.setGlobalSetting("language", "it");
+        Path liveDatabase = AppConstants.getDefaultDatabasePath();
+        if (Files.exists(liveDatabase)) {
+            throw new IllegalStateException("Refusing to overwrite a probe database: " + liveDatabase);
+        }
+        DatabaseManager.createEmptyDatabase(liveDatabase, "EUR");
+        WareStatFileHeader.seal(liveDatabase);
+
+        // Approve the real EULA through its controls in this CI-only probe.
+        // No application-level license bypass is added.
+        Thread licenseDriver = new Thread(() -> {
+            try {
+                for (int attempts = 0; attempts < 120; attempts++) {
+                    if (EulaAcceptanceStore.isCurrentLicenseAccepted()) return;
+                    SwingUtilities.invokeAndWait(() -> {
+                        for (Window window : Window.getWindows()) {
+                            if (window instanceof EulaDialog && window.isShowing()) {
+                                checkEulaBoxes(window);
+                                JButton accept = findEulaAcceptButton(window);
+                                if (accept != null && accept.isEnabled()) accept.doClick();
+                            }
+                        }
+                    });
+                    Thread.sleep(150);
+                }
+            } catch (Exception problem) {
+                System.err.println("CI EULA interaction failed: " + problem);
+            }
+        }, "graal-ci-license-driver");
+        licenseDriver.setDaemon(true);
+        licenseDriver.start();
+
         MainWindow.main(new String[0]);
         Thread.sleep(10000);
+        if (!EulaAcceptanceStore.isCurrentLicenseAccepted()) {
+            throw new IllegalStateException("CI EULA acceptance did not complete");
+        }
 
         final MainWindow[] mainWindow = new MainWindow[1];
         final WebViewComponent[] embeddedWebView = new WebViewComponent[1];
@@ -350,6 +398,24 @@ public final class GraalProbe {
         if (!isWindowsNativeImage()) {
             System.exit(0);
         }
+    }
+
+    private static void checkEulaBoxes(Component component) {
+        if (component instanceof JCheckBox box && !box.isSelected()) box.doClick();
+        if (component instanceof Container container) {
+            for (Component child : container.getComponents()) checkEulaBoxes(child);
+        }
+    }
+
+    private static JButton findEulaAcceptButton(Component component) {
+        if (component instanceof JButton button && "Accept".equals(button.getText())) return button;
+        if (component instanceof Container container) {
+            for (Component child : container.getComponents()) {
+                JButton found = findEulaAcceptButton(child);
+                if (found != null) return found;
+            }
+        }
+        return null;
     }
 
     private static WebViewComponent findWebView(Component component) {
