@@ -160,3 +160,35 @@ Signing/notarization is a release-authenticity layer. It is separate from Native
 The first fully green four-platform Native Image run was produced from branch `experiment/graalvm-native` after Linux packaging support was added. The working pipeline includes all platform-specific fixes described above.
 
 When reorganizing branches or workflow filenames, preserve the content and behavior of this build contract and re-run all four targets before declaring the reorganization complete.
+
+## Publishing permanent GitHub Release downloads
+
+The workflow runs on pull requests to `main`, pushes to `main`, manual
+workflow dispatch, and version tags (`v*`). Only a matching **version tag**
+can publish public downloads. This deliberately prevents a regular push,
+manual diagnostic run or unreviewed pull request from releasing binaries.
+
+1. Merge the tested release changes into `main` and check that the cross-platform
+   native build and regression tests pass.
+2. Create and push the version tag on that exact tested commit. For
+   `app.version=1.3`, use `v1.3.0` (or `v1.3`). For example:
+   `git tag v1.3.0 && git push origin v1.3.0`.
+3. The tag run builds Windows, both macOS architectures and Linux on their
+   respective native runners. The publication job has all three jobs as
+   mandatory dependencies, including both macOS matrix entries.
+4. The job downloads all four workflow artifacts, requires seven distributables
+   and seven checksums, rejects missing, duplicate and mismatched-version
+   files, and checks every SHA-256 before publishing a versioned GitHub Release.
+5. Link the official website to
+   `https://github.com/pizzomadone/management_software_2026/releases/latest`.
+   Do not link a temporary Actions artifact to end users.
+
+A failed smoke test prevents publication. Tags that do not match
+`build.properties` also fail publication. The publisher refuses to replace
+files in an existing Release with the same tag; use a new version tag for
+changed binaries.
+
+**Important:** the current pipeline provides functional installers but not
+an Apple-notarized or Windows Authenticode-signed distribution. Arrange
+Apple Developer ID credentials, notarization and a suitable Windows
+code-signing certificate before claiming verified-publisher installers.
