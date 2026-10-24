@@ -95,6 +95,17 @@ public class DashboardPanel extends JPanel {
         pendingOrdersPanel.add(missingOrders);
         topProductsTable.setEnabled(false);
         abcAnalysisTable.setEnabled(false);
+        // Disable every dashboard action in recovery, including compact
+        // action buttons embedded deeper in the layout. The recovery shell
+        // must never offer actions that require an open company database.
+        disableRecoveryButtons(this);
+    }
+
+    private static void disableRecoveryButtons(Container parent) {
+        for (Component child : parent.getComponents()) {
+            if (child instanceof JButton button) button.setEnabled(false);
+            if (child instanceof Container nested) disableRecoveryButtons(nested);
+        }
     }
 
     private void setupPanel() {
