@@ -33,6 +33,9 @@ public class EulaAcceptanceRegressionTest {
         for (String section : new String[] {
                 "5. NO WARRANTIES", "6. EXCLUSION OF ALL LIABILITY",
                 "7. FALLBACK AGGREGATE LIABILITY CAP",
+                "10. BACKUPS, SECURITY AND DATA RECOVERY",
+                "11. IMPORTS, EXPORTS AND MIGRATIONS",
+                "14. NO SUPPORT, MAINTENANCE OR UPDATE COMMITMENT",
                 "15. UNLAWFUL USE AND THIRD-PARTY CLAIMS",
                 "16. TERMINATION", "18. GOVERNING LAW AND COURTS"}) {
             check(reviewedSections.contains(section), "specific review includes " + section);
@@ -42,7 +45,7 @@ public class EulaAcceptanceRegressionTest {
             "specific review omits unlisted sections");
         check(actualLicense.contains("NOTHING IN THIS AGREEMENT EXCLUDES OR LIMITS LIABILITY"),
             "mandatory law protections preserved");
-        check("5,6,7,15,16,18".equals(EulaAcceptanceStore.SPECIFIC_CLAUSES),
+        check("5,6,7,10,11,14,15,16,18".equals(EulaAcceptanceStore.SPECIFIC_CLAUSES),
             "specific approval section references updated");
         String text = "WareStat license terms for this regression test";
         try {
@@ -56,6 +59,14 @@ public class EulaAcceptanceRegressionTest {
             check(!Files.exists(evidence), "one or zero checkboxes: no saved evidence");
             EulaAcceptanceStore.saveAcceptance(prefs, evidence, "1.3", text, true, true);
             check(EulaAcceptanceStore.isAccepted(prefs, evidence, "1.3", text), "both boxes: acceptance persisted");
+            check(EulaAcceptanceStore.SPECIFIC_CLAUSES.equals(prefs.get("specificClauses","")),
+                "newly added clauses are recorded");
+            prefs.put("specificClauses", "5,6,7,15,16,18");
+            check(!EulaAcceptanceStore.isAccepted(prefs, evidence, "1.3", text),
+                "previous specific approval cannot authorize newly added clauses");
+            prefs.put("specificClauses", EulaAcceptanceStore.SPECIFIC_CLAUSES);
+            check(EulaAcceptanceStore.isAccepted(prefs, evidence, "1.3", text),
+                "restored current specific approval is valid");
             check(Instant.parse(prefs.get("acceptedAtUtc", "")).getEpochSecond() > 0, "UTC date saved");
             check(!EulaAcceptanceStore.isAccepted(prefs, evidence, "1.4", text), "software update reacceptance");
             EulaAcceptanceStore.saveAcceptance(prefs, evidence, "1.4", text, true, true);

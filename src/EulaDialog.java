@@ -55,9 +55,11 @@ public class EulaDialog extends JDialog {
         generalCheckBox.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JCheckBox specificCheckBox = new JCheckBox(
-            "<html>I specifically approve Sections 5 (No Warranties), 6 (Exclusion of Liability),<br>" +
-            "7 (EUR 1 Liability Cap), 15 (Third-Party Claims), 16 (Termination),<br>" +
-            "and 18 (Governing Law / Courts).</html>");
+            "<html>I specifically approve, pursuant to Articles 1341 and 1342 of the Italian Civil Code:<br>" +
+            "5 (No Warranties), 6 (Exclusion of Liability), 7 (EUR 1 Liability Cap),<br>" +
+            "10 (Backups and Data Recovery), 11 (Imports, Exports and Migrations),<br>" +
+            "14 (No Support, Maintenance or Updates), 15 (Third-Party Claims),<br>" +
+            "16 (Termination), 18 (Governing Law / Courts).</html>");
         specificCheckBox.setFont(new Font("Arial", Font.PLAIN, 12));
         specificCheckBox.setAlignmentX(Component.LEFT_ALIGNMENT);
         checkboxPanel.add(generalCheckBox);
