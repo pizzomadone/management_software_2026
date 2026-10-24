@@ -15,6 +15,7 @@ public final class SwingWebView extends JPanel {
     private final WebViewComponent webView;
     private final NavigationListener navigationListener;
     private final String userAgentScript;
+    private final boolean deferScriptUntilVisible;
     private final Timer stateTimer;
     private final Timer loadingTimeoutTimer;
     private final List<String> history = new ArrayList<>();
@@ -29,13 +30,17 @@ public final class SwingWebView extends JPanel {
         super(new BorderLayout());
         this.navigationListener = navigationListener;
         this.userAgentScript = "window.wareStatUserAgent = " + javascriptString(userAgent) + ";";
+        this.deferScriptUntilVisible = System.getProperty("os.name", "")
+                .toLowerCase(java.util.Locale.ROOT).contains("win");
         webView = WebViewComponent.create();
         add(webView, BorderLayout.CENTER);
 
-        // Do not call synchronous eval() before the AWT peer is displayed.
-        // Windows WebView2 can wait for a native window/message loop here,
-        // blocking the EDT while the containing frame is still constructing.
-        // Browser-side metadata is set asynchronously once the peer is showing.
+        // Windows WebView2 may block the EDT on eval() before the native
+        // peer exists, preventing the containing frame from ever appearing.
+        // Preserve the original initialization order on macOS/Linux, whose
+        // webview backends require this early configuration for startup.
+        // On Windows, set the script asynchronously only after it is showing.
+        if (!deferScriptUntilVisible) webView.eval(userAgentScript);
         webView.setUrl(url);
         stateTimer = new Timer(350, event -> pollDocumentState(failureListener));
         loadingTimeoutTimer = new Timer(8_000, event ->
@@ -50,7 +55,9 @@ public final class SwingWebView extends JPanel {
         // This also prevents background cards from producing false startup errors.
         if (!webView.isShowing() || stateRequestPending) return;
         stateRequestPending = true;
-        webView.evalAsync(userAgentScript + " return document.readyState + '|' + location.href;").whenComplete((state, error) ->
+        String script = (deferScriptUntilVisible ? userAgentScript + " " : "")
+                + "return document.readyState + '|' + location.href;";
+        webView.evalAsync(script).whenComplete((state, error) ->
             SwingUtilities.invokeLater(() -> {
                 stateRequestPending = false;
                 if (error == null) {
