@@ -10,6 +10,8 @@ import java.math.BigDecimal;
 
 public class SettingsPanel extends JPanel {
     private static Properties settings = new Properties();
+    /** No company may be loaded or modified while startup recovery is in progress. */
+    private final boolean recoveryMode;
 
     private static final String[] CURRENCY_CHOICES = {
         "USD - US Dollar ($)", "EUR - Euro (€)", "GBP - British Pound (£)",
@@ -67,11 +69,16 @@ public class SettingsPanel extends JPanel {
     private JTextField logoPathField;
 
     public SettingsPanel() {
+        this(false);
+    }
+
+    public SettingsPanel(boolean recoveryMode) {
+        this.recoveryMode = recoveryMode;
         loadSettings();
         setupPanel();
         initComponents();
         applyCurrentSettings();
-        loadCompanyData();
+        if (!recoveryMode) loadCompanyData();
     }
 
     private void setupPanel() {
@@ -85,9 +92,11 @@ public class SettingsPanel extends JPanel {
         // General settings: appearance and application options on one screen
         tabbedPane.addTab("Settings", createCombinedSettingsPanel());
 
-        // Company Data Tab
-        JPanel companyPanel = createCompanyDataPanel();
-        tabbedPane.addTab("Company Data", companyPanel);
+        // Company Data cannot even be constructed without an open database.
+        if (!recoveryMode) {
+            JPanel companyPanel = createCompanyDataPanel();
+            tabbedPane.addTab("Company Data", companyPanel);
+        }
 
         // Buttons
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
@@ -209,6 +218,10 @@ public class SettingsPanel extends JPanel {
         String[] currencies = getSupportedCurrencyChoices();
         currencyCombo = new JComboBox<>(currencies);
         currencyCombo.setPrototypeDisplayValue("ZAR - South African Rand (R)");
+        if (recoveryMode) {
+            currencyCombo.setEnabled(false);
+            currencyCombo.setToolTipText(I18n.tr("Open a database to change its currency."));
+        }
         for(String choice:currencies) {
             if(choice.startsWith(getCurrencyCode()+" - "))currencyCombo.setSelectedItem(choice);
         }
@@ -454,6 +467,10 @@ public class SettingsPanel extends JPanel {
     }
 
     private void saveAllSettings() {
+        if (recoveryMode) {
+            saveRecoverySettings();
+            return;
+        }
         boolean success = true;
 
         try {
@@ -481,6 +498,47 @@ public class SettingsPanel extends JPanel {
             Dialogs.showMessageDialog(this,
                 I18n.tr("Settings saved successfully!"),
                 I18n.tr("Settings"), JOptionPane.INFORMATION_MESSAGE);
+        }
+    }
+
+    /**
+     * Save only user-level preferences. In particular, never open a SQLite
+     * connection or run the currency conversion workflow in recovery mode.
+     * Currency and company details remain unchanged until a company is open.
+     */
+    private void saveRecoverySettings() {
+        try {
+            double vatRate;
+            try {
+                vatRate = Numbers.vat(defaultVatField.getText());
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException("Default VAT rate must be a number between 0 and 100");
+            }
+            if (vatRate < 0 || vatRate > 100)
+                throw new IllegalArgumentException("Default VAT rate must be between 0 and 100");
+
+            Properties updated = new Properties();
+            updated.putAll(settings);
+            updated.setProperty("font_size", String.valueOf(fontSizeSlider.getValue()));
+            updated.setProperty("theme", (String) themeCombo.getSelectedItem());
+            updated.setProperty("pdf_default_directory", pdfDirectoryField.getText().trim());
+            updated.setProperty("default_vat", String.valueOf(vatRate));
+            updated.setProperty("language",
+                I18n.codeForName((String) languageCombo.getSelectedItem()));
+
+            try (OutputStreamWriter writer = new OutputStreamWriter(
+                    new FileOutputStream(AppConstants.getSettingsPath().toFile()),
+                    java.nio.charset.StandardCharsets.UTF_8)) {
+                updated.store(writer, "Application Settings");
+            }
+            settings = updated;
+            applySettings();
+            Dialogs.showMessageDialog(this, I18n.tr("Settings saved successfully!"),
+                I18n.tr("Settings"), JOptionPane.INFORMATION_MESSAGE);
+        } catch (Exception problem) {
+            Dialogs.showMessageDialog(this,
+                I18n.tr("Error saving application settings") + ": " + problem.getMessage(),
+                I18n.tr("Error"), JOptionPane.ERROR_MESSAGE);
         }
     }
 
@@ -623,7 +681,9 @@ public class SettingsPanel extends JPanel {
                 String confirmation=I18n.tr("Existing operational monetary values will be converted using:")+"\n"+
                     "1 "+oldCode+" = "+rate.stripTrailingZeros().toPlainString()+" "+newCode+"\n\n"+
                     I18n.tr("Changing the operating currency affects products, costs, supplier product prices, customer orders, supplier orders and Draft invoices.")+
-                    "\n\n"+I18n.tr("Issued, Paid and Canceled invoices will not be changed.");
+                    "\n\n"+I18n.tr("Issued, Paid and Canceled invoices will not be changed.")+
+                    "\n\n"+I18n.tr(
+                        "WARNING: Converting currency permanently replaces original monetary amounts in customer and supplier orders, including completed orders. The original amounts cannot be recovered from this database after conversion. Create a backup before proceeding.");
                 int confirm=Dialogs.showConfirmDialog(this,confirmation,I18n.tr("Confirm Currency Conversion"),
                     JOptionPane.OK_CANCEL_OPTION,JOptionPane.WARNING_MESSAGE);
                 if(confirm!=JOptionPane.OK_OPTION) {

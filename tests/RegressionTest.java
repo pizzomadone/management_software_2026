@@ -1026,16 +1026,16 @@ public class RegressionTest {
             }
             require(WareStatFileHeader.isSQLite(plainDb),"Expected raw SQLite test input");
             BackupManager backup=BackupManager.getInstance();
+            // The current WareStat schema was copied with a SQLite header.
+            // This is precisely the unclean-shutdown recovery case and both
+            // File Open and Backup should now accept it after validation.
+            backup.validateDatabase(plainDb);
+            var recovered=backup.importBackup(plainDb);
+            require(WareStatFileHeader.isSealed(Path.of(recovered.absolutePath())),
+                "SQLite-header current WSBQ was not imported as a sealed WSBQ");
+            require(WareStatFileHeader.isSQLite(plainDb),
+                "Recovery import unexpectedly modified the source file");
             boolean rejected=false;
-            try{backup.importDatabase(plainDb);}catch(RuntimeException e){rejected=true;}
-            require(rejected,"Renamed raw SQLite .wsbq imported");
-            rejected=false;
-            try{backup.importBackup(plainDb);}catch(RuntimeException e){rejected=true;}
-            require(rejected,"Renamed raw SQLite .wsbq registered as backup");
-            rejected=false;
-            try{backup.validateDatabase(plainDb);}catch(RuntimeException e){rejected=true;}
-            require(rejected,"Renamed raw SQLite .wsbq passed validation");
-            require(WareStatFileHeader.isSQLite(plainDb),"Rejected external file was altered");
 
             Path obsolete=OUT.resolve("obsolete-schema.wsbq");
             Files.deleteIfExists(obsolete);
@@ -1053,10 +1053,76 @@ public class RegressionTest {
             require(WareStatFileHeader.isSealed(obsolete),"Rejected obsolete backup modified");
 
             Path unsupported=OUT.resolve("old-experimental.wsbq");
-            Files.copy(plainDb,unsupported,StandardCopyOption.REPLACE_EXISTING);
+            Files.deleteIfExists(unsupported);
+            try(Connection bogus=DatabaseManager.openConnection("jdbc:sqlite:"+unsupported);
+                Statement st=bogus.createStatement()){
+                st.execute("CREATE TABLE unrelated(id INTEGER PRIMARY KEY)");
+            }
             rejected=false;
             try{backup.importBackup(unsupported);}catch(RuntimeException expected){rejected=true;}
-            require(rejected,"An experimental or unsigned .wsbq was accepted");
+            require(rejected,"An unrelated raw SQLite .wsbq was accepted");
+        });
+        test("1.2 File Open and Backup import use equivalent conversions without external photos", () -> {
+            Path folder=OUT.resolve("legacy-entry-point-consistency");
+            Files.createDirectories(folder);
+            Path original=WareStatLegacy12Fixture.create(folder.resolve("genuine-1.2.db"));
+            require(!Files.exists(folder.resolve("product_images")),
+                "Genuine 1.2 fixture must not have external product photos");
+            byte[] originalBytes=Files.readAllBytes(original);
+
+            // File > Open and Backup > Import take different entry points,
+            // but both must use the same isolated migration/validation rules.
+            Path viaOpen=WareStatLocalUpgrade.migrateConfirmed(original,"EUR");
+            Path viaBackup=Path.of(BackupManager.getInstance()
+                .importBackup(original,"EUR").absolutePath());
+            String expected=null;
+            for(Path converted:List.of(viaOpen,viaBackup)) {
+                require(WareStatFileHeader.isSealed(converted),
+                    "Converted 1.2 database was not published in signed WSBQ format");
+                Path copy=WareStatFileHeader.copyReadable(converted,folder);
+                try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+copy);
+                    Statement st=c.createStatement()) {
+                    DatabaseIntegrity.validate(c,false);
+                    ProductImageStore.validateEmbeddedImages(c);
+                    try(ResultSet r=st.executeQuery("SELECT COUNT(*) FROM product_images")) {
+                        require(r.next()&&r.getInt(1)==0,
+                            "Photos were fabricated while migrating a genuine 1.2 database");
+                    }
+                    java.util.Properties customer;
+                    java.util.Properties company;
+                    try(ResultSet r=st.executeQuery(
+                            "SELECT customer_snapshot,company_snapshot,snapshot_version " +
+                            "FROM invoices WHERE number='OLD12-INVOICE'")) {
+                        require(r.next()&&r.getInt("snapshot_version")==0,
+                            "Imported legacy invoice was not marked as legacy");
+                        customer=InvoiceSnapshots.decode(r.getString("customer_snapshot"));
+                        company=InvoiceSnapshots.decode(r.getString("company_snapshot"));
+                    }
+                    require("Historic".equals(customer.getProperty("first_name"))
+                        && "Customer".equals(customer.getProperty("last_name"))
+                        && "Historic Company".equals(company.getProperty("company_name")),
+                        "Imported invoice party snapshots are incomplete");
+                    String signature;
+                    try(ResultSet r=st.executeQuery("""
+                        SELECT p.quantity,p.acquisition_cost,p.sale_price_ex_vat,
+                               o.total_ex_vat,i.taxable_amount,i.vat,i.total
+                        FROM products p,orders o,invoices i
+                        WHERE p.code='OLD12' AND o.id=1 AND i.number='OLD12-INVOICE'
+                        """)) {
+                        require(r.next(),"Migrated business records are missing");
+                        signature=r.getInt(1)+"|"+r.getDouble(2)+"|"+r.getDouble(3)
+                            +"|"+r.getDouble(4)+"|"+r.getDouble(5)+"|"
+                            +r.getDouble(6)+"|"+r.getDouble(7);
+                    }
+                    if(expected==null)expected=signature;
+                    else require(expected.equals(signature),
+                        "File Open and Backup produced different business values");
+                } finally {Files.deleteIfExists(copy);}
+            }
+            require(Arrays.equals(originalBytes,Files.readAllBytes(original)),
+                "A legacy import altered the original 1.2 database");
+            require(!Files.exists(folder.resolve("product_images")),
+                "A legacy import created an external photo directory");
         });
         test("real WareStat 1.2 SQLite backup converts to signed WSBQ", () -> {
             BackupManager backups=BackupManager.getInstance();

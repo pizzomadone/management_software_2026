@@ -94,6 +94,67 @@ public class FifoCompletionTest extends RegressionTest {
             int reversal=Integer.parseInt(value("SELECT id FROM warehouse_movements WHERE document_type='ORDER_REVERSAL'"));
             mustReject(()->StockManager.requireManualMovement(db,reversal));
         });
+        test("partial FIFO sale can be reversed without inventing layers",()->{
+            fresh();
+            sql("INSERT INTO inventory_lots(id,product_id,received_date,initial_quantity,remaining_quantity,unit_cost,source_type) VALUES(1,1,1,6,6,5,'MANUAL_INWARD')");
+            sale(20,8);
+            require(qty()==2 && "0".equals(balances()),"Partial FIFO sale changed wrong stock");
+            require(value("SELECT cost_total FROM order_details WHERE id=20")==null,"Missing FIFO cost was invented");
+            require("2".equals(value("SELECT quantity FROM inventory_lot_consumptions WHERE order_detail_id=20 AND lot_id IS NULL")),
+                "Incomplete FIFO quantity was not recorded");
+            require(CostIntegrity.audit(db).salesWithoutHistoricalCost()==1,
+                "Unknown historical cost not flagged");
+            require(CostIntegrity.audit(db).completedSalesWithoutReversibleFifoHistory()==0,
+                "Explicit missing-lot marker incorrectly marked irreversible");
+            StockManager.reverseCompletedOrder(db,20);
+            require(qty()==10 && "6".equals(balances()),
+                "Storno failed to restore physical stock and only the real FIFO layer");
+            require("Reversed".equals(value("SELECT status FROM orders WHERE id=20")),
+                "Storno did not preserve historical sale");
+            require("2".equals(value("SELECT quantity FROM inventory_lot_consumptions WHERE order_detail_id=20 AND lot_id IS NULL")),
+                "Storno erased the explicit unknown-lot marker");
+            mustReject(()->StockManager.reverseCompletedOrder(db,20));
+        });
+        test("partial FIFO sale can be reopened without inventing layers",()->{
+            fresh();
+            sql("INSERT INTO inventory_lots(id,product_id,received_date,initial_quantity,remaining_quantity,unit_cost,source_type) VALUES(1,1,1,6,6,5,'MANUAL_INWARD')");
+            sale(20,8);
+            StockManager.reopenCompletedOrder(db,20);
+            require(qty()==10 && "6".equals(balances()),
+                "Reopen did not restore physical stock and original FIFO layer");
+            require("In Progress".equals(value("SELECT status FROM orders WHERE id=20")),
+                "Reopened order has wrong status");
+            require("8".equals(value("SELECT reserved_quantity FROM products WHERE id=1")),
+                "Reopened order did not reserve all units");
+            require("0".equals(value("SELECT COUNT(*) FROM inventory_lot_consumptions WHERE order_detail_id=20")),
+                "Reopening left obsolete FIFO sale snapshots");
+            require(value("SELECT cost_total FROM order_details WHERE id=20")==null,
+                "Reopening kept the sale cost");
+        });
+        test("inconsistent non-null FIFO references still prevent unsafe storno",()->{
+            twoLayers();sale(20,2);
+            sql("INSERT INTO inventory_lots(id,product_id,received_date,initial_quantity,remaining_quantity,unit_cost,source_type) VALUES(99,2,1,2,2,8,'MANUAL_INWARD')");
+            sql("UPDATE inventory_lot_consumptions SET lot_id=99 WHERE order_detail_id=20");
+            mustReject(()->StockManager.reverseCompletedOrder(db,20));
+            mustReject(()->StockManager.reopenCompletedOrder(db,20));
+            require(qty()==8 && "3,5".equals(balances()),
+                "Corrupt lot reference changed physical or FIFO stock");
+        });
+        test("duplicate product rows are aggregated for stock checking",()->{
+            fresh();
+            List<StockManager.StockItem> lines=List.of(
+                new StockManager.StockItem(1,"Product A",7),
+                new StockManager.StockItem(1,"Product A",7));
+            require(StockManager.aggregateStockItems(lines).size()==1
+                && StockManager.aggregateStockItems(lines).get(0).getQuantity()==14,
+                "Duplicate product quantities were not summed");
+            Map<String,StockManager.StockAvailability> shortage=
+                StockManager.checkStockAvailability(db,lines,null,"ORDER");
+            require(shortage.size()==1 && shortage.values().iterator().next().getRequestedQuantity()==14,
+                "Stock checker failed to detect combined quantity");
+            require(StockManager.fifoCoverageWarning(db,lines)!=null,
+                "FIFO warning did not aggregate duplicate product quantities");
+        });
         test("sale reversal rolls back all lots if restoring physical quantity overflows",()->{
             twoLayers();sale(20,7);sql("UPDATE products SET quantity=2147483647 WHERE id=1");
             mustReject(()->StockManager.reverseCompletedOrder(db,20));
@@ -252,7 +313,13 @@ public class FifoCompletionTest extends RegressionTest {
                 "Preferred supplier cost is the current purchase cost saved for the preferred supplier. Click the value to edit it.",
                 "When a supplier order is received, its actual unit purchase price becomes the FIFO lot cost and updates that supplier's current cost.",
                 "Last purchase cost is the unit cost of the most recently received supplier purchase. It is updated automatically and cannot be edited here.",
-                "Purchase Cost Help"};
+                "Purchase Cost Help",
+                "Some sold units have no FIFO lot","unit(s) without a FIFO lot",
+                "The sale can proceed, but historical purchase cost and gross profit will remain unavailable for the affected items. You can still reverse or reopen the sale. Continue?",
+                "Incomplete FIFO coverage",
+                "An inbound movement at zero unit cost values these goods at zero and may overstate profit when sold. Confirm that the goods were received free of charge.",
+                "Confirm zero purchase cost",
+                "WARNING: Converting currency permanently replaces original monetary amounts in customer and supplier orders, including completed orders. The original amounts cannot be recovered from this database after conversion. Create a backup before proceeding."};
             try {
                 for(String language:List.of("it","es","fr","de","pl","pt_BR")) {
                     I18n.setLanguage(language);

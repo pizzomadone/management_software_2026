@@ -109,22 +109,26 @@ public class BackupManager {
                 try(Connection c=DriverManager.getConnection("jdbc:sqlite:"+readable.toAbsolutePath(),
                         settings.toProperties())){
                     if(WareStatFileHeader.isSealed(source))
-                        validateCurrentBackupVersion(c);
+                        WareStatCurrentDatabase.validateCurrentContents(c);
                     vacuumInto(c,staging,legacyCurrency);
                 }
             }
             try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+staging)){
-                if(legacyCurrency!=null)DatabaseCurrency.initialize(c,legacyCurrency);
-                DatabaseManager.prepareDatabase(c);
-                if(excludePhotos){
-                    try(Statement st=c.createStatement()){
-                        st.executeUpdate("DELETE FROM product_images");
-                        st.execute("VACUUM");
+                if(legacyCurrency!=null){
+                    // Same 1.2 database migration and invoice checks as
+                    // File > Open. WareStat 1.2 has no product photos.
+                    WareStatLocalUpgrade.prepareLegacyStaging(c,legacyCurrency);
+                }else{
+                    DatabaseManager.prepareDatabase(c);
+                    if(excludePhotos){
+                        try(Statement st=c.createStatement()){
+                            st.executeUpdate("DELETE FROM product_images");
+                            st.execute("VACUUM");
+                        }
                     }
+                    DatabaseIntegrity.validate(c,false);
+                    ProductImageStore.validateEmbeddedImages(c);
                 }
-                // Legacy archives still refer to external photos here; their
-                // BLOBs are imported and checked by prepareInput afterwards.
-                DatabaseIntegrity.validate(c,false);
             }
             return staging;
         }catch(IOException|SQLException|RuntimeException e){
@@ -133,19 +137,6 @@ public class BackupManager {
         }finally{
             removeTemporary(readableCopy);
         }
-    }
-    /** A signed current-format backup must already contain the complete
-     * current schema: never silently migrate an obsolete SQLite database that
-     * has merely been renamed/resealed with a .wsbq extension. */
-    private static void validateCurrentBackupVersion(Connection c) throws SQLException {
-        try(PreparedStatement p=c.prepareStatement(
-                "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1");
-            ResultSet r=p.executeQuery()){
-            if(!r.next()||!"022".equals(r.getString(1)))
-                throw new SQLException("Incompatible WareStat .wsbq schema version");
-        }
-        DatabaseIntegrity.validate(c,false);
-        ProductImageStore.validateEmbeddedImages(c);
     }
 
     private static void vacuumInto(Connection c,Path staging,String legacyCurrency)
@@ -172,13 +163,13 @@ public class BackupManager {
         if(!legacy&&!isArchive(source))
             throw new IOException("Only WareStat 1.2 .db and current .wsbq backups are accepted");
         if(legacy) WareStatLegacy12.validate(source);
-        else if(!WareStatFileHeader.isSealed(source))
-            throw new IOException("Invalid WareStat .wsbq signature");
+        else WareStatCurrentDatabase.validateSelectable(source);
         Path result=null;
         try {
             if (legacy) {
-                // 1.2 genuinely needs a schema conversion. snapshot() validates
-                // both the migrated structure and SQLite pages before returning.
+                // Genuine WareStat 1.2 .db has no photos. Both entry points
+                // convert the isolated snapshot and validate invoice history
+                // and database integrity before publishing a current .wsbq.
                 return snapshot(source,folder,legacyCurrency,false);
             }
 
@@ -195,7 +186,7 @@ public class BackupManager {
             readOnly.setBusyTimeout(10000);
             try(Connection c=DriverManager.getConnection(
                     "jdbc:sqlite:"+result.toAbsolutePath(),readOnly.toProperties())) {
-                validateCurrentBackupVersion(c);
+                WareStatCurrentDatabase.validateCurrentContents(c);
             }
             return result;
         } catch (IOException|SQLException|RuntimeException e) {
@@ -315,6 +306,35 @@ public class BackupManager {
             return registerBackup(target);
         }catch(IOException|SQLException e){throw new IllegalArgumentException("Unable to import backup: "+e.getMessage(),e);}
         finally{removeTemporary(staged);}
+    }
+
+    /**
+     * Restore a backup into a NEW company file when no company is open.
+     * Never replace an existing database or modify the backup itself.
+     * The caller opens the completed file and saves its startup preference.
+     */
+    public synchronized Path restoreBackupAsNewDatabase(
+            Path source, Path destination, String legacyCurrency) throws Exception {
+        Path target = destination.toAbsolutePath().normalize();
+        if (target.getParent() == null || !isArchive(target))
+            throw new IOException("The new database filename must end in .wsbq");
+        if (Files.exists(target))
+            throw new java.nio.file.FileAlreadyExistsException(target.toString());
+        rejectActive(source);
+        Path staging = null;
+        try {
+            Files.createDirectories(target.getParent());
+            staging = prepareInput(source, target.getParent(), legacyCurrency);
+            WareStatFileHeader.seal(staging);
+            if (Files.exists(target))
+                throw new java.nio.file.FileAlreadyExistsException(target.toString());
+            // No REPLACE_EXISTING: restoring must not destroy another company.
+            Files.move(staging, target);
+            staging = null;
+            return target;
+        } finally {
+            removeTemporary(staging);
+        }
     }
 
     public synchronized void importDatabase(Path source){importDatabase(source,null);}

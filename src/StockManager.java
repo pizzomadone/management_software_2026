@@ -47,7 +47,7 @@ public class StockManager {
 
         Map<String, StockAvailability> insufficientProducts = new HashMap<>();
 
-        for (StockItem item : items) {
+        for (StockItem item : aggregateStockItems(items)) {
             int productId = item.getProductId();
             String productName = item.getProductName();
             int requestedQty = item.getQuantity();
@@ -84,6 +84,41 @@ public class StockManager {
         }
 
         return insufficientProducts;
+    }
+
+    /** Combine repeated product IDs for stock operations without changing document lines. */
+    public static List<StockItem> aggregateStockItems(List<StockItem> items) {
+        Map<Integer,StockItem> totals=new LinkedHashMap<>();
+        for(StockItem item:items) {
+            int quantity=Numbers.positiveQuantity(item.getQuantity());
+            StockItem previous=totals.get(item.getProductId());
+            if(previous==null)
+                totals.put(item.getProductId(),new StockItem(
+                    item.getProductId(),item.getProductName(),quantity));
+            else
+                totals.put(item.getProductId(),new StockItem(
+                    previous.getProductId(),previous.getProductName(),
+                    Math.addExact(previous.getQuantity(),quantity)));
+        }
+        return new ArrayList<>(totals.values());
+    }
+
+    /** Warn without preventing a legitimate physical sale with incomplete FIFO history. */
+    public static String fifoCoverageWarning(Connection conn,List<StockItem> items) throws SQLException {
+        StringBuilder affected=new StringBuilder();
+        for(StockItem item:aggregateStockItems(items)) {
+            int uncovered=InventoryLotManager.uncoveredFifoQuantity(conn,
+                item.getProductId(),item.getQuantity());
+            if(uncovered>0) {
+                affected.append("\n- ").append(item.getProductName()).append(": ")
+                    .append(uncovered).append(" ")
+                    .append(I18n.tr("unit(s) without a FIFO lot"));
+            }
+        }
+        if(affected.length()==0) return null;
+        return I18n.tr("Some sold units have no FIFO lot") + ":" + affected +
+            "\n\n" + I18n.tr(
+                "The sale can proceed, but historical purchase cost and gross profit will remain unavailable for the affected items. You can still reverse or reopen the sale. Continue?");
     }
 
     private static int getStockEffectQuantity(Connection conn, int documentId, int productId,
@@ -246,6 +281,32 @@ public class StockManager {
         }
     }
 
+    /** Prevent stale/duplicate order lines from silently consuming the wrong stock. */
+    private static void requireReservationsMatchOrderDetails(Connection conn,int orderId)
+            throws SQLException {
+        try (PreparedStatement p=conn.prepareStatement("""
+                SELECT d.product_id
+                FROM (
+                    SELECT product_id,SUM(quantity) AS required
+                    FROM order_details WHERE order_id=? GROUP BY product_id
+                ) d
+                LEFT JOIN (
+                    SELECT product_id,SUM(reserved_quantity) AS reserved
+                    FROM stock_reservations
+                    WHERE document_type='ORDER' AND document_id=? AND status='ACTIVE'
+                    GROUP BY product_id
+                ) r ON r.product_id=d.product_id
+                WHERE d.required<>COALESCE(r.reserved,0)
+                LIMIT 1
+                """)) {
+            p.setInt(1,orderId);p.setInt(2,orderId);
+            try (ResultSet r=p.executeQuery()) {
+                if(r.next()) throw new SQLException(
+                    "Order quantities and stock reservations do not match");
+            }
+        }
+    }
+
     /**
      * Complete a stock reservation and decrement actual stock
      * This converts reserved stock into actual stock decrease
@@ -261,6 +322,8 @@ public class StockManager {
         // would consume stock already unavailable because of physical stock or
         // other active reservations.
         requireAvailableStockForCompletion(conn, documentType, documentId);
+        if ("ORDER".equals(documentType))
+            requireReservationsMatchOrderDetails(conn,documentId);
 
         // Freeze the economic cost of a completed customer sale before changing
         // physical stock. A line may consume more than one FIFO lot.
@@ -474,6 +537,7 @@ public class StockManager {
             }
             if (items.isEmpty())
                 throw new SQLException("Completed order has no product lines");
+            items = aggregateStockItems(items);
 
             // Undo only this order's completion. FIFO consumptions belonging to
             // later orders are deliberately left untouched.

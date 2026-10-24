@@ -350,31 +350,6 @@ public final class ProductImageStore {
         return names;
     }
 
-    /**
-     * Upgrade a legacy database whose product_images rows reference external JPEGs.
-     * Call after adding image_data in a staging database, never on unprotected live data.
-     */
-    public static void embedLegacyImages(Connection c,Path directory) throws SQLException,IOException {
-        List<Map.Entry<Integer,String>> missing=new ArrayList<>();
-        try(Statement s=c.createStatement();ResultSet r=s.executeQuery(
-                "SELECT id,filename FROM product_images WHERE image_data IS NULL")){
-            while(r.next()) missing.add(Map.entry(r.getInt(1),safeName(r.getString(2))));
-        }
-        try(PreparedStatement p=c.prepareStatement("UPDATE product_images SET image_data=? WHERE id=?")){
-            for(var entry:missing){
-                Path photo=directory.resolve(entry.getValue()).normalize();
-                if(!photo.startsWith(directory.normalize())||!Files.isRegularFile(photo))
-                    throw new IOException("Missing legacy product photo: "+entry.getValue());
-                byte[] data=Files.readAllBytes(photo);
-                if(data.length<4||data.length>10*1024*1024||
-                        (data[0]&255)!=0xff||(data[1]&255)!=0xd8)
-                    throw new IOException("Invalid legacy JPEG: "+entry.getValue());
-                p.setBytes(1,data);p.setInt(2,entry.getKey());p.addBatch();
-            }
-            p.executeBatch();
-        }
-    }
-
     public static void validateEmbeddedImages(Connection c) throws SQLException {
         try(Statement s=c.createStatement();
             ResultSet r=s.executeQuery("SELECT COUNT(*) FROM product_images WHERE image_data IS NULL OR length(image_data)=0")){

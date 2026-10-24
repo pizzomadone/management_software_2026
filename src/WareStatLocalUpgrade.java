@@ -30,6 +30,30 @@ public final class WareStatLocalUpgrade {
             throw new IOException("WareStat 1.2 database requires explicit migration confirmation");
     }
 
+    /**
+     * One migration/validation pipeline for both File > Open and Backup.
+     * Input: genuine WareStat 1.2 .db without photos.
+     * Output: fully validated .wsbq staging database, before publication.
+     * WareStat 1.3 .wsbq files are handled separately without legacy migration.
+     */
+    static void prepareLegacyStaging(Connection c,String currency) throws SQLException {
+        DatabaseCurrency.initialize(c,currency);
+        DatabaseManager.prepareDatabase(c);
+
+        // The 1.2 schema has no photos; there is no external photo directory
+        // to inspect or import. New databases store photos only as SQLite BLOBs.
+        InvoiceSnapshots.repairIncompleteLegacy(c);
+        InvoiceSnapshots.validateMigratedSnapshots(c);
+        DatabaseIntegrity.validate(c,false);
+        ProductImageStore.validateEmbeddedImages(c);
+
+        // Close the staging file cleanly before applying the .wsbq header.
+        try (Statement stmt=c.createStatement()) {
+            stmt.execute("PRAGMA wal_checkpoint(TRUNCATE)");
+            stmt.execute("PRAGMA journal_mode=DELETE");
+        }
+    }
+
     /** A new WSBQ is created next to the existing .db, which is retained. */
     public static Path upgradedPath(Path legacy) throws IOException {
         Path source = legacy.toAbsolutePath().normalize();
@@ -76,40 +100,7 @@ public final class WareStatLocalUpgrade {
             }
 
             try (Connection conn=DatabaseManager.openConnection("jdbc:sqlite:"+staged)) {
-                DatabaseCurrency.initialize(conn,currency);
-                DatabaseManager.prepareDatabase(conn);
-
-                // Prior versions may have referenced JPEG files outside SQLite.
-                // Embed them in the new WSBQ; never modify the original photos.
-                Path localImages=source.getParent().resolve("product_images");
-                Path images=Files.isDirectory(localImages) ? localImages
-                    : AppConstants.getProductImagesDirectory();
-                DatabaseManager.beginTransaction(conn);
-                try {
-                    ProductImageStore.embedLegacyImages(conn,images);
-                    ProductImageStore.validateEmbeddedImages(conn);
-                    conn.commit();
-                } catch (SQLException | IOException problem) {
-                    conn.rollback();
-                    throw problem;
-                } finally {
-                    conn.setAutoCommit(true);
-                }
-
-                // Never publish a newly converted company with invoice
-                // customer/company details missing.
-                InvoiceSnapshots.repairIncompleteLegacy(conn);
-                InvoiceSnapshots.validateMigratedSnapshots(conn);
-                DatabaseIntegrity.validate(conn,false);
-                try (Statement s=conn.createStatement();
-                     ResultSet r=s.executeQuery("PRAGMA integrity_check")) {
-                    if (!r.next() || !"ok".equalsIgnoreCase(r.getString(1)))
-                        throw new SQLException("The migrated database failed SQLite integrity_check");
-                }
-                try (Statement s=conn.createStatement()) {
-                    s.execute("PRAGMA wal_checkpoint(TRUNCATE)");
-                    s.execute("PRAGMA journal_mode=DELETE");
-                }
+                prepareLegacyStaging(conn,currency);
             }
 
             WareStatFileHeader.seal(staged);

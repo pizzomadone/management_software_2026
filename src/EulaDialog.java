@@ -55,13 +55,36 @@ public class EulaDialog extends JDialog {
         generalCheckBox.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JCheckBox specificCheckBox = new JCheckBox(
-            "<html>I specifically approve Sections 5 (No Warranty), 6 (Limitation of Liability),<br>" +
-            "8 (Termination), and 11 (Governing Law / Jurisdiction).</html>");
+            "<html>I specifically approve, pursuant to Articles 1341 and 1342 of the Italian Civil Code:<br>" +
+            "5 (No Warranties), 6 (Exclusion of Liability), 7 (EUR 1 Liability Cap),<br>" +
+            "10 (Backups and Data Recovery), 11 (Imports, Exports and Migrations),<br>" +
+            "14 (No Support, Maintenance or Updates), 15 (Third-Party Claims),<br>" +
+            "16 (Termination), 18 (Governing Law / Courts).</html>");
         specificCheckBox.setFont(new Font("Arial", Font.PLAIN, 12));
         specificCheckBox.setAlignmentX(Component.LEFT_ALIGNMENT);
         checkboxPanel.add(generalCheckBox);
         checkboxPanel.add(Box.createVerticalStrut(5));
         checkboxPanel.add(specificCheckBox);
+        checkboxPanel.add(Box.createVerticalStrut(5));
+        JButton reviewClausesButton = new JButton("Read the specifically approved sections");
+        reviewClausesButton.setAlignmentX(Component.LEFT_ALIGNMENT);
+        reviewClausesButton.addActionListener(event -> {
+            JTextArea clausesArea = new JTextArea(
+                LicenseText.getSpecificallyApprovedSections(displayedLicenseText));
+            clausesArea.setEditable(false);
+            clausesArea.setLineWrap(true);
+            clausesArea.setWrapStyleWord(true);
+            clausesArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+            clausesArea.setCaretPosition(0);
+            JScrollPane clausesScrollPane = new JScrollPane(clausesArea);
+            clausesScrollPane.setPreferredSize(new Dimension(680, 360));
+            JOptionPane.showMessageDialog(
+                EulaDialog.this,
+                clausesScrollPane,
+                "Sections requiring separate approval",
+                JOptionPane.INFORMATION_MESSAGE);
+        });
+        checkboxPanel.add(reviewClausesButton);
         bottomPanel.add(checkboxPanel, BorderLayout.CENTER);
 
         JPanel buttonsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
