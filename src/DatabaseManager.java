@@ -676,13 +676,10 @@ public class DatabaseManager {
         java.nio.file.Path target = selected.toAbsolutePath().normalize();
         java.nio.file.Path previous = AppConstants.getDatabasePath().toAbsolutePath().normalize();
         if (target.equals(previous)) return;
-        if (!target.getFileName().toString().toLowerCase(java.util.Locale.ROOT).endsWith(".wsbq")
-                || !java.nio.file.Files.isRegularFile(target)
-                || !WareStatFileHeader.isSealed(target))
-            throw new java.io.IOException("Select an existing, signed WareStat .wsbq database");
-        if (java.nio.file.Files.exists(java.nio.file.Path.of(target + "-wal"))
-                || java.nio.file.Files.exists(java.nio.file.Path.of(target + "-journal")))
-            throw new java.io.IOException("Selected database may be open elsewhere or require recovery");
+        // Shared with Backup Import/Restore: recover only a genuine current
+        // WSBQ whose header remained SQLite after an interrupted shutdown.
+        // Validation leaves the selected file untouched and rejects hot WALs.
+        WareStatCurrentDatabase.validateSelectable(target);
 
         // Close and seal the previous company, without creating any copies.
         shutdownAndSeal();

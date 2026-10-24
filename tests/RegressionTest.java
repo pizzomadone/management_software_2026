@@ -1026,16 +1026,16 @@ public class RegressionTest {
             }
             require(WareStatFileHeader.isSQLite(plainDb),"Expected raw SQLite test input");
             BackupManager backup=BackupManager.getInstance();
+            // The current WareStat schema was copied with a SQLite header.
+            // This is precisely the unclean-shutdown recovery case and both
+            // File Open and Backup should now accept it after validation.
+            backup.validateDatabase(plainDb);
+            var recovered=backup.importBackup(plainDb);
+            require(WareStatFileHeader.isSealed(Path.of(recovered.absolutePath())),
+                "SQLite-header current WSBQ was not imported as a sealed WSBQ");
+            require(WareStatFileHeader.isSQLite(plainDb),
+                "Recovery import unexpectedly modified the source file");
             boolean rejected=false;
-            try{backup.importDatabase(plainDb);}catch(RuntimeException e){rejected=true;}
-            require(rejected,"Renamed raw SQLite .wsbq imported");
-            rejected=false;
-            try{backup.importBackup(plainDb);}catch(RuntimeException e){rejected=true;}
-            require(rejected,"Renamed raw SQLite .wsbq registered as backup");
-            rejected=false;
-            try{backup.validateDatabase(plainDb);}catch(RuntimeException e){rejected=true;}
-            require(rejected,"Renamed raw SQLite .wsbq passed validation");
-            require(WareStatFileHeader.isSQLite(plainDb),"Rejected external file was altered");
 
             Path obsolete=OUT.resolve("obsolete-schema.wsbq");
             Files.deleteIfExists(obsolete);
@@ -1053,10 +1053,14 @@ public class RegressionTest {
             require(WareStatFileHeader.isSealed(obsolete),"Rejected obsolete backup modified");
 
             Path unsupported=OUT.resolve("old-experimental.wsbq");
-            Files.copy(plainDb,unsupported,StandardCopyOption.REPLACE_EXISTING);
+            Files.deleteIfExists(unsupported);
+            try(Connection bogus=DatabaseManager.openConnection("jdbc:sqlite:"+unsupported);
+                Statement st=bogus.createStatement()){
+                st.execute("CREATE TABLE unrelated(id INTEGER PRIMARY KEY)");
+            }
             rejected=false;
             try{backup.importBackup(unsupported);}catch(RuntimeException expected){rejected=true;}
-            require(rejected,"An experimental or unsigned .wsbq was accepted");
+            require(rejected,"An unrelated raw SQLite .wsbq was accepted");
         });
         test("1.2 File Open and Backup import use equivalent conversions without external photos", () -> {
             Path folder=OUT.resolve("legacy-entry-point-consistency");

@@ -29,6 +29,11 @@ public final class WareStatFileHeader {
         return Arrays.equals(readHeader(path), SQLITE);
     }
 
+    /** True only if the first 16 bytes are a partially written WareStat/SQLite signature. */
+    public static boolean isInterruptedSignature(Path path) throws IOException {
+        return isInterruptedHeader(readHeader(path));
+    }
+
     public static void restoreForSQLite(Path path) throws IOException {
         if (!Files.exists(path)) return;
         byte[] header = readHeader(path);

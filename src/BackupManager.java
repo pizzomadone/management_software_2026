@@ -109,7 +109,7 @@ public class BackupManager {
                 try(Connection c=DriverManager.getConnection("jdbc:sqlite:"+readable.toAbsolutePath(),
                         settings.toProperties())){
                     if(WareStatFileHeader.isSealed(source))
-                        validateCurrentBackupVersion(c);
+                        WareStatCurrentDatabase.validateCurrentContents(c);
                     vacuumInto(c,staging,legacyCurrency);
                 }
             }
@@ -138,19 +138,6 @@ public class BackupManager {
             removeTemporary(readableCopy);
         }
     }
-    /** A signed current-format backup must already contain the complete
-     * current schema: never silently migrate an obsolete SQLite database that
-     * has merely been renamed/resealed with a .wsbq extension. */
-    private static void validateCurrentBackupVersion(Connection c) throws SQLException {
-        try(PreparedStatement p=c.prepareStatement(
-                "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1");
-            ResultSet r=p.executeQuery()){
-            if(!r.next()||!"022".equals(r.getString(1)))
-                throw new SQLException("Incompatible WareStat .wsbq schema version");
-        }
-        DatabaseIntegrity.validate(c,false);
-        ProductImageStore.validateEmbeddedImages(c);
-    }
 
     private static void vacuumInto(Connection c,Path staging,String legacyCurrency)
             throws SQLException {
@@ -176,8 +163,7 @@ public class BackupManager {
         if(!legacy&&!isArchive(source))
             throw new IOException("Only WareStat 1.2 .db and current .wsbq backups are accepted");
         if(legacy) WareStatLegacy12.validate(source);
-        else if(!WareStatFileHeader.isSealed(source))
-            throw new IOException("Invalid WareStat .wsbq signature");
+        else WareStatCurrentDatabase.validateSelectable(source);
         Path result=null;
         try {
             if (legacy) {
@@ -200,7 +186,7 @@ public class BackupManager {
             readOnly.setBusyTimeout(10000);
             try(Connection c=DriverManager.getConnection(
                     "jdbc:sqlite:"+result.toAbsolutePath(),readOnly.toProperties())) {
-                validateCurrentBackupVersion(c);
+                WareStatCurrentDatabase.validateCurrentContents(c);
             }
             return result;
         } catch (IOException|SQLException|RuntimeException e) {

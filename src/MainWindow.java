@@ -248,11 +248,10 @@ public class MainWindow extends JFrame {
                 String currency = DatabaseCurrency.confirmLegacyCurrency(this, candidate);
                 if (currency == null) return;
                 candidate = WareStatLocalUpgrade.migrateConfirmed(candidate, currency);
-            } else if (!candidate.getFileName().toString()
-                    .toLowerCase(java.util.Locale.ROOT).endsWith(".wsbq")
-                    || !Files.isRegularFile(candidate)
-                    || !WareStatFileHeader.isSealed(candidate))
-                throw new java.io.IOException("Select a valid WareStat .wsbq database");
+            } else {
+                // Same accepted WSBQ states as File > Open and Backup.
+                WareStatCurrentDatabase.validateSelectable(candidate);
+            }
 
             AppConstants.useDatabasePathForSession(candidate);
             DatabaseManager.getInstance().initDatabase();
@@ -1226,8 +1225,8 @@ public class MainWindow extends JFrame {
                 if (!WareStatLegacy12.isVersion12(source))
                     throw new IllegalArgumentException("Not a WareStat 1.2 database");
                 if (!confirmLegacyMigration(source)) return;
-            } else if (!Files.isRegularFile(source) || !WareStatFileHeader.isSealed(source)) {
-                throw new IllegalArgumentException("Select a valid WareStat 1.3 .wsbq database");
+            } else {
+                WareStatCurrentDatabase.validateSelectable(source);
             }
         } catch (Exception problem) {
             showDatabaseError("The selected file is not a valid WareStat database.",problem);
