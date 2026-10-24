@@ -4,6 +4,11 @@ on:
   push:
     branches:
       - main
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -1114,3 +1119,104 @@ jobs:
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
+
+  publish-release:
+    name: Publish verified release downloads
+    # No untested builds or pull-request artifacts can reach GitHub Releases.
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [native-image-macos, native-image-windows, native-image-linux]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate release tag and application version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^app.version=//p' build.properties | head -n1 | tr -d '\r')"
+          [[ -n "$version" ]] || { echo "Missing app.version" >&2; exit 1; }
+          [[ "$GITHUB_REF_NAME" == "v$version" || "$GITHUB_REF_NAME" == "v$version.0" ]] || {
+            echo "Tag $GITHUB_REF_NAME does not match application version $version" >&2
+            exit 1
+          }
+          echo "WARESTAT_VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Download successful platform build artifacts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download "$GITHUB_RUN_ID" -R "$GITHUB_REPOSITORY" -D "$RUNNER_TEMP/warestat-artifacts"
+          for name in WareStat-macos-arm64 WareStat-macos-x64 WareStat-windows-x64 WareStat-linux-x64; do
+            [[ -d "$RUNNER_TEMP/warestat-artifacts/$name" ]] || {
+              echo "Required build artifact missing: $name" >&2; exit 1
+            }
+          done
+
+      - name: Stage and validate all installers and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          while IFS= read -r -d '' file; do
+            name="$(basename "$file")"
+            [[ "$name" == WareStat-"$WARESTAT_VERSION"-* ]] || {
+              echo "Unexpected version in artifact: $name" >&2; exit 1
+            }
+            [[ ! -e "release-assets/$name" ]] || {
+              echo "Duplicate artifact name: $name" >&2; exit 1
+            }
+            cp "$file" "release-assets/$name"
+          done < <(find "$RUNNER_TEMP/warestat-artifacts" -type f -print0)
+          # 7 distributables: 1 EXE, 2 DMGs, 2 app ZIPs, 1 DEB, 1 tarball.
+          [[ "$(find release-assets -maxdepth 1 -type f ! -name '*.sha256' | wc -l)" -eq 7 ]] || {
+            echo "Expected seven distributables" >&2; exit 1
+          }
+          [[ "$(find release-assets -maxdepth 1 -type f -name '*.sha256' | wc -l)" -eq 7 ]] || {
+            echo "Expected seven checksum files" >&2; exit 1
+          }
+          test -s "release-assets/WareStat-$WARESTAT_VERSION-windows-x64-setup.exe"
+          for suffix in macos-arm64 macos-x64; do
+            test -s "release-assets/WareStat-$WARESTAT_VERSION-$suffix.dmg"
+            test -s "release-assets/WareStat-$WARESTAT_VERSION-$suffix-app.zip"
+          done
+          test -s "release-assets/WareStat-$WARESTAT_VERSION-linux-x64.deb"
+          test -s "release-assets/WareStat-$WARESTAT_VERSION-linux-x64.tar.gz"
+
+          for checksum in release-assets/*.sha256; do
+            expected="$(awk 'NR == 1 {print $1}' "$checksum")"
+            payload="${checksum%.sha256}"
+            [[ "$expected" =~ ^[0-9a-fA-F]{64}$ && -s "$payload" ]] || {
+              echo "Malformed or missing checksum payload: $checksum" >&2; exit 1
+            }
+            actual="$(sha256sum "$payload" | awk '{print $1}')"
+            [[ "${expected,,}" == "$actual" ]] || {
+              echo "Hash mismatch: $payload" >&2; exit 1
+            }
+          done
+          ls -lh release-assets
+
+      - name: Publish GitHub Release only after all builds pass
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release already exists; refusing to replace published binaries" >&2
+            exit 1
+          fi
+          gh release create "$GITHUB_REF_NAME" release-assets/* \
+            -R "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "WareStat $WARESTAT_VERSION" \
+            --notes-file .github/RELEASE_NOTES.md \
+            --latest
