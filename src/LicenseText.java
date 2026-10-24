@@ -160,13 +160,19 @@ public class LicenseText {
         "\n" +
         "11. IMPORTS, EXPORTS AND MIGRATIONS\n" +
         "------------------------------------\n" +
-        "The User should preserve separate copies of source files and verify migrated,\n" +
-        "imported and exported data before relying on them. Conversion between Software\n" +
-        "versions or data formats can expose missing, incompatible, pre-existing\n" +
-        "corrupt or inaccurately mapped data. Availability of a migration or recovery\n" +
-        "feature does not guarantee success or compatibility with every source file.\n" +
-        "The Licensor does not voluntarily warrant any conversion or restoration\n" +
-        "result, except as required by applicable law.\n" +
+        "Before any import, export, migration, update or data restoration, the User\n" +
+        "must preserve an independent, unmodified copy of the source data. Before\n" +
+        "relying on the results, the User must independently verify the completeness\n" +
+        "and accuracy of the affected data, including physical and reserved stock,\n" +
+        "quantities, lots, FIFO costs, purchase and sale prices, customer and supplier\n" +
+        "orders, invoices, payments, tax amounts and reports.\n" +
+        "Conversions between Software versions, database schemas or data formats\n" +
+        "may omit, alter, duplicate, misclassify or incorrectly map information,\n" +
+        "including data that appeared correct in the original file. Completion\n" +
+        "without an error message does not certify accuracy, completeness or\n" +
+        "compatibility. The Licensor does not voluntarily guarantee the success,\n" +
+        "accuracy, completeness or recoverability of imported, exported, migrated\n" +
+        "or restored data, except as required by applicable law.\n" +
         "\n" +
         "12. DATA PROTECTION AND NETWORK FEATURES\n" +
         "-----------------------------------------\n" +
