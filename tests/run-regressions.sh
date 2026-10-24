@@ -20,8 +20,10 @@ sed -n '/^PASS:/p' "$test_dir/notice-results.log"
     exit 1
 }
 sed -n '/^PASS:/p' "$test_dir/eula-results.log"
-# Validate WSBQ import/open recovery independently of unrelated UI tests.
-"$test_java" -Djava.awt.headless=true -Duser.home="$test_dir/home" \
+# Run WSBQ recovery against an isolated home so these integration
+# checks cannot alter the later recovery/UI test fixture.
+mkdir -p "$test_dir/wsbq-home"
+"$test_java" -Djava.awt.headless=true -Duser.home="$test_dir/wsbq-home" \
     -cp "$test_dir/classes:lib/*:resources" WsbqRecoveryRegressionTest
 "$test_java" -Djava.awt.headless=true -Duser.home="$test_dir/home" \
     -cp "$test_dir/classes:lib/*:resources" StartupDatabaseRecoveryRegressionTest
