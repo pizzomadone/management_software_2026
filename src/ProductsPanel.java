@@ -9,6 +9,12 @@ import java.sql.*;
 import java.util.Vector;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
+import java.util.ArrayList;
+import java.util.List;
 
 public class ProductsPanel extends JPanel {
     private static final String PRODUCT_COLUMN_WIDTHS_SETTING =
@@ -58,6 +64,48 @@ public class ProductsPanel extends JPanel {
     private JButton lotsButton;
     private JButton deleteButton;
     private JButton refreshButton;
+    // A catalog page stays small even with millions of photo BLOBs in SQLite.
+    private static final int PAGE_SIZE = 100;
+    private int currentPage;
+    private int productCount;
+    private int sortColumn = 2; // Product name
+    private boolean sortAscending = true;
+    private boolean adjustingSort;
+    // Each expression uses the products alias 'p' in the page-select SQL.
+    // All entries are trusted literals, never interpolated user values.
+    private static final String[] PAGE_SORT_COLUMNS = {
+        "p.id", "p.code COLLATE NOCASE", "p.name COLLATE NOCASE",
+        "p.description COLLATE NOCASE", "p.sale_price_inc_vat",
+        "p.quantity", "p.reserved_quantity", "(p.quantity-p.reserved_quantity)",
+        "(SELECT COALESCE(SUM(sod.quantity),0) FROM supplier_order_details sod " +
+            "JOIN supplier_orders so ON so.id=sod.order_id WHERE sod.product_id=p.id " +
+            "AND so.status IN ('Draft','Confirmed','In Transit'))",
+        "p.category COLLATE NOCASE", "p.unit_of_measure COLLATE NOCASE",
+        "COALESCE((SELECT minimum_quantity FROM minimum_stock WHERE product_id=p.id),0)",
+        "p.active",
+        "(SELECT f.company_name FROM product_suppliers ps JOIN suppliers f ON f.id=ps.supplier_id " +
+            "WHERE ps.product_id=p.id AND ps.is_preferred=1 LIMIT 1) COLLATE NOCASE",
+        "p.warehouse_position COLLATE NOCASE", "p.vat_rate",
+        "(SELECT filename FROM product_images pi WHERE pi.product_id=p.id " +
+            "ORDER BY pi.is_primary DESC,pi.sort_order,pi.id LIMIT 1) COLLATE NOCASE"
+    };
+    private String activeSearch = "";
+    private JLabel pageCountLabel;
+    private int nextProductOffset;
+    private boolean moreProducts = true;
+    private boolean loadingProductChunk;
+    private boolean scrollLoadQueued;
+    // Keep recently drawn thumbnails without retaining every image while
+    // scrolling through a very large inventory.
+    private final Map<String, ImageIcon> pageThumbnails =
+        new LinkedHashMap<>(256,0.75f,true) {
+            @Override protected boolean removeEldestEntry(Map.Entry<String,ImageIcon> oldest) {
+                return size()>256;
+            }
+        };
+    private final Set<String> pendingThumbnails = new LinkedHashSet<>();
+    // Decode one visible thumbnail per tick instead of blocking the entire list load.
+    private final Timer thumbnailTimer = new Timer(35, e -> loadNextThumbnail());
     private Timer photoPreviewTimer;
     private JWindow photoPreviewWindow;
     private boolean photoPreviewVisible;
@@ -93,7 +141,7 @@ public class ProductsPanel extends JPanel {
         tableModel = new DefaultTableModel(columns, 0) {
             @Override public boolean isCellEditable(int row, int column) { return false; }
             @Override public Class<?> getColumnClass(int columnIndex) {
-                return columnIndex == 16 ? ImageIcon.class : Object.class;
+                return columnIndex == 16 ? String.class : Object.class;
             }
         };
         productsTable = new JTable(tableModel) {
@@ -134,11 +182,15 @@ public class ProductsPanel extends JPanel {
                     boolean selected, boolean focus, int row, int column) {
                 JLabel label = (JLabel) super.getTableCellRendererComponent(
                     table, "", selected, focus, row, column);
-                label.setIcon(value instanceof Icon ? (Icon)value : null);
+                String filename = value instanceof String ? (String)value : null;
+                // Rendering a cell must NEVER schedule disk/SQLite reads.
+                // JTable can ask renderers for non-visible cells when resizing,
+                // sorting or measuring column widths.
+                label.setIcon(filename == null ? null : pageThumbnails.get(filename));
                 label.setHorizontalAlignment(SwingConstants.CENTER);
                 label.setVerticalAlignment(SwingConstants.CENTER);
                 label.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
-                label.setToolTipText(value instanceof Icon
+                label.setToolTipText(filename != null && !filename.isBlank()
                     ? I18n.tr("Hold to preview") : null);
                 return label;
             }
@@ -150,6 +202,23 @@ public class ProductsPanel extends JPanel {
 
         // Enable column sorting
         TableSorterUtil.enableSorting(productsTable);
+        // The JTable sorter controls the visible page, while SQL selects the
+        // correct page from the entire catalog using that same sort column.
+        productsTable.getRowSorter().addRowSorterListener(e -> {
+            if (adjustingSort || e.getType() != javax.swing.event.RowSorterEvent.Type.SORT_ORDER_CHANGED)
+                return;
+            java.util.List<? extends RowSorter.SortKey> keys =
+                productsTable.getRowSorter().getSortKeys();
+            if (keys.isEmpty()) {
+                sortColumn = 2;
+                sortAscending = true;
+            } else {
+                sortColumn = keys.get(0).getColumn();
+                sortAscending = keys.get(0).getSortOrder() != SortOrder.DESCENDING;
+            }
+            currentPage = 0;
+            loadProductPage();
+        });
 
         // Add Delete key shortcut
         TableInteractionUtil.addDeleteKeyAction(productsTable, this::deleteSelectedProduct);
@@ -221,16 +290,43 @@ public class ProductsPanel extends JPanel {
         buttonPanel.add(lotsButton);
         buttonPanel.add(deleteButton);
         buttonPanel.add(refreshButton);
-        
+
+        // Infinite scroll instead of page numbers. SQL retrieves 100 rows
+        // at a time; the counter shows how many have actually been loaded.
+        pageCountLabel = new JLabel("0 / 0");
+        buttonPanel.add(pageCountLabel);
+
         // Main layout
         add(searchPanel, BorderLayout.NORTH);
         productsScrollPane = new JScrollPane(productsTable);
         productsScrollPane.setHorizontalScrollBarPolicy(
             JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        productsScrollPane.getVerticalScrollBar().addAdjustmentListener(event -> {
+            JScrollBar bar=productsScrollPane.getVerticalScrollBar();
+            // Work even while the thumb is being dragged. Preload BEFORE
+            // the bottom, so the user need not release and scroll upwards.
+            if(moreProducts && !loadingProductChunk && !scrollLoadQueued &&
+                    bar.getMaximum()>bar.getVisibleAmount() &&
+                    bar.getValue()+bar.getVisibleAmount()>=bar.getMaximum()-450) {
+                scrollLoadQueued=true;
+                SwingUtilities.invokeLater(() -> {
+                    scrollLoadQueued=false;
+                    if(moreProducts && !loadingProductChunk)loadMoreProducts();
+                });
+            }
+        });
+        // Thumbnail work is driven by the viewport, never by rendering every
+        // loaded row. Fast scrolling discards old queued filenames immediately.
+        productsScrollPane.getViewport().addChangeListener(e -> scheduleVisibleThumbnails());
+        productsTable.addHierarchyListener(e -> {
+            if((e.getChangeFlags() & java.awt.event.HierarchyEvent.SHOWING_CHANGED)!=0)
+                SwingUtilities.invokeLater(this::scheduleVisibleThumbnails);
+        });
         productsScrollPane.getViewport().addComponentListener(new ComponentAdapter() {
             @Override
             public void componentResized(ComponentEvent e) {
                 scheduleProductColumnFit();
+                scheduleVisibleThumbnails();
             }
         });
         add(productsScrollPane, BorderLayout.CENTER);
@@ -612,7 +708,7 @@ public class ProductsPanel extends JPanel {
                 productsTable.convertColumnIndexToModel(viewColumn) != 16) return;
 
         int modelRow = productsTable.convertRowIndexToModel(viewRow);
-        if (!(tableModel.getValueAt(modelRow, 16) instanceof ImageIcon)) return;
+        if (!(tableModel.getValueAt(modelRow, 16) instanceof String filename) || filename.isBlank()) return;
 
         Point screenPoint = evt.getLocationOnScreen();
         photoPreviewTimer = new Timer(225, e -> showPhotoPreview(modelRow, screenPoint));
@@ -691,130 +787,164 @@ public class ProductsPanel extends JPanel {
     }
     
     public void loadProducts() {
-        tableModel.setRowCount(0);
-        missingPurchaseCostProductIds.clear();
-        try {
-            Connection conn = DatabaseManager.getInstance().getConnection();
-            String query = """
-                SELECT p.*, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity,
-                       f.company_name as supplier_name,
-                       ps.purchase_price AS preferred_supplier_cost,
-                       (SELECT filename FROM product_images pi WHERE pi.product_id=p.id ORDER BY pi.is_primary DESC,pi.sort_order,pi.id LIMIT 1) AS primary_image,
-                       COALESCE(SUM(CASE
-                           WHEN so.status IN ('Draft', 'Confirmed', 'In Transit')
-                           THEN sod.quantity
-                           ELSE 0
-                       END), 0) as on_order_quantity
-                FROM products p
-                LEFT JOIN minimum_stock sm ON sm.product_id = p.id
-                LEFT JOIN product_suppliers ps ON ps.product_id=p.id AND ps.is_preferred=1
-                LEFT JOIN suppliers f ON ps.supplier_id = f.id
-                LEFT JOIN supplier_order_details sod ON p.id = sod.product_id
-                LEFT JOIN supplier_orders so ON sod.order_id = so.id
-                GROUP BY p.id
-                ORDER BY p.name
-            """;
-            try (Statement stmt = conn.createStatement();
-                 ResultSet rs = stmt.executeQuery(query)) {
-                while (rs.next()) {
-                    Vector<Object> row = new Vector<>();
-                    row.add(rs.getInt("id"));
-                    row.add(trimCellText(rs.getString("code")));
-                    row.add(trimCellText(rs.getString("name")));
-                    row.add(trimCellText(rs.getString("description")));
-                    row.add(rs.getDouble("sale_price_inc_vat"));
+        currentPage=0;
+        loadProductPage();
+    }
 
-                    int physicalStock = rs.getInt("quantity");
-                    int reservedStock = rs.getInt("reserved_quantity");
-                    int availableStock = physicalStock - reservedStock;
-                    int onOrderQuantity = rs.getInt("on_order_quantity");
+    private void searchProducts() {
+        activeSearch = searchField.getText().trim();
+        currentPage = 0;
+        loadProductPage();
+    }
 
-                    row.add(physicalStock);
-                    row.add(reservedStock);
-                    row.add(availableStock);
-                    row.add(onOrderQuantity);
-
-                    row.add(trimCellText(rs.getString("category")));
-                    row.add(trimCellText(rs.getString("unit_of_measure")));
-                    row.add(rs.getInt("minimum_quantity"));
-                    row.add(rs.getInt("active") == 1 ? "Yes" : "No");
-                    row.add(trimCellText(rs.getString("supplier_name")));
-                    row.add(trimCellText(rs.getString("warehouse_position")));
-                    row.add(rs.getDouble("vat_rate"));
-                    row.add(ProductImageStore.getInstance().iconCover(rs.getString("primary_image"), 48, 30));
-                    if ((rs.getInt("active") == 1 || physicalStock > 0)
-                            && (rs.getObject("preferred_supplier_cost") == null ||
-                                Numbers.nonNegative(rs.getObject("preferred_supplier_cost")) <= 0)) {
-                        missingPurchaseCostProductIds.add(rs.getInt("id"));
-                    }
-                    tableModel.addRow(row);
-                }
-            }
-            scheduleProductColumnFit();
-        } catch (SQLException e) {
-            Dialogs.showMessageDialog(this,
-                "Error loading products: " + e.getMessage(),
-                "Error", JOptionPane.ERROR_MESSAGE);
+    /**
+     * Define the active thumbnail queue by view rows, not by loaded products.
+     * Package-private logic is intentionally factored for headless regression.
+     */
+    private void setThumbnailWindow(int firstViewRow, int lastViewRow) {
+        pendingThumbnails.clear(); // Cancel jobs for rows that left the screen.
+        if (productsTable == null || tableModel == null) return;
+        int count=productsTable.getRowCount();
+        if (count==0 || firstViewRow>lastViewRow) return;
+        int first=Math.max(0,firstViewRow);
+        int last=Math.min(count-1,lastViewRow);
+        for (int view=first;view<=last;view++) {
+            int modelRow=productsTable.convertRowIndexToModel(view);
+            Object value=tableModel.getValueAt(modelRow,16);
+            if(value instanceof String filename && !filename.isBlank() &&
+                    !pageThumbnails.containsKey(filename))
+                pendingThumbnails.add(filename);
         }
     }
-    
-    private void searchProducts() {
-        String searchTerm = searchField.getText().trim();
-        if (searchTerm.isEmpty()) {
-            loadProducts();
+
+    /** Only thumbnails on screen (+4 rows either side) may enter the queue. */
+    private void scheduleVisibleThumbnails() {
+        if(productsTable==null || productsScrollPane==null ||
+                !productsTable.isShowing()){
+            pendingThumbnails.clear();
+            thumbnailTimer.stop();
             return;
         }
+        Rectangle visible=productsScrollPane.getViewport().getViewRect();
+        int rowHeight=productsTable.getRowHeight();
+        if(visible.height<=0 || rowHeight<=0){
+            pendingThumbnails.clear();
+            thumbnailTimer.stop();
+            return;
+        }
+        int first=Math.max(0,visible.y/rowHeight-4);
+        int last=(visible.y+visible.height-1)/rowHeight+4;
+        setThumbnailWindow(first,last);
+        if(pendingThumbnails.isEmpty())thumbnailTimer.stop();
+        else if(!thumbnailTimer.isRunning())thumbnailTimer.start();
+    }
 
-        tableModel.setRowCount(0);
-        missingPurchaseCostProductIds.clear();
+    private void loadNextThumbnail() {
+        // Verify the viewport again: the user may have scrolled hundreds of
+        // rows since the previous timer tick.
+        scheduleVisibleThumbnails();
+        if(pendingThumbnails.isEmpty())return;
+        String filename=pendingThumbnails.iterator().next();
+        pendingThumbnails.remove(filename);
+        // SQLite's exclusive owner connection belongs to the Swing thread.
+        // Decode at most one currently relevant image per timer tick.
+        pageThumbnails.put(filename,
+            ProductImageStore.getInstance().iconCover(filename,48,30));
+        if(productsTable!=null)productsTable.repaint();
+        if(pendingThumbnails.isEmpty())thumbnailTimer.stop();
+    }
+
+    private void loadProductPage() {
+        // Reset and perform the count only when the search/sort changes,
+        // not on every automatic 100-row scroll fetch.
         try {
-            Connection conn = DatabaseManager.getInstance().getConnection();
+            String filter = activeSearch == null ? "" : activeSearch.trim();
+            String where = filter.isEmpty() ? "" :
+                " WHERE p.code LIKE ? OR p.name LIKE ? OR p.description LIKE ? ";
+            Connection conn=DatabaseManager.getInstance().getConnection();
+            try (PreparedStatement count=conn.prepareStatement(
+                    "SELECT COUNT(*) FROM products p" + where)) {
+                if(!filter.isEmpty())bindSearch(count,filter);
+                try(ResultSet r=count.executeQuery()){
+                    if(!r.next())throw new SQLException("Unable to count products");
+                    productCount=r.getInt(1);
+                }
+            }
+            nextProductOffset=currentPage*PAGE_SIZE;
+            moreProducts=nextProductOffset<productCount;
+            cancelPhotoPreviewTimer();
+            closePhotoPreviewWindow();
+            thumbnailTimer.stop();
+            pendingThumbnails.clear();
+            pageThumbnails.clear();
+            missingPurchaseCostProductIds.clear();
+            tableModel.setRowCount(0);
+            if(moreProducts)loadMoreProducts();
+            else pageCountLabel.setText("0 / "+productCount);
+            if(productsScrollPane!=null)
+                productsScrollPane.getVerticalScrollBar().setValue(0);
+            scheduleProductColumnFit();
+        }catch(SQLException e){
+            e.printStackTrace();
+            Dialogs.showMessageDialog(this,
+                "Error loading products: "+e.getMessage(),"Error",JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    /** Append only the next SQL chunk when the user approaches the bottom. */
+    private void loadMoreProducts() {
+        if(loadingProductChunk || !moreProducts)return;
+        loadingProductChunk=true;
+        String filter=activeSearch==null?"":activeSearch.trim();
+        boolean filtered=!filter.isEmpty();
+        String where=filtered ?
+            " WHERE p.code LIKE ? OR p.name LIKE ? OR p.description LIKE ? " : "";
+        try {
+            Connection conn=DatabaseManager.getInstance().getConnection();
+            String orderBy = PAGE_SORT_COLUMNS[sortColumn] +
+                (sortAscending ? " ASC" : " DESC") + ", p.id ASC";
             String query = """
                 SELECT p.*, COALESCE(sm.minimum_quantity, 0) AS minimum_quantity,
-                       f.company_name as supplier_name,
+                       f.company_name AS supplier_name,
                        ps.purchase_price AS preferred_supplier_cost,
-                       (SELECT filename FROM product_images pi WHERE pi.product_id=p.id ORDER BY pi.is_primary DESC,pi.sort_order,pi.id LIMIT 1) AS primary_image,
+                       (SELECT filename FROM product_images pi WHERE pi.product_id=p.id
+                        ORDER BY pi.is_primary DESC, pi.sort_order, pi.id LIMIT 1) AS primary_image,
                        COALESCE(SUM(CASE
-                           WHEN so.status IN ('Draft', 'Confirmed', 'In Transit')
-                           THEN sod.quantity
-                           ELSE 0
-                       END), 0) as on_order_quantity
-                FROM products p
-                LEFT JOIN minimum_stock sm ON sm.product_id = p.id
+                           WHEN so.status IN ('Draft','Confirmed','In Transit') THEN sod.quantity
+                           ELSE 0 END), 0) AS on_order_quantity
+                FROM (
+                    SELECT * FROM products p
+                """ + where + " ORDER BY " + orderBy + " LIMIT ? OFFSET ?\n" + """
+                ) p
+                LEFT JOIN minimum_stock sm ON sm.product_id=p.id
                 LEFT JOIN product_suppliers ps ON ps.product_id=p.id AND ps.is_preferred=1
-                LEFT JOIN suppliers f ON ps.supplier_id = f.id
-                LEFT JOIN supplier_order_details sod ON p.id = sod.product_id
-                LEFT JOIN supplier_orders so ON sod.order_id = so.id
-                WHERE p.code LIKE ? OR p.name LIKE ? OR p.description LIKE ?
+                LEFT JOIN suppliers f ON ps.supplier_id=f.id
+                LEFT JOIN supplier_order_details sod ON sod.product_id=p.id
+                LEFT JOIN supplier_orders so ON so.id=sod.order_id
                 GROUP BY p.id
-                ORDER BY p.name
-            """;
-            String searchPattern = "%" + searchTerm + "%";
-
-            try (PreparedStatement pstmt = conn.prepareStatement(query)) {
-                pstmt.setString(1, searchPattern);
-                pstmt.setString(2, searchPattern);
-                pstmt.setString(3, searchPattern);
-
-                try (ResultSet rs = pstmt.executeQuery()) {
+                ORDER BY p.name COLLATE NOCASE, p.id
+                """;
+            List<Vector<Object>> rows = new ArrayList<>();
+            Set<Integer> missingCosts = new HashSet<>();
+            try (PreparedStatement stmt = conn.prepareStatement(query)) {
+                int index = filtered ? bindSearch(stmt, filter) : 1;
+                stmt.setInt(index++, PAGE_SIZE);
+                stmt.setInt(index, nextProductOffset);
+                try (ResultSet rs = stmt.executeQuery()) {
                     while (rs.next()) {
                         Vector<Object> row = new Vector<>();
-                        row.add(rs.getInt("id"));
+                        int id = rs.getInt("id");
+                        int physical = rs.getInt("quantity");
+                        int reserved = rs.getInt("reserved_quantity");
+                        row.add(id);
                         row.add(trimCellText(rs.getString("code")));
                         row.add(trimCellText(rs.getString("name")));
                         row.add(trimCellText(rs.getString("description")));
                         row.add(rs.getDouble("sale_price_inc_vat"));
-
-                        int physicalStock = rs.getInt("quantity");
-                        int reservedStock = rs.getInt("reserved_quantity");
-                        int availableStock = physicalStock - reservedStock;
-                        int onOrderQuantity = rs.getInt("on_order_quantity");
-
-                        row.add(physicalStock);
-                        row.add(reservedStock);
-                        row.add(availableStock);
-                        row.add(onOrderQuantity);
-
+                        row.add(physical);
+                        row.add(reserved);
+                        row.add(physical - reserved);
+                        row.add(rs.getInt("on_order_quantity"));
                         row.add(trimCellText(rs.getString("category")));
                         row.add(trimCellText(rs.getString("unit_of_measure")));
                         row.add(rs.getInt("minimum_quantity"));
@@ -822,24 +952,39 @@ public class ProductsPanel extends JPanel {
                         row.add(trimCellText(rs.getString("supplier_name")));
                         row.add(trimCellText(rs.getString("warehouse_position")));
                         row.add(rs.getDouble("vat_rate"));
-                        row.add(ProductImageStore.getInstance().iconCover(rs.getString("primary_image"), 48, 30));
-                        if ((rs.getInt("active") == 1 || physicalStock > 0)
+                        // A filename is cheap to fetch; JPEG BLOB reads are lazy.
+                        row.add(rs.getString("primary_image"));
+                        if ((rs.getInt("active") == 1 || physical > 0)
                                 && (rs.getObject("preferred_supplier_cost") == null ||
-                                    Numbers.nonNegative(rs.getObject("preferred_supplier_cost")) <= 0)) {
-                            missingPurchaseCostProductIds.add(rs.getInt("id"));
-                        }
-                    tableModel.addRow(row);
+                                    Numbers.nonNegative(rs.getObject("preferred_supplier_cost")) <= 0))
+                            missingCosts.add(id);
+                        rows.add(row);
                     }
                 }
             }
+            TableStyleUtil.appendRows(tableModel,rows);
+            scheduleVisibleThumbnails();
+            missingPurchaseCostProductIds.addAll(missingCosts);
+            nextProductOffset+=rows.size();
+            moreProducts=nextProductOffset<productCount && !rows.isEmpty();
+            pageCountLabel.setText(nextProductOffset+" / "+productCount);
             scheduleProductColumnFit();
-        } catch (SQLException e) {
+        }catch(SQLException e){
+            moreProducts=false;
+            e.printStackTrace();
             Dialogs.showMessageDialog(this,
-                "Error searching for products: " + e.getMessage(),
-                "Error", JOptionPane.ERROR_MESSAGE);
+                "Error loading products: "+e.getMessage(),"Error",JOptionPane.ERROR_MESSAGE);
+        }finally{
+            loadingProductChunk=false;
         }
     }
-    
+
+    private static int bindSearch(PreparedStatement stmt, String term) throws SQLException {
+        String pattern = "%" + term + "%";
+        for (int i = 1; i <= 3; i++) stmt.setString(i, pattern);
+        return 4;
+    }
+
     private void showProductDialog(Product product) {
         // Get the parent window for the dialog
         Window parentWindow = SwingUtilities.getWindowAncestor(this);
@@ -862,18 +1007,60 @@ public class ProductsPanel extends JPanel {
     }
 
     private void selectProductById(int productId) {
+        if (selectVisibleProductById(productId)) return;
+        try {
+            Connection conn = DatabaseManager.getInstance().getConnection();
+            String name;
+            try (PreparedStatement p = conn.prepareStatement("SELECT name FROM products WHERE id=?")) {
+                p.setInt(1, productId);
+                try (ResultSet rs = p.executeQuery()) {
+                    if (!rs.next()) return;
+                    name = rs.getString(1);
+                }
+            }
+            // When a product is outside the current page, locate it by its
+            // stable name/id ordering rather than loading every product.
+            int before;
+            try (PreparedStatement p = conn.prepareStatement("""
+                    SELECT COUNT(*) FROM products
+                    WHERE name COLLATE NOCASE < ? OR (name COLLATE NOCASE = ? AND id < ?)
+                    """)) {
+                p.setString(1, name);
+                p.setString(2, name);
+                p.setInt(3, productId);
+                try (ResultSet rs = p.executeQuery()) { rs.next(); before = rs.getInt(1); }
+            }
+            activeSearch = "";
+            searchField.setText("");
+            sortColumn = 2;
+            sortAscending = true;
+            // Navigating to an arbitrary product uses stable name/id order.
+            // Clear a prior column sort without reloading a second time.
+            adjustingSort = true;
+            try { productsTable.getRowSorter().setSortKeys(java.util.List.of()); }
+            finally { adjustingSort = false; }
+            currentPage = before / PAGE_SIZE;
+            loadProductPage();
+            selectVisibleProductById(productId);
+        } catch (SQLException e) {
+            Dialogs.showMessageDialog(this, "Error locating product: " + e.getMessage(),
+                "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private boolean selectVisibleProductById(int productId) {
         for (int modelRow = 0; modelRow < tableModel.getRowCount(); modelRow++) {
             Object value = tableModel.getValueAt(modelRow, 0);
             if (value instanceof Number number && number.intValue() == productId) {
                 int viewRow = productsTable.convertRowIndexToView(modelRow);
                 if (viewRow >= 0) {
                     productsTable.setRowSelectionInterval(viewRow, viewRow);
-                    Rectangle rect = productsTable.getCellRect(viewRow, 0, true);
-                    productsTable.scrollRectToVisible(rect);
+                    productsTable.scrollRectToVisible(productsTable.getCellRect(viewRow, 0, true));
                 }
-                return;
+                return true;
             }
         }
+        return false;
     }
     
     private void viewSelectedProduct() {
@@ -1271,29 +1458,24 @@ public class ProductsPanel extends JPanel {
      * @param productCode The code of the product to select
      */
     public void selectProductByCode(String productCode) {
-        // First ensure the table is loaded
-        loadProducts();
-
-        // Search for the product code in the table model
-        for (int modelRow = 0; modelRow < tableModel.getRowCount(); modelRow++) {
-            Object value = tableModel.getValueAt(modelRow, 1); // Code is in column 1
-            if (value != null && value instanceof String && value.equals(productCode)) {
-                // Found the product, convert model index to view index
-                int viewRow = productsTable.convertRowIndexToView(modelRow);
-                // Select the row in the view
-                productsTable.setRowSelectionInterval(viewRow, viewRow);
-                // Scroll to make the row visible
-                productsTable.scrollRectToVisible(productsTable.getCellRect(viewRow, 0, true));
-                // Update button states
-                updateButtonStates();
-                return;
+        try {
+            Connection conn = DatabaseManager.getInstance().getConnection();
+            try (PreparedStatement p = conn.prepareStatement("SELECT id FROM products WHERE code=?")) {
+                p.setString(1, productCode);
+                try (ResultSet r = p.executeQuery()) {
+                    if (r.next()) {
+                        selectProductById(r.getInt(1));
+                        return;
+                    }
+                }
             }
+        } catch (SQLException e) {
+            Dialogs.showMessageDialog(this, "Error locating product: " + e.getMessage(),
+                "Error", JOptionPane.ERROR_MESSAGE);
+            return;
         }
-
-        // If we get here, the product was not found
         Dialogs.showMessageDialog(this,
             "Product with code '" + productCode + "' not found in the list.",
-            "Product Not Found",
-            JOptionPane.INFORMATION_MESSAGE);
+            "Product Not Found", JOptionPane.INFORMATION_MESSAGE);
     }
 }

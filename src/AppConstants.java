@@ -128,7 +128,7 @@ public class AppConstants {
     /**
      * The name of the database file.
      */
-    public static final String DATABASE_FILE_NAME = "data.db";
+    public static final String DATABASE_FILE_NAME = "data.wsbq";
 
     /**
      * The name of the backup configuration file.
@@ -140,10 +140,8 @@ public class AppConstants {
      */
     public static final String SETTINGS_FILE_NAME = "app_settings.properties";
 
-    /**
-     * The name of the EULA acceptance tracking file.
-     */
-    public static final String EULA_ACCEPTED_FILE_NAME = "eula_accepted.txt";
+    /** Identifier of the EULA; acceptance is also bound to app version and text hash. */
+    public static final String EULA_ID = "WARESTAT-EULA";
 
     /**
      * The default backup directory name (relative to app data directory).
@@ -154,26 +152,24 @@ public class AppConstants {
     public static final String PRODUCT_IMAGES_DIR_NAME = "product_images";
 
     /**
-     * Gets the application data directory path for the current platform.
-     * Creates the directory if it doesn't exist.
-     *
-     * @return The path to the application data directory
+     * Returns the platform-specific WareStat data directory without creating it.
+     * EULA evidence uses this exact path and never falls back to another directory.
      */
-    public static Path getAppDataDirectory() {
-        String os = System.getProperty("os.name").toLowerCase();
+    public static Path getAppDataDirectoryLocation() {
+        String os = System.getProperty("os.name").toLowerCase(java.util.Locale.ROOT);
         String userHome = System.getProperty("user.home");
-        Path appDir;
-
         if (os.contains("mac")) {
-            // macOS: Use Application Support directory
-            appDir = Paths.get(userHome, "Library", "Application Support", APP_DIR_NAME);
+            return Paths.get(userHome, "Library", "Application Support", APP_DIR_NAME);
         } else if (os.contains("win")) {
-            // Windows: Use AppData/Local
-            appDir = Paths.get(userHome, "AppData", "Local", APP_DIR_NAME);
-        } else {
-            // Linux/Unix: Use hidden directory
-            appDir = Paths.get(userHome, "." + APP_DIR_NAME.toLowerCase());
+            return Paths.get(userHome, "AppData", "Local", APP_DIR_NAME);
         }
+        return Paths.get(userHome, "." + APP_DIR_NAME.toLowerCase(java.util.Locale.ROOT));
+    }
+
+    /** Existing application data directory, maintaining the legacy fallback for other data. */
+    public static Path getAppDataDirectory() {
+        String userHome = System.getProperty("user.home");
+        Path appDir = getAppDataDirectoryLocation();
 
         // Create the directory if it doesn't exist
         try {
@@ -196,8 +192,45 @@ public class AppConstants {
      *
      * @return The path to the database file
      */
+    private static volatile Path sessionDatabasePath;
+    private static final String ACTIVE_DATABASE_SETTING = "database.active_path";
+
+    /** The original company location used for a new installation or a 1.2 upgrade. */
+    public static Path getDefaultDatabasePath() {
+        return getAppDataDirectory().resolve(DATABASE_FILE_NAME).toAbsolutePath().normalize();
+    }
+
+    /**
+     * The selected company is opened IN PLACE. No snapshot, import or relocation
+     * is necessary on normal startup. Preferences merely remember its path.
+     */
     public static Path getDatabasePath() {
-        return getAppDataDirectory().resolve(DATABASE_FILE_NAME);
+        Path selected = sessionDatabasePath;
+        if (selected != null) return selected;
+        String saved = SettingsPanel.getGlobalSetting(ACTIVE_DATABASE_SETTING, "").trim();
+        return saved.isEmpty() ? getDefaultDatabasePath()
+            : Paths.get(saved).toAbsolutePath().normalize();
+    }
+
+    /** Select a prospective file without changing the persistent startup path. */
+    static void useDatabasePathForSession(Path path) {
+        sessionDatabasePath = path == null ? null : path.toAbsolutePath().normalize();
+    }
+
+    /** Persist only after the selected database has opened successfully. */
+    static void rememberDatabasePath(Path path) throws IOException {
+        Path selected = path.toAbsolutePath().normalize();
+        SettingsPanel.setGlobalSetting(ACTIVE_DATABASE_SETTING,
+            selected.equals(getDefaultDatabasePath()) ? "" : selected.toString());
+        // setGlobalSetting is historically best-effort; do not silently claim
+        // that the selected company will be remembered if writing failed.
+        java.util.Properties verified = new java.util.Properties();
+        try (java.io.InputStream in = Files.newInputStream(getSettingsPath())) {
+            verified.load(in);
+        }
+        String expected = selected.equals(getDefaultDatabasePath()) ? "" : selected.toString();
+        if (!expected.equals(verified.getProperty(ACTIVE_DATABASE_SETTING, "")))
+            throw new IOException("Unable to remember the selected database path");
     }
 
     /**
@@ -236,12 +269,7 @@ public class AppConstants {
         return backupDir;
     }
 
-    /**
-     * Gets the full path to the EULA acceptance tracking file.
-     * Uses app data directory on all platforms.
-     *
-     * @return The path to the EULA acceptance file
-     */
+    /** Returns the product-image directory, independently of EULA records. */
     public static Path getProductImagesDirectory() {
         Path imageDir = getAppDataDirectory().resolve(PRODUCT_IMAGES_DIR_NAME);
         try {
@@ -250,33 +278,6 @@ public class AppConstants {
             throw new IllegalStateException("Could not create product image directory", e);
         }
         return imageDir;
-    }
-
-    public static Path getEulaAcceptedPath() {
-        return getAppDataDirectory().resolve(EULA_ACCEPTED_FILE_NAME);
-    }
-
-    /**
-     * Checks if the EULA has been accepted by the user.
-     *
-     * @return true if EULA has been accepted, false otherwise
-     */
-    public static boolean isEulaAccepted() {
-        return Files.exists(getEulaAcceptedPath());
-    }
-
-    /**
-     * Marks the EULA as accepted by creating the acceptance tracking file.
-     */
-    public static void markEulaAsAccepted() {
-        try {
-            Files.writeString(getEulaAcceptedPath(),
-                "EULA accepted on: " + java.time.LocalDateTime.now().toString(),
-                java.nio.charset.StandardCharsets.UTF_8);
-            System.out.println("EULA acceptance recorded at: " + getEulaAcceptedPath());
-        } catch (IOException e) {
-            System.err.println("Warning: Could not create EULA acceptance file: " + e.getMessage());
-        }
     }
 
     // Private constructor to prevent instantiation

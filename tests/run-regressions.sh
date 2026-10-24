@@ -8,6 +8,29 @@ mkdir -p build
 test_dir="$(mktemp -d "$repo_dir/build/regression-XXXXXX")"
 mkdir -p "$test_dir/classes" "$test_dir/home"
 "$test_javac" --release 21 -encoding UTF-8 -cp 'lib/*' -d "$test_dir/classes" src/*.java tests/*.java
+"$test_java" -Djava.awt.headless=true -Duser.home="$test_dir/home" \
+    -cp "$test_dir/classes:lib/*:resources" RuntimeNoticeRegressionTest > "$test_dir/notice-results.log" 2>&1 || {
+    cat "$test_dir/notice-results.log"
+    exit 1
+}
+sed -n '/^PASS:/p' "$test_dir/notice-results.log"
+"$test_java" -Djava.awt.headless=true -Duser.home="$test_dir/home" \
+    -cp "$test_dir/classes:lib/*:resources" EulaAcceptanceRegressionTest > "$test_dir/eula-results.log" 2>&1 || {
+    cat "$test_dir/eula-results.log"
+    exit 1
+}
+sed -n '/^PASS:/p' "$test_dir/eula-results.log"
+# Run WSBQ recovery against an isolated home so these integration
+# checks cannot alter the later recovery/UI test fixture.
+mkdir -p "$test_dir/wsbq-home"
+"$test_java" -Djava.awt.headless=true -Duser.home="$test_dir/wsbq-home" \
+    -cp "$test_dir/classes:lib/*:resources" WsbqRecoveryRegressionTest
+"$test_java" -Djava.awt.headless=true -Duser.home="$test_dir/home" \
+    -cp "$test_dir/classes:lib/*:resources" StartupDatabaseRecoveryRegressionTest
+"$test_java" -Djava.awt.headless=true -Duser.home="$test_dir/home" \
+    -cp "$test_dir/classes:lib/*:resources" ResponsiveToolBarRegressionTest
+"$test_java" -Djava.awt.headless=true -Duser.home="$test_dir/home" \
+    -cp "$test_dir/classes:lib/*:resources" ToolbarIconLabelRegressionTest
 "$test_java" -Djava.awt.headless=true -Duser.home="$test_dir/home" -Dtest.output="$test_dir/evidence" \
     -cp "$test_dir/classes:lib/*:resources" RegressionTest > "$test_dir/results.log" 2>&1 || {
     cat "$test_dir/results.log"

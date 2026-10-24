@@ -53,6 +53,48 @@ public final class InvoiceSnapshots {
         }
         for(int id:ids)capture(c,id,true);
     }
+    /**
+     * Some legacy 1.2 -> 1.3 archives were left with missing party snapshots.
+     * Repair only explicitly legacy/unversioned rows, never replace a saved
+     * 1.3 (snapshot_version=1) historical identity.
+     *
+     * The legacy format did not retain immutable invoice party information;
+     * the surviving customer/company record is the best available source.
+     * Repair is atomic: on an error nothing is partially filled in.
+     */
+    public static int repairIncompleteLegacy(Connection c) throws SQLException {
+        List<Integer> ids=new ArrayList<>();
+        try(Statement s=c.createStatement();ResultSet r=s.executeQuery(
+                "SELECT id FROM invoices WHERE (snapshot_version IS NULL OR snapshot_version=0) " +
+                "AND (customer_snapshot IS NULL OR company_snapshot IS NULL OR snapshot_version IS NULL)")) {
+            while(r.next())ids.add(r.getInt(1));
+        }
+        if(ids.isEmpty())return 0;
+        if(!c.getAutoCommit())
+            throw new SQLException("Invoice snapshot repair requires an independent transaction");
+        DatabaseManager.beginTransaction(c);
+        try {
+            for(int id:ids)capture(c,id,true);
+            c.commit();
+            return ids.size();
+        }catch(SQLException | RuntimeException e){
+            c.rollback();
+            throw e;
+        }finally{
+            c.setAutoCommit(true);
+        }
+    }
+
+    /** Require complete snapshots when publishing a newly upgraded 1.2 WSBQ. */
+    public static void validateMigratedSnapshots(Connection c) throws SQLException {
+        try(Statement s=c.createStatement();ResultSet r=s.executeQuery(
+                "SELECT number FROM invoices WHERE customer_snapshot IS NULL " +
+                "OR company_snapshot IS NULL OR snapshot_version IS NULL LIMIT 1")) {
+            if(r.next())throw new SQLException("Migrated invoice " + r.getString(1) +
+                " has missing historical customer/company snapshots");
+        }
+    }
+
     private static String encode(Properties p) throws SQLException {
         StringWriter writer=new StringWriter();
         try {p.store(writer,null);return writer.toString();}
@@ -65,6 +107,19 @@ public final class InvoiceSnapshots {
         catch(IOException | IllegalArgumentException e) {throw new SQLException("Invalid invoice snapshot",e);}
     }
     public static Customer customer(Connection c,Invoice invoice) throws SQLException {
+        // Old imports may have thousands of missing legacy snapshots. Rebuild
+        // only the selected invoice at actual print/view time, never all
+        // historical invoices during startup. Immutable v1.3 is untouched.
+        try(PreparedStatement p=c.prepareStatement("""
+                SELECT 1 FROM invoices WHERE id=? AND
+                    (snapshot_version IS NULL OR snapshot_version=0) AND
+                    (customer_snapshot IS NULL OR company_snapshot IS NULL)
+                """)) {
+            p.setInt(1,invoice.getId());
+            try(ResultSet rows=p.executeQuery()){
+                if(rows.next())capture(c,invoice.getId(),true);
+            }
+        }
         try(PreparedStatement p=c.prepareStatement("SELECT customer_snapshot FROM invoices WHERE id=?")) {
             p.setInt(1,invoice.getId());try(ResultSet r=p.executeQuery()) {
                 if(!r.next())throw new SQLException("Invoice no longer exists");

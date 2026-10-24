@@ -100,7 +100,7 @@ public final class CostIntegrity {
                             FROM inventory_lot_consumptions x
                             LEFT JOIN inventory_lots l ON l.id=x.lot_id
                             WHERE x.order_detail_id=d.id
-                              AND (l.id IS NULL OR l.product_id<>d.product_id)
+                              AND (x.lot_id IS NOT NULL AND (l.id IS NULL OR l.product_id<>d.product_id))
                         )
                       )
                   )

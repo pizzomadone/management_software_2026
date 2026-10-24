@@ -289,6 +289,7 @@ public class WarehousePanel extends JPanel {
 
     private void loadStockData() {
         stockModel.setRowCount(0);
+        java.util.List<java.util.Vector<Object>> fetchedRows=new java.util.ArrayList<>();
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
@@ -335,9 +336,10 @@ public class WarehousePanel extends JPanel {
                     row.add(status);
 
                     row.add(rs.getString("supplier_name"));
-                    stockModel.addRow(row);
+                    fetchedRows.add(row);
                 }
             }
+            TableStyleUtil.appendRows(stockModel,fetchedRows);
         } catch (SQLException e) {
             e.printStackTrace();
             Dialogs.showMessageDialog(this,
@@ -349,6 +351,7 @@ public class WarehousePanel extends JPanel {
     private void loadLotsData() {
         if(lotsModel==null)return;
         lotsModel.setRowCount(0);
+        java.util.List<java.util.Vector<Object>> fetchedRows=new java.util.ArrayList<>();
         String query="""
             SELECT l.received_date,p.code,p.name,s.company_name,o.number,
                    l.initial_quantity,l.remaining_quantity,l.unit_cost,l.source_type
@@ -377,10 +380,11 @@ public class WarehousePanel extends JPanel {
                         row.add(r.getDouble("unit_cost")==0 && "MIGRATION".equals(r.getString("source_type"))
                             ? I18n.tr("Historical cost unavailable") : Numbers.unitText(r.getDouble("unit_cost")));
                         row.add(InventoryLotManager.sourceDisplayName(r.getString("source_type")));
-                        lotsModel.addRow(row);
+                        fetchedRows.add(row);
                     }
                 }
             }
+            TableStyleUtil.appendRows(lotsModel,fetchedRows);
         }catch(SQLException e){
             Dialogs.showMessageDialog(this,"Error loading inventory lots: "+e.getMessage(),
                 "Error",JOptionPane.ERROR_MESSAGE);
@@ -439,6 +443,7 @@ public class WarehousePanel extends JPanel {
 
     private void loadNotificationsData() {
         notificationsModel.setRowCount(0);
+        java.util.List<java.util.Vector<Object>> fetchedRows=new java.util.ArrayList<>();
         try {
             Connection conn = DatabaseManager.getInstance().getConnection();
             String query = """
@@ -466,9 +471,10 @@ public class WarehousePanel extends JPanel {
                     row.add(StockManager.displayWarehouseText(rs.getString("message")));
                     row.add(rs.getString("status"));
                     row.add(rs.getInt("id"));
-                    notificationsModel.addRow(row);
+                    fetchedRows.add(row);
                 }
             }
+            TableStyleUtil.appendRows(notificationsModel,fetchedRows);
         } catch (SQLException e) {
             e.printStackTrace();
             Dialogs.showMessageDialog(this,

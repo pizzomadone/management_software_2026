@@ -56,6 +56,10 @@ public class RegressionTest {
     }
     static int qty()throws Exception{try(Statement s=db.createStatement();ResultSet r=s.executeQuery("SELECT quantity FROM products WHERE id=1")){r.next();return r.getInt(1);}}
     static void require(boolean ok,String message){if(!ok)throw new AssertionError(message);}
+    /** Real WareStat 1.2 raw SQLite backup fixture, not an invented archive. */
+    static Path legacy12BackupFixture(Path proposed) throws Exception {
+        return WareStatLegacy12Fixture.create(OUT.resolve(proposed.getFileName().toString()));
+    }
     static void fresh()throws Exception{
         if(db!=null)db.close();
         db=DatabaseManager.openConnection("jdbc:sqlite::memory:");
@@ -131,6 +135,187 @@ public class RegressionTest {
         require(!Boolean.TRUE.equals(get(dialog,savedField)), "Invalid document was saved");
     }
     static void runAll() throws Exception {
+        test("product catalog loads incrementally on scroll, with global SQL sorting and search", () -> {
+            fresh();
+            try (PreparedStatement p = db.prepareStatement("""
+                    INSERT INTO products(code,name,description,sale_price_ex_vat,sale_price_inc_vat,
+                                         quantity,acquisition_cost,supplier_id,vat_rate)
+                    VALUES(?,?,?,?,?,1,5,1,0)
+                    """)) {
+                for (int i=0; i<250; i++) {
+                    String name=String.format(java.util.Locale.ROOT,"Catalog %04d",i);
+                    p.setString(1,String.format(java.util.Locale.ROOT,"P%04d",i));
+                    p.setString(2,name);
+                    p.setString(3,"Bulk catalog fixture");
+                    p.setDouble(4,10);
+                    p.setDouble(5,10);
+                    p.addBatch();
+                }
+                p.executeBatch();
+            }
+            sql("INSERT INTO product_images(product_id,filename,is_primary,sort_order,image_data) " +
+                "VALUES(3,'lazy-test.jpg',1,0,X'FFD8FFD9')," +
+                "(65,'offscreen-test.jpg',1,0,X'FFD8FFD9')");
+            sql("UPDATE products SET sale_price_ex_vat=999,sale_price_inc_vat=999 WHERE code='P0249'");
+            require("3".equals(value("SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name IN " +
+                "('idx_product_images_filename','idx_supplier_order_details_product','idx_products_name_nocase')")),
+                "Large catalog indexes were not installed");
+            ProductsPanel panel=new ProductsPanel();
+            JTable catalog=(JTable)get(panel,"productsTable");
+            DefaultTableModel model=(DefaultTableModel)get(panel,"tableModel");
+            require(model.getRowCount()==100,"Opening catalog materialized more than one scroll chunk");
+            require(model.getValueAt(0,16) instanceof String,
+                "Catalog eagerly decoded images instead of retaining filenames");
+            @SuppressWarnings("unchecked")
+            Set<String> pendingThumbs=(Set<String>)get(panel,"pendingThumbnails");
+            require(pendingThumbs.isEmpty(),
+                "Catalog queued off-screen thumbnails during its initial layout");
+            int photoColumn=catalog.convertColumnIndexToView(16);
+            // Even an explicit renderer request for an off-screen row must not
+            // initiate decoding; table layout and column sizing do this.
+            catalog.prepareRenderer(catalog.getCellRenderer(62,photoColumn),62,photoColumn);
+            require(pendingThumbs.isEmpty(),
+                "A renderer request scheduled an off-screen JPEG decode");
+            call(panel,"setThumbnailWindow",new Class<?>[]{int.class,int.class},0,5);
+            require(pendingThumbs.contains("lazy-test.jpg") &&
+                    !pendingThumbs.contains("offscreen-test.jpg"),
+                "Initial thumbnail queue includes photos outside visible rows");
+            call(panel,"setThumbnailWindow",new Class<?>[]{int.class,int.class},55,75);
+            require(!pendingThumbs.contains("lazy-test.jpg") &&
+                    pendingThumbs.contains("offscreen-test.jpg"),
+                "Scrolling failed to cancel old queued thumbnails and request new visible ones");
+
+            catalog.getRowSorter().setSortKeys(java.util.List.of(
+                new RowSorter.SortKey(4, SortOrder.DESCENDING)));
+            require("P0249".equals(catalog.getValueAt(0,catalog.convertColumnIndexToView(1))),
+                "SQL sort did not display the highest-priced product across catalog pages");
+            catalog.getRowSorter().setSortKeys(java.util.List.of());
+            call(panel,"loadMoreProducts");
+            require(model.getRowCount()==200,
+                "Scrolling did not append the next 100 products");
+            call(panel,"loadMoreProducts");
+            require(model.getRowCount()==252,
+                "Scrolling did not append the last products");
+            require("252 / 252".equals(((JLabel)get(panel,"pageCountLabel")).getText()),
+                "Progress indicator does not reflect the catalog size");
+            JTextField search=(JTextField)get(panel,"searchField");
+            search.setText("P02");
+            call(panel,"searchProducts");
+            require(model.getRowCount()==50,
+                "Search did not filter the complete catalog in SQL");
+            panel.selectProductByCode("P0150");
+            require(search.getText().isEmpty(),"Off-page selection did not clear outdated search");
+            int selected=catalog.getSelectedRow();
+            require(selected>=0 && "P0150".equals(model.getValueAt(
+                catalog.convertRowIndexToModel(selected),1)),
+                "Off-page product could not be found and selected");
+            require(model.getRowCount()<=100,
+                "Off-page navigation materialized more than a single chunk");
+        });
+        test("invoices render lazily and SQL searches an invoice outside the first 100", () -> {
+            fresh();
+            try(PreparedStatement ps=db.prepareStatement(
+                    "INSERT INTO invoices(number,date,customer_id,status,taxable_amount,vat,total) " +
+                    "VALUES(?,? ,1,'Draft',10,0,10)")) {
+                for(int i=1;i<=260;i++){
+                    ps.setString(1,String.format(java.util.Locale.ROOT,"INV-%04d",i));
+                    ps.setLong(2,1700000000000L+1000L*i);
+                    ps.addBatch();
+                }
+                ps.executeBatch();
+            }
+            InvoicesPanel panel=new InvoicesPanel();
+            DefaultTableModel model=(DefaultTableModel)get(panel,"tableModel");
+            require(model.getRowCount()==100,"Invoice panel eagerly read all 260 documents");
+            call(panel,"loadMoreInvoices");
+            require(model.getRowCount()==200,"Second invoice scroll chunk was missing");
+            call(panel,"loadMoreInvoices");
+            require(model.getRowCount()==260,"Invoice scroll skipped the last batch");
+            panel.loadInvoices(); // Simulate leaving and reopening the panel
+            require(model.getRowCount()==100,"Invoice refresh did not reset lazy loading");
+            panel.selectInvoiceByNumber("INV-0001");
+            require("INV-0001".equals(model.getValueAt(0,0)),
+                "Linked invoice outside loaded rows was not found by SQL search");
+        });
+        test("empty charts and sales report distinguish invoices from completed orders", () -> {
+            fresh();
+            require(!SalesDataDiagnostics.explainEmptySales(db).isBlank(),
+                "No-completed-orders diagnosis is missing");
+            sql("INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat) " +
+                "VALUES(1,1,'2022-08-19','Completed',10,10)");
+            String warning=SalesDataDiagnostics.explainEmptySales(db);
+            require(warning.contains("2022-08-19"),
+                "The no-sales diagnosis did not show available historic sale dates");
+        });
+        test("customer orders open quickly in 100-row chunks and search numeric IDs", () -> {
+            fresh();
+            try(PreparedStatement ps=db.prepareStatement(
+                    "INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat) " +
+                    "VALUES(?,1,?,'New',10,10)")){
+                for(int i=1;i<=255;i++){
+                    ps.setInt(1,i);
+                    ps.setLong(2,1700000000000L + (long)i*1000);
+                    ps.addBatch();
+                }
+                ps.executeBatch();
+            }
+            OrdersPanel panel=new OrdersPanel();
+            DefaultTableModel model=(DefaultTableModel)get(panel,"tableModel");
+            require(model.getRowCount()==100,
+                "Opening customer orders loaded all 255 historical documents");
+            call(panel,"loadMoreOrders");
+            require(model.getRowCount()==200,
+                "Scrolling customer orders failed to load the second chunk");
+            call(panel,"loadMoreOrders");
+            require(model.getRowCount()==255,
+                "Last scroll chunk skipped historical customer orders");
+            JTextField search=(JTextField)get(panel,"searchField");
+            search.setText("215");
+            call(panel,"searchOrders");
+            require(model.getRowCount()==1 &&
+                    ((Number)model.getValueAt(0,0)).intValue()==215,
+                "Customer order search did not find an exact numeric ID");
+            search.setText("Test");
+            call(panel,"searchOrders");
+            require(model.getRowCount()==100,
+                "Searching by customer name no longer loads a bounded first chunk");
+        });
+        test("Statistics and Sales Report display substantial historic data in a custom year", () -> {
+            fresh();
+            try(PreparedStatement orders=db.prepareStatement(
+                    "INSERT INTO orders(id,customer_id,order_date,status,total_ex_vat,total_inc_vat) " +
+                    "VALUES(?,1,?,'Completed',10,10)");
+                PreparedStatement details=db.prepareStatement(
+                    "INSERT INTO order_details(order_id,product_id,quantity,sale_unit_price_ex_vat,sale_unit_price_inc_vat,vat_rate,cost_total) " +
+                    "VALUES(?,1,1,10,10,0,5)")){
+                for(int i=1;i<=800;i++){
+                    orders.setInt(1,i);
+                    orders.setString(2,"2023-05-10 12:00:00");
+                    orders.addBatch();
+                    details.setInt(1,i);
+                    details.addBatch();
+                }
+                orders.executeBatch();
+                details.executeBatch();
+            }
+            AdvancedStatsPanel stats=new AdvancedStatsPanel();
+            ((JComboBox<?>)get(stats,"periodCombo")).setSelectedIndex(3);
+            ((DatePickerField)get(stats,"fromDateField")).setText("01/01/2023");
+            ((DatePickerField)get(stats,"toDateField")).setText("31/12/2023");
+            call(stats,"loadData");
+            @SuppressWarnings("unchecked")
+            Map<String,double[]> monthly=(Map<String,double[]>)get(stats,"monthlySales");
+            require(monthly.containsKey("2023-05") && monthly.get("2023-05")[0]==8000.0,
+                "Statistics failed to aggregate historical sales from the selected year");
+            JTable top=(JTable)get(stats,"topProductsTable");
+            require(top.getRowCount()>0,"Statistics left the top-products chart empty");
+            SalesReportPanel report=new SalesReportPanel();
+            ((DatePickerField)get(report,"startDateField")).setText("01/01/2023");
+            ((DatePickerField)get(report,"endDateField")).setText("31/12/2023");
+            call(report,"loadReportData");
+            DefaultTableModel sales=(DefaultTableModel)get(report,"tableModel");
+            require(sales.getRowCount()==800,"Sales Report lost historical orders when filtering by year");
+        });
         test("backup and export photo choices are available in every language", () -> {
             String original=I18n.getLanguage();
             try {
@@ -641,18 +826,58 @@ public class RegressionTest {
             require(qty()==4 && "4".equals(value("SELECT remaining_quantity FROM inventory_lots WHERE supplier_order_detail_id=10")),
                 "Rejected supplier receipt reversal changed stock or FIFO state");
         });
-        test("WAL import includes committed data and retains a prior copy", () -> {
+        test("missing legacy invoice snapshots recover without changing saved 1.3 invoices", () -> {
+            fresh();
+            sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status,snapshot_version) "
+                + "VALUES(901,'OLD-GAP',1,1,10,0,10,'Issued',0)");
+            sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status,snapshot_version,customer_snapshot,company_snapshot) "
+                + "VALUES(902,'NEW-IMMUTABLE',1,1,10,0,10,'Issued',1," +
+                "'first_name=Archived'||char(10)||'last_name=Client'||char(10)," +
+                "'company_name=Archived'||char(10))");
+            sql("INSERT INTO invoices(id,number,date,customer_id,taxable_amount,vat,total,status,snapshot_version,company_snapshot) "
+                + "VALUES(903,'NEW-INCOMPLETE',1,1,10,0,10,'Issued',1,'company_name=Archived'||char(10))");
+            require(InvoiceSnapshots.repairIncompleteLegacy(db)==1,
+                "Only the incomplete legacy snapshot must be repaired");
+            java.util.Properties recovered=InvoiceSnapshots.decode(
+                value("SELECT customer_snapshot FROM invoices WHERE id=901"));
+            require("Test".equals(recovered.getProperty("first_name"))
+                && "Customer".equals(recovered.getProperty("last_name"))
+                && "0".equals(value("SELECT snapshot_version FROM invoices WHERE id=901")),
+                "Incomplete legacy invoice was not restored with recorded customer data");
+            require(("first_name=Archived"+(char)10+"last_name=Client"+(char)10).equals(
+                value("SELECT customer_snapshot FROM invoices WHERE id=902")),
+                "Saved historical 1.3 customer snapshot was modified");
+            require(value("SELECT customer_snapshot FROM invoices WHERE id=903")==null,
+                "Missing non-legacy customer snapshot was silently reconstructed");
+            InvoicesPanel list=empty(InvoicesPanel.class);
+            String fallback=(String)call(list,"snapshotCustomerName",
+                new Class<?>[]{Connection.class,int.class,String.class},db,903,"Test Customer");
+            require("Test Customer".equals(fallback),
+                "Invoice table crashed instead of displaying fallback customer name");
+            String original=(String)call(list,"snapshotCustomerName",
+                new Class<?>[]{Connection.class,int.class,String.class},db,902,"Test Customer");
+            require("Archived Client".equals(original),
+                "Invoice table replaced existing historical snapshot with live customer");
+            require(InvoiceSnapshots.repairIncompleteLegacy(db)==0,
+                "Legacy snapshot recovery is not idempotent");
+        });
+        test("raw SQLite .db with committed WAL is never importable", () -> {
             if(db!=null)db.close();Path current=AppConstants.getDatabasePath();Files.deleteIfExists(current);
             DatabaseManager.getInstance().initDatabase();db=DatabaseManager.getInstance().getConnection();
-            BackupManager b=BackupManager.getInstance();Path source=OUT.resolve("open-wal.db");
+            sql("INSERT INTO customers(first_name,last_name) VALUES('Live','Retained')");
+            Path source=OUT.resolve("open-wal.db");
+            Files.deleteIfExists(source);
             try(PreparedStatement p=db.prepareStatement("VACUUM INTO ?")) {
                 p.setString(1,source.toString());p.execute();
             }
             try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+source);Statement st=c.createStatement()) {
                 st.execute("PRAGMA journal_mode=WAL");st.execute("PRAGMA wal_autocheckpoint=0");
-                st.execute("INSERT INTO customers(first_name,last_name) VALUES('WAL','Committed')");
-                b.importDatabase(source);db=DatabaseManager.getInstance().getConnection();
-                require("1".equals(value("SELECT COUNT(*) FROM customers")),"Committed WAL data lost");
+                st.execute("INSERT INTO customers(first_name,last_name) VALUES('WAL','External')");
+                boolean rejected=false;
+                try {BackupManager.getInstance().importDatabase(source);}
+                catch(RuntimeException expected){rejected=true;}
+                require(rejected,"Raw .db imported despite strict WareStat format");
+                require("1".equals(value("SELECT COUNT(*) FROM customers")),"Rejected import changed live data");
             }
         });
         test("incompatible imports leave live data intact", () -> {
@@ -666,28 +891,22 @@ public class RegressionTest {
         test("retention only removes managed backup files", () -> {
             BackupManager b=BackupManager.getInstance();Path folder=OUT.resolve("backups");Files.createDirectories(folder);
             Path unrelated=folder.resolve("unrelated.db");Files.writeString(unrelated,"unrelated data");
-            Files.setLastModifiedTime(unrelated,FileTime.fromMillis(1));b.setBackupDirectory(folder.toString());b.performBackup();
+            Files.setLastModifiedTime(unrelated,FileTime.fromMillis(1));b.setBackupDirectory(folder.toString());
+            Path saved=b.performBackup();
             require(Files.exists(unrelated),"Unrelated database deleted");
             boolean blocked=false;try{b.importBackup(AppConstants.getDatabasePath());}catch(RuntimeException e){blocked=true;}
             require(blocked,"Live database registered as backup");
-            var imported=b.importBackup(OUT.resolve("open-wal.db"));
-            require(!Files.isSameFile(Path.of(imported.absolutePath()),OUT.resolve("open-wal.db")),"Imported backup is only a reference");
-            b.deleteBackup(imported.id());require(Files.exists(OUT.resolve("open-wal.db")),"Deleted external original");
+            var imported=b.importBackup(saved);
+            require(!Files.isSameFile(Path.of(imported.absolutePath()),saved),"Imported backup is only a reference");
+            b.deleteBackup(imported.id());require(Files.exists(saved),"Deleted external original");
         });
-        test("product photos are optimized ordered and included only in complete backups", () -> {
+        test("product photos are SQLite BLOBs with consistent backup choices", () -> {
             if(db!=null)db.close();
             DatabaseManager.getInstance().closeConnection();
             Path live=AppConstants.getDatabasePath();
             Files.deleteIfExists(live);
             Files.deleteIfExists(Path.of(live+"-wal"));
             Files.deleteIfExists(Path.of(live+"-shm"));
-            Path imageDir=AppConstants.getProductImagesDirectory();
-            if(Files.exists(imageDir)) {
-                try(var walk=Files.walk(imageDir)) {
-                    for(Path p:walk.sorted(Comparator.reverseOrder()).toList()) if(!p.equals(imageDir))Files.deleteIfExists(p);
-                }
-            }
-
             DatabaseManager.getInstance().initDatabase();
             db=DatabaseManager.getInstance().getConnection();
             sql("INSERT INTO suppliers(id,company_name,vat_number) VALUES(1,'Photo Supplier','PHOTO1')");
@@ -695,8 +914,8 @@ public class RegressionTest {
 
             Path source=OUT.resolve("photo-source.png");
             java.awt.image.BufferedImage original=new java.awt.image.BufferedImage(1600,1000,java.awt.image.BufferedImage.TYPE_INT_RGB);
-            for(int y=0;y<original.getHeight();y++) for(int x=0;x<original.getWidth();x++) {
-                int red=(x*255)/original.getWidth(), green=(y*255)/original.getHeight();
+            for(int y=0;y<original.getHeight();y++)for(int x=0;x<original.getWidth();x++){
+                int red=(x*255)/original.getWidth(),green=(y*255)/original.getHeight();
                 int blue=((x/20+y/20)%2==0)?70:190;
                 original.setRGB(x,y,(red<<16)|(green<<8)|blue);
             }
@@ -708,154 +927,510 @@ public class RegressionTest {
             var third=store.addImage(1,source.toFile(),false);
             store.setPrimary(1,second.id());
             store.move(1,third.id(),-1);
-
             var photos=store.list(1);
             require(photos.size()==3,"Product photo count differs");
             require(photos.stream().filter(ProductImageStore.ProductImage::primary).count()==1 &&
-                    photos.stream().anyMatch(p->p.id()==second.id()&&p.primary()),"Primary photo differs");
+                photos.stream().anyMatch(p->p.id()==second.id()&&p.primary()),"Primary photo differs");
             require(photos.stream().map(ProductImageStore.ProductImage::sortOrder).distinct().count()==3,
-                "Photo sort order is not unique");
-
+                "Photo sort order differs");
             boolean fourthBlocked=false;
             try{store.addImage(1,source.toFile(),false);}catch(Exception expected){fourthBlocked=true;}
-            require(fourthBlocked && "3".equals(value("SELECT COUNT(*) FROM product_images WHERE product_id=1")),
-                "Fourth product photo was accepted");
+            require(fourthBlocked,"Fourth product photo was accepted");
 
-            Path optimized=store.imagePath(first.filename());
-            require(Files.size(optimized)<=ProductImageStore.MAX_IMAGE_BYTES,"Optimized JPEG exceeds size limit");
-            java.awt.image.BufferedImage saved=javax.imageio.ImageIO.read(optimized.toFile());
+            byte[] jpg=store.imageBytes(first.filename());
+            require(jpg.length<=ProductImageStore.MAX_IMAGE_BYTES,"JPEG BLOB exceeds 150KB");
+            var saved=javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(jpg));
             require(Math.max(saved.getWidth(),saved.getHeight())<=ProductImageStore.MAX_LONG_SIDE,
-                "Optimized JPEG exceeds pixel limit");
-            Path thumb=store.thumbnailPath(first.filename());
-            require(Files.isRegularFile(thumb),"Thumbnail was not created");
-            java.awt.image.BufferedImage thumbnail=javax.imageio.ImageIO.read(thumb.toFile());
-            require(Math.max(thumbnail.getWidth(),thumbnail.getHeight())<=ProductImageStore.THUMB_LONG_SIDE,
-                "Thumbnail exceeds pixel limit");
+                "JPEG BLOB exceeds 800 pixels");
+            require(store.icon(first.filename(),120)!=null&&store.iconCover(first.filename(),48,30)!=null,
+                "Image preview could not be generated from BLOB");
+            require("3".equals(value("SELECT COUNT(*) FROM product_images WHERE length(image_data)>0")),
+                "Product images are not embedded in SQLite");
 
             BackupManager backup=BackupManager.getInstance();
-            Path folder=OUT.resolve("photo-backups");Files.createDirectories(folder);backup.setBackupDirectory(folder.toString());
+            Path folder=OUT.resolve("photo-backups");Files.createDirectories(folder);
+            backup.setBackupDirectory(folder.toString());
             Path complete=backup.performBackup(true);
-            require(complete.getFileName().toString().endsWith(".wsbq"),"Complete backup extension differs");
-            require(Files.readAllBytes(complete)[0]=='W',"Proprietary backup signature missing");
-            boolean genericZipRejected=false;
-            try(java.util.zip.ZipFile ignored=new java.util.zip.ZipFile(complete.toFile())) {
-                genericZipRejected = false;
-            }catch(java.util.zip.ZipException expected){genericZipRejected=true;}
-            require(genericZipRejected,"WSBQ opened directly as ZIP");
+            require(complete.getFileName().toString().endsWith(".wsbq"),"Backup extension differs");
+            require(WareStatFileHeader.isSealed(complete),"Backup does not have the WareStat signature");
 
-            Path unpacked=OUT.resolve("decoded-for-regression.zip");
-            Files.deleteIfExists(unpacked);
-            WareStatArchiveFormat.unwrap(complete,unpacked);
-            try(java.util.zip.ZipFile zip=new java.util.zip.ZipFile(unpacked.toFile())) {
-                require(zip.getEntry("manifest.json")!=null,"Complete backup has no manifest");
-                require(zip.getEntry("database/"+AppConstants.DATABASE_FILE_NAME)!=null,"Complete backup has no database");
-                require(zip.getEntry("images/"+first.filename())!=null,"Complete backup has no product image");
-                require(zip.getEntry("images/thumb_"+first.filename())==null,"Derived thumbnail was stored in backup");
-                String manifest=new String(zip.getInputStream(zip.getEntry("manifest.json")).readAllBytes(),
-                    java.nio.charset.StandardCharsets.UTF_8);
-                require(manifest.contains("\"images_included\":true"),"Complete backup manifest has no photo flag");
-            }
-            Path legacy=OUT.resolve("legacy-photo-backup.wsbu");
-            Files.copy(unpacked,legacy,StandardCopyOption.REPLACE_EXISTING);
-            boolean obsoleteRejected=false;
-            try { backup.validateDatabase(legacy); }catch(RuntimeException expected){obsoleteRejected=true;}
-            require(obsoleteRejected,"Obsolete .wsbu archive was accepted");
-            obsoleteRejected=false;
-            try { backup.importBackup(legacy); }catch(RuntimeException expected){obsoleteRejected=true;}
-            require(obsoleteRejected,"Obsolete .wsbu archive was imported");
+            // Import of an already-current WSBQ should be a checked byte-for-byte
+            // copy, not a second VACUUM/reindex of its potentially multi-GB BLOBs.
+            byte[] originalBytes=Files.readAllBytes(complete);
+            BackupManager.BackupRecord copied=backup.importBackup(complete);
+            Path copiedFile=Path.of(copied.absolutePath());
+            require(WareStatFileHeader.isSealed(copiedFile),
+                "Import of a current WSBQ did not preserve its sealed header");
+            require(Arrays.equals(originalBytes,Files.readAllBytes(copiedFile)),
+                "Import unnecessarily rewrote a current WSBQ rather than copying it exactly");
+            require(Arrays.equals(originalBytes,Files.readAllBytes(complete)),
+                "Import modified the original current WSBQ backup");
+            boolean genericSqliteRejected=false;
+            try(Connection other=DatabaseManager.openConnection("jdbc:sqlite:"+complete);
+                Statement st=other.createStatement()){
+                st.executeQuery("SELECT COUNT(*) FROM product_images");
+            }catch(SQLException expected){genericSqliteRejected=true;}
+            require(genericSqliteRejected,"Ordinary SQLite opened the sealed backup");
+            Path readableComplete=WareStatFileHeader.copyReadable(complete,OUT);
+            try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+readableComplete);
+                Statement st=c.createStatement();
+                ResultSet r=st.executeQuery("SELECT COUNT(*) FROM product_images WHERE length(image_data)>0")){
+                require(r.next()&&r.getInt(1)==3,"Backup lost embedded photographs");
+            }finally{Files.deleteIfExists(readableComplete);}
+            require(WareStatFileHeader.isSealed(complete),"Reading backup altered its saved signature");
+            Path databaseOnly=backup.performBackup(false);
+            require(WareStatFileHeader.isSealed(databaseOnly),"Photo-free backup not sealed");
+            Path readableWithoutPhotos=WareStatFileHeader.copyReadable(databaseOnly,OUT);
+            try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+readableWithoutPhotos);
+                Statement s=c.createStatement();
+                ResultSet r=s.executeQuery("SELECT COUNT(*) FROM product_images")){
+                require(r.next()&&r.getInt(1)==0,"Photo-free backup retained images");
+            }finally{Files.deleteIfExists(readableWithoutPhotos);}
+            require(Files.size(databaseOnly)<Files.size(complete),
+                "Photo-free backup is not smaller than complete backup");
 
             Path tampered=OUT.resolve("damaged-backup.wsbq");
-            byte[] damaged=Files.readAllBytes(complete);
-            damaged[damaged.length-1] ^= 1;
+            byte[] damaged=Files.readAllBytes(complete);damaged[0]=0;
             Files.write(tampered,damaged);
             boolean corruptionRejected=false;
-            try { backup.validateDatabase(tampered); }catch(RuntimeException expected){corruptionRejected=true;}
-            require(corruptionRejected,"Damaged WSBQ was accepted");
+            try{backup.validateDatabase(tampered);}catch(RuntimeException expected){corruptionRejected=true;}
+            require(corruptionRejected,"Invalid SQLite file was accepted");
 
             sql("UPDATE products SET name='Changed after backup' WHERE id=1");
-            store.deleteFiles(first.filename());
             backup.restoreBackup(complete.toString(),null);
             db=DatabaseManager.getInstance().getConnection();
-            require("Photo Product".equals(value("SELECT name FROM products WHERE id=1")),"Complete restore did not restore database");
-            require(Files.isRegularFile(store.imagePath(first.filename())),"Complete restore did not restore product image");
-            require(Files.isRegularFile(store.thumbnailPath(first.filename())),"Complete restore did not rebuild thumbnail");
-
-            Path databaseOnly=backup.performBackup(false);
-            require(databaseOnly.getFileName().toString().endsWith(".wsbq"),"Database-only backup extension differs");
-            Path onlyZip=OUT.resolve("database-only-decoded.zip");
-            Files.deleteIfExists(onlyZip);
-            WareStatArchiveFormat.unwrap(databaseOnly,onlyZip);
-            try(java.util.zip.ZipFile zip=new java.util.zip.ZipFile(onlyZip.toFile())) {
-                String manifest=new String(zip.getInputStream(zip.getEntry("manifest.json")).readAllBytes(),
-                    java.nio.charset.StandardCharsets.UTF_8);
-                require(manifest.contains("\"images_included\":false"),"Database-only manifest reports photos");
-                require(zip.stream().noneMatch(e -> e.getName().startsWith("images/")),
-                    "Database-only backup contains images");
-                Path extracted=OUT.resolve("database-only-extracted.db");
-                try(var sourceDb=zip.getInputStream(zip.getEntry("database/"+AppConstants.DATABASE_FILE_NAME))) {
-                    Files.copy(sourceDb,extracted,StandardCopyOption.REPLACE_EXISTING);
-                }
-                try(Connection c2=DatabaseManager.openConnection("jdbc:sqlite:"+extracted);
-                    Statement s2=c2.createStatement();
-                    ResultSet r2=s2.executeQuery("SELECT COUNT(*) FROM product_images")) {
-                    require(r2.next() && r2.getInt(1)==0,"Database-only backup retained photo references");
-                }
-            }
+            require("Photo Product".equals(value("SELECT name FROM products WHERE id=1")),
+                "Complete restore did not restore database");
+            require("3".equals(value("SELECT COUNT(*) FROM product_images WHERE length(image_data)>0")),
+                "Complete restore did not restore image BLOBs");
+            require(store.imageBytes(first.filename()).length==jpg.length,
+                "Restored JPEG data differs");
 
             backup.restoreBackup(databaseOnly.toString(),null);
             db=DatabaseManager.getInstance().getConnection();
             require("0".equals(value("SELECT COUNT(*) FROM product_images")),
-                "Database-only restore did not remove image references");
+                "Restore of photo-free backup retained images");
             backup.restoreBackup(complete.toString(),null);
             db=DatabaseManager.getInstance().getConnection();
-            require("3".equals(value("SELECT COUNT(*) FROM product_images")),
-                "Complete WSBQ restore did not restore image references");
 
             Path exported=OUT.resolve("manual-export.wsbq");
             backup.exportDatabase(exported,false);
-            require(Files.isRegularFile(exported),"Manual export did not produce WSBQ");
             backup.validateDatabase(exported);
+            require(Files.isRegularFile(exported),"Manual export did not produce .wsbq");
         });
-        test("new archive saves current data and starts with an empty database", () -> {
+        test("only current signed WSBQ and genuine WareStat 1.2 SQLite backups import", () -> {
+            Path plainDb=OUT.resolve("normal-sqlite.wsbq");
+            Files.deleteIfExists(plainDb);
+            try(PreparedStatement p=db.prepareStatement("VACUUM INTO ?")){
+                p.setString(1,plainDb.toString());p.execute();
+            }
+            require(WareStatFileHeader.isSQLite(plainDb),"Expected raw SQLite test input");
+            BackupManager backup=BackupManager.getInstance();
+            // The current WareStat schema was copied with a SQLite header.
+            // This is precisely the unclean-shutdown recovery case and both
+            // File Open and Backup should now accept it after validation.
+            backup.validateDatabase(plainDb);
+            var recovered=backup.importBackup(plainDb);
+            require(WareStatFileHeader.isSealed(Path.of(recovered.absolutePath())),
+                "SQLite-header current WSBQ was not imported as a sealed WSBQ");
+            require(WareStatFileHeader.isSQLite(plainDb),
+                "Recovery import unexpectedly modified the source file");
+            boolean rejected=false;
+
+            Path obsolete=OUT.resolve("obsolete-schema.wsbq");
+            Files.deleteIfExists(obsolete);
+            try(PreparedStatement p=db.prepareStatement("VACUUM INTO ?")){
+                p.setString(1,obsolete.toString());p.execute();
+            }
+            try(Connection external=DatabaseManager.openConnection("jdbc:sqlite:"+obsolete);
+                Statement st=external.createStatement()){
+                st.executeUpdate("DELETE FROM schema_migrations WHERE version='022'");
+            }
+            WareStatFileHeader.seal(obsolete);
+            rejected=false;
+            try{backup.importBackup(obsolete);}catch(RuntimeException e){rejected=true;}
+            require(rejected,"Sealed obsolete database accepted as current WareStat");
+            require(WareStatFileHeader.isSealed(obsolete),"Rejected obsolete backup modified");
+
+            Path unsupported=OUT.resolve("old-experimental.wsbq");
+            Files.deleteIfExists(unsupported);
+            try(Connection bogus=DatabaseManager.openConnection("jdbc:sqlite:"+unsupported);
+                Statement st=bogus.createStatement()){
+                st.execute("CREATE TABLE unrelated(id INTEGER PRIMARY KEY)");
+            }
+            rejected=false;
+            try{backup.importBackup(unsupported);}catch(RuntimeException expected){rejected=true;}
+            require(rejected,"An unrelated raw SQLite .wsbq was accepted");
+        });
+        test("1.2 File Open and Backup import use equivalent conversions without external photos", () -> {
+            Path folder=OUT.resolve("legacy-entry-point-consistency");
+            Files.createDirectories(folder);
+            Path original=WareStatLegacy12Fixture.create(folder.resolve("genuine-1.2.db"));
+            require(!Files.exists(folder.resolve("product_images")),
+                "Genuine 1.2 fixture must not have external product photos");
+            byte[] originalBytes=Files.readAllBytes(original);
+
+            // File > Open and Backup > Import take different entry points,
+            // but both must use the same isolated migration/validation rules.
+            Path viaOpen=WareStatLocalUpgrade.migrateConfirmed(original,"EUR");
+            Path viaBackup=Path.of(BackupManager.getInstance()
+                .importBackup(original,"EUR").absolutePath());
+            String expected=null;
+            for(Path converted:List.of(viaOpen,viaBackup)) {
+                require(WareStatFileHeader.isSealed(converted),
+                    "Converted 1.2 database was not published in signed WSBQ format");
+                Path copy=WareStatFileHeader.copyReadable(converted,folder);
+                try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+copy);
+                    Statement st=c.createStatement()) {
+                    DatabaseIntegrity.validate(c,false);
+                    ProductImageStore.validateEmbeddedImages(c);
+                    try(ResultSet r=st.executeQuery("SELECT COUNT(*) FROM product_images")) {
+                        require(r.next()&&r.getInt(1)==0,
+                            "Photos were fabricated while migrating a genuine 1.2 database");
+                    }
+                    java.util.Properties customer;
+                    java.util.Properties company;
+                    try(ResultSet r=st.executeQuery(
+                            "SELECT customer_snapshot,company_snapshot,snapshot_version " +
+                            "FROM invoices WHERE number='OLD12-INVOICE'")) {
+                        require(r.next()&&r.getInt("snapshot_version")==0,
+                            "Imported legacy invoice was not marked as legacy");
+                        customer=InvoiceSnapshots.decode(r.getString("customer_snapshot"));
+                        company=InvoiceSnapshots.decode(r.getString("company_snapshot"));
+                    }
+                    require("Historic".equals(customer.getProperty("first_name"))
+                        && "Customer".equals(customer.getProperty("last_name"))
+                        && "Historic Company".equals(company.getProperty("company_name")),
+                        "Imported invoice party snapshots are incomplete");
+                    String signature;
+                    try(ResultSet r=st.executeQuery("""
+                        SELECT p.quantity,p.acquisition_cost,p.sale_price_ex_vat,
+                               o.total_ex_vat,i.taxable_amount,i.vat,i.total
+                        FROM products p,orders o,invoices i
+                        WHERE p.code='OLD12' AND o.id=1 AND i.number='OLD12-INVOICE'
+                        """)) {
+                        require(r.next(),"Migrated business records are missing");
+                        signature=r.getInt(1)+"|"+r.getDouble(2)+"|"+r.getDouble(3)
+                            +"|"+r.getDouble(4)+"|"+r.getDouble(5)+"|"
+                            +r.getDouble(6)+"|"+r.getDouble(7);
+                    }
+                    if(expected==null)expected=signature;
+                    else require(expected.equals(signature),
+                        "File Open and Backup produced different business values");
+                } finally {Files.deleteIfExists(copy);}
+            }
+            require(Arrays.equals(originalBytes,Files.readAllBytes(original)),
+                "A legacy import altered the original 1.2 database");
+            require(!Files.exists(folder.resolve("product_images")),
+                "A legacy import created an external photo directory");
+        });
+        test("real WareStat 1.2 SQLite backup converts to signed WSBQ", () -> {
+            BackupManager backups=BackupManager.getInstance();
+            Path previous=backups.performBackup(true);
+            Path backup12=WareStatLegacy12Fixture.create(OUT.resolve("version-1.2-backup.db"));
+            boolean noCurrency=false;
+            try{backups.importBackup(backup12);}catch(RuntimeException expected){noCurrency=true;}
+            require(noCurrency,"Currency-less 1.2 backup imported without requesting original currency");
+            var imported=backups.importBackup(backup12,"EUR");
+            require(WareStatFileHeader.isSealed(Path.of(imported.absolutePath())),
+                "1.2 backup conversion did not seal output WSBQ");
+            Path readable=WareStatFileHeader.copyReadable(Path.of(imported.absolutePath()),OUT);
+            try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+readable);
+                Statement st=c.createStatement()){
+                DatabaseIntegrity.validate(c,false);
+                try(ResultSet r=st.executeQuery("SELECT COUNT(*) FROM products WHERE code='OLD12' AND quantity=9")){
+                    require(r.next()&&r.getInt(1)==1,"1.2 product lost or changed stock");
+                }
+                try(ResultSet r=st.executeQuery("SELECT COUNT(*) FROM product_images")){
+                    require(r.next()&&r.getInt(1)==0,"Unexpected photos in original 1.2 backup");
+                }
+            }finally{Files.deleteIfExists(readable);}
+            require(Files.exists(backup12)&&WareStatFileHeader.isSQLite(backup12),
+                "Original 1.2 backup was modified");
+            try {
+                backups.restoreBackup(imported.absolutePath(),null);
+                db=DatabaseManager.getInstance().getConnection();
+                require("1".equals(value("SELECT COUNT(*) FROM products WHERE code='OLD12'")),
+                    "WareStat 1.2 imported backup cannot be restored");
+            } finally {
+                // Later regressions rely on the previous JPEG BLOB fixture.
+                backups.restoreBackup(previous.toString(),null);
+                db=DatabaseManager.getInstance().getConnection();
+            }
+        });
+        test("new archive saves BLOBs and starts a clean SQLite company", () -> {
             db=DatabaseManager.getInstance().getConnection();
             sql("INSERT INTO customers(first_name,last_name) VALUES('Archive','Customer')");
-            String imageName=value("SELECT filename FROM product_images ORDER BY id LIMIT 1");
-
-            Path folder=OUT.resolve("named-archives");
-            Files.createDirectories(folder);
+            String filename=value("SELECT filename FROM product_images ORDER BY id LIMIT 1");
+            Path folder=OUT.resolve("named-archives");Files.createDirectories(folder);
             Path archive=folder.resolve("My Warehouse 2026.wsbq");
-            Files.deleteIfExists(archive);
-
             BackupManager backup=BackupManager.getInstance();
             Path created=backup.archiveAndStartNew(archive);
             db=DatabaseManager.getInstance().getConnection();
-
             require(Files.isRegularFile(created),"Named archive was not created");
+            require(WareStatFileHeader.isSealed(created),"New archive not sealed");
             require("0".equals(value("SELECT COUNT(*) FROM customers")),
                 "New archive workflow did not clear customers");
             require("0".equals(value("SELECT COUNT(*) FROM products")),
                 "New archive workflow did not clear products");
             require("0".equals(value("SELECT COUNT(*) FROM product_images")),
-                "New archive workflow did not clear product image metadata");
+                "New archive workflow retained photos");
             require(Path.of(backup.getArchiveDirectory()).toAbsolutePath().normalize()
-                    .equals(folder.toAbsolutePath().normalize()),
-                "New archive directory was not remembered");
-
-            try(var stream=Files.list(AppConstants.getProductImagesDirectory())) {
-                require(stream.findAny().isEmpty(),"New archive workflow kept old product image files");
-            }
-
+                .equals(folder.toAbsolutePath().normalize()),"Archive directory was not remembered");
             backup.restoreBackup(created.toString(),null);
             db=DatabaseManager.getInstance().getConnection();
-            require("1".equals(value(
-                "SELECT COUNT(*) FROM customers WHERE first_name='Archive' AND last_name='Customer'")),
-                "Named archive did not restore archived customer data");
+            require("1".equals(value("SELECT COUNT(*) FROM customers WHERE first_name='Archive'")),
+                "Archive did not restore customers");
             require("Photo Product".equals(value("SELECT name FROM products WHERE code='PHOTO'")),
-                "Named archive did not restore archived product data");
-            if(imageName!=null) require(Files.isRegularFile(
-                ProductImageStore.getInstance().imagePath(imageName)),
-                "Named archive did not restore archived product images");
+                "Archive did not restore products");
+            require(filename==null||ProductImageStore.getInstance().imageBytes(filename)!=null,
+                "Archive did not restore image BLOBs");
         });
+        test("installed WareStat 1.2 migration requires consent and preserves original DB", () -> {
+            BackupManager backup=BackupManager.getInstance();
+            Path savedCurrent=backup.performBackup(true);
+            Path legacy=AppConstants.getAppDataDirectory().resolve("data.db");
+            WareStatLegacy12Fixture.create(legacy);
+            byte[] untouched12=Files.readAllBytes(legacy);
+            DatabaseManager.getInstance().closeConnection();db=null;
+            Path live=AppConstants.getDatabasePath();
+            Files.deleteIfExists(live);
+            Files.deleteIfExists(Path.of(live+"-wal"));
+            Files.deleteIfExists(Path.of(live+"-shm"));
+            require(WareStatLocalUpgrade.needsStartupConfirmation(),
+                "Original WareStat 1.2 installation did not require confirmation");
+            require(WareStatLegacy12.isVersion12(legacy),
+                "WareStat 1.2 file was not recognized before asking consent");
+            boolean confirmationRequired=false;
+            try { DatabaseManager.getInstance().initDatabase(); }
+            catch(IllegalStateException expected) { confirmationRequired=true; }
+            require(confirmationRequired,
+                "Startup migrated a WareStat 1.2 company without confirmation");
+            require(!Files.exists(live) && Files.exists(legacy) &&
+                    Arrays.equals(untouched12,Files.readAllBytes(legacy)),
+                "Declining migration modified the original WareStat 1.2 file");
+            // Explicit YES creates an independent WareStat 1.3 database and
+            // leaves the real 1.2 input byte-for-byte unchanged.
+            Path upgraded=WareStatLocalUpgrade.migrateConfirmed(legacy,"EUR");
+            require(upgraded.equals(live) && Files.exists(legacy)
+                    && WareStatFileHeader.isSealed(upgraded),
+                "Confirmed upgrade did not create a separate signed .wsbq");
+            require(Arrays.equals(untouched12,Files.readAllBytes(legacy)),
+                "Confirmed migration changed the original WareStat 1.2 .db");
+            DatabaseManager.getInstance().initDatabase();
+            db=DatabaseManager.getInstance().getConnection();
+            require("1".equals(value("SELECT COUNT(*) FROM products WHERE code='OLD12' AND quantity=9")),
+                "Startup failed to convert original 1.2 product and stock");
+            require("1".equals(value("SELECT COUNT(*) FROM suppliers WHERE company_name='WareStat 1.2 Supplier'")),
+                "Startup migration lost original supplier");
+            require("1".equals(value("SELECT COUNT(*) FROM invoices WHERE number='OLD12-INVOICE'")),
+                "Startup migration lost original invoice");
+            require("1".equals(value("SELECT COUNT(*) FROM invoices WHERE number='OLD12-INVOICE' AND customer_snapshot IS NOT NULL AND company_snapshot IS NOT NULL AND snapshot_version=0")),
+                "WareStat 1.2 migration lost invoice historical snapshots");
+            java.util.Properties legacyCustomer=InvoiceSnapshots.decode(value("SELECT customer_snapshot FROM invoices WHERE number='OLD12-INVOICE'"));
+            require("Historic".equals(legacyCustomer.getProperty("first_name"))
+                    && "Customer".equals(legacyCustomer.getProperty("last_name")),
+                "WareStat 1.2 migration stored incorrect invoice customer identity");
+            require(Files.exists(legacy)&&WareStatFileHeader.isSQLite(legacy)
+                    && Arrays.equals(untouched12,Files.readAllBytes(legacy)),
+                "Migrating or opening WareStat 1.3 unexpectedly modified the 1.2 original");
+            // Check each original business area, not just table creation.
+            require("1".equals(value("SELECT COUNT(*) FROM customers WHERE id=1 AND first_name='Historic' AND last_name='Customer' AND email='historic@example.invalid'")),
+                "Migration lost the customer or changed personal data");
+            require("1".equals(value("SELECT COUNT(*) FROM company_data WHERE id=1 AND company_name='Historic Company' AND vat_number='HISTORIC-VAT'")),
+                "Migration lost company details");
+            require("1".equals(value("SELECT COUNT(*) FROM products WHERE id=1 AND code='OLD12' AND quantity=9 AND sale_price_ex_vat=100 AND sale_price_inc_vat=122 AND acquisition_cost=60")),
+                "Migration changed product quantity, original sale price, VAT-inclusive price or cost");
+            require("1".equals(value("SELECT COUNT(*) FROM product_suppliers WHERE product_id=1 AND supplier_id=1 AND purchase_price=60")),
+                "Migration lost the original supplier price list");
+            require("1".equals(value("SELECT COUNT(*) FROM orders WHERE id=1 AND customer_id=1 AND status='Completed' AND total_ex_vat=122")),
+                "Migration lost or changed the original customer order");
+            require("1".equals(value("SELECT COUNT(*) FROM order_details WHERE id=1 AND order_id=1 AND product_id=1 AND quantity=1 AND sale_unit_price_ex_vat=100")),
+                "Migration lost original customer order lines or prices");
+            require("1".equals(value("SELECT COUNT(*) FROM invoices WHERE id=1 AND customer_id=1 AND number='OLD12-INVOICE' AND taxable_amount=100 AND vat=22 AND total=122")),
+                "Migration changed an original invoice's amounts or customer");
+            require("1".equals(value("SELECT COUNT(*) FROM invoice_details WHERE id=1 AND invoice_id=1 AND product_id=1 AND quantity=1 AND sale_unit_price_ex_vat=100 AND vat_rate=22 AND total=122")),
+                "Migration lost original invoice lines or tax details");
+            require("1".equals(value("SELECT COUNT(*) FROM supplier_orders WHERE id=1 AND supplier_id=1 AND number='OLD-PO-1' AND total=120")),
+                "Migration lost the supplier purchase order");
+            require("1".equals(value("SELECT COUNT(*) FROM supplier_order_details WHERE id=1 AND order_id=1 AND product_id=1 AND quantity=2 AND unit_price=60 AND total=120")),
+                "Migration lost original supplier purchase lines or costs");
+            require("1".equals(value("SELECT COUNT(*) FROM warehouse_movements WHERE id=1 AND product_id=1 AND quantity=10 AND reason='Legacy 1.2'")),
+                "Migration lost historical warehouse movements");
+            require("1".equals(value("SELECT COUNT(*) FROM minimum_stock WHERE product_id=1 AND minimum_quantity=3 AND reorder_quantity=10")),
+                "Migration changed the historic reorder settings");
+            DatabaseManager.getInstance().shutdownAndSeal();
+            require(WareStatFileHeader.isSealed(live),"Converted WSBQ not signed on shutdown");
+            DatabaseManager.getInstance().initDatabase();
+            db=DatabaseManager.getInstance().getConnection();
+            require("1".equals(value("SELECT COUNT(*) FROM products WHERE code='OLD12'")),
+                "Converted WSBQ failed to reopen");
+            backup.restoreBackup(savedCurrent.toString(),null);
+            db=DatabaseManager.getInstance().getConnection();
+            require("3".equals(value("SELECT COUNT(*) FROM product_images WHERE length(image_data)>0")),
+                "Restoring original current backup after 1.2 upgrade lost BLOB photos");
+        });
+        test("sealed .wsbq opens after being copied from another WareStat installation", () -> {
+            BackupManager backups=BackupManager.getInstance();
+            Path copy=backups.performBackup(true);
+            require(WareStatFileHeader.isSealed(copy),"Cross-install source is not sealed");
+            DatabaseManager.getInstance().closeConnection();
+            db=null;
+            Path live=AppConstants.getDatabasePath();
+            Files.deleteIfExists(live);
+            Files.copy(copy,live);
+            require(WareStatFileHeader.isSealed(live),"Copied company file lost its signature");
+            DatabaseManager.getInstance().initDatabase();
+            db=DatabaseManager.getInstance().getConnection();
+            require(!WareStatFileHeader.isSealed(live),"Copied company was not opened as SQLite");
+            require("3".equals(value("SELECT COUNT(*) FROM product_images WHERE length(image_data)>0")),
+                "Cross-install copy lost product photos");
+        });
+        test("Open uses a selected WSBQ in place and persists it without import or copies", () -> {
+            Path original = AppConstants.getDatabasePath().toAbsolutePath().normalize();
+            Path selected = OUT.resolve("selected-working-company.wsbq").toAbsolutePath().normalize();
+            Path invalid = OUT.resolve("not-a-company.wsbq").toAbsolutePath().normalize();
+            Files.writeString(invalid,"This is not a WareStat database");
+            Path malformed=OUT.resolve("signed-nonwarestat.wsbq").toAbsolutePath().normalize();
+            Files.deleteIfExists(malformed);
+            try (Connection bogus=DatabaseManager.openConnection("jdbc:sqlite:"+malformed);
+                 Statement st=bogus.createStatement()) {
+                st.execute("CREATE TABLE unrelated(id INTEGER PRIMARY KEY)");
+            }
+            WareStatFileHeader.seal(malformed);
+            BackupManager.getInstance().exportDatabase(selected,true);
+            require(WareStatFileHeader.isSealed(selected),"Save As did not produce signed WSBQ");
+            long expectedSize=Files.size(selected);
+            int originalPhotoCount=Integer.parseInt(value("SELECT COUNT(*) FROM product_images"));
+            DatabaseManager manager=DatabaseManager.getInstance();
+            try {
+                manager.openDatabase(selected);
+                db=manager.getConnection();
+                require(selected.equals(AppConstants.getDatabasePath()),
+                    "Open did not select the external WSBQ path");
+                require(WareStatFileHeader.isSealed(original),
+                    "Opening another WSBQ did not close and seal previous company");
+                require(!WareStatFileHeader.isSealed(selected),
+                    "Opened company was not made readable for live SQLite");
+                require(Files.size(selected)==expectedSize,
+                    "Opening the selected WSBQ unexpectedly copied or rebuilt it");
+                require(originalPhotoCount==Integer.parseInt(value("SELECT COUNT(*) FROM product_images")),
+                    "Directly opened company lost its photo BLOBs");
+                require(selected.toString().equals(SettingsPanel.getGlobalSetting(
+                    "database.active_path","")),
+                    "Open did not remember the selected company");
+                boolean rejected=false;
+                try { manager.openDatabase(invalid); }
+                catch(Exception expected) {rejected=true;}
+                require(rejected,"An invalid WSBQ was accepted by Open");
+                require(selected.equals(AppConstants.getDatabasePath()),
+                    "Invalid selection changed the active company");
+                rejected=false;
+                try { manager.openDatabase(malformed); }
+                catch(Exception expected) {rejected=true;}
+                require(rejected,"A signed file with unrelated schema was accepted by Open");
+                db=manager.getConnection();
+                require(selected.equals(AppConstants.getDatabasePath()),
+                    "Failed Open did not restore the previously selected company");
+                require(originalPhotoCount==Integer.parseInt(value("SELECT COUNT(*) FROM product_images")),
+                    "Failed Open did not recover the previous company's photos");
+                // Simulate closing and reopening WareStat. It must re-open the
+                // selected file, never migrate data.db or copy the WSBQ.
+                manager.shutdownAndSeal();db=null;
+                require(WareStatFileHeader.isSealed(selected),"Selected company not sealed on exit");
+                manager.initDatabase();db=manager.getConnection();
+                require(selected.equals(AppConstants.getDatabasePath()),
+                    "Restart did not return directly to the selected WSBQ");
+                require(originalPhotoCount==Integer.parseInt(value("SELECT COUNT(*) FROM product_images")),
+                    "Reopening directly changed product photos");
+            } finally {
+                if (!original.equals(AppConstants.getDatabasePath())) {
+                    manager.openDatabase(original);
+                    db=manager.getConnection();
+                }
+            }
+            require(original.equals(AppConstants.getDatabasePath()),
+                "The original default company was not restored after the regression");
+            require(SettingsPanel.getGlobalSetting("database.active_path","").isBlank(),
+                "Default database path preference was not reset after selecting it");
+        });
+        test("File Open recognizes external 1.2 DB and creates separate WSBQ", () -> {
+            Path previous=AppConstants.getDatabasePath().toAbsolutePath().normalize();
+            Path source=OUT.resolve("opened-legacy-1.2.db").toAbsolutePath().normalize();
+            Path target=WareStatLocalUpgrade.upgradedPath(source);
+            Files.deleteIfExists(target);
+            WareStatLegacy12Fixture.create(source);
+            byte[] original12=Files.readAllBytes(source);
+            require(WareStatLegacy12.isVersion12(source),
+                "Open did not identify an external WareStat 1.2 database");
+            require(Files.exists(source) && Arrays.equals(original12,Files.readAllBytes(source)),
+                "Only recognizing a 1.2 file modified it before confirmation");
+            require(!WareStatLegacy12.isVersion12(OUT.resolve("nonexistent.db")),
+                "Open accepted a nonexistent legacy database");
+            // A failed migration must never overwrite a previously created 1.3
+            // database or modify the 1.2 original.
+            Files.writeString(target,"existing-destination");
+            boolean destinationProtected=false;
+            try { WareStatLocalUpgrade.migrateConfirmed(source,"EUR"); }
+            catch(java.io.IOException expected) { destinationProtected=true; }
+            require(destinationProtected && "existing-destination".equals(Files.readString(target))
+                    && Arrays.equals(original12,Files.readAllBytes(source)),
+                "Migration overwrote an existing file or modified the original .db");
+            Files.delete(target);
+            Path migrated=WareStatLocalUpgrade.migrateConfirmed(source,"EUR");
+            require(migrated.equals(target) && Files.exists(source)
+                    && WareStatFileHeader.isSealed(target),
+                "Confirmed external 1.2 migration did not create a separate WSBQ");
+            require(Arrays.equals(original12,Files.readAllBytes(source)),
+                "Confirmed external migration modified the original 1.2 database");
+            try {
+                DatabaseManager.getInstance().openDatabase(target);
+                db=DatabaseManager.getInstance().getConnection();
+                require(target.equals(AppConstants.getDatabasePath()),
+                    "Opening the migrated 1.2 file did not use the selected path");
+                require("1".equals(value("SELECT COUNT(*) FROM products WHERE code='OLD12' AND quantity=9")),
+                    "Directly opened migrated 1.2 file lost product stock");
+                require("1".equals(value("SELECT COUNT(*) FROM invoices WHERE number='OLD12-INVOICE'")),
+                    "Directly opened migrated 1.2 file lost invoice history");
+            } finally {
+                if (!previous.equals(AppConstants.getDatabasePath())) {
+                    DatabaseManager.getInstance().openDatabase(previous);
+                    db=DatabaseManager.getInstance().getConnection();
+                }
+            }
+        });
+        test("exclusive live SQLite and crash-tolerant reversible signature", () -> {
+            Path live=AppConstants.getDatabasePath();
+            db=DatabaseManager.getInstance().getConnection();
+            require(!WareStatFileHeader.isSealed(live),"Live SQLite database unexpectedly sealed");
+            String mode=value("PRAGMA locking_mode");
+            require("exclusive".equalsIgnoreCase(mode),"Live SQLite is not exclusively locked");
+            boolean blocked=false;
+            org.sqlite.SQLiteConfig cfg=new org.sqlite.SQLiteConfig();
+            cfg.setBusyTimeout(200);
+            try(Connection other=DriverManager.getConnection("jdbc:sqlite:"+live,cfg.toProperties());
+                Statement s=other.createStatement()){
+                s.executeQuery("SELECT COUNT(*) FROM products");
+            }catch(SQLException expected){blocked=true;}
+            require(blocked,"Second SQLite client read the exclusively locked database");
+            DatabaseManager.getInstance().shutdownAndSeal();
+            db=null;
+            require(WareStatFileHeader.isSealed(live),"Normal shutdown did not seal database");
+            DatabaseManager.getInstance().initDatabase();
+            db=DatabaseManager.getInstance().getConnection();
+            require(!WareStatFileHeader.isSealed(live),"Start-up did not restore SQLite header");
+            require("3".equals(value("SELECT COUNT(*) FROM product_images WHERE image_data IS NOT NULL")),
+                "Reopening WareStat lost photographs");
+
+            // Simulate an unclean exit: the header remains the normal SQLite one.
+            DatabaseManager.getInstance().closeConnection();
+            db=null;
+            require(!WareStatFileHeader.isSealed(live),"Unclean close unexpectedly sealed database");
+            DatabaseManager.getInstance().initDatabase();
+            db=DatabaseManager.getInstance().getConnection();
+            sql("UPDATE products SET name=name WHERE id=1");
+        });
+
     }
     public static void main(String[] args) throws Exception {
         Locale.setDefault(Locale.US);TimeZone.setDefault(TimeZone.getTimeZone("UTC"));

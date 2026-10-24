@@ -14,13 +14,7 @@ import javax.swing.JOptionPane;
 public class DatabaseManager {
     private static DatabaseManager instance;
     private Connection connection;
-    private static final String DB_URL;
-
-    // Static initializer to set up the database URL
-    static {
-        DB_URL = "jdbc:sqlite:" + AppConstants.getDatabasePath().toString();
-        System.out.println("Database will be created at: " + AppConstants.getDatabasePath());
-    }
+    private volatile boolean shuttingDown;
 
     private DatabaseManager() {
         // Private constructor for the Singleton pattern
@@ -42,17 +36,46 @@ public class DatabaseManager {
     }
 
     public synchronized void initDatabase() {
+        shuttingDown = false;
         try {
             // Load the SQLite JDBC driver
             Class.forName("org.sqlite.JDBC");
 
-            // Validate an existing archive before creating any missing application tables.
-            boolean existing = java.nio.file.Files.exists(AppConstants.getDatabasePath());
+            // Never change the header while SQLite might still own the file.
             closeConnection();
-            connection = openConnection(DB_URL);
-            if (existing) {
+            // A real version-1.2 installation stores data.db. Convert an
+            // isolated, validated snapshot into signed data.wsbq on first start.
+            // Keep data.db untouched; SQLite only opens the new data.wsbq.
+            java.nio.file.Path file = AppConstants.getDatabasePath();
+            if (!file.equals(AppConstants.getDefaultDatabasePath()) &&
+                    !java.nio.file.Files.isRegularFile(file))
+                throw new java.io.IOException("Previously selected WareStat database is missing: " + file);
+            // Only a genuine 1.2 installation at the original default location
+            // requires conversion. Normal startups do not copy or move files.
+            WareStatLocalUpgrade.migrateIfNeeded();
+            WareStatFileHeader.restoreForSQLite(file);
+
+            // Validate an existing database before creating any missing application tables.
+            boolean existing = java.nio.file.Files.exists(file);
+            connection = openConnection("jdbc:sqlite:" + file);
+            // Set the lock before the first schema query / WAL access. In this
+            // mode a second SQLite client cannot open the live company file.
+            try (Statement stmt = connection.createStatement()) {
+                stmt.execute("PRAGMA locking_mode=EXCLUSIVE");
+            }
+            if (!existing) {
+                // Keep newly created SQLite databases compactable without full VACUUM.
+                try (Statement stmt = connection.createStatement()) {
+                    stmt.execute("PRAGMA auto_vacuum=INCREMENTAL");
+                }
+            }
+            // Only a pending schema migration needs expensive preflight checks.
+            // A normal SQLite/WAL open already performs crash recovery.
+            boolean needsMigration = existing &&
+                DatabaseMigrationManager.hasPendingMigrations(connection);
+            if (needsMigration) {
                 repairOrphanedProductImageReferences(connection);
-                DatabaseIntegrity.validate(connection, true);
+                DatabaseIntegrity.validateStructureAndRelations(connection,true);
             }
 
             // Enable foreign keys and set SQLite optimizations
@@ -74,7 +97,15 @@ public class DatabaseManager {
             }
             // Create tables if they do not exist
             createTables();
-            DatabaseIntegrity.validate(connection, false);
+
+            // Full integrity and photo BLOB scans are reserved for newly
+            // created / migrated companies. Repeating them for a multi-GB
+            // database on every startup delays the first usable window.
+            // Historic invoice snapshots are repaired only on invoice access.
+            if (!existing || needsMigration) {
+                DatabaseIntegrity.validate(connection,false);
+                ProductImageStore.validateEmbeddedImages(connection);
+            }
             DatabaseCurrency.bind(connection);
             startupCostAudit=upgraded ? CostIntegrity.audit(connection) : null;
 
@@ -140,6 +171,7 @@ public class DatabaseManager {
         java.nio.file.Files.deleteIfExists(java.nio.file.Path.of(target + "-shm"));
 
         try (Connection conn = openConnection("jdbc:sqlite:" + target)) {
+            try (Statement s = conn.createStatement()) { s.execute("PRAGMA auto_vacuum=INCREMENTAL"); }
             DatabaseManager staging = new DatabaseManager();
             staging.connection = conn;
             staging.createTables();
@@ -218,6 +250,7 @@ public class DatabaseManager {
                 filename TEXT NOT NULL,
                 is_primary INTEGER NOT NULL DEFAULT 0 CHECK(is_primary IN (0,1)),
                 sort_order INTEGER NOT NULL DEFAULT 0 CHECK(sort_order >= 0),
+                image_data BLOB,
                 FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE CASCADE
             )
         """;
@@ -499,11 +532,45 @@ public class DatabaseManager {
             stmt.execute(createCompanyDataTable);
         }
 
-        // Apply ordered, versioned schema migrations for existing databases.
+        // Do not rebuild stock triggers or reconcile every product on routine
+        // startups; the existing triggers maintain reserved quantities.
+        boolean schemaWork=DatabaseMigrationManager.hasPendingMigrations(connection);
         DatabaseMigrationManager.migrate(connection);
 
-        // Create triggers for stock reservation synchronization
-        createStockReservationTriggers();
+        // These indexes are needed for large page-based catalogs. In particular,
+        // thumbnail lookup by filename must not scan a 2 GB image-BLOB table.
+        // IF NOT EXISTS also upgrades already-migrated WareStat 1.3 databases.
+        try (Statement stmt = connection.createStatement()) {
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_product_images_filename ON product_images(filename)");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_supplier_order_details_product ON supplier_order_details(product_id)");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_products_name_nocase ON products(name COLLATE NOCASE, id)");
+            // High-traffic relationships shared by invoices, orders, warehouse,
+            // sales reports and returns. Built only once, maintained incrementally.
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_order_details_order ON order_details(order_id)");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_invoice_details_invoice ON invoice_details(invoice_id)");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_supplier_order_details_order ON supplier_order_details(order_id)");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_warehouse_movements_date ON warehouse_movements(date DESC, id DESC)");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_orders_order_date ON orders(order_date DESC, id DESC)");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_invoices_date ON invoices(date DESC, id DESC)");
+            // Statistics and reports usually read completed orders only.
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_orders_completed_date ON orders(order_date DESC,id DESC) WHERE status='Completed'");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_order_details_product ON order_details(product_id,order_id)");
+            stmt.execute("CREATE INDEX IF NOT EXISTS idx_stock_reservations_active_product " +
+                "ON stock_reservations(product_id) WHERE status='ACTIVE'");
+        }
+
+        // Rebuild triggers only on a schema change or if one is missing.
+        boolean missingStockTriggers=false;
+        try(Statement stmt=connection.createStatement();
+            ResultSet rs=stmt.executeQuery(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN " +
+                "('update_reserved_stock_insert','update_reserved_stock_update','update_reserved_stock_delete')")) {
+            missingStockTriggers=!rs.next() || rs.getInt(1)!=3;
+        }
+        if(schemaWork || missingStockTriggers) {
+            createStockReservationTriggers();
+        }
+        // Always repair stale quantities, but only write changed rows.
         StockManager.reconcileReservedStock(connection);
     }
 
@@ -560,7 +627,115 @@ public class DatabaseManager {
         }
     }
 
+
+    /**
+     * Opportunistic bounded disk reclamation, called after a successful backup.
+     * Avoids rewriting the whole live database during day-to-day operations.
+     */
+    public static void reclaimUnusedPages() {
+        try {
+            // EXCLUSIVE forbids a second connection; reuse the live owner.
+            Connection c = getInstance().liveConnectionIfOpen();
+            if (c == null) return; // Never reopen a sealed database during shutdown.
+            try (Statement s = c.createStatement()) {
+            int autoVacuum;
+            try (ResultSet r = s.executeQuery("PRAGMA auto_vacuum")) {
+                autoVacuum = r.next() ? r.getInt(1) : 0;
+            }
+            if (autoVacuum != 2) return; // INCREMENTAL
+            int available;
+            try (ResultSet r = s.executeQuery("PRAGMA freelist_count")) {
+                available = r.next() ? r.getInt(1) : 0;
+            }
+            if (available >= 256 && c.getAutoCommit())
+                s.execute("PRAGMA incremental_vacuum(2048)");
+            }
+        } catch (SQLException e) {
+            // A busy database should not invalidate a completed backup.
+            System.err.println("SQLite free-page maintenance deferred: " + e.getMessage());
+        }
+    }
+
+    /**
+     * For VACUUM INTO on the live database. Caller must never close this
+     * connection; the EXCLUSIVE lock belongs to WareStat until shutdown.
+     */
+    public synchronized Connection liveConnectionIfOpen() throws SQLException {
+        if (connection == null || connection.isClosed()) return null;
+        return connection;
+    }
+
+    /** Called on normal application exit; an interrupted or unclean shutdown
+     * leaves a standard SQLite header to let SQLite recover its journal/WAL. */
+    /**
+     * Open an existing signed WareStat 1.3 company directly from its location.
+     * Retain the previous database and startup preference if opening fails.
+     * This does not import, copy, overwrite, or rename either company file.
+     */
+    public synchronized void openDatabase(java.nio.file.Path selected) throws Exception {
+        java.nio.file.Path target = selected.toAbsolutePath().normalize();
+        java.nio.file.Path previous = AppConstants.getDatabasePath().toAbsolutePath().normalize();
+        if (target.equals(previous)) return;
+        // Shared with Backup Import/Restore: recover only a genuine current
+        // WSBQ whose header remained SQLite after an interrupted shutdown.
+        // Validation leaves the selected file untouched and rejects hot WALs.
+        WareStatCurrentDatabase.validateSelectable(target);
+
+        // Close and seal the previous company, without creating any copies.
+        shutdownAndSeal();
+        AppConstants.useDatabasePathForSession(target);
+        try {
+            initDatabase();
+            CompanyData.getInstance().reloadFromDatabase();
+            ProductImageStore.getInstance().removeOrphanFiles();
+            AppConstants.rememberDatabasePath(target);
+        } catch (Exception problem) {
+            try {
+                shutdownAndSeal();
+            } catch (Exception rollbackError) {
+                problem.addSuppressed(rollbackError);
+            }
+            AppConstants.useDatabasePathForSession(previous);
+            try {
+                initDatabase();
+                CompanyData.getInstance().reloadFromDatabase();
+                ProductImageStore.getInstance().removeOrphanFiles();
+            } catch (Exception rollbackError) {
+                problem.addSuppressed(rollbackError);
+            }
+            throw problem;
+        } finally {
+            AppConstants.useDatabasePathForSession(null);
+        }
+    }
+
+    public synchronized void shutdownAndSeal() {
+        shuttingDown = true;
+        if (connection == null) return;
+        // Run bounded SQLite statistics optimization once per normal exit.
+        // Coordinate with snapshots before closing the exclusive owner.
+        synchronized (connection) {
+            try {
+                if (connection.getAutoCommit()) {
+                    try (Statement stmt = connection.createStatement()) {
+                        stmt.execute("PRAGMA optimize");
+                    }
+                }
+            } catch (SQLException e) {
+                System.err.println("SQLite optimization deferred: " + e.getMessage());
+            }
+            closeConnection();
+        }
+        try {
+            WareStatFileHeader.seal(AppConstants.getDatabasePath());
+        } catch (java.io.IOException e) {
+            // Recovery takes priority over camouflage: leave SQLite readable.
+            System.err.println("WareStat header not sealed: " + e.getMessage());
+        }
+    }
+
     public Connection getConnection() throws SQLException {
+        if (shuttingDown) throw new SQLException("WareStat is shutting down");
         // Check if connection is valid, if not recreate it
         if (connection == null || connection.isClosed() || !connection.isValid(5)) {
             initDatabase();
@@ -571,7 +746,10 @@ public class DatabaseManager {
     public void closeConnection() {
         try {
             if (connection != null && !connection.isClosed()) {
-                connection.close();
+                // Wait for VACUUM INTO to finish before closing the exclusive owner.
+                synchronized (connection) {
+                    connection.close();
+                }
                 connection = null;
                 System.out.println("Database connection closed");
             }

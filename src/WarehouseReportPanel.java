@@ -187,6 +187,7 @@ public class WarehouseReportPanel extends JPanel {
     private void loadProductsData() {
         productsValid=false;
         productsModel.setRowCount(0);
+        java.util.List<java.util.Vector<Object>> fetchedRows=new java.util.ArrayList<>();
         JPanel statsPanel = (JPanel)((JPanel)tabbedPane.getComponentAt(0)).getComponent(0);
         for (Component component : statsPanel.getComponents())
             if (component instanceof JLabel label) label.setText("—");
@@ -245,12 +246,13 @@ public class WarehouseReportPanel extends JPanel {
                     }
                     row.add(status);
 
-                    productsModel.addRow(row);
+                    fetchedRows.add(row);
                     totalProducts++;
                     totalValue = Numbers.add(totalValue,totalValueProduct);
                 }
             }
 
+            TableStyleUtil.appendRows(productsModel,fetchedRows);
             // Update statistics
             updateStatistics(totalProducts, totalValue, lowStock, outOfStock);
             productsValid=true;
@@ -290,6 +292,7 @@ public class WarehouseReportPanel extends JPanel {
     private void loadMovementsData() {
         movementsValid=false;
         movementsModel.setRowCount(0);
+        java.util.List<java.util.Vector<Object>> fetchedRows=new java.util.ArrayList<>();
         try {
             String startDateText = startDateField.getText().trim();
             String endDateText = endDateField.getText().trim();
@@ -372,10 +375,11 @@ public class WarehouseReportPanel extends JPanel {
                     }
                     row.add(document);
 
-                    movementsModel.addRow(row);
+                    fetchedRows.add(row);
                 }
             }
             movementsValid=true;
+            TableStyleUtil.appendRows(movementsModel,fetchedRows);
         } catch (Exception e) {
             e.printStackTrace();
             Dialogs.showMessageDialog(this,

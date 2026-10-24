@@ -152,8 +152,21 @@ public class DatePickerField extends JTextField {
 
         Object value = pane.getValue();
         if (value instanceof Integer result && result == JOptionPane.OK_OPTION) {
-            displayedMonth = YearMonth.of((Integer) year.getValue(), months.getSelectedIndex() + 1);
-            rebuildPopup(selected);
+            // Text entered into a JSpinner editor is not automatically
+            // committed when JOptionPane's OK button closes the dialog.
+            // Otherwise choosing e.g. 2023 still leaves the old year visible.
+            try {
+                year.commitEdit();
+                displayedMonth = YearMonth.of(((Number)year.getValue()).intValue(),
+                    months.getSelectedIndex() + 1);
+                // OK applies the new month/year to the field immediately,
+                // retaining the selected day (or clipping 31 to month end).
+                LocalDate base=selected==null ? LocalDate.now() : selected;
+                selectDate(displayedMonth.atDay(
+                    Math.min(base.getDayOfMonth(),displayedMonth.lengthOfMonth())));
+            } catch (java.text.ParseException invalid) {
+                Toolkit.getDefaultToolkit().beep();
+            }
         }
     }
 

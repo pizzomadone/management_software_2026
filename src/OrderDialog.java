@@ -842,6 +842,18 @@ public class OrderDialog extends JDialog {
                 }
             }
 
+                if ("Completed".equals(newStatus)) {
+                    String fifoWarning=StockManager.fifoCoverageWarning(conn,stockItems);
+                    if(fifoWarning!=null && !java.awt.GraphicsEnvironment.isHeadless()
+                            && Dialogs.showConfirmDialog(this,fifoWarning,
+                                I18n.tr("Incomplete FIFO coverage"),
+                                JOptionPane.YES_NO_OPTION,JOptionPane.WARNING_MESSAGE)
+                                !=JOptionPane.YES_OPTION) {
+                        conn.rollback();
+                        return;
+                    }
+                }
+
                 int orderId;
                 Date completedDate = "Completed".equals(newStatus) ? new Date() : null;
 
@@ -960,6 +972,7 @@ public class OrderDialog extends JDialog {
 
     private void handleStockForNewStatus(Connection conn, int orderId, String status,
                                          List<StockManager.StockItem> items, Date completedDate) throws SQLException {
+        items = StockManager.aggregateStockItems(items);
         switch (status) {
             case "Reservation":
                 // Commercial reservation only: no warehouse reservation, stock movement or FIFO effect.

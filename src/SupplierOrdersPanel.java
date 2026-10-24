@@ -222,9 +222,32 @@ public class SupplierOrdersPanel extends JPanel {
     }
 
     public void loadOrders() {
-        model.setRowCount(0); String term = search.getText().trim();
+        model.setRowCount(0);
+        java.util.List<java.util.Vector<Object>> fetchedRows=new java.util.ArrayList<>(); String term = search.getText().trim();
+        // Compute supplier return state for every listed order in one SQL
+        // query rather than issuing two SUM queries for EACH completed order.
         String sql = """
-            SELECT so.*, s.company_name FROM supplier_orders so JOIN suppliers s ON s.id=so.supplier_id
+            SELECT so.*, s.company_name,
+                   CASE
+                       WHEN COALESCE(ret.returned,0)<=0 THEN 0
+                       WHEN ret.returned>=COALESCE(bought.quantity,0)
+                            AND COALESCE(bought.quantity,0)>0 THEN 2
+                       ELSE 1
+                   END AS return_state
+            FROM supplier_orders so
+            JOIN suppliers s ON s.id=so.supplier_id
+            LEFT JOIN (
+                SELECT order_id, SUM(quantity) AS quantity
+                FROM supplier_order_details
+                GROUP BY order_id
+            ) bought ON bought.order_id=so.id
+            LEFT JOIN (
+                SELECT sr.order_id, SUM(ri.quantity) AS returned
+                FROM supplier_returns sr
+                JOIN supplier_return_items ri ON ri.return_id=sr.id
+                WHERE sr.reversed_at IS NULL
+                GROUP BY sr.order_id
+            ) ret ON ret.order_id=so.id
             WHERE ?='' OR so.number LIKE ? OR s.company_name LIKE ? OR so.status LIKE ?
             ORDER BY so.order_date DESC, so.id DESC
             """;
@@ -237,14 +260,14 @@ public class SupplierOrdersPanel extends JPanel {
                     row.add(date == null ? "" : DateUtils.formatDate(date, dateFormat)); row.add(delivery == null ? "" : DateUtils.formatDate(delivery, dateFormat));
                     String status = rs.getString("status");
                     if ("Completed".equals(status)) {
-                        int returned = SupplierReturnManager.returnState(
-                            DatabaseManager.getInstance().getConnection(),rs.getInt("id"));
+                        int returned = rs.getInt("return_state");
                         if (returned==1) status += "|Partial Return";
                         if (returned==2) status += "|Full Return";
                     }
-                    row.add(status); row.add(SettingsPanel.formatCurrency(rs.getDouble("total"))); row.add(rs.getString("notes")); model.addRow(row);
+                    row.add(status); row.add(SettingsPanel.formatCurrency(rs.getDouble("total"))); row.add(rs.getString("notes")); fetchedRows.add(row);
                 }
             }
+            TableStyleUtil.appendRows(model,fetchedRows);
         } catch (SQLException ex) { Dialogs.showMessageDialog(this, "Error loading supplier orders: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE); }
     }
 

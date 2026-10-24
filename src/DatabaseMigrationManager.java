@@ -52,13 +52,29 @@ public final class DatabaseMigrationManager {
         new Migration("020", "Store actual customer order completion date",
             DatabaseMigrationManager::migrateCustomerOrderCompletionDate),
         new Migration("021", "Record partial and complete supplier returns",
-            SupplierReturnManager::installSchema)
+            SupplierReturnManager::installSchema),
+        new Migration("022", "Embed optimized product JPEGs directly in SQLite",
+            c -> addColumnIfMissing(c, "product_images", "image_data",
+                "ALTER TABLE product_images ADD COLUMN image_data BLOB"))
     );
 
     private DatabaseMigrationManager() {}
 
+    /** Read-only, indexed check: ordinary startups must not run migration transactions. */
+    public static boolean hasPendingMigrations(Connection connection) throws SQLException {
+        try(Statement s=connection.createStatement();
+            ResultSet r=s.executeQuery(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'")) {
+            if(!r.next())return true;
+        }
+        for(Migration migration:MIGRATIONS)
+            if(!isApplied(connection,migration.version()))return true;
+        return false;
+    }
+
     public static void migrate(Connection connection) throws SQLException {
         if (!connection.getAutoCommit()) throw new SQLException("Migrations require an independent connection");
+        if(!hasPendingMigrations(connection))return;
         try (Statement s = connection.createStatement()) { s.execute("PRAGMA foreign_keys=OFF"); }
         DatabaseManager.beginTransaction(connection);
         try {
