@@ -681,7 +681,9 @@ public class SettingsPanel extends JPanel {
                 String confirmation=I18n.tr("Existing operational monetary values will be converted using:")+"\n"+
                     "1 "+oldCode+" = "+rate.stripTrailingZeros().toPlainString()+" "+newCode+"\n\n"+
                     I18n.tr("Changing the operating currency affects products, costs, supplier product prices, customer orders, supplier orders and Draft invoices.")+
-                    "\n\n"+I18n.tr("Issued, Paid and Canceled invoices will not be changed.");
+                    "\n\n"+I18n.tr("Issued, Paid and Canceled invoices will not be changed.")+
+                    "\n\n"+I18n.tr(
+                        "WARNING: Converting currency permanently replaces original monetary amounts in customer and supplier orders, including completed orders. The original amounts cannot be recovered from this database after conversion. Create a backup before proceeding.");
                 int confirm=Dialogs.showConfirmDialog(this,confirmation,I18n.tr("Confirm Currency Conversion"),
                     JOptionPane.OK_CANCEL_OPTION,JOptionPane.WARNING_MESSAGE);
                 if(confirm!=JOptionPane.OK_OPTION) {

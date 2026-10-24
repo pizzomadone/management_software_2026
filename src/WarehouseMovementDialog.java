@@ -493,6 +493,16 @@ public class WarehouseMovementDialog extends JDialog {
                 }
             }
 
+            if ("INWARD".equals(type) && inboundUnitCost==0.0
+                    && !java.awt.GraphicsEnvironment.isHeadless()
+                    && Dialogs.showConfirmDialog(this,
+                        I18n.tr("An inbound movement at zero unit cost values these goods at zero and may overstate profit when sold. Confirm that the goods were received free of charge."),
+                        I18n.tr("Confirm zero purchase cost"),
+                        JOptionPane.YES_NO_OPTION,JOptionPane.WARNING_MESSAGE)
+                        !=JOptionPane.YES_OPTION) {
+                return;
+            }
+
             DatabaseManager.beginTransaction(conn);
             try {
                 if (movement != null) StockManager.requireManualMovement(conn, movement.getId());

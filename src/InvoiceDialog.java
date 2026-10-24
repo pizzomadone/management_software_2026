@@ -1172,7 +1172,7 @@ public class InvoiceDialog extends JDialog {
             p.executeBatch();
         }
 
-        for (StockManager.StockItem item : stockItems) {
+        for (StockManager.StockItem item : StockManager.aggregateStockItems(stockItems)) {
             StockManager.createOrUpdateReservation(conn, item.getProductId(),
                 "ORDER", orderId, item.getQuantity(), "Order #" + orderId);
         }
@@ -1273,6 +1273,16 @@ public class InvoiceDialog extends JDialog {
                                 message.toString(),
                                 I18n.tr("Insufficient Stock"),
                                 JOptionPane.WARNING_MESSAGE);
+                            conn.rollback();
+                            return;
+                        }
+
+                        String fifoWarning=StockManager.fifoCoverageWarning(conn,stockItems);
+                        if(fifoWarning!=null && !java.awt.GraphicsEnvironment.isHeadless()
+                                && Dialogs.showConfirmDialog(this,fifoWarning,
+                                    I18n.tr("Incomplete FIFO coverage"),
+                                    JOptionPane.YES_NO_OPTION,JOptionPane.WARNING_MESSAGE)
+                                    !=JOptionPane.YES_OPTION) {
                             conn.rollback();
                             return;
                         }

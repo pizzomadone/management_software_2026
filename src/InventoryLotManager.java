@@ -29,6 +29,22 @@ public final class InventoryLotManager {
 
     private InventoryLotManager() {}
 
+    /** Units without a remaining FIFO lot; physical stock is checked separately. */
+    public static int uncoveredFifoQuantity(Connection c,int productId,int requested)
+            throws SQLException {
+        if (requested <= 0) throw new SQLException("Sale quantity must be positive");
+        try (PreparedStatement p=c.prepareStatement("""
+                SELECT COALESCE(SUM(remaining_quantity),0)
+                FROM inventory_lots WHERE product_id=? AND remaining_quantity>0
+                """)) {
+            p.setInt(1,productId);
+            try (ResultSet r=p.executeQuery()) {
+                if (!r.next()) throw new SQLException("Unable to inspect FIFO lots");
+                return Math.toIntExact(Math.max(0L,(long)requested-r.getLong(1)));
+            }
+        }
+    }
+
     public static void receiveSupplierOrder(Connection c, int orderId, Date date, String number)
             throws SQLException {
         if (date == null) throw new SQLException(I18n.tr("Supplier receipt date is required"));
@@ -339,9 +355,8 @@ public final class InventoryLotManager {
             }
         }
         if(needed>0) {
-            // The sale is allowed to drive physical stock negative, but there is no
-            // real FIFO layer for these units. Keep a zero-cost marker only so a later
-            // rollback is distinguishable from a legacy sale with no FIFO history.
+            // Physical stock is checked before completion. Missing FIFO history
+            // is recorded explicitly so reversal/reopening need not invent a lot.
             // Historical cost/profit stays unavailable instead of being invented from
             // the product's current acquisition cost.
             insertConsumption(c,null,detailId,null,needed,0.0);
@@ -376,7 +391,7 @@ public final class InventoryLotManager {
                         FROM inventory_lot_consumptions x
                         LEFT JOIN inventory_lots l ON l.id=x.lot_id
                         WHERE x.order_detail_id=d.id
-                          AND (l.id IS NULL OR l.product_id<>d.product_id)
+                          AND (x.lot_id IS NOT NULL AND (l.id IS NULL OR l.product_id<>d.product_id))
                     )
                   )
                 LIMIT 1
@@ -445,7 +460,7 @@ public final class InventoryLotManager {
                     OR EXISTS (
                         SELECT 1 FROM inventory_lot_consumptions x
                         LEFT JOIN inventory_lots l ON l.id=x.lot_id
-                        WHERE x.order_detail_id=d.id AND (l.id IS NULL OR l.product_id<>d.product_id)
+                        WHERE x.order_detail_id=d.id AND (x.lot_id IS NOT NULL AND (l.id IS NULL OR l.product_id<>d.product_id))
                     )
                   )
                 LIMIT 1
@@ -472,7 +487,11 @@ public final class InventoryLotManager {
                         p.setInt(1,detailId);
                         try(ResultSet r=p.executeQuery()) {
                             while(r.next()) {
-                                updateLotRemaining(c,r.getInt("lot_id"),r.getInt("quantity"));
+                                // NULL marks a known FIFO shortfall, not a broken lot reference.
+                                // Physical stock is restored by the caller; do not invent a lot.
+                                Object lot=r.getObject("lot_id");
+                                if(lot!=null)
+                                    updateLotRemaining(c,((Number)lot).intValue(),r.getInt("quantity"));
                             }
                         }
                     }
