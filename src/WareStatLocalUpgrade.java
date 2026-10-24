@@ -31,42 +31,23 @@ public final class WareStatLocalUpgrade {
     }
 
     /**
-     * Single validation and conversion pipeline for every legacy entry point:
-     * startup/Open and Backup import/restore. Call only on a PRIVATE SQLite
-     * snapshot, never on the original file. A failure must prevent publication.
-     *
-     * External JPEGs must be in product_images beside the selected legacy .db.
-     * Do not silently take identically named files from another company's
-     * application folder when importing a portable backup.
+     * One migration/validation pipeline for both File > Open and Backup.
+     * Input: genuine WareStat 1.2 .db without photos.
+     * Output: fully validated .wsbq staging database, before publication.
+     * WareStat 1.3 .wsbq files are handled separately without legacy migration.
      */
-    static void prepareLegacyStaging(Connection c,Path source,String currency)
-            throws SQLException,IOException {
+    static void prepareLegacyStaging(Connection c,String currency) throws SQLException {
         DatabaseCurrency.initialize(c,currency);
         DatabaseManager.prepareDatabase(c);
 
-        Path imageDirectory=source.toAbsolutePath().normalize()
-            .getParent().resolve("product_images");
-        DatabaseManager.beginTransaction(c);
-        try {
-            ProductImageStore.embedLegacyImages(c,imageDirectory);
-            ProductImageStore.validateEmbeddedImages(c);
-            c.commit();
-        } catch (SQLException | IOException | RuntimeException failure) {
-            c.rollback();
-            throw failure;
-        } finally {
-            c.setAutoCommit(true);
-        }
-
-        // Legacy documents cannot provide their old immutable identities.
-        // Capture the best available snapshot and flag it as legacy rather
-        // than publishing invoices with missing counterparties.
+        // The 1.2 schema has no photos; there is no external photo directory
+        // to inspect or import. New databases store photos only as SQLite BLOBs.
         InvoiceSnapshots.repairIncompleteLegacy(c);
         InvoiceSnapshots.validateMigratedSnapshots(c);
         DatabaseIntegrity.validate(c,false);
         ProductImageStore.validateEmbeddedImages(c);
 
-        // Ensure no journal/WAL sidecars are needed once the WSBQ is sealed.
+        // Close the staging file cleanly before applying the .wsbq header.
         try (Statement stmt=c.createStatement()) {
             stmt.execute("PRAGMA wal_checkpoint(TRUNCATE)");
             stmt.execute("PRAGMA journal_mode=DELETE");
@@ -119,7 +100,7 @@ public final class WareStatLocalUpgrade {
             }
 
             try (Connection conn=DatabaseManager.openConnection("jdbc:sqlite:"+staged)) {
-                prepareLegacyStaging(conn,source,currency);
+                prepareLegacyStaging(conn,currency);
             }
 
             WareStatFileHeader.seal(staged);

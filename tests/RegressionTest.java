@@ -1058,95 +1058,67 @@ public class RegressionTest {
             try{backup.importBackup(unsupported);}catch(RuntimeException expected){rejected=true;}
             require(rejected,"An experimental or unsigned .wsbq was accepted");
         });
-        test("legacy startup and Backup imports preserve the same external JPEGs and invoice snapshots", () -> {
-            Path folder=OUT.resolve("legacy-photo-consistency");
+        test("1.2 File Open and Backup import use equivalent conversions without external photos", () -> {
+            Path folder=OUT.resolve("legacy-entry-point-consistency");
             Files.createDirectories(folder);
-            Path original=WareStatLegacy12Fixture.create(folder.resolve("with-photos.db"));
-            Path photos=folder.resolve("product_images");
-            Files.createDirectories(photos);
-            java.awt.image.BufferedImage sample=new java.awt.image.BufferedImage(
-                24,16,java.awt.image.BufferedImage.TYPE_INT_RGB);
-            sample.setRGB(3,4,0x00886644);
-            Path jpeg=photos.resolve("legacy-item.jpg");
-            require(javax.imageio.ImageIO.write(sample,"jpg",jpeg.toFile()),
-                "Unable to generate legacy JPEG fixture");
-            byte[] originalJpeg=Files.readAllBytes(jpeg);
+            Path original=WareStatLegacy12Fixture.create(folder.resolve("genuine-1.2.db"));
+            require(!Files.exists(folder.resolve("product_images")),
+                "Genuine 1.2 fixture must not have external product photos");
+            byte[] originalBytes=Files.readAllBytes(original);
 
-            // The original 1.2 fixture has no photo table. Add optional external
-            // photo metadata to exercise migration of old databases that have it.
-            try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+original);
-                Statement st=c.createStatement()){
-                st.execute("""
-                    CREATE TABLE product_images (
-                        id INTEGER PRIMARY KEY, product_id INTEGER NOT NULL,
-                        filename TEXT NOT NULL, is_primary INTEGER DEFAULT 1,
-                        sort_order INTEGER DEFAULT 0,
-                        FOREIGN KEY(product_id) REFERENCES products(id)
-                    )
-                    """);
-                st.execute("INSERT INTO product_images(id,product_id,filename,is_primary,sort_order) " +
-                    "VALUES(1,1,'legacy-item.jpg',1,0)");
-            }
-            WareStatLegacy12.validate(original);
-            byte[] originalDb=Files.readAllBytes(original);
-            Path viaStartup=WareStatLocalUpgrade.migrateConfirmed(original,"EUR");
-            BackupManager manager=BackupManager.getInstance();
-            Path viaBackup=Path.of(manager.importBackup(original,"EUR").absolutePath());
-
-            for(Path converted:List.of(viaStartup,viaBackup)){
+            // File > Open and Backup > Import take different entry points,
+            // but both must use the same isolated migration/validation rules.
+            Path viaOpen=WareStatLocalUpgrade.migrateConfirmed(original,"EUR");
+            Path viaBackup=Path.of(BackupManager.getInstance()
+                .importBackup(original,"EUR").absolutePath());
+            String expected=null;
+            for(Path converted:List.of(viaOpen,viaBackup)) {
                 require(WareStatFileHeader.isSealed(converted),
-                    "Legacy import did not produce a sealed WSBQ: "+converted);
-                Path inspect=WareStatFileHeader.copyReadable(converted,folder);
-                try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+inspect);
-                    Statement st=c.createStatement()){
+                    "Converted 1.2 database was not published in signed WSBQ format");
+                Path copy=WareStatFileHeader.copyReadable(converted,folder);
+                try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+copy);
+                    Statement st=c.createStatement()) {
                     DatabaseIntegrity.validate(c,false);
                     ProductImageStore.validateEmbeddedImages(c);
-                    try(ResultSet r=st.executeQuery(
-                        "SELECT image_data FROM product_images WHERE product_id=1")){
-                        require(r.next() && Arrays.equals(originalJpeg,r.getBytes(1)),
-                            "An import entry point lost or changed a historical JPEG");
+                    try(ResultSet r=st.executeQuery("SELECT COUNT(*) FROM product_images")) {
+                        require(r.next()&&r.getInt(1)==0,
+                            "Photos were fabricated while migrating a genuine 1.2 database");
                     }
+                    java.util.Properties customer;
+                    java.util.Properties company;
                     try(ResultSet r=st.executeQuery(
-                        "SELECT snapshot_version,customer_snapshot,company_snapshot " +
-                        "FROM invoices WHERE number='OLD12-INVOICE'")){
-                        require(r.next() && r.getInt("snapshot_version")==0
-                            && r.getString("customer_snapshot")!=null
-                            && r.getString("company_snapshot")!=null,
-                            "An import entry point omitted historical invoice snapshots");
+                            "SELECT customer_snapshot,company_snapshot,snapshot_version " +
+                            "FROM invoices WHERE number='OLD12-INVOICE'")) {
+                        require(r.next()&&r.getInt("snapshot_version")==0,
+                            "Imported legacy invoice was not marked as legacy");
+                        customer=InvoiceSnapshots.decode(r.getString("customer_snapshot"));
+                        company=InvoiceSnapshots.decode(r.getString("company_snapshot"));
                     }
-                } finally {Files.deleteIfExists(inspect);}
+                    require("Historic".equals(customer.getProperty("first_name"))
+                        && "Customer".equals(customer.getProperty("last_name"))
+                        && "Historic Company".equals(company.getProperty("company_name")),
+                        "Imported invoice party snapshots are incomplete");
+                    String signature;
+                    try(ResultSet r=st.executeQuery("""
+                        SELECT p.quantity,p.acquisition_cost,p.sale_price_ex_vat,
+                               o.total_ex_vat,i.taxable_amount,i.vat,i.total
+                        FROM products p,orders o,invoices i
+                        WHERE p.code='OLD12' AND o.id=1 AND i.number='OLD12-INVOICE'
+                        """)) {
+                        require(r.next(),"Migrated business records are missing");
+                        signature=r.getInt(1)+"|"+r.getDouble(2)+"|"+r.getDouble(3)
+                            +"|"+r.getDouble(4)+"|"+r.getDouble(5)+"|"
+                            +r.getDouble(6)+"|"+r.getDouble(7);
+                    }
+                    if(expected==null)expected=signature;
+                    else require(expected.equals(signature),
+                        "File Open and Backup produced different business values");
+                } finally {Files.deleteIfExists(copy);}
             }
-            require(Arrays.equals(originalDb,Files.readAllBytes(original))
-                && Arrays.equals(originalJpeg,Files.readAllBytes(jpeg)),
-                "Legacy migration modified source database or its original photo");
-
-            // Missing photographs are fatal in BOTH entry points. Never
-            // publish a seemingly successful but incomplete converted database.
-            Path incomplete=WareStatLegacy12Fixture.create(folder.resolve("missing-photo.db"));
-            try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+incomplete);
-                Statement st=c.createStatement()){
-                st.execute("""
-                    CREATE TABLE product_images (
-                        id INTEGER PRIMARY KEY, product_id INTEGER NOT NULL,
-                        filename TEXT NOT NULL, is_primary INTEGER DEFAULT 1,
-                        sort_order INTEGER DEFAULT 0,
-                        FOREIGN KEY(product_id) REFERENCES products(id)
-                    )
-                    """);
-                st.execute("INSERT INTO product_images(id,product_id,filename,is_primary,sort_order) " +
-                    "VALUES(1,1,'image-not-available.jpg',1,0)");
-            }
-            byte[] incompleteOriginal=Files.readAllBytes(incomplete);
-            boolean startupRejected=false,backupRejected=false;
-            try{WareStatLocalUpgrade.migrateConfirmed(incomplete,"EUR");}
-            catch(java.io.IOException | SQLException expected){startupRejected=true;}
-            try{manager.importBackup(incomplete,"EUR");}
-            catch(RuntimeException expected){backupRejected=true;}
-            require(startupRejected && backupRejected,
-                "An import entry point accepted missing legacy photographs");
-            require(!Files.exists(folder.resolve("missing-photo.wsbq"))
-                && Arrays.equals(incompleteOriginal,Files.readAllBytes(incomplete)),
-                "Rejected conversion modified the legacy source or published an incomplete WSBQ");
+            require(Arrays.equals(originalBytes,Files.readAllBytes(original)),
+                "A legacy import altered the original 1.2 database");
+            require(!Files.exists(folder.resolve("product_images")),
+                "A legacy import created an external photo directory");
         });
         test("real WareStat 1.2 SQLite backup converts to signed WSBQ", () -> {
             BackupManager backups=BackupManager.getInstance();

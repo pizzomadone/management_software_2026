@@ -115,12 +115,9 @@ public class BackupManager {
             }
             try(Connection c=DatabaseManager.openConnection("jdbc:sqlite:"+staging)){
                 if(legacyCurrency!=null){
-                    // The Backup panel uses exactly the same legacy conversion
-                    // and checks as startup / File > Open, including external
-                    // photos and historic invoice snapshots.
-                    if(excludePhotos)
-                        throw new IOException("Legacy database migration cannot discard photos");
-                    WareStatLocalUpgrade.prepareLegacyStaging(c,source,legacyCurrency);
+                    // Same 1.2 database migration and invoice checks as
+                    // File > Open. WareStat 1.2 has no product photos.
+                    WareStatLocalUpgrade.prepareLegacyStaging(c,legacyCurrency);
                 }else{
                     DatabaseManager.prepareDatabase(c);
                     if(excludePhotos){
@@ -184,9 +181,9 @@ public class BackupManager {
         Path result=null;
         try {
             if (legacy) {
-                // The legacy .db is copied through VACUUM INTO. The shared
-                // converter then embeds any referenced photos, validates invoice
-                // snapshots and checks SQLite integrity before publication.
+                // Genuine WareStat 1.2 .db has no photos. Both entry points
+                // convert the isolated snapshot and validate invoice history
+                // and database integrity before publishing a current .wsbq.
                 return snapshot(source,folder,legacyCurrency,false);
             }
 
