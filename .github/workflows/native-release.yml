@@ -125,6 +125,14 @@ jobs:
           printf 'language=it\n' > "$app_data/app_settings.properties"
           printf 'accepted by CI GraalVM probe\n' > "$app_data/eula_accepted.txt"
 
+      - name: Prepare disposable CI user and licence receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/graal-ci-setup-classes
+          javac -encoding UTF-8 -cp "build/release/classes:lib/*" -d build/graal-ci-setup-classes packaging/GraalProbeSetup.java
+          java -cp "build/graal-ci-setup-classes:build/release/classes:lib/*" GraalProbeSetup
+
       - name: Collect reachability metadata from real WareStat startup
         shell: bash
         run: |
@@ -420,6 +428,15 @@ jobs:
           New-Item -ItemType Directory -Force $appData | Out-Null
           Set-Content -Path (Join-Path $appData 'app_settings.properties') -Value 'language=it' -Encoding utf8
           Set-Content -Path (Join-Path $appData 'eula_accepted.txt') -Value 'accepted by CI GraalVM probe' -Encoding utf8
+
+      - name: Prepare disposable CI user and licence receipt
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/graal-ci-setup-classes | Out-Null
+          javac -encoding UTF-8 -cp "build/release/classes;lib/*" -d build/graal-ci-setup-classes packaging/GraalProbeSetup.java
+          if ($LASTEXITCODE -ne 0) { throw "CI fixture compilation failed" }
+          java -cp "build/graal-ci-setup-classes;build/release/classes;lib/*" GraalProbeSetup
+          if ($LASTEXITCODE -ne 0) { throw "CI fixture initialization failed" }
 
       - name: Collect reachability metadata from real WareStat startup
         shell: pwsh
@@ -839,6 +856,14 @@ jobs:
           mkdir -p "$app_data"
           printf 'language=it\n' > "$app_data/app_settings.properties"
           printf 'accepted by CI GraalVM probe\n' > "$app_data/eula_accepted.txt"
+
+      - name: Prepare disposable CI user and licence receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/graal-ci-setup-classes
+          javac -encoding UTF-8 -cp "build/release/classes:lib/*" -d build/graal-ci-setup-classes packaging/GraalProbeSetup.java
+          java -cp "build/graal-ci-setup-classes:build/release/classes:lib/*" GraalProbeSetup
 
       - name: Collect reachability metadata from real WareStat startup
         shell: bash
